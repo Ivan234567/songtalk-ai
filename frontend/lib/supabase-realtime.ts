@@ -4,7 +4,7 @@ import { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 /**
  * Создает real-time подписку на изменения в таблице
  */
-export function subscribeToTable<T = any>(
+export function subscribeToTable<T extends Record<string, any> = any>(
   tableName: string,
   filter: string = '*',
   callback: (payload: RealtimePostgresChangesPayload<T>) => void
@@ -36,7 +36,7 @@ export function unsubscribeFromChannel(channel: RealtimeChannel) {
 /**
  * Подписка на изменения конкретной записи по ID
  */
-export function subscribeToRecord<T = any>(
+export function subscribeToRecord<T extends Record<string, any> = any>(
   tableName: string,
   recordId: string,
   callback: (payload: RealtimePostgresChangesPayload<T>) => void

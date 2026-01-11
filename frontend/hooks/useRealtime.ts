@@ -6,7 +6,7 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 /**
  * Хук для подписки на real-time изменения таблицы
  */
-export function useRealtimeTable<T = any>(
+export function useRealtimeTable<T extends Record<string, any> = any>(
   tableName: string,
   filter: string = '*',
   enabled: boolean = true
@@ -50,7 +50,7 @@ export function useRealtimeTable<T = any>(
 /**
  * Хук для подписки на real-time изменения конкретной записи
  */
-export function useRealtimeRecord<T = any>(
+export function useRealtimeRecord<T extends Record<string, any> = any>(
   tableName: string,
   recordId: string | null,
   enabled: boolean = true
