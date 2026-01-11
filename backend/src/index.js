@@ -26,6 +26,15 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'SongTalk AI Backend API',
+    version: '1.0.0',
+    endpoints: ['/health', '/api/test', '/api/realtime']
+  })
+})
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 
