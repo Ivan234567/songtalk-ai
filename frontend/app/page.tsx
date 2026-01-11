@@ -13,22 +13,35 @@ export default function Home() {
     // Проверка подключения к Supabase
     const checkConnection = async () => {
       try {
-        // Простая проверка подключения через rpc или проверку версии
-        // Если подключение работает, даже без таблиц - это успех
-        const { error } = await supabase.rpc('version').catch(() => ({ error: null }))
+        // Проверяем подключение - если ошибка связана с отсутствием таблицы, это нормально
+        const { error } = await supabase.from('_test').select('count').limit(1)
         
-        // Если нет критических ошибок подключения, считаем успешным
-        if (!error || error.code === 'PGRST301' || error.message?.includes('function') || error.message?.includes('relation')) {
-          setStatus('Connected to Supabase ✓')
+        // Если ошибка связана с отсутствием таблицы - это нормально, подключение работает
+        if (error) {
+          const errorMessage = error.message || ''
+          const errorCode = error.code || ''
+          
+          // Коды ошибок, означающие что таблица не найдена (но подключение работает)
+          if (errorCode === 'PGRST116' || 
+              errorMessage.includes('relation') || 
+              errorMessage.includes('schema cache') ||
+              errorMessage.includes('Could not find')) {
+            setStatus('Connected to Supabase ✓')
+          } else {
+            setStatus(`Error: ${error.message}`)
+          }
         } else {
-          setStatus(`Error: ${error.message}`)
+          setStatus('Connected to Supabase ✓')
         }
       } catch (err: any) {
-        // Если ошибка связана с отсутствием таблиц/функций - это нормально, подключение работает
-        if (err?.message?.includes('relation') || err?.message?.includes('function') || err?.message?.includes('schema cache')) {
+        // Если ошибка связана с отсутствием таблиц - это нормально, подключение работает
+        const errorMsg = err?.message || String(err)
+        if (errorMsg.includes('relation') || 
+            errorMsg.includes('schema cache') ||
+            errorMsg.includes('Could not find')) {
           setStatus('Connected to Supabase ✓')
         } else {
-          setStatus(`Connection error: ${err?.message || 'Unknown error'}`)
+          setStatus(`Connection error: ${errorMsg}`)
         }
       }
     }
