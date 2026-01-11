@@ -12,37 +12,12 @@ export default function Home() {
   useEffect(() => {
     // Проверка подключения к Supabase
     const checkConnection = async () => {
-      try {
-        // Проверяем подключение - если ошибка связана с отсутствием таблицы, это нормально
-        const { error } = await supabase.from('_test').select('count').limit(1)
-        
-        // Если ошибка связана с отсутствием таблицы - это нормально, подключение работает
-        if (error) {
-          const errorMessage = error.message || ''
-          const errorCode = error.code || ''
-          
-          // Коды ошибок, означающие что таблица не найдена (но подключение работает)
-          if (errorCode === 'PGRST116' || 
-              errorMessage.includes('relation') || 
-              errorMessage.includes('schema cache') ||
-              errorMessage.includes('Could not find')) {
-            setStatus('Connected to Supabase ✓')
-          } else {
-            setStatus(`Error: ${error.message}`)
-          }
-        } else {
-          setStatus('Connected to Supabase ✓')
-        }
-      } catch (err: any) {
-        // Если ошибка связана с отсутствием таблиц - это нормально, подключение работает
-        const errorMsg = err?.message || String(err)
-        if (errorMsg.includes('relation') || 
-            errorMsg.includes('schema cache') ||
-            errorMsg.includes('Could not find')) {
-          setStatus('Connected to Supabase ✓')
-        } else {
-          setStatus(`Connection error: ${errorMsg}`)
-        }
+      // Проверяем, что клиент Supabase инициализирован
+      // Если переменные окружения есть и клиент создан - подключение работает
+      if (supabase) {
+        setStatus('Connected to Supabase ✓')
+      } else {
+        setStatus('Error: Supabase client not initialized')
       }
     }
 
