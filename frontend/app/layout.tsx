@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'SongTalk AI - Learn English with Songs',
-  description: 'Learn English through interactive song experiences',
+  title: 'Knowledge Graph - Tana аналог',
+  description: 'AI-powered knowledge graph platform для управления идеями и проектами',
 }
 
 export default function RootLayout({
