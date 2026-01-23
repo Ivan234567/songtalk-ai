@@ -18,7 +18,9 @@ RUN npm install
 
 # Копируем requirements.txt и устанавливаем Python зависимости
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --upgrade pip && \
+    pip3 install --no-cache-dir -r requirements.txt && \
+    python3 -c "import whisper; import TTS; print('Python dependencies installed successfully')"
 
 # Копируем все остальные файлы
 COPY . .
