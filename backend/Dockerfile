@@ -17,10 +17,17 @@ COPY package.json package-lock.json* ./
 RUN npm install
 
 # Копируем requirements.txt и устанавливаем Python зависимости
+# Устанавливаем по частям для лучшей отладки и надежности
 COPY requirements.txt ./
-RUN pip3 install --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt && \
-    python3 -c "import whisper; import TTS; print('Python dependencies installed successfully')"
+RUN pip3 install --upgrade pip setuptools wheel && \
+    pip3 install --no-cache-dir numpy>=1.24.0 && \
+    pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    pip3 install --no-cache-dir openai-whisper>=20231117 && \
+    pip3 install --no-cache-dir TTS>=0.21.0 && \
+    pip3 install --no-cache-dir yt-dlp>=2023.12.30 && \
+    python3 -c "import whisper; print('Whisper installed')" && \
+    python3 -c "import TTS; print('TTS installed')" && \
+    echo "All Python dependencies installed successfully"
 
 # Копируем все остальные файлы
 COPY . .
