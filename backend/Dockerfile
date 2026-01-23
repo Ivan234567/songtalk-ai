@@ -2,11 +2,12 @@ FROM node:20
 
 WORKDIR /app
 
-# Копируем только файлы из папки backend
-COPY backend/package.json backend/package-lock.json* ./
+# Копируем package.json и package-lock.json
+COPY package.json package-lock.json* ./
 RUN npm install
 
-COPY backend/ .
+# Копируем все остальные файлы
+COPY . .
 
 RUN npm run build
 
