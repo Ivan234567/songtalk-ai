@@ -1,37 +1,40 @@
-FROM node:20
+FROM node:20-slim
 
 # Устанавливаем Python и системные зависимости для Whisper
+# Используем slim образ для уменьшения базового размера
+# Объединяем все команды в один RUN для уменьшения размера образа
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-# Создаем симлинк для python
-RUN ln -s /usr/bin/python3 /usr/bin/python
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/python3 /usr/bin/python \
+    && apt-get clean
 
 WORKDIR /app
 
 # Копируем package.json и package-lock.json
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm install --production --omit=dev && npm cache clean --force
 
 # Копируем requirements.txt и устанавливаем Python зависимости
 # Используем python3 -m pip для гарантии установки в правильный Python
-# Используем --break-system-packages для установки в Docker контейнере
+# Устанавливаем только torch и torchaudio (torchvision не нужен для Whisper/TTS)
+# Очищаем кэш pip после установки для уменьшения размера
 COPY requirements.txt ./
-RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-packages && \
+RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-packages --no-cache-dir && \
     python3 -m pip install --no-cache-dir --break-system-packages numpy>=1.24.0 && \
-    python3 -m pip install --no-cache-dir --break-system-packages torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    python3 -m pip install --no-cache-dir --break-system-packages torch torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     python3 -m pip install --no-cache-dir --break-system-packages openai-whisper>=20231117 && \
     python3 -m pip install --no-cache-dir --break-system-packages TTS>=0.21.0 && \
     python3 -m pip install --no-cache-dir --break-system-packages yt-dlp>=2023.12.30 && \
-    python3 -c "import whisper; print('Whisper installed successfully')" && \
-    python3 -c "import TTS; print('TTS installed successfully')" && \
-    python3 -c "import sys; print('Python executable:', sys.executable)" && \
-    python3 -c "import whisper; print('Whisper location:', whisper.__file__)" && \
-    python3 -c "import TTS; print('TTS location:', TTS.__file__)" && \
-    echo "All Python dependencies installed and verified"
+    python3 -c "import whisper; import TTS; print('Dependencies verified')" && \
+    python3 -m pip cache purge && \
+    rm -rf /root/.cache/pip && \
+    rm -rf /root/.cache/whisper && \
+    rm -rf /root/.cache/tts && \
+    rm -rf /root/.cache/huggingface && \
+    echo "Python dependencies installed and cache cleared"
 
 # Копируем все остальные файлы
 COPY . .
