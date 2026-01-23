@@ -44,3 +44,22 @@ yarn-error.log*
 # Logs
 logs/
 *.log
+
+# Whisper uploads
+backend/uploads/
+
+# TTS output
+backend/tts_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/

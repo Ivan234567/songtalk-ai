@@ -35,7 +35,10 @@ cd ../backend && npm install
 
 3. **Настройте переменные окружения**
 
-Создайте файлы `.env` на основе примеров:
+Создайте env-файлы на основе примеров (шаблоны лежат в репозитории):
+
+- `frontend/env.local.example` → скопируйте в `frontend/.env.local`
+- `backend/env.example` → скопируйте в `backend/.env`
 
 **frontend/.env.local:**
 ```env
@@ -50,6 +53,12 @@ SUPABASE_URL=your_supabase_project_url
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 FRONTEND_URL=http://localhost:3000
 PORT=3001
+
+# AITUNNEL (OpenAI-compatible)
+# Документация: https://docs.aitunnel.ru/api/reference.html
+AITUNNEL_API_KEY=sk-aitunnel-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+AITUNNEL_BASE_URL=https://api.aitunnel.ru/v1/
+AITUNNEL_MODEL=DeepSeek-V3.2-Speciale
 ```
 
 4. **Запустите проект**
@@ -175,6 +184,9 @@ songtalk-ai/
 - `SUPABASE_SERVICE_ROLE_KEY` - Service Role ключ Supabase
 - `FRONTEND_URL` - URL фронтенда на Vercel (для CORS)
 - `PORT` - Порт сервера (устанавливается Railway автоматически)
+- `AITUNNEL_API_KEY` - ключ AITUNNEL (ТОЛЬКО на backend, не на фронт)
+- `AITUNNEL_BASE_URL` - по умолчанию `https://api.aitunnel.ru/v1/`
+- `AITUNNEL_MODEL` - название модели из панели AITUNNEL (важен регистр)
 
 ## 🐛 Troubleshooting
 

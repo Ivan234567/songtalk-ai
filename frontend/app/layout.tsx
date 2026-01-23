@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Knowledge Graph - Tana аналог',
-  description: 'AI-powered knowledge graph platform для управления идеями и проектами',
+  title: 'Speakeasy',
+  description: 'Speakeasy - платформа для общения и взаимодействия',
 }
 
 export default function RootLayout({
@@ -13,6 +13,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <script src="https://www.youtube.com/iframe_api" async></script>
+      </head>
       <body>{children}</body>
     </html>
   )

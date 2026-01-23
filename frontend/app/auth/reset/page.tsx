@@ -1,64 +1,47 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
+  const [success, setSuccess] = useState<string | null>(null)
 
   const translateError = (errorMessage: string): string => {
     const errorMsg = errorMessage.toLowerCase()
     
-    // Переводчик ошибок на русский
-    if (errorMsg.includes('invalid login credentials') || 
-        errorMsg.includes('invalid credentials') ||
-        errorMsg.includes('incorrect email') ||
-        errorMsg.includes('incorrect password')) {
-      return 'Неверный email или пароль. Проверьте введенные данные.'
-    }
-    
-    if (errorMsg.includes('email not confirmed')) {
-      return 'Email не подтвержден. Проверьте почту и подтвердите регистрацию.'
-    }
-    
-    if (errorMsg.includes('user not found')) {
-      return 'Пользователь с таким email не найден. Проверьте email или зарегистрируйтесь.'
+    if (errorMsg.includes('user not found') || 
+        errorMsg.includes('email not found')) {
+      return 'Пользователь с таким email не найден'
     }
     
     if (errorMsg.includes('too many requests')) {
-      return 'Слишком много попыток входа. Попробуйте позже.'
+      return 'Слишком много запросов. Попробуйте позже.'
     }
     
-    // Возвращаем оригинальное сообщение, если нет перевода
     return errorMessage
   }
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleReset = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setSuccess(null)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
+      const redirectTo = `${window.location.origin}/auth/update-password`
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+      
       if (error) {
         const translatedError = translateError(error.message)
         throw new Error(translatedError)
       }
-
-      router.push('/')
-      router.refresh()
-    } catch (error: any) {
-      setError(error.message)
+      
+      setSuccess('Если такой email существует — мы отправили письмо для сброса пароля.')
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось отправить письмо')
     } finally {
       setLoading(false)
     }
@@ -131,7 +114,7 @@ export default function LoginPage() {
             marginBottom: '0.75rem',
             lineHeight: '1.2'
           }}>
-            Добро пожаловать
+            Сброс пароля
           </h1>
           <p style={{
             margin: 0,
@@ -141,7 +124,7 @@ export default function LoginPage() {
             position: 'relative',
             display: 'inline-block'
           }}>
-            Войдите в свой аккаунт
+            Введите email для восстановления
             <span style={{
               position: 'absolute',
               bottom: '-4px',
@@ -174,8 +157,27 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: '1.5rem', position: 'relative' }}>
+        {success && (
+          <div style={{
+            padding: '1rem 1.25rem',
+            background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+            color: '#166534',
+            borderRadius: '16px',
+            marginBottom: '1.75rem',
+            fontSize: '0.875rem',
+            border: '2px solid #bbf7d0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            boxShadow: '0 4px 12px rgba(22, 101, 52, 0.1)'
+          }}>
+            <span style={{ fontSize: '1.25rem' }}>✓</span>
+            <span>{success}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleReset}>
+          <div style={{ marginBottom: '2rem', position: 'relative' }}>
             <label style={{ 
               display: 'block', 
               marginBottom: '0.75rem', 
@@ -188,18 +190,6 @@ export default function LoginPage() {
               Email
             </label>
             <div style={{ position: 'relative' }}>
-              <div style={{
-                position: 'absolute',
-                left: '1rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: email ? '#667eea' : '#9ca3af',
-                fontSize: '1.125rem',
-                pointerEvents: 'none',
-                transition: 'color 0.3s ease'
-              }}>
-                ✉️
-              </div>
               <input
                 type="email"
                 value={email}
@@ -208,108 +198,25 @@ export default function LoginPage() {
                 placeholder="your@email.com"
                 style={{
                   width: '100%',
-                  padding: '1rem 1.25rem 1rem 3rem',
-                  border: '2px solid #e5e7eb',
+                  padding: '1rem 1.25rem',
+                  border: `2px solid ${error && error.includes('не найден') ? '#dc2626' : '#e5e7eb'}`,
                   borderRadius: '16px',
                   fontSize: '0.9375rem',
                   color: '#111827',
                   background: 'linear-gradient(135deg, #ffffff 0%, #f9fafb 100%)',
                   outline: 'none',
                   boxSizing: 'border-box',
-                  transition: 'all 0.3s ease'
+                  transition: 'all 0.2s ease'
                 }}
                 onFocus={(e) => {
                   e.target.style.borderColor = '#667eea'
                   e.target.style.boxShadow = '0 0 0 6px rgba(102, 126, 234, 0.12), 0 8px 16px rgba(102, 126, 234, 0.1)'
                 }}
                 onBlur={(e) => {
-                  e.target.style.borderColor = '#e5e7eb'
+                  e.target.style.borderColor = error && error.includes('не найден') ? '#dc2626' : '#e5e7eb'
                   e.target.style.boxShadow = 'none'
                 }}
               />
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '2rem', position: 'relative' }}>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.75rem', 
-              fontWeight: '700',
-              fontSize: '0.875rem',
-              color: '#374151',
-              letterSpacing: '0.02em',
-              textTransform: 'uppercase'
-            }}>
-              Пароль
-            </label>
-            <div style={{ position: 'relative' }}>
-              <div style={{
-                position: 'absolute',
-                left: '1rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: password ? '#667eea' : '#9ca3af',
-                fontSize: '1.125rem',
-                pointerEvents: 'none',
-                transition: 'color 0.3s ease'
-              }}>
-                🔒
-              </div>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="••••••••"
-                style={{
-                  width: '100%',
-                  padding: '1rem 3.5rem 1rem 3rem',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '16px',
-                  fontSize: '0.9375rem',
-                  color: '#111827',
-                  background: 'linear-gradient(135deg, #ffffff 0%, #f9fafb 100%)',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                  transition: 'all 0.3s ease'
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#667eea'
-                  e.target.style.boxShadow = '0 0 0 6px rgba(102, 126, 234, 0.12), 0 8px 16px rgba(102, 126, 234, 0.1)'
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#e5e7eb'
-                  e.target.style.boxShadow = 'none'
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  right: '1rem',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '0.5rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: password ? '#667eea' : '#9ca3af',
-                  fontSize: '1.125rem',
-                  transition: 'color 0.2s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#764ba2'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = password ? '#667eea' : '#9ca3af'
-                }}
-              >
-                {showPassword ? '👁️' : '👁️‍🗨️'}
-              </button>
             </div>
           </div>
 
@@ -343,31 +250,9 @@ export default function LoginPage() {
               }
             }}
           >
-            {loading ? 'Вход...' : 'Войти'}
+            {loading ? 'Отправка...' : 'Отправить письмо'}
           </button>
         </form>
-
-        <div style={{ marginTop: '2rem', textAlign: 'center' }}>
-          <a 
-            href="/auth/reset" 
-            style={{ 
-              color: '#667eea', 
-              textDecoration: 'none',
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              position: 'relative',
-              display: 'inline-block'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = '#764ba2'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = '#667eea'
-            }}
-          >
-            Забыли пароль?
-          </a>
-        </div>
 
         <div style={{ 
           marginTop: '2.5rem', 
@@ -391,9 +276,8 @@ export default function LoginPage() {
             color: '#6b7280',
             fontWeight: '500'
           }}>
-            Нет аккаунта?{' '}
             <a 
-              href="/auth/register" 
+              href="/auth/login" 
               style={{ 
                 color: '#667eea',
                 textDecoration: 'none',
@@ -410,7 +294,7 @@ export default function LoginPage() {
                 e.currentTarget.style.opacity = '1'
               }}
             >
-              Зарегистрироваться
+              ← Вернуться ко входу
             </a>
           </p>
         </div>
