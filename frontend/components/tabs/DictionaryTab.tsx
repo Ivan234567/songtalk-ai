@@ -78,7 +78,9 @@ type UserPhrasalVerb = {
 };
 
 function getApiUrl() {
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  // Убираем trailing slash, если есть
+  return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
 export const DictionaryTab: React.FC = () => {

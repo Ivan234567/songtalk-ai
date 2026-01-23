@@ -30,7 +30,8 @@ export default function AuthCallbackPage() {
 
           const supabaseToken = sessionData.session?.access_token
           if (supabaseToken) {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+            const apiUrlRaw = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const apiUrl = apiUrlRaw.endsWith('/') ? apiUrlRaw.slice(0, -1) : apiUrlRaw;
             const resp = await fetch(`${apiUrl}/api/auth/exchange-supabase-token`, {
               method: 'POST',
               headers: {

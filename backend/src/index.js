@@ -29,8 +29,31 @@ const PORT = process.env.PORT || 3001
 const SERVER_TIMEOUT_MS = Number.parseInt(process.env.SERVER_TIMEOUT_MS || '900000', 10) // 15 минут по умолчанию
 
 // Middleware
+// Разрешаем несколько origins для CORS (разные домены Vercel)
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  'https://songtalk-ai-frontend-ivans-projects-bf7082bb.vercel.app',
+  'https://songtalk-ai-qt84.vercel.app',
+  'http://localhost:3000',
+].filter(Boolean)
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Разрешаем запросы без origin (например, Postman, curl)
+    if (!origin) return callback(null, true)
+    
+    // Проверяем, есть ли origin в списке разрешенных
+    if (allowedOrigins.some(allowed => origin.startsWith(allowed))) {
+      callback(null, true)
+    } else {
+      // Также разрешаем все поддомены vercel.app для preview деплоев
+      if (origin.includes('.vercel.app')) {
+        callback(null, true)
+      } else {
+        callback(new Error('Not allowed by CORS'))
+      }
+    }
+  },
   credentials: true
 }))
 app.use(express.json({ limit: '1mb' }))
