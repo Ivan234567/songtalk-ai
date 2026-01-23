@@ -8,5 +8,6 @@
     "startCommand": "cd backend && npm start",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
-  }
+  },
+  "watchPatterns": ["backend/**"]
 }
