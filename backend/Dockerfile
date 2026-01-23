@@ -18,13 +18,14 @@ RUN npm install
 
 # Копируем requirements.txt и устанавливаем Python зависимости
 # Устанавливаем по частям для лучшей отладки и надежности
+# Используем --break-system-packages для установки в Docker контейнере
 COPY requirements.txt ./
-RUN pip3 install --upgrade pip setuptools wheel && \
-    pip3 install --no-cache-dir numpy>=1.24.0 && \
-    pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-    pip3 install --no-cache-dir openai-whisper>=20231117 && \
-    pip3 install --no-cache-dir TTS>=0.21.0 && \
-    pip3 install --no-cache-dir yt-dlp>=2023.12.30 && \
+RUN pip3 install --upgrade pip setuptools wheel --break-system-packages && \
+    pip3 install --no-cache-dir --break-system-packages numpy>=1.24.0 && \
+    pip3 install --no-cache-dir --break-system-packages torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    pip3 install --no-cache-dir --break-system-packages openai-whisper>=20231117 && \
+    pip3 install --no-cache-dir --break-system-packages TTS>=0.21.0 && \
+    pip3 install --no-cache-dir --break-system-packages yt-dlp>=2023.12.30 && \
     python3 -c "import whisper; print('Whisper installed')" && \
     python3 -c "import TTS; print('TTS installed')" && \
     echo "All Python dependencies installed successfully"
