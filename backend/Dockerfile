@@ -17,18 +17,21 @@ COPY package.json package-lock.json* ./
 RUN npm install
 
 # Копируем requirements.txt и устанавливаем Python зависимости
-# Устанавливаем по частям для лучшей отладки и надежности
+# Используем python3 -m pip для гарантии установки в правильный Python
 # Используем --break-system-packages для установки в Docker контейнере
 COPY requirements.txt ./
-RUN pip3 install --upgrade pip setuptools wheel --break-system-packages && \
-    pip3 install --no-cache-dir --break-system-packages numpy>=1.24.0 && \
-    pip3 install --no-cache-dir --break-system-packages torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-    pip3 install --no-cache-dir --break-system-packages openai-whisper>=20231117 && \
-    pip3 install --no-cache-dir --break-system-packages TTS>=0.21.0 && \
-    pip3 install --no-cache-dir --break-system-packages yt-dlp>=2023.12.30 && \
-    python3 -c "import whisper; print('Whisper installed')" && \
-    python3 -c "import TTS; print('TTS installed')" && \
-    echo "All Python dependencies installed successfully"
+RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-packages && \
+    python3 -m pip install --no-cache-dir --break-system-packages numpy>=1.24.0 && \
+    python3 -m pip install --no-cache-dir --break-system-packages torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    python3 -m pip install --no-cache-dir --break-system-packages openai-whisper>=20231117 && \
+    python3 -m pip install --no-cache-dir --break-system-packages TTS>=0.21.0 && \
+    python3 -m pip install --no-cache-dir --break-system-packages yt-dlp>=2023.12.30 && \
+    python3 -c "import whisper; print('Whisper installed successfully')" && \
+    python3 -c "import TTS; print('TTS installed successfully')" && \
+    python3 -c "import sys; print('Python executable:', sys.executable)" && \
+    python3 -c "import whisper; print('Whisper location:', whisper.__file__)" && \
+    python3 -c "import TTS; print('TTS location:', TTS.__file__)" && \
+    echo "All Python dependencies installed and verified"
 
 # Копируем все остальные файлы
 COPY . .
