@@ -29,19 +29,18 @@ RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-package
     # triton (639M) - GPU ускорение, не нужно для CPU версии PyTorch
     # sudachidict_core (208M) - японский словарь, не нужен для английского TTS
     # gruut_lang_* (129M+72M+28M) - языковые пакеты для других языков, не нужны
-    # llvmlite (161M) - компилятор для numba, возможно не нужен
+    # llvmlite (161M) - НУЖЕН для Whisper! Не удаляем.
     # spacy (112M) - NLP библиотека, не нужна для базового TTS
     # transformers (58M) - возможно не нужен
     # pandas (43M) - возможно не нужен
     # sklearn (32M) - возможно не нужен
-    python3 -m pip uninstall -y triton sudachidict_core gruut_lang_es gruut_lang_de gruut_lang_fr llvmlite spacy transformers pandas sklearn 2>/dev/null || true && \
+    python3 -m pip uninstall -y triton sudachidict_core gruut_lang_es gruut_lang_de gruut_lang_fr spacy transformers pandas sklearn 2>/dev/null || true && \
     # Удаляем напрямую через rm, если pip uninstall не сработал
     rm -rf /usr/local/lib/python3.11/dist-packages/triton* 2>/dev/null || true && \
     rm -rf /usr/local/lib/python3.11/dist-packages/sudachidict_core* 2>/dev/null || true && \
     rm -rf /usr/local/lib/python3.11/dist-packages/gruut_lang_es* 2>/dev/null || true && \
     rm -rf /usr/local/lib/python3.11/dist-packages/gruut_lang_de* 2>/dev/null || true && \
     rm -rf /usr/local/lib/python3.11/dist-packages/gruut_lang_fr* 2>/dev/null || true && \
-    rm -rf /usr/local/lib/python3.11/dist-packages/llvmlite* 2>/dev/null || true && \
     rm -rf /usr/local/lib/python3.11/dist-packages/spacy* 2>/dev/null || true && \
     rm -rf /usr/local/lib/python3.11/dist-packages/transformers* 2>/dev/null || true && \
     rm -rf /usr/local/lib/python3.11/dist-packages/pandas* 2>/dev/null || true && \
