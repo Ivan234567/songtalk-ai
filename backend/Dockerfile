@@ -25,6 +25,14 @@ RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-package
     python3 -m pip install --no-cache-dir --break-system-packages TTS>=0.21.0 && \
     python3 -m pip install --no-cache-dir --break-system-packages yt-dlp>=2023.12.30 && \
     python3 -c "import whisper; from TTS.api import TTS; print('Dependencies verified')" && \
+    # Удаляем ненужные большие пакеты, которые устанавливаются как зависимости TTS
+    # triton (639M) - GPU ускорение, не нужно для CPU версии PyTorch
+    # sudachidict_core (208M) - японский словарь, не нужен для английского TTS
+    # gruut_lang_* (129M+72M+28M) - языковые пакеты для других языков, не нужны
+    # llvmlite (161M) - компилятор для numba, возможно не нужен
+    # spacy (112M) - NLP библиотека, не нужна для базового TTS
+    # transformers (58M) - возможно не нужен
+    python3 -m pip uninstall -y triton sudachidict_core gruut_lang_es gruut_lang_de gruut_lang_fr llvmlite spacy transformers 2>/dev/null || true && \
     python3 -m pip cache purge && \
     rm -rf /root/.cache/pip && \
     rm -rf /root/.cache/whisper/* && \
@@ -32,7 +40,7 @@ RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-package
     rm -rf /root/.cache/huggingface/* && \
     rm -rf /root/.local/share/tts/* && \
     rm -rf /root/.local/share/coqui/* && \
-    echo "All auto-downloaded models removed"
+    echo "All auto-downloaded models and unused packages removed"
 
 # Предзагружаем модели
 COPY preload_models.py ./
