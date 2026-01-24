@@ -32,7 +32,20 @@ RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-package
     # llvmlite (161M) - компилятор для numba, возможно не нужен
     # spacy (112M) - NLP библиотека, не нужна для базового TTS
     # transformers (58M) - возможно не нужен
-    python3 -m pip uninstall -y triton sudachidict_core gruut_lang_es gruut_lang_de gruut_lang_fr llvmlite spacy transformers 2>/dev/null || true && \
+    # pandas (43M) - возможно не нужен
+    # sklearn (32M) - возможно не нужен
+    python3 -m pip uninstall -y triton sudachidict_core gruut_lang_es gruut_lang_de gruut_lang_fr llvmlite spacy transformers pandas sklearn 2>/dev/null || true && \
+    # Удаляем напрямую через rm, если pip uninstall не сработал
+    rm -rf /usr/local/lib/python3.11/dist-packages/triton* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/sudachidict_core* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/gruut_lang_es* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/gruut_lang_de* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/gruut_lang_fr* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/llvmlite* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/spacy* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/transformers* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/pandas* 2>/dev/null || true && \
+    rm -rf /usr/local/lib/python3.11/dist-packages/sklearn* 2>/dev/null || true && \
     python3 -m pip cache purge && \
     rm -rf /root/.cache/pip && \
     rm -rf /root/.cache/whisper/* && \
