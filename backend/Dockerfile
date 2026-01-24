@@ -66,6 +66,17 @@ RUN rm -rf /usr/share/doc/* \
     && find /usr/local/lib/python3.11/dist-packages -name "*.txt" -delete 2>/dev/null || true \
     && python3 -m pip uninstall -y setuptools wheel 2>/dev/null || true
 
+# Анализ размеров перед копированием кода
+RUN echo "=== Размеры компонентов образа ===" && \
+    echo "Python пакеты:" && du -sh /usr/local/lib/python3.11/dist-packages/ 2>/dev/null || echo "N/A" && \
+    echo "PyTorch:" && du -sh /usr/local/lib/python3.11/dist-packages/torch/ 2>/dev/null || echo "N/A" && \
+    echo "TTS:" && du -sh /usr/local/lib/python3.11/dist-packages/TTS/ 2>/dev/null || echo "N/A" && \
+    echo "Whisper модель:" && du -sh /root/.cache/whisper/ 2>/dev/null || echo "N/A" && \
+    echo "TTS модели:" && du -sh /root/.local/share/tts/ 2>/dev/null || echo "N/A" && \
+    echo "Node modules:" && du -sh /app/node_modules/ 2>/dev/null || echo "N/A" && \
+    echo "=== Топ-10 самых больших директорий ===" && \
+    du -h --max-depth=1 / 2>/dev/null | sort -hr | head -10 || echo "N/A"
+
 # Копируем все остальные файлы
 COPY . .
 
