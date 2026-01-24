@@ -74,6 +74,8 @@ RUN echo "=== Размеры компонентов образа ===" && \
     echo "Whisper модель:" && du -sh /root/.cache/whisper/ 2>/dev/null || echo "N/A" && \
     echo "TTS модели:" && du -sh /root/.local/share/tts/ 2>/dev/null || echo "N/A" && \
     echo "Node modules:" && du -sh /app/node_modules/ 2>/dev/null || echo "N/A" && \
+    echo "=== Топ-20 самых больших Python пакетов ===" && \
+    du -h --max-depth=1 /usr/local/lib/python3.11/dist-packages/ 2>/dev/null | sort -hr | head -20 || echo "N/A" && \
     echo "=== Топ-10 самых больших директорий ===" && \
     du -h --max-depth=1 / 2>/dev/null | sort -hr | head -10 || echo "N/A"
 
