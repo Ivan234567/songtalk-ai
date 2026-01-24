@@ -21,17 +21,22 @@ except Exception as e:
     sys.exit(1)
 
 # Preload Coqui TTS model: tacotron2-DDC
+# NOTE: This is optional - if download fails, model will be loaded on first use
 try:
     print("[Preload] Loading Coqui TTS model: tts_models/en/ljspeech/tacotron2-DDC...", file=sys.stderr)
     from TTS.api import TTS
-    tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC", progress_bar=False)
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC", progress_bar=False).to(device)
     print("[Preload] ✓ Coqui TTS model 'tacotron2-DDC' loaded successfully", file=sys.stderr)
     del tts  # Free memory
 except Exception as e:
-    print(f"[Preload] ✗ Failed to load Coqui TTS model: {e}", file=sys.stderr)
-    sys.exit(1)
+    print(f"[Preload] ⚠ Warning: Failed to preload Coqui TTS model: {e}", file=sys.stderr)
+    print("[Preload] ⚠ Model will be downloaded on first use (this is OK)", file=sys.stderr)
+    # Don't exit - this is not critical for build
 
-print("[Preload] ✓ All required models preloaded successfully", file=sys.stderr)
+print("[Preload] ✓ Whisper model preloaded successfully", file=sys.stderr)
+print("[Preload] ℹ TTS model will be loaded on first use if not preloaded", file=sys.stderr)
 
 # Clean up any other models from cache (optional, but helps reduce size)
 try:

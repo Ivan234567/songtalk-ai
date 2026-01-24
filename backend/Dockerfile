@@ -37,7 +37,7 @@ RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-package
 # Это гарантирует, что загружаются только small.en (Whisper) и tacotron2-DDC (TTS)
 COPY preload_models.py ./
 RUN python3 preload_models.py && \
-    echo "Required models preloaded: small.en (Whisper) and tacotron2-DDC (TTS)" && \
+    echo "Whisper model (small.en) preloaded. TTS model will load on first use if needed." && \
     rm -f preload_models.py
 
 # Копируем все остальные файлы
