@@ -26,7 +26,14 @@ RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-package
     python3 -m pip install --no-cache-dir --break-system-packages yt-dlp>=2023.12.30 && \
     python3 -c "import whisper; import TTS; print('Dependencies verified')" && \
     python3 -m pip cache purge && \
-    rm -rf /root/.cache/pip
+    rm -rf /root/.cache/pip && \
+    # Удаляем все модели, которые могли загрузиться автоматически при установке TTS
+    rm -rf /root/.cache/whisper/* && \
+    rm -rf /root/.cache/tts/* && \
+    rm -rf /root/.cache/huggingface/* && \
+    rm -rf /root/.local/share/tts/* && \
+    rm -rf /root/.local/share/coqui/* && \
+    echo "All auto-downloaded models removed"
 
 # Предзагружаем модели
 COPY preload_models.py ./
