@@ -754,10 +754,10 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     }
 
     audioFilePath = req.file.path
-    // Используем tiny.en - самую быструю модель Whisper для английского языка
-    // tiny.en быстрее base в 2-3 раза, что критично для реального времени
-    const whisperModel = 'tiny.en' // Самая быстрая модель Whisper (только английский)
-    const language = 'en' // Фиксируем английский язык для максимальной скорости
+    // Используем small.en - оптимальный баланс скорости и точности для английского языка
+    // small.en обеспечивает отличную точность при приемлемой скорости для production
+    const whisperModel = 'small.en' // Оптимальная модель Whisper для production (только английский)
+    const language = 'en' // Фиксируем английский язык
 
     // Check if file is a video and extract audio if needed
     // Whisper can handle video files directly, but we'll keep the original file path

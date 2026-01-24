@@ -19,7 +19,8 @@ def transcribe_audio(audio_path, model_name="base", language=None):
     
     Args:
         audio_path: Path to audio file
-        model_name: Whisper model name (tiny, base, small, medium, large, turbo)
+        model_name: Whisper model name (tiny.en, base.en, small.en, medium.en, large-v2.en, large-v3.en)
+        Recommended: small.en for production (optimal balance of speed and accuracy)
         language: Language code (e.g., 'en' for English). If None, auto-detect.
     
     Returns:

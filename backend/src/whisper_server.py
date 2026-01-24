@@ -52,7 +52,7 @@ def get_whisper_model(model_name, device=None):
         _whisper_models[cache_key] = model
         return model
 
-def transcribe_audio(audio_path, model_name="tiny.en", language="en"):
+def transcribe_audio(audio_path, model_name="small.en", language="en"):
     """Transcribe audio file using Whisper (model cached in memory)"""
     try:
         if not os.path.exists(audio_path):
@@ -117,7 +117,7 @@ class WhisperRequestHandler(BaseHTTPRequestHandler):
                 data = json.loads(post_data.decode('utf-8'))
                 
                 audio_path = data.get('audio_path', '')
-                model_name = data.get('model', 'tiny.en')
+                model_name = data.get('model', 'small.en')
                 language = data.get('language', 'en')
                 
                 result = transcribe_audio(audio_path, model_name, language)
