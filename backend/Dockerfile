@@ -34,16 +34,23 @@ RUN python3 preload_models.py && \
     echo "Whisper model (small.en) preloaded. TTS model will load on first use if needed." && \
     rm -f preload_models.py
 
-# УДАЛЯЕМ build tools для уменьшения размера образа
+# УДАЛЯЕМ build tools и ненужные пакеты для уменьшения размера образа
 RUN apt-get remove -y \
     python3-dev \
     build-essential \
-    gcc \
-    g++ \
-    make \
     && apt-get autoremove -y \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/share/doc/* \
+    && rm -rf /usr/share/man/* \
+    && rm -rf /usr/share/locale/* \
+    && rm -rf /var/cache/debconf/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/*
+
+# Удаляем setuptools и wheel после установки всех пакетов (они больше не нужны)
+# pip оставляем на случай, если понадобится установить что-то в runtime
+RUN python3 -m pip uninstall -y setuptools wheel || true
 
 # Копируем все остальные файлы
 COPY . .
