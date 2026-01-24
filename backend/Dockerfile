@@ -22,12 +22,12 @@ RUN npm install --production --omit=dev && npm cache clean --force
 # Устанавливаем только torch и torchaudio (torchvision не нужен для Whisper/TTS)
 # Очищаем кэш pip после установки для уменьшения размера
 COPY requirements.txt ./
-RUN python3 -m pip install --upgrade pip setuptools wheel --no-cache-dir && \
-    python3 -m pip install --no-cache-dir numpy>=1.24.0 && \
-    python3 -m pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu && \
-    python3 -m pip install --no-cache-dir openai-whisper>=20231117 && \
-    python3 -m pip install --no-cache-dir TTS>=0.21.0 && \
-    python3 -m pip install --no-cache-dir yt-dlp>=2023.12.30 && \
+RUN python3 -m pip install --upgrade pip setuptools wheel --break-system-packages --no-cache-dir && \
+    python3 -m pip install --no-cache-dir --break-system-packages numpy>=1.24.0 && \
+    python3 -m pip install --no-cache-dir --break-system-packages torch torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    python3 -m pip install --no-cache-dir --break-system-packages openai-whisper>=20231117 && \
+    python3 -m pip install --no-cache-dir --break-system-packages TTS>=0.21.0 && \
+    python3 -m pip install --no-cache-dir --break-system-packages yt-dlp>=2023.12.30 && \
     python3 -c "import whisper; import TTS; print('Dependencies verified')" && \
     python3 -m pip cache purge && \
     rm -rf /root/.cache/pip && \
