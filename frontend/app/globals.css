@@ -14,6 +14,72 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+:root {
+  font-size: 17px;
+  --bg: #0f0f0f;
+  --bg-muted: #151515;
+  --card: rgba(255, 255, 255, 0.04);
+  --card-strong: rgba(255, 255, 255, 0.07);
+  --stroke: rgba(255, 255, 255, 0.12);
+  --stroke-strong: rgba(255, 255, 255, 0.18);
+  --text-primary: #e8ecf4;
+  --text-muted: rgba(232, 236, 244, 0.72);
+  --accent: #7ad7a7;
+  --accent-strong: #58c18f;
+  --accent-soft: rgba(122, 215, 167, 0.16);
+  --radius: 12px;
+  --radius-lg: 16px;
+  --shadow-soft: 0 10px 26px rgba(0, 0, 0, 0.18);
+  --shadow-hover: 0 14px 32px rgba(0, 0, 0, 0.22);
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --fs-xs: 0.82rem;
+  --fs-sm: 0.94rem;
+  --fs-md: 1.02rem;
+  --fs-lg: 1.2rem;
+  --fs-xl: 1.5rem;
+  --sidebar-bg: #f8f9fa;
+  --sidebar-text: #1f2937;
+  --sidebar-border: rgba(0, 0, 0, 0.1);
+  --sidebar-hover: rgba(0, 0, 0, 0.05);
+  --sidebar-active: rgba(0, 0, 0, 0.1);
+  --sidebar-accent: rgba(0, 0, 0, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f0f0f;
+    --bg-muted: #151515;
+    --card: rgba(255, 255, 255, 0.04);
+    --card-strong: rgba(255, 255, 255, 0.07);
+    --stroke: rgba(255, 255, 255, 0.12);
+    --stroke-strong: rgba(255, 255, 255, 0.18);
+    --text-primary: #e8ecf4;
+    --text-muted: rgba(232, 236, 244, 0.72);
+    --accent: #7ad7a7;
+    --accent-strong: #58c18f;
+    --accent-soft: rgba(122, 215, 167, 0.16);
+    --radius: 12px;
+    --radius-lg: 16px;
+    --shadow-soft: 0 10px 26px rgba(0, 0, 0, 0.18);
+    --shadow-hover: 0 14px 32px rgba(0, 0, 0, 0.22);
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --fs-xs: 0.82rem;
+    --fs-sm: 0.94rem;
+    --fs-md: 1.02rem;
+    --fs-lg: 1.2rem;
+    --fs-xl: 1.5rem;
+    --sidebar-bg: #1e1e1e;
+    --sidebar-text: #e5e5e5;
+    --sidebar-border: rgba(255, 255, 255, 0.1);
+    --sidebar-hover: rgba(255, 255, 255, 0.08);
+    --sidebar-active: rgba(255, 255, 255, 0.12);
+    --sidebar-accent: rgba(255, 255, 255, 0.15);
+  }
+}
 
 body {
   color: #f9fafb;
@@ -21,29 +87,54 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Темная тема */
+/* РўРµРјРЅР°СЏ С‚РµРјР° */
 .dark body {
   color: #f9fafb;
   background: #111827;
 }
 
-/* Светлая тема */
-body:not(.dark) {
+/* Светлая тема: когда html НЕ имеет класс .dark */
+html:not(.dark) body {
   color: #1f2937;
   background: #ffffff;
 }
 
-/* Адаптивность */
+/* РђРґР°РїС‚РёРІРЅРѕСЃС‚СЊ */
 @media (max-width: 768px) {
   body {
-    font-size: 14px;
+    font-size: 16px;
   }
 }
 
 @media (max-width: 480px) {
   body {
-    font-size: 12px;
+    font-size: 15px;
   }
+}
+
+/* Скролл главной страницы */
+.main-content-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(103, 199, 163, 0.55) rgba(18, 24, 22, 0.9);
+}
+
+.main-content-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.main-content-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main-content-scroll::-webkit-scrollbar-thumb {
+  background: rgba(103, 199, 163, 0.55);
+  border-radius: 4px;
+}
+
+.main-content-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(79, 168, 134, 0.85);
 }
 
 a {
@@ -55,16 +146,200 @@ button {
   font-family: inherit;
 }
 
-input, textarea {
+/* РњРµРЅСЋ Р°РіРµРЅС‚Р°: РїР°РЅРµР»СЊ СЂРµР¶РёРјРѕРІ */
+.agent-mode-segment {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.agent-mode-segment:hover {
+  border-color: var(--sidebar-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.agent-mode-tab:hover {
+  background: var(--sidebar-hover) !important;
+}
+
+.agent-mode-tab[aria-selected="true"]:hover {
+  background: var(--sidebar-active) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* Р’С‹РїР°РґР°СЋС‰РёР№ СЃРїРёСЃРѕРє Roleplays */
+.roleplay-dropdown-backdrop {
+  animation: roleplay-dropdown-fade-in 0.15s ease-out;
+}
+
+.roleplay-dropdown-panel {
+  animation: roleplay-dropdown-scale-in 0.2s ease-out;
+  transform-origin: top right;
+}
+
+@keyframes roleplay-dropdown-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes roleplay-dropdown-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.roleplay-dropdown-item:hover {
+  background: var(--sidebar-hover) !important;
+  color: var(--sidebar-text) !important;
+}
+
+.roleplay-dropdown-item:active {
+  background: var(--sidebar-active) !important;
+}
+
+.roleplay-dropdown-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--sidebar-accent);
+}
+
+/* Р¤РѕРєСѓСЃ РїРѕР»СЏ РїРѕРёСЃРєР° РІ РјРѕРґР°Р»РєРµ СЃС†РµРЅР°СЂРёРµРІ */
+.roleplay-scenario-search:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--sidebar-accent);
+}
+
+/* РљР°СЂС‚РѕС‡РєР° В«РџРµСЂРµРґ РЅР°С‡Р°Р»РѕРј РґРёР°Р»РѕРіР°В» вЂ” Р±СЂРёС„РёРЅРі */
+.roleplay-briefing button[aria-label="РќР°Р·Р°Рґ Рє СЃРїРёСЃРєСѓ"]:hover {
+  background: var(--sidebar-hover);
+  border-color: var(--sidebar-accent);
+}
+
+.roleplay-briefing-start:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.roleplay-briefing-start:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4);
+}
+
+.roleplay-modern-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(148, 163, 184, 0.95) 50%),
+    linear-gradient(135deg, rgba(148, 163, 184, 0.95) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 9px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.roleplay-modern-select:hover {
+  border-color: rgba(148, 163, 184, 0.65) !important;
+  background-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.roleplay-modern-select:focus {
+  outline: none;
+  border-color: rgba(148, 163, 184, 0.85) !important;
+  background-color: rgba(148, 163, 184, 0.24) !important;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.22);
+}
+
+.roleplay-modern-select option {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 0.45rem 0.65rem;
+}
+
+.roleplay-modern-select option:hover,
+.roleplay-modern-select option:checked {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+/* РљР°СЂС‚Р° С€Р°РіРѕРІ СЃС†РµРЅР°СЂРёСЏ (СЃРїСЂР°РІР° РїРѕРґ roleplays) вЂ” С‡РёС‚Р°РµРјС‹Р№ С‚РµРєСЃС‚ РІ Р»СЋР±РѕР№ С‚РµРјРµ */
+.roleplay-steps-map {
+  background: var(--sidebar-bg);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.roleplay-steps-map .roleplay-steps-map-label {
+  color: var(--sidebar-text);
+  opacity: 0.65;
+}
+
+.roleplay-steps-map .roleplay-steps-map-item-done {
+  color: var(--sidebar-text);
+  opacity: 1;
+}
+
+.roleplay-steps-map .roleplay-steps-map-item-pending {
+  color: var(--sidebar-text);
+  opacity: 0.6;
+}
+
+.roleplay-steps-map .roleplay-steps-map-check {
+  color: #16a34a;
+}
+
+.roleplay-steps-map .roleplay-steps-map-circle {
+  border: 1.5px solid var(--sidebar-border);
+  background: transparent;
+  box-sizing: border-box;
+}
+
+@media (prefers-color-scheme: dark) {
+  .roleplay-steps-map .roleplay-steps-map-check {
+    color: rgba(34, 197, 94, 0.95);
+  }
+}
+
+/* РљРЅРѕРїРєР° РёСЃС‚РѕСЂРёРё РІ Р°РіРµРЅС‚Рµ вЂ” РµРґРёРЅС‹Р№ СЃС‚РёР»СЊ СЃ РјРµРЅСЋ */
+.agent-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.agent-toolbar-btn:hover {
+  border-color: var(--sidebar-accent);
+  background: var(--sidebar-active);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+input,
+textarea {
   font-family: inherit;
 }
 
-/* Анимации для плавных переходов */
+/* РђРЅРёРјР°С†РёРё РґР»СЏ РїР»Р°РІРЅС‹С… РїРµСЂРµС…РѕРґРѕРІ */
 @keyframes slideDown {
   from {
     opacity: 0;
     transform: translateY(-10px) scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -76,6 +351,7 @@ input, textarea {
     opacity: 0;
     transform: translateY(10px) scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -86,6 +362,7 @@ input, textarea {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -96,6 +373,7 @@ input, textarea {
     opacity: 0;
     transform: scale(0.9);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -103,21 +381,28 @@ input, textarea {
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.05);
   }
 }
 
 @keyframes shake {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateX(0);
   }
+
   25% {
     transform: translateX(-5px);
   }
+
   75% {
     transform: translateX(5px);
   }
@@ -127,15 +412,19 @@ input, textarea {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
 }
 
 @keyframes float {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0px);
   }
+
   50% {
     transform: translateY(-10px);
   }
@@ -146,29 +435,256 @@ input, textarea {
     transform: translateX(100%);
     opacity: 0;
   }
+
   to {
     transform: translateX(0);
     opacity: 1;
   }
 }
 
-/* Стили для красивого скроллбара */
+/* РЎС‚РёР»Рё РґР»СЏ РєСЂР°СЃРёРІРѕРіРѕ СЃРєСЂРѕР»Р»Р±Р°СЂР° */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(24, 24, 27, 0.5);
+  background: rgba(18, 24, 22, 0.9);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(139, 92, 246, 0.5);
+  background: rgba(103, 199, 163, 0.55);
   border-radius: 4px;
   transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 92, 246, 0.7);
+  background: rgba(79, 168, 134, 0.85);
 }
+
+@keyframes blink {
+
+  0%,
+  50% {
+    opacity: 1;
+  }
+
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes siriPulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.05);
+    opacity: 0.95;
+  }
+}
+
+@keyframes siriWave {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0.8;
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.4;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0;
+  }
+}
+
+@keyframes agent-orb-pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scale(1.08);
+    opacity: 0.2;
+  }
+}
+
+@keyframes agent-subtitles-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes agent-orb-breathe {
+
+  0%,
+  100% {
+    box-shadow: 0 0 40px 0 rgba(99, 102, 241, 0.15), 0 20px 50px -15px rgba(0, 0, 0, 0.35);
+  }
+
+  50% {
+    box-shadow: 0 0 60px 5px rgba(99, 102, 241, 0.22), 0 20px 50px -15px rgba(0, 0, 0, 0.35);
+  }
+}
+
+@keyframes agent-dots {
+
+  0%,
+  20% {
+    opacity: 0.3;
+  }
+
+  40% {
+    opacity: 1;
+  }
+
+  60%,
+  100% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes agent-shine {
+  0% {
+    transform: translateX(-100%) skewX(-15deg);
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+
+  100% {
+    transform: translateX(200%) skewX(-15deg);
+    opacity: 0;
+  }
+}
+
+@keyframes aiChatDot {
+  from {
+    opacity: 0.3;
+    transform: scale(0.85);
+  }
+
+  to {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+
+
+
+/* Soft minimalism helpers */
+.soft-card {
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+}
+.soft-card-strong {
+  background: var(--card-strong);
+  border: 1px solid var(--stroke-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+}
+.soft-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+.soft-tag {
+  display: inline-flex;
+  padding: 0.14rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.02em;
+}
+.soft-muted { color: var(--text-muted); }
+.soft-heading { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.01em; }
+.soft-sub { font-size: var(--fs-sm); color: var(--text-muted); }
+
+/* Словарь: адаптивная сетка (одна колонка на мобильных) */
+.dictionary-tab-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr);
+  gap: 1.25rem;
+  min-height: 320px;
+  position: relative;
+  z-index: 1;
+}
+@media (max-width: 768px) {
+  .dictionary-tab-grid {
+    grid-template-columns: 1fr;
+  }
+  .dictionary-tab-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dictionary-tab-toolbar {
+    flex-wrap: wrap;
+  }
+}
+
+/* Скелетон загрузки словаря */
+.dictionary-skeleton-row {
+  border-radius: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  background: linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%);
+  border: 1px solid rgba(17,98,47,0.15);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+.dictionary-skeleton-line {
+  height: 0.9rem;
+  border-radius: 0.4rem;
+  background: rgba(148,163,184,0.2);
+  animation: dictionary-skeleton-pulse 1.2s ease-in-out infinite;
+}
+@keyframes dictionary-skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* Hover элементов списка словаря */
+.dictionary-list-item {
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+.dictionary-list-item:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 2px 10px rgba(17,98,47,0.12);
+}
+.dictionary-list-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+

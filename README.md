@@ -58,7 +58,7 @@ PORT=3001
 # Документация: https://docs.aitunnel.ru/api/reference.html
 AITUNNEL_API_KEY=sk-aitunnel-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 AITUNNEL_BASE_URL=https://api.aitunnel.ru/v1/
-AITUNNEL_MODEL=DeepSeek-V3.2-Speciale
+AITUNNEL_MODEL=gpt-4o
 ```
 
 4. **Запустите проект**
@@ -193,7 +193,7 @@ songtalk-ai/
 ### Real-time не работает
 - Проверьте, что Realtime включен для таблицы в Supabase
 - Убедитесь, что используете правильные ключи API
-- Проверьте консоль браузера на ошибки WebSocket
+- Проверьте консоль браузера на ошибки сети или API
 
 ### CORS ошибки
 - Убедитесь, что `FRONTEND_URL` в бэкенде соответствует URL фронтенда

@@ -1,0 +1,877 @@
+/* Balance tab — пополнение и статистика */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 0 0.25rem 1.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Блок баланса и пополнения */
+.balanceHero {
+  border-radius: var(--radius-lg, 16px);
+  border: 1px solid var(--stroke);
+  background: linear-gradient(145deg, var(--card) 0%, rgba(104, 201, 149, 0.06) 100%);
+  box-shadow: var(--shadow-soft, 0 4px 20px rgba(0, 0, 0, 0.06));
+  padding: 1.75rem 2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.balanceHero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(46, 139, 87, 0.7), rgba(60, 179, 113, 0.8));
+  opacity: 1;
+}
+
+.balanceHeroHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.refreshBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  background: var(--sidebar-hover);
+  border-color: var(--stroke-strong);
+}
+
+.refreshBtn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.refreshBtnSpinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--stroke);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: balanceRefreshSpin 0.8s linear infinite;
+}
+
+@keyframes balanceRefreshSpin {
+  to { transform: rotate(360deg); }
+}
+
+.balanceLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 0 0 0.35rem;
+}
+
+.balanceValue {
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.balanceValueLow {
+  color: var(--danger, #dc2626);
+}
+
+.balanceProgressBlock {
+  margin-top: 1.25rem;
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.progressLabel {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  min-width: 140px;
+}
+
+.progressTrack {
+  flex: 1;
+  min-width: 80px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--sidebar-hover);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(46, 139, 87, 0.8), rgba(60, 179, 113, 0.9));
+  transition: width 0.3s ease;
+}
+
+.progressValue {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.balanceHint {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0.5rem 0 0;
+}
+
+.balanceHint strong {
+  color: var(--text-primary);
+}
+
+.topupGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.topupCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.topupCard:hover {
+  border-color: var(--stroke-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+}
+
+.topupAmount {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.topupLabel {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.topupBadge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: var(--sidebar-hover);
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  align-self: flex-start;
+}
+
+/* Предупреждение низкий баланс */
+.lowBalanceBanner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.9rem 1.25rem;
+  border-radius: 12px;
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.lowBalanceBannerIcon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  opacity: 0.9;
+}
+
+/* Ошибка */
+.errorBanner {
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: var(--danger, #dc2626);
+  font-size: 0.9rem;
+}
+
+/* Секция статистики */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.sectionTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.periodRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.periodPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.customRangeRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.customRangeLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.customRangeInput {
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  font-size: 0.85rem;
+}
+
+.customRangeInput:hover,
+.customRangeInput:focus {
+  border-color: var(--sidebar-accent);
+  outline: none;
+}
+
+.periodPill {
+  padding: 0.4rem 0.85rem;
+  border-radius: 20px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.periodPill:hover {
+  background: var(--sidebar-hover);
+  border-color: var(--stroke-strong);
+}
+
+.periodPillActive {
+  background: rgba(46, 139, 87, 0.15);
+  border-color: rgba(46, 139, 87, 0.5);
+  color: var(--text-primary);
+}
+
+.periodPill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* График по дням */
+.chartSection {
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.35rem;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+}
+
+/* 7 дней: столбцы и подписи равномерно по ширине, не сжаты */
+.chartSectionFewDays .chartBars {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chartSectionFewDays .chartBarWrap {
+  flex: 0 1 36px;
+  min-width: 28px;
+  max-width: 48px;
+}
+
+.chartSectionFewDays .chartLabels {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chartSectionFewDays .chartLabel {
+  flex: 0 1 auto;
+  min-width: 28px;
+  max-width: 48px;
+}
+
+/* 8–31 день (14, 30 и т.д.): таймлайн тоже равномерно по ширине */
+.chartSectionSpreadDays .chartBars {
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.chartSectionSpreadDays .chartBarWrap {
+  flex: 0 1 24px;
+  min-width: 6px;
+  max-width: 28px;
+}
+
+.chartSectionSpreadDays .chartLabels {
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.chartSectionSpreadDays .chartLabel {
+  flex: 0 1 auto;
+  min-width: 6px;
+  max-width: 28px;
+}
+
+.chartTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+}
+
+.chartBars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 80px;
+  min-height: 80px;
+}
+
+.chartBarWrap {
+  flex: 1;
+  min-width: 4px;
+  max-width: 24px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.chartBar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, rgba(46, 139, 87, 0.9), rgba(60, 179, 113, 0.7));
+  transition: height 0.2s ease;
+}
+
+.chartLabels {
+  display: flex;
+  gap: 2px;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--stroke);
+}
+
+.chartLabel {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  max-width: 24px;
+  text-align: center;
+}
+
+.chartSkeleton {
+  margin-bottom: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  padding: 1.25rem 1.35rem;
+}
+
+.skeletonChartBar {
+  width: 100%;
+  border-radius: 8px;
+}
+
+/* Карточки метрик */
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.metricCard {
+  padding: 1.2rem 1.35rem;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.metricCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+.metricLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+
+.metricValue {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.metricDelta {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+.metricDeltaUp {
+  color: var(--danger, #dc2626);
+}
+
+.metricDeltaDown {
+  color: #16a34a;
+}
+
+/* Топы */
+.topsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.topCard {
+  padding: 1.25rem 1.35rem;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+}
+
+.topCardTitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin: 0 0 0.85rem;
+}
+
+.topList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.topItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--stroke);
+}
+
+.topItem:last-child {
+  border-bottom: none;
+}
+
+.topItemService {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topItemValue {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.topItemPct {
+  font-weight: 500;
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.emptyHint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+  padding: 0.5rem 0;
+}
+
+/* История */
+.historyToolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.historyActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.historyFilterSelect {
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  min-width: 140px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1rem;
+}
+
+.historyFilterSelect:hover,
+.historyFilterSelect:focus {
+  border-color: var(--sidebar-accent);
+  background-color: var(--sidebar-active);
+  outline: none;
+}
+
+.historyFilterSelect option {
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+}
+
+.historyDateRange {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.historyDateLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.historyDateInput {
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  font-size: 0.85rem;
+}
+
+.historyDateInput:hover,
+.historyDateInput:focus {
+  border-color: var(--sidebar-accent);
+  outline: none;
+}
+
+.downloadBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.downloadBtn:hover {
+  background: var(--sidebar-hover);
+  border-color: var(--stroke-strong);
+}
+
+.historyTableWrap {
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.historyTableScroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.historyTable {
+  width: 100%;
+  min-width: 320px;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.historyShowMoreWrap {
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
+.showMoreBtn {
+  padding: 0.5rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.showMoreBtn:hover {
+  background: var(--sidebar-hover);
+  border-color: var(--stroke-strong);
+}
+
+.historyTable th {
+  text-align: left;
+  padding: 0.85rem 1.15rem;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--sidebar-hover);
+  border-bottom: 1px solid var(--stroke);
+}
+
+.historyTable td {
+  padding: 0.75rem 1.15rem;
+  border-bottom: 1px solid var(--stroke);
+  color: var(--text-primary);
+}
+
+.historyTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.historyTable tbody tr:hover td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.historyTable .colAmount {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.historyEmpty {
+  padding: 2rem 1.5rem !important;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* Пустое состояние истории */
+.emptyState {
+  text-align: center;
+  padding: 3rem 2rem;
+  border-radius: 12px;
+  border: 1px dashed var(--stroke);
+  background: var(--sidebar-hover);
+}
+
+.emptyStateIcon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 1.25rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.emptyStateIcon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.emptyStateTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 0.5rem;
+}
+
+.emptyStateText {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  max-width: 360px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* Скелетон */
+.skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--stroke) 25%, var(--sidebar-hover) 50%, var(--stroke) 75%);
+  background-size: 200% 100%;
+  animation: balanceShimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes balanceShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeletonBalance {
+  width: 140px;
+  height: 36px;
+  margin-top: 0.5rem;
+}
+
+.skeletonTitle {
+  width: 180px;
+  height: 22px;
+}
+
+/* Скелетоны секции статистики */
+.skeletonMetricLabel {
+  width: 100%;
+  max-width: 100px;
+  height: 12px;
+  margin-bottom: 0.5rem;
+}
+
+.skeletonMetricValue {
+  width: 70px;
+  height: 22px;
+}
+
+.skeletonTopTitle {
+  width: 120px;
+  height: 14px;
+  margin-bottom: 0.85rem;
+}
+
+.skeletonTopLine {
+  width: 100%;
+  height: 18px;
+}
+
+.historySkeleton {
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.skeletonTableRow {
+  height: 36px;
+  width: 100%;
+  border-radius: 6px;
+}
+
+/* Узкие экраны */
+@media (max-width: 480px) {
+  .wrapper {
+    padding: 0 0 1rem;
+  }
+
+  .balanceHero {
+    padding: 1.25rem 1.25rem;
+  }
+
+  .balanceHeroHead {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .historyToolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .historyActions {
+    width: 100%;
+  }
+
+  .historyFilterSelect {
+    min-width: 100%;
+  }
+
+  .metricsGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .topsGrid {
+    grid-template-columns: 1fr;
+  }
+}

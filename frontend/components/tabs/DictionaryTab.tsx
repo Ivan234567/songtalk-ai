@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 
 type VocabularyProgress = {
@@ -38,6 +39,7 @@ type VocabularyWord = {
   contexts?: { video_id?: string; text?: string; timestamp?: string }[];
   progress?: VocabularyProgress | null;
   categories?: VocabularyCategory[];
+  videos?: { id: string; title: string; video_type?: string; video_id?: string; video_url?: string }[];
 };
 
 type VocabularyStats = {
@@ -77,11 +79,48 @@ type UserPhrasalVerb = {
   categories?: VocabularyCategory[];
 };
 
+/** Русская плюрализация: plural(5, 'слово', 'слова', 'слов') => 'слов' */
+function plural(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
 function getApiUrl() {
   const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
   // Убираем trailing slash, если есть
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
+
+const iconStyle = { width: 14, height: 14, flexShrink: 0 };
+const DownloadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+  </svg>
+);
+const UploadIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+  </svg>
+);
+const TagIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
+    <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01" />
+  </svg>
+);
+const ChevronDownIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 10, height: 10, opacity: 0.7 }}>
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
+const ChevronUpIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 10, height: 10, opacity: 0.7 }}>
+    <polyline points="18 15 12 9 6 15" />
+  </svg>
+);
 
 export const DictionaryTab: React.FC = () => {
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -95,9 +134,7 @@ export const DictionaryTab: React.FC = () => {
   const [difficulty, setDifficulty] = useState<string>('all');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [idiomCategoryId, setIdiomCategoryId] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<'word' | 'mastery_level' | 'difficulty_level'>(
-    'word',
-  );
+  const [sortBy, setSortBy] = useState<'difficulty_level'>('difficulty_level');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Categories state
@@ -105,14 +142,42 @@ export const DictionaryTab: React.FC = () => {
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<VocabularyCategory | null>(null);
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '#3b82f6', icon: '' });
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '#11622f', icon: '' });
   const [showAssignCategoriesModal, setShowAssignCategoriesModal] = useState(false);
   const [assigningWordId, setAssigningWordId] = useState<string | null>(null);
   const [assigningIdiomId, setAssigningIdiomId] = useState<string | null>(null);
   const [assigningPhrasalVerbId, setAssigningPhrasalVerbId] = useState<string | null>(null);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<Set<string>>(new Set());
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const categoryDropdownPortalRef = useRef<HTMLDivElement>(null);
+  const [showLevelDropdown, setShowLevelDropdown] = useState(false);
+  const [levelDropdownRect, setLevelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const levelDropdownRef = useRef<HTMLDivElement>(null);
+  const levelDropdownPortalRef = useRef<HTMLDivElement>(null);
+
+  const LEVEL_OPTIONS = [
+    { value: 'all', label: 'Все уровни' },
+    { value: 'A1', label: 'A1' },
+    { value: 'A2', label: 'A2' },
+    { value: 'B1', label: 'B1' },
+    { value: 'B2', label: 'B2' },
+    { value: 'C1', label: 'C1' },
+    { value: 'C2', label: 'C2' },
+  ] as const;
+
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [exportDropdownRect, setExportDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const exportDropdownPortalRef = useRef<HTMLDivElement>(null);
+
+  const EXPORT_FORMATS = [
+    { format: 'csv' as const, label: 'CSV' },
+    { format: 'json' as const, label: 'JSON' },
+    { format: 'anki' as const, label: 'Anki' },
+  ];
 
   const [selectedWordId, setSelectedWordId] = useState<string | null>(null);
   const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
@@ -174,24 +239,163 @@ export const DictionaryTab: React.FC = () => {
     };
   }, []);
 
-  // Close category dropdown when clicking outside
+  // Measure trigger for category portal dropdown position
+  useLayoutEffect(() => {
+    if (!showCategoryDropdown || !categoryDropdownRef.current) {
+      setDropdownRect(null);
+      return;
+    }
+    const rect = categoryDropdownRef.current.getBoundingClientRect();
+    setDropdownRect({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, [showCategoryDropdown, viewMode]);
+
+  // Measure trigger for level portal dropdown position
+  useLayoutEffect(() => {
+    if (!showLevelDropdown || !levelDropdownRef.current) {
+      setLevelDropdownRect(null);
+      return;
+    }
+    const rect = levelDropdownRef.current.getBoundingClientRect();
+    setLevelDropdownRect({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, [showLevelDropdown]);
+
+  // Measure trigger for export portal dropdown position
+  useLayoutEffect(() => {
+    if (!showExportDropdown || !exportDropdownRef.current) {
+      setExportDropdownRect(null);
+      return;
+    }
+    const rect = exportDropdownRef.current.getBoundingClientRect();
+    setExportDropdownRect({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, [showExportDropdown]);
+
+  // Close dropdowns when viewMode changes
+  useEffect(() => {
+    setShowCategoryDropdown(false);
+    setShowLevelDropdown(false);
+  }, [viewMode]);
+
+  // Close dropdowns when clicking outside (trigger or portaled panel)
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (
-        categoryDropdownRef.current &&
-        !categoryDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowCategoryDropdown(false);
-      }
+      const target = event.target as Node;
+      const inCatTrigger = categoryDropdownRef.current?.contains(target);
+      const inCatPortal = categoryDropdownPortalRef.current?.contains(target);
+      const inLevelTrigger = levelDropdownRef.current?.contains(target);
+      const inLevelPortal = levelDropdownPortalRef.current?.contains(target);
+      const inExportTrigger = exportDropdownRef.current?.contains(target);
+      const inExportPortal = exportDropdownPortalRef.current?.contains(target);
+      if (!inCatTrigger && !inCatPortal) setShowCategoryDropdown(false);
+      if (!inLevelTrigger && !inLevelPortal) setShowLevelDropdown(false);
+      if (!inExportTrigger && !inExportPortal) setShowExportDropdown(false);
     }
 
-    if (showCategoryDropdown) {
+    if (showCategoryDropdown || showLevelDropdown || showExportDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
+      return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showCategoryDropdown]);
+  }, [showCategoryDropdown, showLevelDropdown, showExportDropdown]);
+
+  // Close all dropdowns on Escape
+  useEffect(() => {
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setShowCategoryDropdown(false);
+        setShowLevelDropdown(false);
+        setShowExportDropdown(false);
+      }
+    }
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, []);
+
+  const handleExport = useCallback(
+    async (format: 'csv' | 'json' | 'anki') => {
+      if (!accessToken || exporting) return;
+      setExporting(true);
+      setShowExportDropdown(false);
+      try {
+        const params = new URLSearchParams();
+        params.set('format', format);
+        params.set('view_mode', viewMode);
+        
+        // Add search filter
+        if (debouncedSearch.trim()) {
+          params.set('search', debouncedSearch.trim());
+        }
+        
+        // Add difficulty filter
+        if (difficulty !== 'all') {
+          params.set('difficulty', difficulty);
+        }
+        
+        // Add category filter based on view mode
+        if (viewMode === 'words' && categoryId) {
+          params.set('category_id', categoryId);
+        } else if (viewMode === 'idioms' && idiomCategoryId) {
+          params.set('idiom_category_id', idiomCategoryId);
+        } else if (viewMode === 'phrasal-verbs' && phrasalVerbCategoryId) {
+          params.set('phrasal_verb_category_id', phrasalVerbCategoryId);
+        }
+
+        const resp = await fetch(`${getApiUrl()}/api/vocabulary/export?${params.toString()}`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!resp.ok) {
+          const errorData = await resp.json().catch(() => ({ error: 'Ошибка экспорта' }));
+          throw new Error(errorData?.error || 'Ошибка экспорта');
+        }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const date = new Date().toISOString().split('T')[0];
+        
+        // Generate filename based on view mode
+        let filename = '';
+        if (viewMode === 'idioms') {
+          filename = format === 'anki' ? `idioms_anki_${date}.csv` : `idioms_${date}.${format === 'json' ? 'json' : 'csv'}`;
+        } else if (viewMode === 'phrasal-verbs') {
+          filename = format === 'anki' ? `phrasal_verbs_anki_${date}.csv` : `phrasal_verbs_${date}.${format === 'json' ? 'json' : 'csv'}`;
+        } else {
+          filename = format === 'anki' ? `vocabulary_anki_${date}.csv` : `vocabulary_${date}.${format === 'json' ? 'json' : 'csv'}`;
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('Не удалось экспортировать словарь: ' + (e as Error).message);
+      } finally {
+        setExporting(false);
+      }
+    },
+    [accessToken, viewMode, debouncedSearch, difficulty, categoryId, idiomCategoryId, phrasalVerbCategoryId]
+  );
+
+  // Reset sort if legacy "mastery_level" or "word" was ever selected (options removed)
+  useEffect(() => {
+    setSortBy((prev) =>
+      (prev as string) === 'mastery_level' || (prev as string) === 'word'
+        ? 'difficulty_level'
+        : prev
+    );
+  }, []);
 
   // Load categories
   useEffect(() => {
@@ -469,7 +673,9 @@ export const DictionaryTab: React.FC = () => {
       });
 
       if (!resp.ok) {
-        throw new Error('Не удалось синтезировать произношение слова');
+        const errData = await resp.json().catch(() => ({}));
+        const msg = errData?.error || 'Не удалось синтезировать произношение слова';
+        throw new Error(msg);
       }
 
       const blob = await resp.blob();
@@ -496,6 +702,7 @@ export const DictionaryTab: React.FC = () => {
       }, 100);
     } catch (e) {
       console.error('Word TTS error:', e);
+      alert(e instanceof Error ? e.message : 'Не удалось синтезировать произношение');
     } finally {
       setWordAudioLoading(false);
     }
@@ -538,7 +745,8 @@ export const DictionaryTab: React.FC = () => {
       });
 
       if (!resp.ok) {
-        throw new Error('Не удалось синтезировать произношение идиомы');
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData?.error || 'Не удалось синтезировать произношение идиомы');
       }
 
       const blob = await resp.blob();
@@ -560,6 +768,7 @@ export const DictionaryTab: React.FC = () => {
       }, 100);
     } catch (e) {
       console.error('Idiom TTS error:', e);
+      alert(e instanceof Error ? e.message : 'Не удалось синтезировать произношение');
     } finally {
       setIdiomAudioLoading(false);
     }
@@ -602,11 +811,11 @@ export const DictionaryTab: React.FC = () => {
       }
 
       setShowCategoryModal(false);
-      setCategoryForm({ name: '', description: '', color: '#3b82f6', icon: '' });
+      setCategoryForm({ name: '', description: '', color: '#11622f', icon: '' });
       setEditingCategory(null);
     } catch (e: any) {
       console.error('Error creating category:', e);
-      alert(e?.message || 'Failed to create category');
+      alert(e?.message || 'Не удалось создать категорию');
     }
   }, [accessToken, categoryForm]);
 
@@ -646,16 +855,16 @@ export const DictionaryTab: React.FC = () => {
       }
 
       setShowCategoryModal(false);
-      setCategoryForm({ name: '', description: '', color: '#3b82f6', icon: '' });
+      setCategoryForm({ name: '', description: '', color: '#11622f', icon: '' });
       setEditingCategory(null);
     } catch (e: any) {
       console.error('Error updating category:', e);
-      alert(e?.message || 'Failed to update category');
+      alert(e?.message || 'Не удалось обновить категорию');
     }
   }, [accessToken, editingCategory, categoryForm]);
 
   const handleDeleteCategory = useCallback(async (deletedCategoryId: string) => {
-    if (!accessToken || !confirm('Are you sure you want to delete this category?')) return;
+    if (!accessToken || !confirm('Вы уверены, что хотите удалить эту категорию?')) return;
 
     try {
       const resp = await fetch(`${getApiUrl()}/api/vocabulary/categories/${deletedCategoryId}`, {
@@ -688,7 +897,7 @@ export const DictionaryTab: React.FC = () => {
       }
     } catch (e: any) {
       console.error('Error deleting category:', e);
-      alert(e?.message || 'Failed to delete category');
+      alert(e?.message || 'Не удалось удалить категорию');
     }
   }, [accessToken, categoryId]);
 
@@ -732,7 +941,7 @@ export const DictionaryTab: React.FC = () => {
       }
     } catch (e: any) {
       console.error('Error assigning categories:', e);
-      alert(e?.message || 'Failed to assign categories');
+      alert(e?.message || 'Не удалось назначить категории');
     }
   }, [accessToken, debouncedSearch, difficulty, categoryId, sortBy, sortOrder]);
 
@@ -770,7 +979,7 @@ export const DictionaryTab: React.FC = () => {
       }
     } catch (e: any) {
       console.error('Error assigning categories:', e);
-      alert(e?.message || 'Failed to assign categories');
+      alert(e?.message || 'Не удалось назначить категории');
     }
   }, [accessToken, idiomCategoryId]);
 
@@ -808,7 +1017,7 @@ export const DictionaryTab: React.FC = () => {
       }
     } catch (e: any) {
       console.error('Error assigning categories:', e);
-      alert(e?.message || 'Failed to assign categories');
+      alert(e?.message || 'Не удалось назначить категории');
     }
   }, [accessToken, phrasalVerbCategoryId]);
 
@@ -823,7 +1032,7 @@ export const DictionaryTab: React.FC = () => {
       });
     } else {
       setEditingCategory(null);
-      setCategoryForm({ name: '', description: '', color: '#3b82f6', icon: '' });
+      setCategoryForm({ name: '', description: '', color: '#11622f', icon: '' });
     }
     setShowCategoryModal(true);
   }, []);
@@ -855,20 +1064,8 @@ export const DictionaryTab: React.FC = () => {
       return true;
     });
 
-    // Auto-select first idiom if none selected or selected is filtered out
-    if (filtered.length > 0) {
-      const selectedKey = selectedIdiom?.phrase.trim().toLowerCase();
-      const selectedExists = selectedKey
-        ? filtered.some((i) => i.phrase.trim().toLowerCase() === selectedKey)
-        : false;
-      if (!selectedExists && (!selectedIdiom || viewMode === 'idioms')) {
-        // Use setTimeout to avoid updating state during render
-        setTimeout(() => setSelectedIdiom(filtered[0]), 0);
-      }
-    }
-
     return filtered;
-  }, [idioms, debouncedSearch, difficulty, selectedIdiom, viewMode]);
+  }, [idioms, debouncedSearch, difficulty]);
 
   const filteredPhrasalVerbs = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
@@ -885,22 +1082,42 @@ export const DictionaryTab: React.FC = () => {
         }
       }
 
+      // Apply difficulty filter
+      if (difficulty !== 'all') {
+        if (pv.difficulty_level !== difficulty) {
+          return false;
+        }
+      }
+
       return true;
     });
 
-    // Auto-select first phrasal verb if current selection is not in filtered list
-    if (filtered.length > 0 && selectedPhrasalVerb) {
-      const selectedExists = filtered.some(
-        (pv) => pv.phrase.trim().toLowerCase() === selectedPhrasalVerb.phrase.trim().toLowerCase()
-      );
-      if (!selectedExists && (!selectedPhrasalVerb || viewMode === 'phrasal-verbs')) {
-        // Use setTimeout to avoid updating state during render
-        setTimeout(() => setSelectedPhrasalVerb(filtered[0]), 0);
-      }
-    }
-
     return filtered;
-  }, [phrasalVerbs, debouncedSearch, selectedPhrasalVerb, viewMode]);
+  }, [phrasalVerbs, debouncedSearch, difficulty]);
+
+  // Sync selected idiom when filtered list changes (selection not in list → pick first)
+  useEffect(() => {
+    if (viewMode !== 'idioms' || filteredIdioms.length === 0) return;
+    const selectedKey = selectedIdiom?.phrase.trim().toLowerCase();
+    const selectedExists = selectedKey
+      ? filteredIdioms.some((i) => i.phrase.trim().toLowerCase() === selectedKey)
+      : false;
+    if (!selectedExists) {
+      setSelectedIdiom(filteredIdioms[0]);
+    }
+  }, [viewMode, filteredIdioms, selectedIdiom?.phrase]);
+
+  // Sync selected phrasal verb when filtered list changes (selection not in list → pick first)
+  useEffect(() => {
+    if (viewMode !== 'phrasal-verbs' || filteredPhrasalVerbs.length === 0) return;
+    const selectedKey = selectedPhrasalVerb?.phrase.trim().toLowerCase();
+    const selectedExists = selectedKey
+      ? filteredPhrasalVerbs.some((pv) => pv.phrase.trim().toLowerCase() === selectedKey)
+      : false;
+    if (!selectedExists) {
+      setSelectedPhrasalVerb(filteredPhrasalVerbs[0]);
+    }
+  }, [viewMode, filteredPhrasalVerbs, selectedPhrasalVerb?.phrase]);
 
   // Clean up idiom audio when idiom changes
   useEffect(() => {
@@ -971,14 +1188,17 @@ export const DictionaryTab: React.FC = () => {
       style={{
         borderRadius: '1.75rem',
         padding: '1.75rem',
-        background: 'rgba(24,24,27,0.98)',
-        border: '1px solid rgba(82,82,91,0.85)',
+        background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
+        border: '1px solid var(--stroke)',
+        boxShadow: 'var(--shadow-soft)',
+        backdropFilter: 'blur(20px)',
         display: 'flex',
         flexDirection: 'column',
         gap: '1.25rem',
       }}
     >
       <header
+        className="dictionary-tab-header"
         style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -990,17 +1210,14 @@ export const DictionaryTab: React.FC = () => {
           <h2
             style={{
               fontSize: '1.1rem',
-              marginBottom: '0.35rem',
+              marginBottom: 0,
               letterSpacing: '0.08em',
               textTransform: 'uppercase',
-              color: '#e5e7eb',
+              color: 'var(--text-primary)',
             }}
           >
             Словарь
           </h2>
-          <p style={{ fontSize: '0.9rem', color: 'rgba(156,163,175,0.95)' }}>
-            Слова, которые вы добавили из караоке и видео, с уровнями сложности и прогрессом.
-          </p>
         </div>
         <div
           style={{
@@ -1013,164 +1230,86 @@ export const DictionaryTab: React.FC = () => {
           <div
             style={{
               fontSize: '0.8rem',
-              color: 'rgba(148,163,184,0.9)',
+              color: 'var(--text-muted)',
             }}
           >
-            Всего слов:{' '}
-            <span style={{ color: '#f9fafb', fontWeight: 600 }}>{totalWords}</span>
+            {viewMode === 'words' && (
+              <>Всего слов: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{totalWords}</span></>
+            )}
+            {viewMode === 'idioms' && (
+              <>Всего идиом: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{filteredIdioms.length}</span></>
+            )}
+            {viewMode === 'phrasal-verbs' && (
+              <>Всего фразовых глаголов: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{filteredPhrasalVerbs.length}</span></>
+            )}
           </div>
           <div
             style={{
               display: 'flex',
               gap: '0.5rem',
               flexWrap: 'wrap',
+              alignItems: 'center',
             }}
           >
-            <button
-              onClick={async () => {
-                if (!accessToken) return
-                try {
-                  const resp = await fetch(`${getApiUrl()}/api/vocabulary/export?format=csv`, {
-                    method: 'GET',
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                    },
-                  })
-                  if (!resp.ok) throw new Error('Ошибка экспорта')
-                  const blob = await resp.blob()
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `vocabulary_${new Date().toISOString().split('T')[0]}.csv`
-                  document.body.appendChild(a)
-                  a.click()
-                  document.body.removeChild(a)
-                  URL.revokeObjectURL(url)
-                } catch (e) {
-                  alert('Не удалось экспортировать словарь: ' + (e as Error).message)
-                }
-              }}
-              style={{
-                padding: '0.4rem 0.8rem',
-                borderRadius: '0.6rem',
-                border: '1px solid rgba(75,85,99,0.9)',
-                background: 'rgba(24,24,27,0.95)',
-                color: '#e5e7eb',
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              title="Экспорт в CSV"
-            >
-              📥 CSV
-            </button>
-            <button
-              onClick={async () => {
-                if (!accessToken) return
-                try {
-                  const resp = await fetch(`${getApiUrl()}/api/vocabulary/export?format=json`, {
-                    method: 'GET',
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                    },
-                  })
-                  if (!resp.ok) throw new Error('Ошибка экспорта')
-                  const blob = await resp.blob()
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `vocabulary_${new Date().toISOString().split('T')[0]}.json`
-                  document.body.appendChild(a)
-                  a.click()
-                  document.body.removeChild(a)
-                  URL.revokeObjectURL(url)
-                } catch (e) {
-                  alert('Не удалось экспортировать словарь: ' + (e as Error).message)
-                }
-              }}
-              style={{
-                padding: '0.4rem 0.8rem',
-                borderRadius: '0.6rem',
-                border: '1px solid rgba(75,85,99,0.9)',
-                background: 'rgba(24,24,27,0.95)',
-                color: '#e5e7eb',
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              title="Экспорт в JSON"
-            >
-              📥 JSON
-            </button>
-            <button
-              onClick={async () => {
-                if (!accessToken) return
-                try {
-                  const resp = await fetch(`${getApiUrl()}/api/vocabulary/export?format=anki`, {
-                    method: 'GET',
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                    },
-                  })
-                  if (!resp.ok) throw new Error('Ошибка экспорта')
-                  const blob = await resp.blob()
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `vocabulary_anki_${new Date().toISOString().split('T')[0]}.csv`
-                  document.body.appendChild(a)
-                  a.click()
-                  document.body.removeChild(a)
-                  URL.revokeObjectURL(url)
-                } catch (e) {
-                  alert('Не удалось экспортировать словарь: ' + (e as Error).message)
-                }
-              }}
-              style={{
-                padding: '0.4rem 0.8rem',
-                borderRadius: '0.6rem',
-                border: '1px solid rgba(75,85,99,0.9)',
-                background: 'rgba(24,24,27,0.95)',
-                color: '#e5e7eb',
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              title="Экспорт для Anki"
-            >
-              📥 Anki
-            </button>
+            <div ref={exportDropdownRef} style={{ position: 'relative' }}>
+              <button
+                type="button"
+                onClick={() => !exporting && setShowExportDropdown((prev) => !prev)}
+                disabled={exporting}
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '0.6rem',
+                  border: '1px solid var(--stroke)',
+                  background: 'var(--card)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  cursor: exporting ? 'wait' : 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  opacity: exporting ? 0.7 : 1,
+                }}
+                title={exporting ? 'Экспорт…' : 'Экспорт словаря'}
+              >
+                <DownloadIcon /> {exporting ? 'Экспорт…' : 'Экспорт'}
+                {!exporting && (showExportDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />)}
+              </button>
+            </div>
             <button
               onClick={() => openCategoryModal()}
               style={{
                 padding: '0.4rem 0.8rem',
                 borderRadius: '0.6rem',
-                border: '1px solid rgba(75,85,99,0.9)',
-                background: 'rgba(24,24,27,0.95)',
-                color: '#e5e7eb',
+                border: '1px solid var(--stroke)',
+                background: 'var(--card)',
+                color: 'var(--text-primary)',
                 fontSize: '0.75rem',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
               }}
-              title="Manage Categories"
+              title="Управление категориями"
             >
-              🏷️ Categories
+              <TagIcon /> Категории
             </button>
             <label
               style={{
                 padding: '0.4rem 0.8rem',
                 borderRadius: '0.6rem',
-                border: '1px solid rgba(75,85,99,0.9)',
-                background: 'rgba(24,24,27,0.95)',
-                color: '#e5e7eb',
+                border: '1px solid var(--stroke)',
+                background: 'var(--card)',
+                color: 'var(--text-primary)',
                 fontSize: '0.75rem',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                 display: 'inline-block',
               }}
               title="Импорт словаря"
             >
-              📤 Импорт
+              <UploadIcon /> Импорт
               <input
                 type="file"
                 accept=".csv,.json"
@@ -1266,18 +1405,23 @@ export const DictionaryTab: React.FC = () => {
         </div>
       </header>
 
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '0.75rem',
-          alignItems: 'center',
-          padding: '0.75rem 1rem',
-          borderRadius: '1rem',
-          background: 'rgba(17,24,39,0.95)',
-          border: '1px solid rgba(55,65,81,0.9)',
-        }}
-      >
+          <div
+            className="dictionary-tab-toolbar"
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+              alignItems: 'center',
+              padding: '0.75rem 1rem',
+              borderRadius: '1rem',
+              background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
+              border: '1px solid var(--stroke)',
+              boxShadow: 'var(--shadow-soft)',
+              backdropFilter: 'blur(10px)',
+              position: 'relative' as const,
+              zIndex: (showCategoryDropdown || showLevelDropdown) ? 1100 : undefined,
+            }}
+          >
         {/* Mode switcher */}
         <div
           style={{
@@ -1285,23 +1429,27 @@ export const DictionaryTab: React.FC = () => {
             gap: '0.25rem',
             padding: '0.25rem',
             borderRadius: '0.75rem',
-            background: 'rgba(24,24,27,0.95)',
-            border: '1px solid rgba(75,85,99,0.9)',
+            background: 'var(--card)',
+            border: '1px solid var(--stroke)',
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
           }}
         >
           <button
             onClick={() => setViewMode('words')}
-            style={{
-              padding: '0.4rem 0.9rem',
-              borderRadius: '0.5rem',
-              border: 'none',
-              background: viewMode === 'words' ? 'rgba(139,92,246,0.9)' : 'transparent',
-              color: viewMode === 'words' ? '#f9fafb' : 'rgba(148,163,184,0.9)',
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              fontWeight: viewMode === 'words' ? 600 : 400,
-              transition: 'all 0.2s',
-            }}
+              style={{
+                padding: '0.4rem 0.9rem',
+                borderRadius: '0.5rem',
+                border: 'none',
+                background: viewMode === 'words' 
+                  ? 'var(--accent)'
+                  : 'transparent',
+                color: viewMode === 'words' ? 'var(--bg)' : 'var(--text-muted)',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                fontWeight: viewMode === 'words' ? 600 : 400,
+                transition: 'all 0.2s',
+                boxShadow: viewMode === 'words' ? '0 2px 8px var(--accent-soft)' : 'none',
+              }}
           >
             Слова
           </button>
@@ -1311,8 +1459,8 @@ export const DictionaryTab: React.FC = () => {
               padding: '0.4rem 0.9rem',
               borderRadius: '0.5rem',
               border: 'none',
-              background: viewMode === 'idioms' ? 'rgba(139,92,246,0.9)' : 'transparent',
-              color: viewMode === 'idioms' ? '#f9fafb' : 'rgba(148,163,184,0.9)',
+              background: viewMode === 'idioms' ? 'var(--accent)' : 'transparent',
+              color: viewMode === 'idioms' ? 'var(--bg)' : 'var(--text-muted)',
               fontSize: '0.85rem',
               cursor: 'pointer',
               fontWeight: viewMode === 'idioms' ? 600 : 400,
@@ -1327,8 +1475,8 @@ export const DictionaryTab: React.FC = () => {
               padding: '0.4rem 0.9rem',
               borderRadius: '0.5rem',
               border: 'none',
-              background: viewMode === 'phrasal-verbs' ? 'rgba(139,92,246,0.9)' : 'transparent',
-              color: viewMode === 'phrasal-verbs' ? '#f9fafb' : 'rgba(148,163,184,0.9)',
+              background: viewMode === 'phrasal-verbs' ? 'var(--accent)' : 'transparent',
+              color: viewMode === 'phrasal-verbs' ? 'var(--bg)' : 'var(--text-muted)',
               fontSize: '0.85rem',
               cursor: 'pointer',
               fontWeight: viewMode === 'phrasal-verbs' ? 600 : 400,
@@ -1348,47 +1496,77 @@ export const DictionaryTab: React.FC = () => {
             minWidth: 0,
             padding: '0.55rem 0.8rem',
             borderRadius: '0.75rem',
-            border: '1px solid rgba(75,85,99,0.9)',
-            background: 'rgba(24,24,27,0.95)',
-            color: '#e5e7eb',
+            border: '1px solid var(--stroke)',
+            background: 'var(--card)',
+            color: 'var(--text-primary)',
             fontSize: '0.9rem',
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+            transition: 'all 0.2s',
           }}
         />
-        <select
-          value={difficulty}
-          onChange={(e) => setDifficulty(e.target.value)}
+        <div
+          ref={levelDropdownRef}
           style={{
-            padding: '0.5rem 0.75rem',
-            borderRadius: '0.75rem',
-            border: '1px solid rgba(75,85,99,0.9)',
-            background: 'rgba(24,24,27,0.95)',
-            color: '#e5e7eb',
-            fontSize: '0.85rem',
+            position: 'relative',
+            zIndex: showLevelDropdown ? 1100 : undefined,
           }}
         >
-          <option value="all">Все уровни</option>
-          <option value="A1">A1</option>
-          <option value="A2">A2</option>
-          <option value="B1">B1</option>
-          <option value="B2">B2</option>
-          <option value="C1">C1</option>
-          <option value="C2">C2</option>
-        </select>
+          <button
+            type="button"
+            onClick={() => {
+              setShowLevelDropdown((prev) => !prev);
+              if (!showLevelDropdown) setShowCategoryDropdown(false);
+            }}
+            style={{
+              padding: '0.5rem 0.75rem',
+              borderRadius: '0.75rem',
+              border: '1px solid var(--stroke)',
+              background: 'var(--card)',
+              color: 'var(--text-primary)',
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              minWidth: '140px',
+              justifyContent: 'space-between',
+              boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'var(--stroke-strong)';
+              e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.1), 0 0 0 2px var(--accent-soft)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--stroke)';
+              e.currentTarget.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.1)';
+            }}
+          >
+            <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {LEVEL_OPTIONS.find((o) => o.value === difficulty)?.label ?? 'Все уровни'}
+            </span>
+            {showLevelDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />}
+          </button>
+        </div>
         {viewMode === 'words' && (
           <div
             ref={categoryDropdownRef}
             style={{
               position: 'relative',
+              zIndex: showCategoryDropdown ? 1100 : undefined,
             }}
           >
             <button
-              onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+              onClick={() => {
+                setShowLevelDropdown(false);
+                setShowCategoryDropdown(!showCategoryDropdown);
+              }}
               style={{
                 padding: '0.5rem 0.75rem',
                 borderRadius: '0.75rem',
-                border: '1px solid rgba(75,85,99,0.9)',
-                background: 'rgba(24,24,27,0.95)',
-                color: '#e5e7eb',
+                border: '1px solid var(--stroke)',
+                background: 'var(--card)',
+                color: 'var(--text-primary)',
                 fontSize: '0.85rem',
                 cursor: 'pointer',
                 display: 'flex',
@@ -1396,6 +1574,8 @@ export const DictionaryTab: React.FC = () => {
                 gap: '0.5rem',
                 minWidth: '150px',
                 justifyContent: 'space-between',
+                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                transition: 'all 0.2s',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
@@ -1410,7 +1590,7 @@ export const DictionaryTab: React.FC = () => {
                             width: '12px',
                             height: '12px',
                             borderRadius: '3px',
-                            background: selectedCat.color || '#3b82f6',
+                            background: selectedCat.color || '#11622f',
                             display: 'inline-block',
                           }}
                         />
@@ -1419,122 +1599,15 @@ export const DictionaryTab: React.FC = () => {
                         </span>
                       </>
                     ) : (
-                      <span>All Categories</span>
+                      <span>Все категории</span>
                     );
                   })()
                 ) : (
-                  <span>All Categories</span>
+                  <span>Все категории</span>
                 )}
               </div>
-              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>
-                {showCategoryDropdown ? '▲' : '▼'}
-              </span>
+              {showCategoryDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />}
             </button>
-            {showCategoryDropdown && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  marginTop: '0.25rem',
-                  borderRadius: '0.75rem',
-                  border: '1px solid rgba(75,85,99,0.9)',
-                  background: 'rgba(24,24,27,0.98)',
-                  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
-                  zIndex: 100,
-                  maxHeight: '300px',
-                  overflowY: 'auto',
-                }}
-              >
-                <button
-                  onClick={() => {
-                    setCategoryId(null);
-                    setShowCategoryDropdown(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '0.6rem 0.75rem',
-                    textAlign: 'left',
-                    background: categoryId === null ? 'rgba(139,92,246,0.2)' : 'transparent',
-                    border: 'none',
-                    color: '#e5e7eb',
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    borderRadius: '0.5rem 0.5rem 0 0',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (categoryId !== null) {
-                      e.currentTarget.style.background = 'rgba(139,92,246,0.1)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (categoryId !== null) {
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
-                >
-                  <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'rgba(75,85,99,0.5)' }} />
-                  <span>All Categories</span>
-                  {categoryId === null && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
-                </button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => {
-                      setCategoryId(cat.id);
-                      setShowCategoryDropdown(false);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.75rem',
-                      textAlign: 'left',
-                      background: categoryId === cat.id ? 'rgba(139,92,246,0.2)' : 'transparent',
-                      border: 'none',
-                      color: '#e5e7eb',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (categoryId !== cat.id) {
-                        e.currentTarget.style.background = 'rgba(139,92,246,0.1)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (categoryId !== cat.id) {
-                        e.currentTarget.style.background = 'transparent';
-                      }
-                    }}
-                  >
-                    {cat.icon && <span style={{ fontSize: '1rem' }}>{cat.icon}</span>}
-                    <span
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '4px',
-                        background: cat.color || '#3b82f6',
-                        flexShrink: 0,
-                      }}
-                    />
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {cat.name}
-                    </span>
-                    {cat.word_count !== undefined && cat.word_count > 0 && (
-                      <span style={{ fontSize: '0.75rem', color: 'rgba(148,163,184,0.7)', marginLeft: '0.25rem' }}>
-                        ({cat.word_count})
-                      </span>
-                    )}
-                    {categoryId === cat.id && <span style={{ marginLeft: '0.25rem', fontSize: '0.7rem' }}>✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
         {viewMode === 'idioms' && (
@@ -1542,16 +1615,20 @@ export const DictionaryTab: React.FC = () => {
             ref={categoryDropdownRef}
             style={{
               position: 'relative',
+              zIndex: showCategoryDropdown ? 1100 : undefined,
             }}
           >
             <button
-              onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+              onClick={() => {
+                setShowLevelDropdown(false);
+                setShowCategoryDropdown(!showCategoryDropdown);
+              }}
               style={{
                 padding: '0.5rem 0.75rem',
                 borderRadius: '0.75rem',
-                border: '1px solid rgba(75,85,99,0.9)',
-                background: 'rgba(24,24,27,0.95)',
-                color: '#e5e7eb',
+                border: '1px solid var(--stroke)',
+                background: 'var(--card)',
+                color: 'var(--text-primary)',
                 fontSize: '0.85rem',
                 cursor: 'pointer',
                 display: 'flex',
@@ -1559,6 +1636,8 @@ export const DictionaryTab: React.FC = () => {
                 gap: '0.5rem',
                 minWidth: '150px',
                 justifyContent: 'space-between',
+                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                transition: 'all 0.2s',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
@@ -1573,7 +1652,7 @@ export const DictionaryTab: React.FC = () => {
                             width: '12px',
                             height: '12px',
                             borderRadius: '3px',
-                            background: selectedCat.color || '#3b82f6',
+                            background: selectedCat.color || '#11622f',
                             display: 'inline-block',
                           }}
                         />
@@ -1582,122 +1661,15 @@ export const DictionaryTab: React.FC = () => {
                         </span>
                       </>
                     ) : (
-                      <span>All Categories</span>
+                      <span>Все категории</span>
                     );
                   })()
                 ) : (
-                  <span>All Categories</span>
+                  <span>Все категории</span>
                 )}
               </div>
-              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>
-                {showCategoryDropdown ? '▲' : '▼'}
-              </span>
+              {showCategoryDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />}
             </button>
-            {showCategoryDropdown && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  marginTop: '0.25rem',
-                  borderRadius: '0.75rem',
-                  border: '1px solid rgba(75,85,99,0.9)',
-                  background: 'rgba(24,24,27,0.98)',
-                  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
-                  zIndex: 100,
-                  maxHeight: '300px',
-                  overflowY: 'auto',
-                }}
-              >
-                <button
-                  onClick={() => {
-                    setIdiomCategoryId(null);
-                    setShowCategoryDropdown(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '0.6rem 0.75rem',
-                    textAlign: 'left',
-                    background: idiomCategoryId === null ? 'rgba(139,92,246,0.2)' : 'transparent',
-                    border: 'none',
-                    color: '#e5e7eb',
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    borderRadius: '0.5rem 0.5rem 0 0',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (idiomCategoryId !== null) {
-                      e.currentTarget.style.background = 'rgba(139,92,246,0.1)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (idiomCategoryId !== null) {
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
-                >
-                  <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'rgba(75,85,99,0.5)' }} />
-                  <span>All Categories</span>
-                  {idiomCategoryId === null && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
-                </button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => {
-                      setIdiomCategoryId(cat.id);
-                      setShowCategoryDropdown(false);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.75rem',
-                      textAlign: 'left',
-                      background: idiomCategoryId === cat.id ? 'rgba(139,92,246,0.2)' : 'transparent',
-                      border: 'none',
-                      color: '#e5e7eb',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (idiomCategoryId !== cat.id) {
-                        e.currentTarget.style.background = 'rgba(139,92,246,0.1)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (idiomCategoryId !== cat.id) {
-                        e.currentTarget.style.background = 'transparent';
-                      }
-                    }}
-                  >
-                    {cat.icon && <span style={{ fontSize: '1rem' }}>{cat.icon}</span>}
-                    <span
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '4px',
-                        background: cat.color || '#3b82f6',
-                        flexShrink: 0,
-                      }}
-                    />
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {cat.name}
-                    </span>
-                    {cat.idiom_count !== undefined && cat.idiom_count > 0 && (
-                      <span style={{ fontSize: '0.75rem', color: 'rgba(148,163,184,0.7)', marginLeft: '0.25rem' }}>
-                        ({cat.idiom_count})
-                      </span>
-                    )}
-                    {idiomCategoryId === cat.id && <span style={{ marginLeft: '0.25rem', fontSize: '0.7rem' }}>✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
         {viewMode === 'phrasal-verbs' && (
@@ -1705,16 +1677,20 @@ export const DictionaryTab: React.FC = () => {
             ref={categoryDropdownRef}
             style={{
               position: 'relative',
+              zIndex: showCategoryDropdown ? 1100 : undefined,
             }}
           >
             <button
-              onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+              onClick={() => {
+                setShowLevelDropdown(false);
+                setShowCategoryDropdown(!showCategoryDropdown);
+              }}
               style={{
                 padding: '0.5rem 0.75rem',
                 borderRadius: '0.75rem',
-                border: '1px solid rgba(75,85,99,0.9)',
-                background: 'rgba(24,24,27,0.95)',
-                color: '#e5e7eb',
+                border: '1px solid var(--stroke)',
+                background: 'var(--card)',
+                color: 'var(--text-primary)',
                 fontSize: '0.85rem',
                 cursor: 'pointer',
                 display: 'flex',
@@ -1722,6 +1698,8 @@ export const DictionaryTab: React.FC = () => {
                 gap: '0.5rem',
                 minWidth: '150px',
                 justifyContent: 'space-between',
+                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                transition: 'all 0.2s',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
@@ -1736,7 +1714,7 @@ export const DictionaryTab: React.FC = () => {
                             width: '12px',
                             height: '12px',
                             borderRadius: '3px',
-                            background: selectedCat.color || '#3b82f6',
+                            background: selectedCat.color || '#11622f',
                             display: 'inline-block',
                           }}
                         />
@@ -1745,46 +1723,49 @@ export const DictionaryTab: React.FC = () => {
                         </span>
                       </>
                     ) : (
-                      <span>All Categories</span>
+                      <span>Все категории</span>
                     );
                   })()
                 ) : (
-                  <span>All Categories</span>
+                  <span>Все категории</span>
                 )}
               </div>
-              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>
-                {showCategoryDropdown ? '▲' : '▼'}
-              </span>
+              {showCategoryDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />}
             </button>
-            {showCategoryDropdown && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  marginTop: '0.25rem',
-                  borderRadius: '0.75rem',
-                  border: '1px solid rgba(75,85,99,0.9)',
-                  background: 'rgba(24,24,27,0.98)',
-                  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
-                  zIndex: 100,
-                  maxHeight: '300px',
-                  overflowY: 'auto',
-                }}
-              >
+          </div>
+        )}
+      </div>
+
+      {showCategoryDropdown && dropdownRect && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={categoryDropdownPortalRef}
+            style={{
+              position: 'fixed',
+              top: dropdownRect.top,
+              left: dropdownRect.left,
+              minWidth: dropdownRect.width,
+              maxWidth: Math.max(dropdownRect.width, 280),
+              borderRadius: '0.75rem',
+              border: '1px solid var(--stroke)',
+              background: '#1e1e1e',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+              zIndex: 1100,
+              maxHeight: '300px',
+              overflowY: 'auto',
+            }}
+          >
+            {viewMode === 'words' && (
+              <>
                 <button
-                  onClick={() => {
-                    setPhrasalVerbCategoryId(null);
-                    setShowCategoryDropdown(false);
-                  }}
+                  onClick={() => { setCategoryId(null); setShowCategoryDropdown(false); }}
                   style={{
                     width: '100%',
                     padding: '0.6rem 0.75rem',
                     textAlign: 'left',
-                    background: phrasalVerbCategoryId === null ? 'rgba(139,92,246,0.2)' : 'transparent',
+                    background: categoryId === null ? 'var(--accent-soft)' : 'transparent',
                     border: 'none',
-                    color: '#e5e7eb',
+                    color: 'var(--text-primary)',
                     fontSize: '0.85rem',
                     cursor: 'pointer',
                     display: 'flex',
@@ -1792,108 +1773,306 @@ export const DictionaryTab: React.FC = () => {
                     gap: '0.5rem',
                     borderRadius: '0.5rem 0.5rem 0 0',
                   }}
-                  onMouseEnter={(e) => {
-                    if (phrasalVerbCategoryId !== null) {
-                      e.currentTarget.style.background = 'rgba(139,92,246,0.1)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (phrasalVerbCategoryId !== null) {
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
+                  onMouseEnter={(e) => { if (categoryId !== null) e.currentTarget.style.background = 'var(--accent-soft)'; }}
+                  onMouseLeave={(e) => { if (categoryId !== null) e.currentTarget.style.background = 'transparent'; }}
                 >
-                  <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'rgba(75,85,99,0.5)' }} />
-                  <span>All Categories</span>
-                  {phrasalVerbCategoryId === null && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
+                  <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'var(--card-strong)' }} />
+                  <span>Все категории</span>
+                  {categoryId === null && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
                 </button>
                 {categories.map((cat) => (
                   <button
                     key={cat.id}
-                    onClick={() => {
-                      setPhrasalVerbCategoryId(cat.id);
-                      setShowCategoryDropdown(false);
-                    }}
+                    onClick={() => { setCategoryId(cat.id); setShowCategoryDropdown(false); }}
                     style={{
                       width: '100%',
                       padding: '0.6rem 0.75rem',
                       textAlign: 'left',
-                      background: phrasalVerbCategoryId === cat.id ? 'rgba(139,92,246,0.2)' : 'transparent',
+                      background: categoryId === cat.id ? 'var(--accent-soft)' : 'transparent',
                       border: 'none',
-                      color: '#e5e7eb',
+                      color: 'var(--text-primary)',
                       fontSize: '0.85rem',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.5rem',
                     }}
-                    onMouseEnter={(e) => {
-                      if (phrasalVerbCategoryId !== cat.id) {
-                        e.currentTarget.style.background = 'rgba(139,92,246,0.1)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (phrasalVerbCategoryId !== cat.id) {
-                        e.currentTarget.style.background = 'transparent';
-                      }
-                    }}
+                    onMouseEnter={(e) => { if (categoryId !== cat.id) e.currentTarget.style.background = 'var(--accent-soft)'; }}
+                    onMouseLeave={(e) => { if (categoryId !== cat.id) e.currentTarget.style.background = 'transparent'; }}
                   >
                     {cat.icon && <span style={{ fontSize: '1rem' }}>{cat.icon}</span>}
-                    <span
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '4px',
-                        background: cat.color || '#3b82f6',
-                        flexShrink: 0,
-                      }}
-                    />
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {cat.name}
-                    </span>
+                    <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: cat.color || '#11622f', flexShrink: 0 }} />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.name}</span>
+                    {cat.word_count !== undefined && cat.word_count > 0 && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.25rem' }}>({cat.word_count})</span>
+                    )}
+                    {categoryId === cat.id && <span style={{ marginLeft: '0.25rem', fontSize: '0.7rem' }}>✓</span>}
+                  </button>
+                ))}
+              </>
+            )}
+            {viewMode === 'idioms' && (
+              <>
+                <button
+                  onClick={() => { setIdiomCategoryId(null); setShowCategoryDropdown(false); }}
+                  style={{
+                    width: '100%',
+                    padding: '0.6rem 0.75rem',
+                    textAlign: 'left',
+                    background: idiomCategoryId === null ? 'var(--accent-soft)' : 'transparent',
+                    border: 'none',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    borderRadius: '0.5rem 0.5rem 0 0',
+                  }}
+                  onMouseEnter={(e) => { if (idiomCategoryId !== null) e.currentTarget.style.background = 'var(--accent-soft)'; }}
+                  onMouseLeave={(e) => { if (idiomCategoryId !== null) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'var(--card-strong)' }} />
+                  <span>Все категории</span>
+                  {idiomCategoryId === null && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
+                </button>
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => { setIdiomCategoryId(cat.id); setShowCategoryDropdown(false); }}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.75rem',
+                      textAlign: 'left',
+                      background: idiomCategoryId === cat.id ? 'var(--accent-soft)' : 'transparent',
+                      border: 'none',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                    }}
+                    onMouseEnter={(e) => { if (idiomCategoryId !== cat.id) e.currentTarget.style.background = 'var(--accent-soft)'; }}
+                    onMouseLeave={(e) => { if (idiomCategoryId !== cat.id) e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {cat.icon && <span style={{ fontSize: '1rem' }}>{cat.icon}</span>}
+                    <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: cat.color || '#11622f', flexShrink: 0 }} />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.name}</span>
+                    {cat.idiom_count !== undefined && cat.idiom_count > 0 && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.25rem' }}>({cat.idiom_count})</span>
+                    )}
+                    {idiomCategoryId === cat.id && <span style={{ marginLeft: '0.25rem', fontSize: '0.7rem' }}>✓</span>}
+                  </button>
+                ))}
+              </>
+            )}
+            {viewMode === 'phrasal-verbs' && (
+              <>
+                <button
+                  onClick={() => { setPhrasalVerbCategoryId(null); setShowCategoryDropdown(false); }}
+                  style={{
+                    width: '100%',
+                    padding: '0.6rem 0.75rem',
+                    textAlign: 'left',
+                    background: phrasalVerbCategoryId === null ? 'var(--accent-soft)' : 'transparent',
+                    border: 'none',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    borderRadius: '0.5rem 0.5rem 0 0',
+                  }}
+                  onMouseEnter={(e) => { if (phrasalVerbCategoryId !== null) e.currentTarget.style.background = 'var(--accent-soft)'; }}
+                  onMouseLeave={(e) => { if (phrasalVerbCategoryId !== null) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'var(--card-strong)' }} />
+                  <span>Все категории</span>
+                  {phrasalVerbCategoryId === null && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
+                </button>
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => { setPhrasalVerbCategoryId(cat.id); setShowCategoryDropdown(false); }}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.75rem',
+                      textAlign: 'left',
+                      background: phrasalVerbCategoryId === cat.id ? 'var(--accent-soft)' : 'transparent',
+                      border: 'none',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                    }}
+                    onMouseEnter={(e) => { if (phrasalVerbCategoryId !== cat.id) e.currentTarget.style.background = 'var(--accent-soft)'; }}
+                    onMouseLeave={(e) => { if (phrasalVerbCategoryId !== cat.id) e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    {cat.icon && <span style={{ fontSize: '1rem' }}>{cat.icon}</span>}
+                    <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: cat.color || '#11622f', flexShrink: 0 }} />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.name}</span>
                     {cat.phrasal_verb_count !== undefined && cat.phrasal_verb_count > 0 && (
-                      <span style={{ fontSize: '0.75rem', color: 'rgba(148,163,184,0.7)', marginLeft: '0.25rem' }}>
-                        ({cat.phrasal_verb_count})
-                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.25rem' }}>({cat.phrasal_verb_count})</span>
                     )}
                     {phrasalVerbCategoryId === cat.id && <span style={{ marginLeft: '0.25rem', fontSize: '0.7rem' }}>✓</span>}
                   </button>
                 ))}
-              </div>
+              </>
             )}
-          </div>
+          </div>,
+          document.body
         )}
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as any)}
-          style={{
-            padding: '0.5rem 0.75rem',
-            borderRadius: '0.75rem',
-            border: '1px solid rgba(75,85,99,0.9)',
-            background: 'rgba(24,24,27,0.95)',
-            color: '#e5e7eb',
-            fontSize: '0.85rem',
-          }}
-        >
-          <option value="word">По слову (A–Z)</option>
-          <option value="mastery_level">По уровню освоения</option>
-          <option value="difficulty_level">По уровню сложности</option>
-        </select>
-        <button
-          onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-          style={{
-            padding: '0.45rem 0.8rem',
-            borderRadius: '0.75rem',
-            border: '1px solid rgba(75,85,99,0.9)',
-            background: 'rgba(24,24,27,0.95)',
-            color: '#e5e7eb',
-            fontSize: '0.8rem',
-            cursor: 'pointer',
-          }}
-        >
-          {sortOrder === 'asc' ? '▲' : '▼'}
-        </button>
-      </div>
+
+      {showLevelDropdown && levelDropdownRect && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={levelDropdownPortalRef}
+            style={{
+              position: 'fixed',
+              top: levelDropdownRect.top,
+              left: levelDropdownRect.left,
+              minWidth: levelDropdownRect.width,
+              maxWidth: Math.max(levelDropdownRect.width, 200),
+              borderRadius: '0.75rem',
+              border: '1px solid var(--stroke)',
+              background: '#1e1e1e',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+              zIndex: 1100,
+              maxHeight: '320px',
+              overflowY: 'auto',
+            }}
+          >
+            {LEVEL_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  setDifficulty(opt.value);
+                  setShowLevelDropdown(false);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.6rem 0.75rem',
+                  textAlign: 'left',
+                  background: difficulty === opt.value ? 'var(--accent-soft)' : 'transparent',
+                  border: 'none',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  borderRadius: opt.value === 'all' ? '0.5rem 0.5rem 0 0' : undefined,
+                }}
+                onMouseEnter={(e) => {
+                  if (difficulty !== opt.value) e.currentTarget.style.background = 'var(--accent-soft)';
+                }}
+                onMouseLeave={(e) => {
+                  if (difficulty !== opt.value) e.currentTarget.style.background = 'transparent';
+                }}
+              >
+                {opt.value === 'all' ? (
+                  <span style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'var(--card-strong)', flexShrink: 0 }} />
+                ) : (
+                  <span
+                    style={{
+                      minWidth: '20px',
+                      height: '18px',
+                      padding: '0 4px',
+                      borderRadius: '4px',
+                      background: 'var(--accent-soft)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {opt.value}
+                  </span>
+                )}
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {opt.label}
+                </span>
+                {difficulty === opt.value && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+
+      {showExportDropdown && exportDropdownRect && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={exportDropdownPortalRef}
+            style={{
+              position: 'fixed',
+              top: exportDropdownRect.top,
+              left: exportDropdownRect.left,
+              minWidth: exportDropdownRect.width,
+              borderRadius: '0.75rem',
+              border: '1px solid var(--stroke)',
+              background: '#1e1e1e',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+              zIndex: 1100,
+              overflow: 'hidden',
+            }}
+          >
+            {/* Export count info */}
+            <div
+              style={{
+                padding: '0.5rem 0.85rem',
+                borderBottom: '1px solid var(--stroke)',
+                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+                background: 'var(--card)',
+              }}
+            >
+              {viewMode === 'words' && (
+                <>Экспорт {words.length} {plural(words.length, 'слова', 'слов', 'слов')}</>
+              )}
+              {viewMode === 'idioms' && (
+                <>Экспорт {filteredIdioms.length} {plural(filteredIdioms.length, 'идиомы', 'идиом', 'идиом')}</>
+              )}
+              {viewMode === 'phrasal-verbs' && (
+                <>Экспорт {filteredPhrasalVerbs.length} {plural(filteredPhrasalVerbs.length, 'фразового глагола', 'фразовых глаголов', 'фразовых глаголов')}</>
+              )}
+            </div>
+            {EXPORT_FORMATS.map(({ format, label }) => (
+              <button
+                key={format}
+                type="button"
+                onClick={() => handleExport(format)}
+                style={{
+                  width: '100%',
+                  padding: '0.6rem 0.85rem',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent-soft)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <DownloadIcon />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
 
       {error && (
         <div
@@ -1910,28 +2089,24 @@ export const DictionaryTab: React.FC = () => {
         </div>
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1.1fr)',
-          gap: '1.25rem',
-          minHeight: '320px',
-        }}
-      >
+      <div className="dictionary-tab-grid">
         <div
           style={{
             borderRadius: '1.25rem',
-            background: 'rgba(17,24,39,0.98)',
-            border: '1px solid rgba(55,65,81,0.95)',
+            background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
+            border: '1px solid var(--stroke)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+            backdropFilter: 'blur(10px)',
             padding: '0.75rem',
             display: 'flex',
             flexDirection: 'column',
+            overflow: 'visible',
           }}
         >
           <div
             style={{
               fontSize: '0.8rem',
-              color: 'rgba(148,163,184,0.9)',
+              color: 'var(--text-muted)',
               padding: '0.25rem 0.5rem 0.5rem',
               display: 'flex',
               justifyContent: 'space-between',
@@ -1952,7 +2127,7 @@ export const DictionaryTab: React.FC = () => {
                       }
                     }}
                     style={{
-                      accentColor: '#8b5cf6',
+                      accentColor: 'var(--accent)',
                     }}
                   />
                   <span>
@@ -1974,7 +2149,7 @@ export const DictionaryTab: React.FC = () => {
                       }
                     }}
                     style={{
-                      accentColor: '#8b5cf6',
+                      accentColor: 'var(--accent)',
                     }}
                   />
                   <span>
@@ -1996,7 +2171,7 @@ export const DictionaryTab: React.FC = () => {
                       }
                     }}
                     style={{
-                      accentColor: '#8b5cf6',
+                      accentColor: 'var(--accent)',
                     }}
                   />
                   <span>
@@ -2192,16 +2367,20 @@ export const DictionaryTab: React.FC = () => {
           >
             {viewMode === 'words' ? (
               <>
-                {loading && words.length === 0 ? (
-                  <div
-                    style={{
-                      padding: '2rem',
-                      textAlign: 'center',
-                      fontSize: '0.9rem',
-                      color: 'rgba(148,163,184,0.9)',
-                    }}
-                  >
-                    Загрузка словаря...
+                {loading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="dictionary-skeleton-row">
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <div className="dictionary-skeleton-line" style={{ width: 18, height: 18, borderRadius: 4, marginTop: 2 }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <div className="dictionary-skeleton-line" style={{ width: 80 + (i % 4) * 24, maxWidth: 200 }} />
+                            <div className="dictionary-skeleton-line" style={{ width: 120 + (i % 3) * 20, maxWidth: 260, height: '0.75rem' }} />
+                          </div>
+                        </div>
+                        <div className="dictionary-skeleton-line" style={{ width: 44, height: 22, borderRadius: 999 }} />
+                      </div>
+                    ))}
                   </div>
                 ) : words.length === 0 ? (
                   <div
@@ -2221,16 +2400,19 @@ export const DictionaryTab: React.FC = () => {
                           onClick={() => {
                             setSearch('');
                             setDifficulty('all');
+                            setCategoryId(null);
                           }}
                           style={{
                             padding: '0.5rem 1rem',
                             borderRadius: '0.75rem',
-                            border: '1px solid rgba(75,85,99,0.9)',
-                            background: 'rgba(24,24,27,0.95)',
+                            border: '1px solid rgba(17,98,47,0.3)',
+                            background: 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                             color: '#e5e7eb',
                             fontSize: '0.85rem',
                             cursor: 'pointer',
                             marginTop: '0.5rem',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
                           }}
                         >
                           Сбросить фильтры
@@ -2249,20 +2431,25 @@ export const DictionaryTab: React.FC = () => {
                       return (
                         <button
                           key={word.id}
+                          className="dictionary-list-item"
                           onClick={() => setSelectedWordId(word.id)}
                           style={{
                             width: '100%',
                             textAlign: 'left',
                             borderRadius: '0.85rem',
                             border: isSelected
-                              ? '1px solid rgba(168,85,247,0.9)'
-                              : '1px solid rgba(55,65,81,0.9)',
+                              ? '1px solid rgba(17,98,47,0.6)'
+                              : '1px solid rgba(17,98,47,0.15)',
                             background: isSelected
-                              ? 'rgba(139,92,246,0.28)'
-                              : 'rgba(24,24,27,0.95)',
+                              ? 'linear-gradient(135deg, rgba(17,98,47,0.25) 0%, rgba(11,81,37,0.2) 100%)'
+                              : 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                             padding: '0.6rem 0.75rem',
                             cursor: 'pointer',
                             display: 'flex',
+                            boxShadow: isSelected 
+                              ? '0 4px 12px rgba(17,98,47,0.2)' 
+                              : '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             gap: '0.75rem',
@@ -2292,7 +2479,7 @@ export const DictionaryTab: React.FC = () => {
                               }}
                               style={{
                                 marginTop: '0.2rem',
-                                accentColor: '#8b5cf6',
+                                accentColor: '#11622f',
                               }}
                             />
                             <div
@@ -2352,7 +2539,7 @@ export const DictionaryTab: React.FC = () => {
                                       style={{
                                         padding: '0.15rem 0.45rem',
                                         borderRadius: '999px',
-                                        background: cat.color || '#3b82f6',
+                                        background: cat.color || '#11622f',
                                         color: '#ffffff',
                                         fontSize: '0.7rem',
                                         display: 'inline-flex',
@@ -2372,8 +2559,8 @@ export const DictionaryTab: React.FC = () => {
                                   style={{
                                     padding: '0.15rem 0.45rem',
                                     borderRadius: '999px',
-                                    background: 'rgba(139,92,246,0.95)',
-                                    color: 'rgba(237,233,254,0.98)',
+                                    background: '#256f40',
+                                    color: 'rgba(220,252,231,0.98)',
                                     fontSize: '0.75rem',
                                   }}
                                 >
@@ -2402,16 +2589,20 @@ export const DictionaryTab: React.FC = () => {
               </>
             ) : viewMode === 'idioms' ? (
               <>
-                {idiomsLoading && filteredIdioms.length === 0 ? (
-                  <div
-                    style={{
-                      padding: '2rem',
-                      textAlign: 'center',
-                      fontSize: '0.9rem',
-                      color: 'rgba(148,163,184,0.9)',
-                    }}
-                  >
-                    Загрузка идиом...
+                {idiomsLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="dictionary-skeleton-row">
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <div className="dictionary-skeleton-line" style={{ width: 18, height: 18, borderRadius: 4, marginTop: 2 }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <div className="dictionary-skeleton-line" style={{ width: 100 + (i % 4) * 28, maxWidth: 220 }} />
+                            <div className="dictionary-skeleton-line" style={{ width: 140 + (i % 3) * 25, maxWidth: 260, height: '0.75rem' }} />
+                          </div>
+                        </div>
+                        <div className="dictionary-skeleton-line" style={{ width: 44, height: 22, borderRadius: 999 }} />
+                      </div>
+                    ))}
                   </div>
                 ) : filteredIdioms.length === 0 ? (
                   <div
@@ -2431,16 +2622,19 @@ export const DictionaryTab: React.FC = () => {
                           onClick={() => {
                             setSearch('');
                             setDifficulty('all');
+                            setIdiomCategoryId(null);
                           }}
                           style={{
                             padding: '0.5rem 1rem',
                             borderRadius: '0.75rem',
-                            border: '1px solid rgba(75,85,99,0.9)',
-                            background: 'rgba(24,24,27,0.95)',
+                            border: '1px solid rgba(17,98,47,0.3)',
+                            background: 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                             color: '#e5e7eb',
                             fontSize: '0.85rem',
                             cursor: 'pointer',
                             marginTop: '0.5rem',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
                           }}
                         >
                           Сбросить фильтры
@@ -2459,20 +2653,25 @@ export const DictionaryTab: React.FC = () => {
                       return (
                         <button
                           key={idx}
+                          className="dictionary-list-item"
                           onClick={() => setSelectedIdiom(idiom)}
                           style={{
                             width: '100%',
                             textAlign: 'left',
                             borderRadius: '0.85rem',
                             border: isSelected
-                              ? '1px solid rgba(168,85,247,0.9)'
-                              : '1px solid rgba(55,65,81,0.9)',
+                              ? '1px solid rgba(17,98,47,0.6)'
+                              : '1px solid rgba(17,98,47,0.15)',
                             background: isSelected
-                              ? 'rgba(139,92,246,0.28)'
-                              : 'rgba(24,24,27,0.95)',
+                              ? 'linear-gradient(135deg, rgba(17,98,47,0.25) 0%, rgba(11,81,37,0.2) 100%)'
+                              : 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                             padding: '0.6rem 0.75rem',
                             cursor: 'pointer',
                             display: 'flex',
+                            boxShadow: isSelected 
+                              ? '0 4px 12px rgba(17,98,47,0.2)' 
+                              : '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             gap: '0.75rem',
@@ -2502,7 +2701,7 @@ export const DictionaryTab: React.FC = () => {
                               }}
                               style={{
                                 marginTop: '0.2rem',
-                                accentColor: '#8b5cf6',
+                                accentColor: '#11622f',
                               }}
                             />
                             <div
@@ -2562,7 +2761,7 @@ export const DictionaryTab: React.FC = () => {
                                       style={{
                                         padding: '0.15rem 0.45rem',
                                         borderRadius: '999px',
-                                        background: cat.color || '#3b82f6',
+                                        background: cat.color || '#11622f',
                                         color: '#ffffff',
                                         fontSize: '0.7rem',
                                         display: 'inline-flex',
@@ -2583,8 +2782,8 @@ export const DictionaryTab: React.FC = () => {
                                 style={{
                                   padding: '0.15rem 0.45rem',
                                   borderRadius: '999px',
-                                  background: 'rgba(30,64,175,0.95)',
-                                  color: 'rgba(219,234,254,0.98)',
+                                  background: '#256f40',
+                                  color: 'rgba(220,252,231,0.98)',
                                   fontSize: '0.75rem',
                                 }}
                               >
@@ -2611,16 +2810,20 @@ export const DictionaryTab: React.FC = () => {
             ) : null}
             {viewMode === 'phrasal-verbs' && (
               <>
-                {phrasalVerbsLoading && filteredPhrasalVerbs.length === 0 ? (
-                  <div
-                    style={{
-                      padding: '2rem',
-                      textAlign: 'center',
-                      fontSize: '0.9rem',
-                      color: 'rgba(148,163,184,0.9)',
-                    }}
-                  >
-                    Загрузка фразовых глаголов...
+                {phrasalVerbsLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="dictionary-skeleton-row">
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <div className="dictionary-skeleton-line" style={{ width: 18, height: 18, borderRadius: 4, marginTop: 2 }} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <div className="dictionary-skeleton-line" style={{ width: 90 + (i % 4) * 26, maxWidth: 210 }} />
+                            <div className="dictionary-skeleton-line" style={{ width: 130 + (i % 3) * 22, maxWidth: 260, height: '0.75rem' }} />
+                          </div>
+                        </div>
+                        <div className="dictionary-skeleton-line" style={{ width: 44, height: 22, borderRadius: 999 }} />
+                      </div>
+                    ))}
                   </div>
                 ) : filteredPhrasalVerbs.length === 0 ? (
                   <div
@@ -2631,7 +2834,7 @@ export const DictionaryTab: React.FC = () => {
                       color: 'rgba(148,163,184,0.9)',
                     }}
                   >
-                    {debouncedSearch ? (
+                    {debouncedSearch || difficulty !== 'all' ? (
                       <>
                         <div style={{ marginBottom: '0.5rem' }}>
                           Фразовые глаголы не найдены по заданным фильтрам.
@@ -2639,16 +2842,20 @@ export const DictionaryTab: React.FC = () => {
                         <button
                           onClick={() => {
                             setSearch('');
+                            setDifficulty('all');
+                            setPhrasalVerbCategoryId(null);
                           }}
                           style={{
                             padding: '0.5rem 1rem',
                             borderRadius: '0.75rem',
-                            border: '1px solid rgba(75,85,99,0.9)',
-                            background: 'rgba(24,24,27,0.95)',
+                            border: '1px solid rgba(17,98,47,0.3)',
+                            background: 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                             color: '#e5e7eb',
                             fontSize: '0.85rem',
                             cursor: 'pointer',
                             marginTop: '0.5rem',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
                           }}
                         >
                           Сбросить фильтры
@@ -2667,20 +2874,25 @@ export const DictionaryTab: React.FC = () => {
                       return (
                         <button
                           key={idx}
+                          className="dictionary-list-item"
                           onClick={() => setSelectedPhrasalVerb(phrasalVerb)}
                           style={{
                             width: '100%',
                             textAlign: 'left',
                             borderRadius: '0.85rem',
                             border: isSelected
-                              ? '1px solid rgba(168,85,247,0.9)'
-                              : '1px solid rgba(55,65,81,0.9)',
+                              ? '1px solid rgba(17,98,47,0.6)'
+                              : '1px solid rgba(17,98,47,0.15)',
                             background: isSelected
-                              ? 'rgba(139,92,246,0.28)'
-                              : 'rgba(24,24,27,0.95)',
+                              ? 'linear-gradient(135deg, rgba(17,98,47,0.25) 0%, rgba(11,81,37,0.2) 100%)'
+                              : 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                             padding: '0.6rem 0.75rem',
                             cursor: 'pointer',
                             display: 'flex',
+                            boxShadow: isSelected 
+                              ? '0 4px 12px rgba(17,98,47,0.2)' 
+                              : '0 2px 4px rgba(0,0,0,0.1)',
+                            transition: 'all 0.2s',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             gap: '0.75rem',
@@ -2710,7 +2922,7 @@ export const DictionaryTab: React.FC = () => {
                               }}
                               style={{
                                 marginTop: '0.2rem',
-                                accentColor: '#8b5cf6',
+                                accentColor: '#11622f',
                               }}
                             />
                             <div
@@ -2770,7 +2982,7 @@ export const DictionaryTab: React.FC = () => {
                                       style={{
                                         padding: '0.15rem 0.45rem',
                                         borderRadius: '999px',
-                                        background: cat.color || '#3b82f6',
+                                        background: cat.color || '#11622f',
                                         color: '#ffffff',
                                         fontSize: '0.7rem',
                                         display: 'inline-flex',
@@ -2791,8 +3003,8 @@ export const DictionaryTab: React.FC = () => {
                                 style={{
                                   padding: '0.15rem 0.45rem',
                                   borderRadius: '999px',
-                                  background: 'rgba(30,64,175,0.95)',
-                                  color: 'rgba(219,234,254,0.98)',
+                                  background: '#256f40',
+                                  color: 'rgba(220,252,231,0.98)',
                                   fontSize: '0.75rem',
                                 }}
                               >
@@ -2824,8 +3036,10 @@ export const DictionaryTab: React.FC = () => {
           <div
             style={{
               borderRadius: '1.25rem',
-              background: 'rgba(17,24,39,0.98)',
-              border: '1px solid rgba(55,65,81,0.95)',
+              background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
+              border: '1px solid rgba(17,98,47,0.2)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+              backdropFilter: 'blur(10px)',
               padding: '1rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
@@ -2877,7 +3091,7 @@ export const DictionaryTab: React.FC = () => {
                           padding: '0.4rem 0.8rem',
                           borderRadius: '0.6rem',
                           border: '1px solid rgba(82,82,91,0.9)',
-                          background: wordAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(139,92,246,0.9)',
+                          background: wordAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
                           color: wordAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
                           fontSize: '0.8rem',
                           cursor: wordAudioLoading ? 'default' : 'pointer',
@@ -2920,7 +3134,7 @@ export const DictionaryTab: React.FC = () => {
                         style={{
                           padding: '0.2rem 0.5rem',
                           borderRadius: '999px',
-                          background: 'rgba(30,64,175,0.95)',
+                          background: '#256f40',
                           color: 'rgba(219,234,254,0.98)',
                         }}
                       >
@@ -2994,7 +3208,7 @@ export const DictionaryTab: React.FC = () => {
                       alignItems: 'center',
                     }}
                   >
-                    <span>Categories:</span>
+                    <span>Категории:</span>
                     <button
                       onClick={() => {
                         setAssigningWordId(selectedWord.id);
@@ -3013,7 +3227,7 @@ export const DictionaryTab: React.FC = () => {
                         cursor: 'pointer',
                       }}
                     >
-                      Edit
+                      Изменить
                     </button>
                   </div>
                   {selectedWord.categories && selectedWord.categories.length > 0 ? (
@@ -3030,7 +3244,7 @@ export const DictionaryTab: React.FC = () => {
                           style={{
                             padding: '0.25rem 0.6rem',
                             borderRadius: '999px',
-                            background: cat.color || '#3b82f6',
+                            background: cat.color || '#11622f',
                             color: '#ffffff',
                             fontSize: '0.8rem',
                             display: 'inline-flex',
@@ -3052,10 +3266,46 @@ export const DictionaryTab: React.FC = () => {
                         fontStyle: 'italic',
                       }}
                     >
-                      No categories
+                      Нет категорий
                     </div>
                   )}
                 </div>
+
+                {selectedWord.videos && selectedWord.videos.length > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: '0.8rem',
+                        color: 'rgba(148,163,184,0.9)',
+                        marginBottom: '0.15rem',
+                      }}
+                    >
+                      Связанные видео:
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.5rem',
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {selectedWord.videos.map((v) => (
+                        <span
+                          key={v.id}
+                          style={{
+                            padding: '0.3rem 0.6rem',
+                            borderRadius: '999px',
+                            background: '#256f40',
+                            color: 'rgba(219,234,254,0.98)',
+                          }}
+                        >
+                          {v.title || 'Видео'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Hidden audio element for pronunciation */}
                 <audio ref={wordAudioRef} src={wordAudioUrl || undefined} />
@@ -3075,12 +3325,14 @@ export const DictionaryTab: React.FC = () => {
               </div>
             )}
           </div>
-        ) : (
+        ) : viewMode === 'idioms' ? (
           <div
             style={{
               borderRadius: '1.25rem',
-              background: 'rgba(17,24,39,0.98)',
-              border: '1px solid rgba(55,65,81,0.95)',
+              background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
+              border: '1px solid rgba(17,98,47,0.2)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+              backdropFilter: 'blur(10px)',
               padding: '1rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
@@ -3132,7 +3384,7 @@ export const DictionaryTab: React.FC = () => {
                           padding: '0.4rem 0.8rem',
                           borderRadius: '0.6rem',
                           border: '1px solid rgba(82,82,91,0.9)',
-                          background: idiomAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(139,92,246,0.9)',
+                          background: idiomAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
                           color: idiomAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
                           fontSize: '0.8rem',
                           cursor: idiomAudioLoading ? 'default' : 'pointer',
@@ -3176,7 +3428,7 @@ export const DictionaryTab: React.FC = () => {
                         style={{
                           padding: '0.2rem 0.5rem',
                           borderRadius: '999px',
-                          background: 'rgba(30,64,175,0.95)',
+                          background: '#256f40',
                           color: 'rgba(219,234,254,0.98)',
                         }}
                       >
@@ -3279,7 +3531,7 @@ export const DictionaryTab: React.FC = () => {
                         alignItems: 'center',
                       }}
                     >
-                      <span>Categories:</span>
+                      <span>Категории:</span>
                       <button
                         onClick={() => {
                           setAssigningIdiomId(selectedIdiom.id!);
@@ -3298,7 +3550,7 @@ export const DictionaryTab: React.FC = () => {
                           cursor: 'pointer',
                         }}
                       >
-                        Edit
+                        Изменить
                       </button>
                     </div>
                     {selectedIdiom.categories && selectedIdiom.categories.length > 0 ? (
@@ -3315,7 +3567,7 @@ export const DictionaryTab: React.FC = () => {
                             style={{
                               padding: '0.25rem 0.6rem',
                               borderRadius: '999px',
-                              background: cat.color || '#3b82f6',
+                              background: cat.color || '#11622f',
                               color: '#ffffff',
                               fontSize: '0.8rem',
                               display: 'inline-flex',
@@ -3337,7 +3589,7 @@ export const DictionaryTab: React.FC = () => {
                           fontStyle: 'italic',
                         }}
                       >
-                        No categories
+                        Нет категорий
                       </div>
                     )}
                   </div>
@@ -3368,7 +3620,7 @@ export const DictionaryTab: React.FC = () => {
                           style={{
                             padding: '0.3rem 0.6rem',
                             borderRadius: '999px',
-                            background: 'rgba(30,64,175,0.95)',
+                            background: '#256f40',
                             color: 'rgba(219,234,254,0.98)',
                           }}
                         >
@@ -3395,13 +3647,14 @@ export const DictionaryTab: React.FC = () => {
               </div>
             )}
           </div>
-        )}
-        {viewMode === 'phrasal-verbs' ? (
+        ) : viewMode === 'phrasal-verbs' ? (
           <div
             style={{
               borderRadius: '1.25rem',
-              background: 'rgba(17,24,39,0.98)',
-              border: '1px solid rgba(55,65,81,0.95)',
+              background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
+              border: '1px solid rgba(17,98,47,0.2)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+              backdropFilter: 'blur(10px)',
               padding: '1rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
@@ -3419,6 +3672,17 @@ export const DictionaryTab: React.FC = () => {
                   }}
                 >
                   <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: '0.8rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.08em',
+                        color: 'rgba(148,163,184,0.9)',
+                        marginBottom: '0.15rem',
+                      }}
+                    >
+                      Выбранный фразовый глагол
+                    </div>
                     <div
                       style={{
                         fontSize: '1.15rem',
@@ -3462,7 +3726,7 @@ export const DictionaryTab: React.FC = () => {
 
                           setPhrasalVerbAudioLoading(true);
                           try {
-                            const resp = await fetch(`${getApiUrl()}/api/vocabulary/synthesize`, {
+                            const resp = await fetch(`${getApiUrl()}/api/tts`, {
                               method: 'POST',
                               headers: {
                                 'Content-Type': 'application/json',
@@ -3472,7 +3736,8 @@ export const DictionaryTab: React.FC = () => {
                             });
 
                             if (!resp.ok) {
-                              throw new Error('Не удалось синтезировать произношение фразового глагола');
+                              const errData = await resp.json().catch(() => ({}));
+                              throw new Error(errData?.error || 'Не удалось синтезировать произношение фразового глагола');
                             }
 
                             const blob = await resp.blob();
@@ -3498,7 +3763,7 @@ export const DictionaryTab: React.FC = () => {
                           padding: '0.4rem 0.8rem',
                           borderRadius: '0.6rem',
                           border: '1px solid rgba(82,82,91,0.9)',
-                          background: phrasalVerbAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(139,92,246,0.9)',
+                          background: phrasalVerbAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
                           color: phrasalVerbAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
                           fontSize: '0.8rem',
                           cursor: phrasalVerbAudioLoading ? 'default' : 'pointer',
@@ -3542,7 +3807,7 @@ export const DictionaryTab: React.FC = () => {
                         style={{
                           padding: '0.2rem 0.5rem',
                           borderRadius: '999px',
-                          background: 'rgba(30,64,175,0.95)',
+                          background: '#256f40',
                           color: 'rgba(219,234,254,0.98)',
                         }}
                       >
@@ -3625,8 +3890,6 @@ export const DictionaryTab: React.FC = () => {
                           style={{
                             padding: '0.6rem 0.75rem',
                             borderRadius: '0.75rem',
-                            background: 'rgba(24,24,27,0.95)',
-                            border: '1px solid rgba(55,65,81,0.9)',
                             fontSize: '0.9rem',
                             color: '#e5e7eb',
                           }}
@@ -3638,67 +3901,81 @@ export const DictionaryTab: React.FC = () => {
                   </div>
                 )}
 
-                {selectedPhrasalVerb.categories && selectedPhrasalVerb.categories.length > 0 && (
+                {selectedPhrasalVerb.id && (
                   <div>
                     <div
                       style={{
                         fontSize: '0.8rem',
                         color: 'rgba(148,163,184,0.9)',
                         marginBottom: '0.5rem',
-                      }}
-                    >
-                      Категории:
-                    </div>
-                    <div
-                      style={{
                         display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '0.5rem',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
                       }}
                     >
-                      {selectedPhrasalVerb.categories.map((cat) => (
-                        <span
-                          key={cat.id}
-                          style={{
-                            padding: '0.3rem 0.6rem',
-                            borderRadius: '999px',
-                            background: cat.color || '#3b82f6',
-                            color: '#ffffff',
-                            fontSize: '0.8rem',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                          }}
-                          title={cat.description || cat.name}
-                        >
-                          {cat.icon && <span>{cat.icon}</span>}
-                          <span>{cat.name}</span>
-                        </span>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (selectedPhrasalVerb?.id) {
-                          setAssigningPhrasalVerbId(selectedPhrasalVerb.id);
+                      <span>Категории:</span>
+                      <button
+                        onClick={() => {
+                          setAssigningPhrasalVerbId(selectedPhrasalVerb.id!);
+                          setAssigningWordId(null);
+                          setAssigningIdiomId(null);
                           setSelectedCategoryIds(
                             new Set(selectedPhrasalVerb.categories?.map((c) => c.id) || [])
                           );
                           setShowAssignCategoriesModal(true);
-                        }
-                      }}
-                      style={{
-                        marginTop: '0.5rem',
-                        padding: '0.4rem 0.8rem',
-                        borderRadius: '0.6rem',
-                        border: '1px solid rgba(75,85,99,0.9)',
-                        background: 'rgba(24,24,27,0.95)',
-                        color: '#e5e7eb',
-                        fontSize: '0.8rem',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Изменить категории
-                    </button>
+                        }}
+                        style={{
+                          padding: '0.3rem 0.6rem',
+                          borderRadius: '0.5rem',
+                          border: '1px solid rgba(75,85,99,0.9)',
+                          background: 'rgba(24,24,27,0.95)',
+                          color: '#e5e7eb',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Изменить
+                      </button>
+                    </div>
+                    {selectedPhrasalVerb.categories && selectedPhrasalVerb.categories.length > 0 ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '0.4rem',
+                        }}
+                      >
+                        {selectedPhrasalVerb.categories.map((cat) => (
+                          <span
+                            key={cat.id}
+                            style={{
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '999px',
+                              background: cat.color || '#11622f',
+                              color: '#ffffff',
+                              fontSize: '0.8rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                            }}
+                            title={cat.description || cat.name}
+                          >
+                            {cat.icon && <span>{cat.icon}</span>}
+                            <span>{cat.name}</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          fontSize: '0.85rem',
+                          color: 'rgba(148,163,184,0.7)',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        Нет категорий
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3727,7 +4004,7 @@ export const DictionaryTab: React.FC = () => {
                           style={{
                             padding: '0.3rem 0.6rem',
                             borderRadius: '999px',
-                            background: 'rgba(30,64,175,0.95)',
+                            background: '#256f40',
                             color: 'rgba(219,234,254,0.98)',
                           }}
                         >
@@ -3809,7 +4086,7 @@ export const DictionaryTab: React.FC = () => {
           onClick={() => {
             setShowCategoryModal(false);
             setEditingCategory(null);
-            setCategoryForm({ name: '', description: '', color: '#3b82f6', icon: '' });
+            setCategoryForm({ name: '', description: '', color: '#11622f', icon: '' });
           }}
         >
           <div
@@ -3833,7 +4110,7 @@ export const DictionaryTab: React.FC = () => {
                 marginBottom: '1rem',
               }}
             >
-              {editingCategory ? 'Edit Category' : 'Create Category'}
+              {editingCategory ? 'Редактировать категорию' : 'Создать категорию'}
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -3846,21 +4123,23 @@ export const DictionaryTab: React.FC = () => {
                     marginBottom: '0.4rem',
                   }}
                 >
-                  Name *
+                  Название *
                 </label>
                 <input
                   type="text"
                   value={categoryForm.name}
                   onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                  placeholder="Category name (any language)"
+                  placeholder="Название категории"
                   style={{
                     width: '100%',
                     padding: '0.6rem 0.8rem',
                     borderRadius: '0.75rem',
-                    border: '1px solid rgba(75,85,99,0.9)',
-                    background: 'rgba(24,24,27,0.95)',
+                    border: '1px solid rgba(17,98,47,0.2)',
+                    background: 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                     color: '#e5e7eb',
                     fontSize: '0.9rem',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                    transition: 'all 0.2s',
                   }}
                 />
               </div>
@@ -3874,21 +4153,23 @@ export const DictionaryTab: React.FC = () => {
                     marginBottom: '0.4rem',
                   }}
                 >
-                  Description
+                  Описание
                 </label>
                 <textarea
                   value={categoryForm.description}
                   onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
-                  placeholder="Category description (optional)"
+                  placeholder="Описание категории (необязательно)"
                   rows={3}
                   style={{
                     width: '100%',
                     padding: '0.6rem 0.8rem',
                     borderRadius: '0.75rem',
-                    border: '1px solid rgba(75,85,99,0.9)',
-                    background: 'rgba(24,24,27,0.95)',
+                    border: '1px solid rgba(17,98,47,0.2)',
+                    background: 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                     color: '#e5e7eb',
                     fontSize: '0.9rem',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                    transition: 'all 0.2s',
                     resize: 'vertical',
                   }}
                 />
@@ -3903,7 +4184,7 @@ export const DictionaryTab: React.FC = () => {
                     marginBottom: '0.4rem',
                   }}
                 >
-                  Color
+                  Цвет
                 </label>
                 <input
                   type="color"
@@ -3928,22 +4209,24 @@ export const DictionaryTab: React.FC = () => {
                     marginBottom: '0.4rem',
                   }}
                 >
-                  Icon (emoji)
+                  Иконка (эмодзи)
                 </label>
                 <input
                   type="text"
                   value={categoryForm.icon}
                   onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
-                  placeholder="e.g. 🍕, ✈️, 💼"
+                  placeholder="напр. 🍕, ✈️, 💼"
                   maxLength={2}
                   style={{
                     width: '100%',
                     padding: '0.6rem 0.8rem',
                     borderRadius: '0.75rem',
-                    border: '1px solid rgba(75,85,99,0.9)',
-                    background: 'rgba(24,24,27,0.95)',
+                    border: '1px solid rgba(17,98,47,0.2)',
+                    background: 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                     color: '#e5e7eb',
                     fontSize: '0.9rem',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                    transition: 'all 0.2s',
                   }}
                 />
               </div>
@@ -3953,19 +4236,21 @@ export const DictionaryTab: React.FC = () => {
                   onClick={() => {
                     setShowCategoryModal(false);
                     setEditingCategory(null);
-                    setCategoryForm({ name: '', description: '', color: '#3b82f6', icon: '' });
+                    setCategoryForm({ name: '', description: '', color: '#11622f', icon: '' });
                   }}
                   style={{
                     padding: '0.6rem 1.2rem',
                     borderRadius: '0.75rem',
-                    border: '1px solid rgba(75,85,99,0.9)',
-                    background: 'rgba(24,24,27,0.95)',
+                    border: '1px solid rgba(17,98,47,0.2)',
+                    background: 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
                     color: '#e5e7eb',
                     fontSize: '0.9rem',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                    transition: 'all 0.2s',
                     cursor: 'pointer',
                   }}
                 >
-                  Cancel
+                  Отмена
                 </button>
                 <button
                   onClick={editingCategory ? handleUpdateCategory : handleCreateCategory}
@@ -3974,14 +4259,14 @@ export const DictionaryTab: React.FC = () => {
                     padding: '0.6rem 1.2rem',
                     borderRadius: '0.75rem',
                     border: 'none',
-                    background: categoryForm.name.trim() ? 'rgba(139,92,246,0.9)' : 'rgba(75,85,99,0.5)',
+                    background: categoryForm.name.trim() ? 'rgba(17,98,47,0.9)' : 'rgba(75,85,99,0.5)',
                     color: '#f9fafb',
                     fontSize: '0.9rem',
                     cursor: categoryForm.name.trim() ? 'pointer' : 'not-allowed',
                     opacity: categoryForm.name.trim() ? 1 : 0.6,
                   }}
                 >
-                  {editingCategory ? 'Save' : 'Create'}
+                  {editingCategory ? 'Сохранить' : 'Создать'}
                 </button>
               </div>
             </div>
@@ -3996,7 +4281,7 @@ export const DictionaryTab: React.FC = () => {
                     marginBottom: '1rem',
                   }}
                 >
-                  All Categories
+                  Все категории
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {categories.map((cat) => (
@@ -4008,7 +4293,7 @@ export const DictionaryTab: React.FC = () => {
                         alignItems: 'center',
                         padding: '0.6rem 0.8rem',
                         borderRadius: '0.75rem',
-                        background: 'rgba(17,24,39,0.98)',
+                        background: 'var(--card)',
                         border: '1px solid rgba(55,65,81,0.95)',
                       }}
                     >
@@ -4018,7 +4303,7 @@ export const DictionaryTab: React.FC = () => {
                             width: '20px',
                             height: '20px',
                             borderRadius: '4px',
-                            background: cat.color || '#3b82f6',
+                            background: cat.color || '#11622f',
                           }}
                         />
                         {cat.icon && <span>{cat.icon}</span>}
@@ -4042,7 +4327,7 @@ export const DictionaryTab: React.FC = () => {
                             cursor: 'pointer',
                           }}
                         >
-                          Edit
+                          Изменить
                         </button>
                         <button
                           onClick={() => handleDeleteCategory(cat.id)}
@@ -4056,7 +4341,7 @@ export const DictionaryTab: React.FC = () => {
                             cursor: 'pointer',
                           }}
                         >
-                          Delete
+                          Удалить
                         </button>
                       </div>
                     </div>
@@ -4092,8 +4377,10 @@ export const DictionaryTab: React.FC = () => {
         >
           <div
             style={{
-              background: 'rgba(24,24,27,0.98)',
-              border: '1px solid rgba(82,82,91,0.85)',
+              background: 'linear-gradient(135deg, rgba(24,24,27,0.98) 0%, rgba(39,39,42,0.95) 100%)',
+              border: '1px solid rgba(17,98,47,0.3)',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(17,98,47,0.1)',
+              backdropFilter: 'blur(20px)',
               borderRadius: '1.25rem',
               padding: '1.5rem',
               maxWidth: '500px',
@@ -4111,7 +4398,7 @@ export const DictionaryTab: React.FC = () => {
                 marginBottom: '1rem',
               }}
             >
-              Select Categories
+              Выбрать категории
             </h3>
 
             {categories.length === 0 ? (
@@ -4122,7 +4409,7 @@ export const DictionaryTab: React.FC = () => {
                   color: 'rgba(148,163,184,0.9)',
                 }}
               >
-                No categories. Create a category to assign it to words.
+                Нет категорий. Создайте категорию, чтобы назначить её словам.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
@@ -4136,8 +4423,8 @@ export const DictionaryTab: React.FC = () => {
                       padding: '0.75rem',
                       borderRadius: '0.75rem',
                       background: selectedCategoryIds.has(cat.id)
-                        ? 'rgba(139,92,246,0.2)'
-                        : 'rgba(17,24,39,0.98)',
+                        ? 'rgba(17,98,47,0.2)'
+                        : 'var(--card)',
                       border: `1px solid ${selectedCategoryIds.has(cat.id) ? cat.color : 'rgba(55,65,81,0.95)'}`,
                       cursor: 'pointer',
                     }}
@@ -4165,7 +4452,7 @@ export const DictionaryTab: React.FC = () => {
                         width: '20px',
                         height: '20px',
                         borderRadius: '4px',
-                        background: cat.color || '#3b82f6',
+                        background: cat.color || '#11622f',
                       }}
                     />
                     {cat.icon && <span style={{ fontSize: '1.2rem' }}>{cat.icon}</span>}
@@ -4197,7 +4484,7 @@ export const DictionaryTab: React.FC = () => {
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                Отмена
               </button>
               <button
                 onClick={async () => {
@@ -4222,13 +4509,13 @@ export const DictionaryTab: React.FC = () => {
                   padding: '0.6rem 1.2rem',
                   borderRadius: '0.75rem',
                   border: 'none',
-                  background: 'rgba(139,92,246,0.9)',
+                  background: 'rgba(17,98,47,0.9)',
                   color: '#f9fafb',
                   fontSize: '0.9rem',
                   cursor: 'pointer',
                 }}
               >
-                Save
+                Сохранить
               </button>
             </div>
           </div>

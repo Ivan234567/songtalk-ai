@@ -714,7 +714,7 @@ export default function VideosPage() {
                               border: '1px solid rgba(82,82,91,0.9)',
                               background: synthesizingIdiom === idiom.phrase.trim().toLowerCase() 
                                 ? 'rgba(24,24,27,0.95)' 
-                                : 'rgba(59,130,246,0.9)',
+                                : 'rgba(103,199,163,0.9)',
                               color: synthesizingIdiom === idiom.phrase.trim().toLowerCase() 
                                 ? 'rgba(148,163,184,0.9)' 
                                 : '#e5e7eb',

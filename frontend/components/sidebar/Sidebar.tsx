@@ -1,7 +1,143 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 
-type SidebarTabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'call';
+// Текст и волна в одном стиле для логотипа (полная и компактная версии)
+const LOGO_FONT = '"Segoe UI", "SF Pro Display", system-ui, sans-serif';
+const LOGO_TEXT_PROPS = { x: 24, y: 128, fontSize: 72, fontWeight: 700, fontFamily: LOGO_FONT };
+
+// Выразительная звуковая волна: большая амплитуда, плавные кривые (центр ~100, амплитуда ~28)
+const SOUND_WAVE_PATH_MAIN =
+  'M0,100 C25,58 50,142 75,100 C100,58 125,142 150,100 C175,58 200,142 225,100 C250,58 275,142 300,100 C325,58 350,142 375,100 C400,58 425,142 450,100 C475,58 500,142 525,100 C550,58 575,142 600,100';
+// Смещённые волны для объёма (разные фазы)
+const SOUND_WAVE_PATH_UP =
+  'M0,82 C30,52 60,112 90,82 C120,52 150,112 180,82 C210,52 240,112 270,82 C300,52 330,112 360,82 C390,52 420,112 450,82 C480,52 510,112 540,82 C570,52 600,82';
+const SOUND_WAVE_PATH_DOWN =
+  'M0,118 C30,88 60,148 90,118 C120,88 150,148 180,118 C210,88 240,148 270,118 C300,88 330,148 360,118 C390,88 420,148 450,118 C480,88 510,148 540,118 C570,88 600,118';
+
+// Логотип Speakeasy: чёткий текст + звуковая волна, проходящая сквозь буквы (clipPath)
+const SpeakeasyLogoFull: React.FC<{ width?: number }> = ({ width = 200 }) => {
+  const height = (width / 600) * 200;
+  return (
+    <svg width={width} height={height} viewBox="0 0 600 200" xmlns="http://www.w3.org/2000/svg" aria-label="Speakeasy" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="logoTextGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#2e8b57" />
+          <stop offset="100%" stopColor="#3cb371" />
+        </linearGradient>
+        <linearGradient id="logoWaveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#b8ffb8" stopOpacity={0.95} />
+          <stop offset="50%" stopColor="#e8fff0" stopOpacity={1} />
+          <stop offset="100%" stopColor="#b8ffb8" stopOpacity={0.95} />
+        </linearGradient>
+        <clipPath id="logoLettersClip">
+          <text {...LOGO_TEXT_PROPS}>Speakeasy</text>
+        </clipPath>
+      </defs>
+      {/* Буквы — чёткий текст с градиентом */}
+      <text {...LOGO_TEXT_PROPS} fill="url(#logoTextGrad)">Speakeasy</text>
+      {/* Звуковая волна, обрезанная по форме букв — выразительный пучок волн */}
+      <g clipPath="url(#logoLettersClip)">
+        <path d={SOUND_WAVE_PATH_UP} fill="none" stroke="url(#logoWaveGrad)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+        <path d={SOUND_WAVE_PATH_MAIN} fill="none" stroke="url(#logoWaveGrad)" strokeWidth={14} strokeLinecap="round" strokeLinejoin="round" />
+        <path d={SOUND_WAVE_PATH_DOWN} fill="none" stroke="url(#logoWaveGrad)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+      </g>
+    </svg>
+  );
+};
+
+// Компактный логотип: тот же дизайн, вписан в квадрат и отцентрирован для кубика свёрнутого сайдбара
+const SpeakeasyLogoCompact: React.FC<{ size?: number }> = ({ size = 28 }) => {
+  const scale = 32 / 600; // вписать ширину 600 в 32
+  const logoH = 200 * scale; // ~10.67
+  const offsetY = (32 - logoH) / 2;   // центр по вертикали
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-label="Speakeasy" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="logoTextGradC" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#2e8b57" />
+          <stop offset="100%" stopColor="#3cb371" />
+        </linearGradient>
+        <linearGradient id="logoWaveGradC" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#b8ffb8" stopOpacity={0.95} />
+          <stop offset="50%" stopColor="#e8fff0" stopOpacity={1} />
+          <stop offset="100%" stopColor="#b8ffb8" stopOpacity={0.95} />
+        </linearGradient>
+        <clipPath id="logoLettersClipC">
+          <text {...LOGO_TEXT_PROPS}>Speakeasy</text>
+        </clipPath>
+      </defs>
+      <g transform={`translate(0, ${offsetY}) scale(${scale})`}>
+        <text {...LOGO_TEXT_PROPS} fill="url(#logoTextGradC)">Speakeasy</text>
+        <g clipPath="url(#logoLettersClipC)">
+          <path d={SOUND_WAVE_PATH_UP} fill="none" stroke="url(#logoWaveGradC)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+          <path d={SOUND_WAVE_PATH_MAIN} fill="none" stroke="url(#logoWaveGradC)" strokeWidth={14} strokeLinecap="round" strokeLinejoin="round" />
+          <path d={SOUND_WAVE_PATH_DOWN} fill="none" stroke="url(#logoWaveGradC)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+        </g>
+      </g>
+    </svg>
+  );
+};
+
+const DashboardIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+  </svg>
+);
+
+export const KaraokeIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 1C10.62 1 9.5 2.12 9.5 3.5V10.5C9.5 11.88 10.62 13 12 13C13.38 13 14.5 11.88 14.5 10.5V3.5C14.5 2.12 13.38 1 12 1Z" />
+    <path d="M12 13V16" />
+    <path d="M12 16C12 16 8 16.5 8 19" />
+    <path d="M12 16C12 16 16 16.5 16 19" />
+    <path d="M6 19H18" />
+    <path d="M9 7H10" opacity="0.5" />
+    <path d="M9 10H10" opacity="0.5" />
+  </svg>
+);
+
+export const DictionaryIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 19.5C4 18.1 5.1 17 6.5 17H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M6.5 2H20V22H6.5C5.1 22 4 20.9 4 19.5V4.5C4 3.1 5.1 2 6.5 2Z" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <path d="M8 7H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M8 11H16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
+export const AgentIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2C10.9 2 10 2.9 10 4V12C10 13.1 10.9 14 12 14C13.1 14 14 13.1 14 12V4C14 2.9 13.1 2 12 2Z" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <path d="M19 10V12C19 15.9 15.9 19 12 19C8.1 19 5 15.9 5 12V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+    <path d="M12 19V22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
+export const ProgressIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3 3v18h18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M7 14l4-4 4 4 5-8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const BalanceIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const LogoutIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M9 21H5C4.47 21 3.96 20.79 3.59 20.41C3.21 20.04 3 19.53 3 19V5C3 4.47 3.21 3.96 3.59 3.59C3.96 3.21 4.47 3 5 3H9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M16 17L21 12L16 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M21 12H9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
+type SidebarTabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance';
 
 export interface SidebarProps {
   activeTab: SidebarTabKey;
@@ -10,75 +146,26 @@ export interface SidebarProps {
   userEmail?: string | null;
 }
 
-// Цветовые схемы для каждой вкладки
-const tabColors: Record<SidebarTabKey, {
-  primary: string;
-  secondary: string;
-  gradient: string;
-  glow: string;
-  border: string;
-  bg: string;
-}> = {
-  dashboard: {
-    primary: '#6366f1', // Индиго
-    secondary: '#818cf8',
-    gradient: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(129, 140, 248, 0.15) 100%)',
-    glow: 'rgba(99, 102, 241, 0.4)',
-    border: 'rgba(99, 102, 241, 0.4)',
-    bg: 'rgba(99, 102, 241, 0.12)',
-  },
-  karaoke: {
-    primary: '#ec4899', // Розовый
-    secondary: '#f472b6',
-    gradient: 'linear-gradient(135deg, rgba(236, 72, 153, 0.2) 0%, rgba(244, 114, 182, 0.15) 100%)',
-    glow: 'rgba(236, 72, 153, 0.4)',
-    border: 'rgba(236, 72, 153, 0.4)',
-    bg: 'rgba(236, 72, 153, 0.12)',
-  },
-  dictionary: {
-    primary: '#10b981', // Изумрудный
-    secondary: '#34d399',
-    gradient: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(52, 211, 153, 0.15) 100%)',
-    glow: 'rgba(16, 185, 129, 0.4)',
-    border: 'rgba(16, 185, 129, 0.4)',
-    bg: 'rgba(16, 185, 129, 0.12)',
-  },
-  call: {
-    primary: '#f59e0b', // Янтарный
-    secondary: '#fbbf24',
-    gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(251, 191, 36, 0.15) 100%)',
-    glow: 'rgba(245, 158, 11, 0.4)',
-    border: 'rgba(245, 158, 11, 0.4)',
-    bg: 'rgba(245, 158, 11, 0.12)',
-  },
+const PALETTE = {
+  accent: '#68c995',
+  accentStrong: '#46af7d',
+  accentSoft: 'rgba(104, 201, 149, 0.16)',
+  shadow: '0 12px 32px rgba(70, 175, 125, 0.18)',
+  buttonShadow: '0 6px 18px rgba(70, 175, 125, 0.12)',
+  hoverShadow: '0 4px 12px rgba(70, 175, 125, 0.1)',
 };
 
-const tabs: { key: SidebarTabKey; label: string; description: string; icon: string }[] = [
-  {
-    key: 'dashboard',
-    label: 'Панель управления',
-    description: 'Общая сводка и быстрый доступ',
-    icon: '📊',
-  },
-  {
-    key: 'karaoke',
-    label: 'Караоке',
-    description: 'Пойте и улучшайте произношение',
-    icon: '🎤',
-  },
-  {
-    key: 'dictionary',
-    label: 'Словарь',
-    description: 'Ваши слова и выражения',
-    icon: '📚',
-  },
-  {
-    key: 'call',
-    label: 'Звонок с AI',
-    description: 'Практикуйте разговорный английский',
-    icon: '📞',
-  },
+const RADIUS = 16;
+
+const tabs: { key: SidebarTabKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'dashboard', label: 'Главная', icon: <DashboardIcon size={20} /> },
+  { key: 'karaoke', label: 'Караоке', icon: <KaraokeIcon size={20} /> },
+  { key: 'dictionary', label: 'Словарь', icon: <DictionaryIcon size={20} /> },
+  { key: 'agent', label: 'Собеседник', icon: <AgentIcon size={20} /> },
+  { key: 'progress', label: 'Прогресс', icon: <ProgressIcon size={20} /> },
+  { key: 'balance', label: 'Баланс', icon: <BalanceIcon size={20} /> },
 ];
+
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
@@ -88,465 +175,331 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const emailInitial = (userEmail || '').trim().charAt(0).toUpperCase() || '?';
   const [expanded, setExpanded] = useState(false);
-  const [hoveredTab, setHoveredTab] = useState<SidebarTabKey | null>(null);
 
   return (
     <aside
       style={{
-        width: expanded ? '280px' : '80px',
-        minWidth: expanded ? '260px' : '80px',
-        maxWidth: expanded ? '300px' : '80px',
+        width: expanded ? 280 : 76,
         height: '100vh',
-        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        padding: expanded ? '1.5rem 1rem' : '1.5rem 0.75rem',
-        background: 'linear-gradient(180deg, #1a1a1a 0%, #1f1f1f 100%)',
-        color: '#f9fafb',
-        boxShadow: '2px 0 24px rgba(0, 0, 0, 0.4), inset -1px 0 0 rgba(255, 255, 255, 0.05)',
-        borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+        padding: '1rem 0.65rem',
+        background: 'var(--sidebar-bg)',
+        color: 'var(--sidebar-text)',
         boxSizing: 'border-box',
-        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease',
         overflow: 'hidden',
+        position: 'relative',
+        borderRight: `1px solid var(--sidebar-border)`,
+        boxShadow: '4px 0 24px rgba(0, 0, 0, 0.1)',
       }}
       onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => {
-        setExpanded(false);
-        setHoveredTab(null);
-      }}
+      onMouseLeave={() => setExpanded(false)}
     >
-      {/* Декоративные градиенты сверху - многослойные для глубины */}
+      {/* Акцентная полоска справа */}
       <div
         style={{
           position: 'absolute',
           top: 0,
-          left: 0,
           right: 0,
-          height: '200px',
-          background: `linear-gradient(180deg, 
-            rgba(139, 92, 246, 0.12) 0%, 
-            rgba(99, 102, 241, 0.08) 25%,
-            rgba(236, 72, 153, 0.06) 50%,
-            rgba(16, 185, 129, 0.04) 75%,
-            transparent 100%)`,
+          width: 1,
+          height: '100%',
+          background: `var(--sidebar-accent)`,
           pointerEvents: 'none',
-          opacity: expanded ? 1 : 0,
-          transition: 'opacity 0.3s ease',
-        }}
-      />
-      {/* Дополнительный цветной акцент для активной вкладки */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: '80px',
-          background: tabColors[activeTab].gradient,
-          pointerEvents: 'none',
-          opacity: expanded ? 0.6 : 0,
-          transition: 'opacity 0.3s ease',
-          filter: 'blur(20px)',
+          opacity: 0.5,
         }}
       />
 
-      {/* Верхний блок логотипа / брендинга */}
-      <div style={{ marginBottom: '2.5rem', position: 'relative', zIndex: 1 }}>
+      {/* Логотип */}
+      <div style={{ marginBottom: '1.4rem', padding: '0 0.75rem', position: 'relative', zIndex: 1 }}>
         <Link href="/" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: expanded ? '0.875rem' : 0,
+              justifyContent: 'center',
               cursor: 'pointer',
-              transition: 'transform 0.2s ease',
+              padding: expanded ? '0.35rem 0.75rem' : '0.4rem',
+              borderRadius: 8,
+              transition: 'background 0.2s ease, transform 0.18s ease',
+              position: 'relative',
+              border: 'none',
+              background: expanded ? 'var(--card)' : 'transparent',
+              width: expanded ? '100%' : undefined,
+              boxSizing: 'border-box',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.02)';
+              e.currentTarget.style.background = PALETTE.accentSoft;
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = PALETTE.hoverShadow;
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.background = expanded ? 'var(--card)' : 'transparent';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = 'none';
             }}
           >
-            <div
-              style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '12px',
-                background: `linear-gradient(135deg, 
-                  rgba(139, 92, 246, 0.25) 0%, 
-                  rgba(99, 102, 241, 0.2) 30%,
-                  rgba(236, 72, 153, 0.2) 60%,
-                  rgba(16, 185, 129, 0.2) 100%)`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '1px solid rgba(139, 92, 246, 0.4)',
-                boxShadow: `0 4px 16px rgba(139, 92, 246, 0.2), 
-                  0 2px 8px rgba(99, 102, 241, 0.15),
-                  inset 0 1px 0 rgba(255, 255, 255, 0.15)`,
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <span style={{ fontSize: '1.5rem', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}>♪</span>
-            </div>
-            {expanded && (
-              <div>
-                <div
-                  style={{
-                    fontSize: '1.25rem',
-                    fontWeight: 800,
-                    letterSpacing: '-0.02em',
-                    background: 'linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                  }}
-                >
-                  Speakeasy
-                </div>
-                <div
-                  style={{
-                    fontSize: '0.7rem',
-                    color: 'rgba(148, 163, 184, 0.7)',
-                    marginTop: '0.1rem',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  Language Learning
-                </div>
+            {expanded ? (
+              <SpeakeasyLogoFull width={168} />
+            ) : (
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'var(--sidebar-active)',
+                  borderRadius: 8,
+                  border: 'none',
+                  flexShrink: 0,
+                  transition: 'all 0.25s ease',
+                }}
+              >
+                <SpeakeasyLogoCompact size={24} />
               </div>
             )}
           </div>
         </Link>
       </div>
 
-      {/* Раздел навигации по вкладкам */}
-      <div style={{ marginBottom: '1.5rem', position: 'relative', zIndex: 1 }}>
+      {/* Навигация */}
+      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, padding: '0 0.75rem', position: 'relative', zIndex: 1 }}>
         {expanded && (
-          <p
+          <div
             style={{
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.2em',
-              color: 'rgba(148, 163, 184, 0.6)',
-              marginBottom: '1rem',
-              paddingLeft: '0.5rem',
+              fontSize: '0.6875rem',
               fontWeight: 600,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'var(--sidebar-text)',
+              opacity: 0.6,
+              padding: '0 1rem',
+              marginBottom: 8,
             }}
           >
-            Разделы
-          </p>
+            Навигация
+          </div>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.key;
-            const isHovered = hoveredTab === tab.key;
-            const colors = tabColors[tab.key];
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => onTabChange(tab.key)}
-                onMouseEnter={() => setHoveredTab(tab.key)}
-                onMouseLeave={() => setHoveredTab(null)}
-                title={!expanded ? tab.label : undefined}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: expanded ? '0.875rem' : 0,
-                  padding: expanded ? '0.875rem 0.75rem' : '0.875rem 0',
-                  justifyContent: expanded ? 'flex-start' : 'center',
-                  marginBottom: 0,
-                  borderRadius: '12px',
-                  border: isActive
-                    ? `1px solid ${colors.border}`
-                    : isHovered
-                    ? `1px solid ${colors.border.replace('0.4', '0.25')}`
-                    : '1px solid transparent',
-                  background: isActive
-                    ? colors.gradient
-                    : isHovered
-                    ? colors.bg
-                    : 'transparent',
-                  color: isActive ? '#f9fafb' : isHovered ? 'rgba(229, 231, 235, 0.95)' : 'rgba(209, 213, 219, 0.8)',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  position: 'relative',
-                  boxShadow: isActive
-                    ? `0 4px 16px ${colors.glow}, 0 2px 8px ${colors.glow.replace('0.4', '0.2')}, inset 0 1px 0 rgba(255, 255, 255, 0.15)`
-                    : isHovered
-                    ? `0 2px 12px ${colors.glow.replace('0.4', '0.15')}`
-                    : 'none',
-                  transform: isHovered ? 'translateX(2px)' : 'translateX(0)',
-                }}
-              >
-                {/* Активный индикатор слева с цветом вкладки */}
-                {isActive && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      width: '4px',
-                      height: '70%',
-                      background: `linear-gradient(180deg, ${colors.primary} 0%, ${colors.secondary} 100%)`,
-                      borderRadius: '0 4px 4px 0',
-                      boxShadow: `0 0 12px ${colors.glow}, 0 0 6px ${colors.primary}`,
-                    }}
-                  />
-                )}
-                {/* Цветной индикатор при hover (если не активен) */}
-                {!isActive && isHovered && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      width: '2px',
-                      height: '50%',
-                      background: colors.primary,
-                      borderRadius: '0 2px 2px 0',
-                      opacity: 0.6,
-                    }}
-                  />
-                )}
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => onTabChange(tab.key)}
+              title={!expanded ? tab.label : undefined}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: expanded ? '0.875rem' : 0,
+                padding: expanded ? '0.75rem 1rem' : '0.75rem',
+                justifyContent: expanded ? 'flex-start' : 'center',
+                borderRadius: 8,
+                border: 'none',
+                background: isActive
+                  ? 'var(--sidebar-active)'
+                  : 'transparent',
+                color: isActive ? 'var(--sidebar-text)' : 'var(--sidebar-text)',
+                opacity: isActive ? 1 : 0.7,
+                cursor: 'pointer',
+                fontSize: '0.9375rem',
+                fontWeight: isActive ? 600 : 500,
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                textAlign: 'left',
+                position: 'relative',
+                boxShadow: isActive ? '0 2px 8px rgba(0, 0, 0, 0.1)' : 'none',
+                outline: 'none',
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.background = 'var(--sidebar-hover)';
+                  e.currentTarget.style.opacity = '1';
+                  e.currentTarget.style.transform = 'translateX(4px)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.opacity = '0.7';
+                  e.currentTarget.style.transform = 'translateX(0)';
+                }
+              }}
+            >
+              {isActive && (
                 <div
                   style={{
-                    width: '36px',
-                    height: '36px',
-                    minWidth: '36px',
-                    borderRadius: '10px',
-                    background: isActive
-                      ? `linear-gradient(135deg, ${colors.primary}22 0%, ${colors.secondary}1a 100%)`
-                      : isHovered
-                      ? colors.bg
-                      : 'rgba(39, 39, 42, 0.6)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.3rem',
-                    border: isActive
-                      ? `1px solid ${colors.border}`
-                      : isHovered
-                      ? `1px solid ${colors.border.replace('0.4', '0.2')}`
-                      : '1px solid rgba(255, 255, 255, 0.05)',
-                    boxShadow: isActive
-                      ? `0 2px 10px ${colors.glow.replace('0.4', '0.25')}, inset 0 1px 0 rgba(255, 255, 255, 0.15)`
-                      : isHovered
-                      ? `0 1px 6px ${colors.glow.replace('0.4', '0.15')}, inset 0 1px 0 rgba(255, 255, 255, 0.08)`
-                      : 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-                    transition: 'all 0.2s ease',
-                    transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+                    position: 'absolute',
+                    left: 0,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: 4,
+                    height: '56%',
+                    background: 'var(--sidebar-accent)',
+                    borderRadius: '0 4px 4px 0',
                   }}
-                >
-                  {tab.icon}
-                </div>
-                {expanded && (
-                  <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: '0.95rem',
-                        fontWeight: isActive ? 600 : 500,
-                        lineHeight: 1.4,
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      {tab.label}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.75rem',
-                        color: isActive 
-                          ? `${colors.secondary}dd` 
-                          : isHovered 
-                          ? `${colors.primary}aa` 
-                          : 'rgba(148, 163, 184, 0.5)',
-                        lineHeight: 1.3,
-                        whiteSpace: 'nowrap',
-                        textOverflow: 'ellipsis',
-                        overflow: 'hidden',
-                        transition: 'color 0.2s ease',
-                      }}
-                    >
-                      {tab.description}
-                    </div>
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+                />
+              )}
+              <span
+                style={{
+                  width: 40,
+                  height: 40,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  borderRadius: 8,
+                  background: isActive ? 'var(--sidebar-active)' : 'var(--sidebar-hover)',
+                  color: 'inherit',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {tab.icon}
+              </span>
+              {expanded && (
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {tab.label}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
 
-      {/* Заполнитель, чтобы вытолкнуть нижний блок вниз */}
-      <div style={{ flex: 1 }} />
-
-      {/* Информация о текущем пользователе */}
+      {/* Нижний блок: пользователь и выход */}
       <div
         style={{
-          marginBottom: '1rem',
-          padding: expanded ? '1rem 0.75rem' : '0.75rem 0.5rem',
-          borderRadius: '14px',
-          background: expanded
-            ? 'linear-gradient(135deg, rgba(39, 39, 42, 0.8) 0%, rgba(24, 24, 27, 0.9) 100%)'
-            : 'rgba(39, 39, 42, 0.4)',
-          border: expanded ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid rgba(255, 255, 255, 0.08)',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: expanded ? 'flex-start' : 'center',
-          gap: expanded ? '0.75rem' : 0,
-          boxShadow: expanded
-            ? '0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
-            : 'inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-          transition: 'all 0.25s ease',
+          flexDirection: 'column',
+          gap: 8,
+          padding: '1.5rem 0.75rem 1.25rem',
+          marginTop: '0.75rem',
+          borderTop: `1px solid var(--sidebar-border)`,
           position: 'relative',
           zIndex: 1,
         }}
       >
-        <div
-          style={{
-            width: '36px',
-            height: '36px',
-            minWidth: '36px',
-            borderRadius: '10px',
-            background: `linear-gradient(135deg, 
-              rgba(139, 92, 246, 0.35) 0%, 
-              rgba(99, 102, 241, 0.3) 30%,
-              rgba(236, 72, 153, 0.25) 60%,
-              rgba(16, 185, 129, 0.25) 100%)`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid rgba(139, 92, 246, 0.5)',
-            fontSize: '0.9rem',
-            fontWeight: 700,
-            color: '#f9fafb',
-            boxShadow: `0 2px 10px rgba(139, 92, 246, 0.25), 
-              0 1px 4px rgba(99, 102, 241, 0.2),
-              inset 0 1px 0 rgba(255, 255, 255, 0.25)`,
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Декоративное свечение внутри аватара */}
+        {expanded && (
           <div
             style={{
-              position: 'absolute',
-              top: '-50%',
-              left: '-50%',
-              width: '200%',
-              height: '200%',
-              background: `radial-gradient(circle, 
-                rgba(139, 92, 246, 0.3) 0%, 
-                transparent 70%)`,
-              opacity: 0.6,
+              padding: '0.65rem 0.75rem',
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.65rem',
+              background: 'var(--sidebar-hover)',
+              border: `1px solid var(--sidebar-border)`,
+              transition: 'all 0.25s ease',
             }}
-          />
-          <span style={{ position: 'relative', zIndex: 1 }}>{emailInitial}</span>
-        </div>
-        {expanded && (
-          <div style={{ minWidth: 0, flex: 1 }}>
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--sidebar-active)';
+              e.currentTarget.style.borderColor = 'var(--sidebar-accent)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'var(--sidebar-hover)';
+              e.currentTarget.style.borderColor = 'var(--sidebar-border)';
+            }}
+          >
             <div
               style={{
-                fontSize: '0.7rem',
-                color: 'rgba(148, 163, 184, 0.7)',
-                marginBottom: '0.25rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                fontWeight: 600,
+                width: 34,
+                height: 34,
+                borderRadius: 6,
+                background: 'var(--sidebar-active)',
+                border: `1px solid var(--sidebar-border)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.8125rem',
+                fontWeight: 700,
+                color: 'var(--sidebar-text)',
+                flexShrink: 0,
               }}
             >
-              Аккаунт
+              {emailInitial}
             </div>
-            <div
-              style={{
-                fontSize: '0.85rem',
-                fontWeight: 500,
-                color: '#e5e7eb',
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-                overflow: 'hidden',
-              }}
-              title={userEmail || undefined}
-            >
-              {userEmail || 'Неизвестный пользователь'}
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontSize: '0.625rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: 'var(--sidebar-text)',
+                  opacity: 0.6,
+                  marginBottom: 2,
+                }}
+              >
+                Аккаунт
+              </div>
+              <div
+                style={{
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  color: 'var(--sidebar-text)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                title={userEmail || undefined}
+              >
+                {userEmail || 'Гость'}
+              </div>
             </div>
           </div>
         )}
-      </div>
 
-      {/* Кнопка выхода внизу сайдбара */}
-      <div
-        style={{
-          paddingTop: '1rem',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          position: 'relative',
-          zIndex: 1,
-        }}
-      >
         <button
           type="button"
           onClick={onLogout}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-1px)';
-            e.currentTarget.style.boxShadow = '0 4px 16px rgba(239, 68, 68, 0.3), 0 2px 8px rgba(220, 38, 38, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 2px 8px rgba(239, 68, 68, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05)';
-          }}
           style={{
             width: '100%',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: expanded ? 'space-between' : 'center',
-            padding: expanded ? '0.875rem 1rem' : '0.75rem 0.5rem',
-            borderRadius: '12px',
-            border: '1px solid rgba(239, 68, 68, 0.4)',
-            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.12) 50%, rgba(185, 28, 28, 0.1) 100%)',
-            color: '#fca5a5',
-            fontSize: '0.9rem',
-            fontWeight: 500,
+            justifyContent: expanded ? 'flex-start' : 'center',
+            gap: expanded ? '0.875rem' : 0,
+            padding: expanded ? '0.75rem 1rem' : '0.75rem',
+            borderRadius: 8,
+            border: 'none',
+            background: 'transparent',
+            color: 'rgba(241, 241, 244, 0.6)',
             cursor: 'pointer',
-            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-            position: 'relative',
-            overflow: 'hidden',
+            fontSize: '0.9375rem',
+            fontWeight: 500,
+            transition: 'all 0.25s ease',
+            outline: 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.12)';
+            e.currentTarget.style.opacity = '1';
+            e.currentTarget.style.transform = 'translateY(-1px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.opacity = '0.7';
+            e.currentTarget.style.transform = 'translateY(0)';
           }}
         >
-          {/* Декоративный градиент при hover */}
-          <div
+          <span
             style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%)',
-              opacity: 0,
-              transition: 'opacity 0.2s ease',
+              width: 40,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              borderRadius: 8,
+              background: 'var(--sidebar-hover)',
+              color: 'inherit',
+              transition: 'all 0.2s ease',
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '1';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '0';
-            }}
-          />
-          {expanded && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, position: 'relative', zIndex: 1 }}>
-              <span>Выйти</span>
-            </span>
-          )}
-          <span style={{ fontSize: '1.2rem', filter: 'drop-shadow(0 1px 3px rgba(239, 68, 68, 0.4))', position: 'relative', zIndex: 1 }}>⏏</span>
+          >
+            <LogoutIcon size={20} />
+          </span>
+          {expanded && <span>Выйти</span>}
         </button>
       </div>
     </aside>
   );
 };
-

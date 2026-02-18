@@ -1194,10 +1194,32 @@ export const KaraokeTab: React.FC = () => {
           </button>
         </div>
 
+        {/* VPN предупреждение */}
+        <div
+          style={{
+            marginTop: '1rem',
+            padding: '0.75rem 1rem',
+            background: 'linear-gradient(135deg, rgba(234,179,8,0.1) 0%, rgba(202,138,4,0.08) 100%)',
+            border: '1px solid rgba(234,179,8,0.3)',
+            borderRadius: '0.75rem',
+            color: '#fde68a',
+            fontSize: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            lineHeight: 1.5,
+          }}
+        >
+          <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>🔒</span>
+          <span>
+            <strong>Требуется VPN.</strong> YouTube заблокирован в РФ. Для работы караоке включите VPN.
+          </span>
+        </div>
+
         {error && (
           <div
             style={{
-              marginTop: '1rem',
+              marginTop: '0.75rem',
               padding: '1rem 1.25rem',
               background: 'linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(220,38,38,0.1) 100%)',
               border: '1px solid rgba(239,68,68,0.4)',
@@ -2039,7 +2061,7 @@ export const KaraokeTab: React.FC = () => {
               position: 'relative',
               // Красивый скролл
               scrollbarWidth: 'thin',
-              scrollbarColor: 'rgba(139,92,246,0.5) rgba(24,24,27,0.95)',
+              scrollbarColor: 'rgba(103, 199, 163, 0.55) rgba(18, 24, 22, 0.9)',
             }}
             onScroll={(e) => {
               const target = e.currentTarget;
@@ -2361,20 +2383,20 @@ export const KaraokeTab: React.FC = () => {
                 onClick={handleAnalyzeIdioms}
                 disabled={!segments.length || !accessToken || idiomsLoading}
                 style={{
-                  padding: '0.75rem 1.25rem',
-                  borderRadius: '0.75rem',
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '0.5rem',
                   border: '1px solid rgba(148,163,184,0.3)',
                   background: 'rgba(30,41,59,0.8)',
                   color: 'rgba(226,232,240,0.95)',
                   cursor:
                     !segments.length || !accessToken || idiomsLoading ? 'default' : 'pointer',
-                  fontSize: '0.9rem',
+                  fontSize: '0.78rem',
                   fontWeight: 600,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.5rem',
-                  width: '240px',
+                  gap: '0.35rem',
                   justifyContent: 'center',
+                  whiteSpace: 'nowrap',
                   opacity:
                     !segments.length || !accessToken || idiomsLoading
                       ? 0.6
@@ -2404,9 +2426,9 @@ export const KaraokeTab: React.FC = () => {
                   style={{
                     cursor: 'pointer',
                     color: '#e5e7eb',
-                    fontSize: '0.9rem',
-                    width: '22px',
-                    height: '22px',
+                    fontSize: '0.7rem',
+                    width: '18px',
+                    height: '18px',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -2424,20 +2446,20 @@ export const KaraokeTab: React.FC = () => {
                 onClick={handleAnalyzePhrasalVerbs}
                 disabled={!segments.length || !accessToken || phrasalVerbsLoading}
                 style={{
-                  padding: '0.75rem 1.25rem',
-                  borderRadius: '0.75rem',
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '0.5rem',
                   border: '1px solid rgba(148,163,184,0.3)',
                   background: 'rgba(30,41,59,0.8)',
                   color: 'rgba(226,232,240,0.95)',
                   cursor:
                     !segments.length || !accessToken || phrasalVerbsLoading ? 'default' : 'pointer',
-                  fontSize: '0.9rem',
+                  fontSize: '0.78rem',
                   fontWeight: 600,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.5rem',
-                  width: '240px',
+                  gap: '0.35rem',
                   justifyContent: 'center',
+                  whiteSpace: 'nowrap',
                   opacity:
                     !segments.length || !accessToken || phrasalVerbsLoading
                       ? 0.6
@@ -2467,9 +2489,9 @@ export const KaraokeTab: React.FC = () => {
                   style={{
                     cursor: 'pointer',
                     color: '#e5e7eb',
-                    fontSize: '0.9rem',
-                    width: '22px',
-                    height: '22px',
+                    fontSize: '0.7rem',
+                    width: '18px',
+                    height: '18px',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -2519,17 +2541,18 @@ export const KaraokeTab: React.FC = () => {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 style={{
-                  padding: '0.75rem 1.5rem',
+                  padding: '0.45rem 0.85rem',
                   background: 'rgba(30,41,59,0.8)',
                   border: '1px solid rgba(148,163,184,0.3)',
-                  borderRadius: '0.75rem',
+                  borderRadius: '0.5rem',
                   color: '#f9fafb',
                   cursor: 'pointer',
-                  fontSize: '0.95rem',
+                  fontSize: '0.78rem',
                   fontWeight: 600,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.5rem',
+                  gap: '0.35rem',
+                  whiteSpace: 'nowrap',
                   transition: 'all 0.2s ease',
                 }}
                 onMouseEnter={(e) => {
@@ -2541,7 +2564,7 @@ export const KaraokeTab: React.FC = () => {
                   e.currentTarget.style.borderColor = 'rgba(148,163,184,0.3)';
                 }}
               >
-                <span style={{ fontSize: '1.2rem' }}>✕</span>
+                <span style={{ fontSize: '0.9rem' }}>✕</span>
                 <span>Закрыть</span>
               </button>
             </div>
@@ -3533,7 +3556,7 @@ export const KaraokeTab: React.FC = () => {
                   padding: '0.45rem 1.1rem',
                   borderRadius: '999px',
                   border: '1px solid rgba(82,82,91,0.9)',
-                  background: wordAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(59,130,246,0.9)',
+                  background: wordAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(103,199,163,0.9)',
                   color: wordAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
                   fontSize: '0.9rem',
                   cursor: wordAudioLoading ? 'default' : 'pointer',

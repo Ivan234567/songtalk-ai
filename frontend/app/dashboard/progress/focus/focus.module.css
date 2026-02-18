@@ -1,0 +1,137 @@
+.page {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text-primary);
+  padding: 1.4rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 0.42rem 0.8rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--stroke-strong);
+  background: var(--card-strong);
+}
+
+.pill {
+  font-size: var(--fs-sm);
+  opacity: 0.9;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  padding: 0.24rem 0.58rem;
+}
+
+.heroRow {
+  display: flex;
+  gap: 0.8rem;
+  align-items: stretch;
+}
+
+.section {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--stroke);
+  background: var(--card-strong);
+  padding: 0.95rem 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.hero {
+  flex: 0 0 40%;
+  max-width: 40%;
+}
+
+.criteria {
+  flex: 1 1 0%;
+}
+
+.chip {
+  font-size: var(--fs-sm);
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  padding: 0.24rem 0.55rem;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+}
+
+.chipAccent {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.attemptCard {
+  min-width: 188px;
+  flex-shrink: 0;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  color: var(--text-primary);
+  padding: 0.52rem 0.62rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.attemptCard:hover {
+  transform: translateY(-1px);
+  border-color: var(--stroke-strong);
+  box-shadow: var(--shadow-hover);
+}
+
+.attemptCardActive {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.section h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.dialog {
+  max-height: 480px;
+}
+
+.matrixLegend {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 980px) {
+  .heroRow {
+    flex-direction: column;
+  }
+  .hero,
+  .criteria {
+    max-width: 100%;
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 1rem 1.1rem;
+  }
+}

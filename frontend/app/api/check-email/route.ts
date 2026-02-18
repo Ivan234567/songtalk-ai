@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-function getSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing Supabase environment variables')
-  }
-
-  return createClient(supabaseUrl, supabaseAnonKey)
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables')
 }
+
+// Создаем клиент Supabase
+const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = getSupabaseClient()
     const { email } = await request.json()
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
@@ -28,10 +26,10 @@ export async function POST(request: NextRequest) {
     // Если email существует, Supabase вернет ошибку "Invalid login credentials"
     // Если email не существует, может вернуть другую ошибку
     // Но это не идеально, так как для несуществующего email тоже может быть "Invalid login credentials"
-    
+
     // Попробуем более надежный способ - проверить через попытку восстановления пароля
     // но не отправлять письмо (если это возможно)
-    
+
     // Временное решение - используем проверку через попытку входа
     const testPassword = 'test_check_email_' + Date.now()
     const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
@@ -42,28 +40,28 @@ export async function POST(request: NextRequest) {
     // Анализируем ошибку входа
     if (loginError) {
       const errorMsg = loginError.message.toLowerCase()
-      
+
       // Если ошибка "Invalid login credentials", email скорее всего существует
       // (пользователь есть, но пароль неверный)
-      if (errorMsg.includes('invalid login') || 
-          errorMsg.includes('invalid credentials') ||
-          errorMsg.includes('incorrect email') ||
-          errorMsg.includes('incorrect password')) {
+      if (errorMsg.includes('invalid login') ||
+        errorMsg.includes('invalid credentials') ||
+        errorMsg.includes('incorrect email') ||
+        errorMsg.includes('incorrect password')) {
         return NextResponse.json({ exists: true })
       }
-      
+
       // Если ошибка "Email not confirmed", email существует
       if (errorMsg.includes('email not confirmed')) {
         return NextResponse.json({ exists: true })
       }
-      
+
       // Если ошибка "User not found" или "Email not found", email не существует
-      if (errorMsg.includes('user not found') || 
-          errorMsg.includes('email not found') ||
-          errorMsg.includes('no user found')) {
+      if (errorMsg.includes('user not found') ||
+        errorMsg.includes('email not found') ||
+        errorMsg.includes('no user found')) {
         return NextResponse.json({ exists: false })
       }
-      
+
       // Для других ошибок предполагаем что email существует
       // (чтобы не блокировать регистрацию существующих пользователей)
       return NextResponse.json({ exists: true })
@@ -78,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     // Если нет ни ошибки, ни данных - считаем что email не существует
     return NextResponse.json({ exists: false })
-    
+
   } catch (error: any) {
     console.error('Error checking email:', error)
     return NextResponse.json(

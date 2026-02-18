@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import http from 'http'
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 import dns from 'node:dns'
@@ -12,11 +13,17 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
+import { Readable } from 'stream'
+import { transcribe as sttTranscribe } from './stt.js'
+import { synthesize as ttsSynthesize } from './tts.js'
+import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
+import { getCost } from './balance-rates.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-dotenv.config()
+// Загружаем переменные окружения из .env файла в корне backend директории
+dotenv.config({ path: path.join(__dirname, '..', '.env') })
 
 // Prefer IPv4 on hosts where IPv6 connectivity is flaky (common cause of UND_ERR_CONNECT_TIMEOUT)
 dns.setDefaultResultOrder('ipv4first')
@@ -35,13 +42,18 @@ const allowedOrigins = [
   'https://songtalk-ai-frontend-ivans-projects-bf7082bb.vercel.app',
   'https://songtalk-ai-qt84.vercel.app',
   'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
+  'http://localhost:3004',
+  'http://localhost:3005',
 ].filter(Boolean)
 
 app.use(cors({
   origin: (origin, callback) => {
     // Разрешаем запросы без origin (например, Postman, curl)
     if (!origin) return callback(null, true)
-    
+
     // Проверяем, есть ли origin в списке разрешенных
     if (allowedOrigins.some(allowed => origin.startsWith(allowed))) {
       callback(null, true)
@@ -79,7 +91,7 @@ const upload = multer({
     ]
     const allMimeTypes = [...audioMimeTypes, ...videoMimeTypes]
     const allExtensions = /\.(mp3|wav|webm|ogg|m4a|aac|flac|mp4|mov|avi|mkv)$/i
-    
+
     if (allMimeTypes.includes(file.mimetype) || file.originalname.match(allExtensions)) {
       cb(null, true)
     } else {
@@ -92,14 +104,6 @@ const upload = multer({
 const uploadsDir = path.join(__dirname, '..', 'uploads')
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true })
-}
-
-// Ensure TTS output directory exists
-// Files are stored permanently here for caching (not deleted after use)
-const ttsOutputDir = path.join(__dirname, '..', 'tts_output')
-if (!fs.existsSync(ttsOutputDir)) {
-  fs.mkdirSync(ttsOutputDir, { recursive: true })
-  console.log('[TTS] Created output directory:', ttsOutputDir)
 }
 
 const execAsync = promisify(exec)
@@ -148,252 +152,6 @@ function verifyBackendJwt(rawToken) {
   }
 }
 
-// TTS Server configuration
-const TTS_SERVER_PORT = Number.parseInt(process.env.TTS_SERVER_PORT || '8765', 10)
-const TTS_SERVER_URL = `http://localhost:${TTS_SERVER_PORT}`
-let ttsServerProcess = null
-let ttsRestartCount = 0
-const MAX_TTS_RESTARTS = 5 // Максимум 5 перезапусков
-const TTS_HEALTH_CHECK_DELAY = Number.parseInt(process.env.TTS_HEALTH_CHECK_DELAY || '35000', 10) // 35 секунд по умолчанию
-
-// Whisper Server configuration
-const WHISPER_SERVER_PORT = Number.parseInt(process.env.WHISPER_SERVER_PORT || '8766', 10)
-const WHISPER_SERVER_URL = `http://localhost:${WHISPER_SERVER_PORT}`
-let whisperServerProcess = null
-let whisperRestartCount = 0
-const MAX_WHISPER_RESTARTS = 5 // Максимум 5 перезапусков
-const WHISPER_HEALTH_CHECK_DELAY = Number.parseInt(process.env.WHISPER_HEALTH_CHECK_DELAY || '35000', 10) // 35 секунд по умолчанию
-
-// Start TTS HTTP server
-function startTTSServer() {
-  const pythonScript = path.join(__dirname, 'tts_server.py')
-  const defaultPython = process.platform === 'win32' ? 'py' : 'python3'
-  const pythonCommand = process.env.PYTHON_COMMAND || defaultPython
-  
-  console.log('[TTS] Starting TTS HTTP server...')
-  console.log(`[TTS] Python command: ${pythonCommand}`)
-  console.log(`[TTS] Script path: ${pythonScript}`)
-  console.log(`[TTS] Port: ${TTS_SERVER_PORT}`)
-  console.log(`[TTS] Output dir: ${ttsOutputDir}`)
-  
-  ttsServerProcess = spawn(pythonCommand, [
-    pythonScript,
-    '--port', TTS_SERVER_PORT.toString(),
-    '--output-dir', ttsOutputDir
-  ], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    cwd: path.join(__dirname, '..')
-  })
-  
-  console.log(`[TTS] Server process started (PID: ${ttsServerProcess.pid})`)
-  
-  ttsServerProcess.stdout.on('data', (data) => {
-    const output = data.toString()
-    // Log all stdout for debugging
-    if (output.trim()) {
-      console.log('[TTS Server stdout]', output.trim())
-    }
-  })
-  
-  ttsServerProcess.stderr.on('data', (data) => {
-    const output = data.toString()
-    // Log all stderr from TTS server for debugging
-    // Filter out common warnings that are not critical
-    if (output.trim()) {
-      // Always log server startup messages and errors
-      if (output.includes('[TTS Server]') || 
-          output.includes('Starting on') || 
-          output.includes('ERROR') || 
-          output.includes('Error') ||
-          output.includes('Traceback')) {
-        console.log('[TTS Server]', output.trim())
-      } else if (!output.includes('DeprecationWarning') && !output.includes('UserWarning')) {
-        console.log('[TTS Server]', output.trim())
-      }
-    }
-  })
-  
-  ttsServerProcess.on('error', (err) => {
-    console.error('[TTS] Failed to start TTS server:', err.message || err)
-    if (err.code === 'ENOENT') {
-      console.error(`[TTS] Python command '${pythonCommand}' not found. Install Python or set PYTHON_COMMAND env variable.`)
-    }
-  })
-  
-  ttsServerProcess.on('exit', (code) => {
-    if (code !== 0 && code !== null) {
-      console.error(`[TTS] Server exited unexpectedly with code ${code}`)
-      console.error('[TTS] Check stderr above for error details')
-      console.error(`[TTS] Python command used: ${pythonCommand}`)
-      console.error(`[TTS] Script path: ${pythonScript}`)
-      
-      // Автоматический перезапуск при падении (если не превышен лимит)
-      if (ttsRestartCount < MAX_TTS_RESTARTS) {
-        ttsRestartCount++
-        const delay = Math.min(ttsRestartCount * 2000, 10000) // Увеличиваем задержку с каждым перезапуском (макс 10 сек)
-        console.log(`[TTS] Attempting restart ${ttsRestartCount}/${MAX_TTS_RESTARTS} in ${delay}ms...`)
-        setTimeout(() => {
-          startTTSServer()
-        }, delay)
-      } else {
-        console.error(`[TTS] Max restart attempts (${MAX_TTS_RESTARTS}) reached. Server will use fallback method.`)
-      }
-    } else if (code === 0) {
-      console.log(`[TTS] Server process exited normally (code ${code})`)
-      // Сбрасываем счетчик при нормальном завершении
-      ttsRestartCount = 0
-    }
-  })
-  
-  // Wait for models to load (can take 30+ seconds) and check if server started successfully
-  setTimeout(async () => {
-    // Check if process is still running
-    if (ttsServerProcess && (ttsServerProcess.killed || ttsServerProcess.exitCode !== null)) {
-      console.error('[TTS] Server process was killed or exited before health check')
-      return
-    }
-    
-    try {
-      console.log(`[TTS] Checking server health at ${TTS_SERVER_URL}/health (after ${TTS_HEALTH_CHECK_DELAY}ms)...`)
-      const healthCheck = await fetch(`${TTS_SERVER_URL}/health`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000) // 5 секунд на ответ health check
-      }).catch((err) => {
-        console.log(`[TTS] Health check failed: ${err.message}`)
-        return null
-      })
-      
-      if (healthCheck && healthCheck.ok) {
-        const data = await healthCheck.json().catch(() => ({}))
-        console.log(`[TTS] ✓ Server is running on ${TTS_SERVER_URL}`, data)
-        // Сбрасываем счетчик при успешном запуске
-        ttsRestartCount = 0
-      } else {
-        // Models may still be loading - это нормально, система будет использовать fallback
-        console.log(`[TTS] Server is starting... Models may still be loading. Health check returned: ${healthCheck?.status || 'no response'}`)
-        console.log(`[TTS] System will use fallback method if HTTP server isn't ready`)
-      }
-    } catch (err) {
-      // Not critical - server will use fallback if HTTP server isn't ready
-      console.log(`[TTS] Server is starting... (${err?.message || 'unknown error'})`)
-      console.log(`[TTS] System will use fallback method if HTTP server isn't ready`)
-    }
-  }, TTS_HEALTH_CHECK_DELAY) // Увеличено до 35 секунд для загрузки моделей
-}
-
-// Start Whisper HTTP server
-function startWhisperServer() {
-  const pythonScript = path.join(__dirname, 'whisper_server.py')
-  const defaultPython = process.platform === 'win32' ? 'py' : 'python3'
-  const pythonCommand = process.env.PYTHON_COMMAND || defaultPython
-  
-  console.log('[Whisper] Starting Whisper HTTP server...')
-  whisperServerProcess = spawn(pythonCommand, [
-    pythonScript,
-    '--port', WHISPER_SERVER_PORT.toString()
-  ], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    cwd: path.join(__dirname, '..')
-  })
-  
-  whisperServerProcess.stdout.on('data', (data) => {
-    const output = data.toString()
-    if (output.trim()) {
-      console.log('[Whisper Server stdout]', output.trim())
-    }
-  })
-  
-  whisperServerProcess.stderr.on('data', (data) => {
-    const output = data.toString()
-    console.error('[Whisper Server stderr]', output.trim())
-  })
-  
-  whisperServerProcess.on('error', (err) => {
-    console.error('[Whisper] Failed to start Whisper server:', err)
-    
-    // Автоматический перезапуск при ошибке запуска (если не превышен лимит)
-    if (whisperRestartCount < MAX_WHISPER_RESTARTS) {
-      whisperRestartCount++
-      const delay = Math.min(whisperRestartCount * 2000, 10000) // Увеличиваем задержку с каждым перезапуском
-      console.log(`[Whisper] Attempting restart ${whisperRestartCount}/${MAX_WHISPER_RESTARTS} in ${delay}ms...`)
-      setTimeout(() => {
-        startWhisperServer()
-      }, delay)
-    } else {
-      console.error(`[Whisper] Max restart attempts (${MAX_WHISPER_RESTARTS}) reached. Server will use fallback method.`)
-    }
-  })
-  
-  whisperServerProcess.on('exit', (code) => {
-    if (code !== 0 && code !== null) {
-      console.error(`[Whisper] Server exited unexpectedly with code ${code}`)
-      console.error('[Whisper] Check stderr above for error details')
-      
-      // Автоматический перезапуск при падении (если не превышен лимит)
-      if (whisperRestartCount < MAX_WHISPER_RESTARTS) {
-        whisperRestartCount++
-        const delay = Math.min(whisperRestartCount * 2000, 10000) // Увеличиваем задержку с каждым перезапуском
-        console.log(`[Whisper] Attempting restart ${whisperRestartCount}/${MAX_WHISPER_RESTARTS} in ${delay}ms...`)
-        setTimeout(() => {
-          startWhisperServer()
-        }, delay)
-      } else {
-        console.error(`[Whisper] Max restart attempts (${MAX_WHISPER_RESTARTS}) reached. Server will use fallback method.`)
-      }
-    } else if (code === 0) {
-      console.log(`[Whisper] Server process exited normally (code ${code})`)
-      // Сбрасываем счетчик при нормальном завершении
-      whisperRestartCount = 0
-    }
-  })
-  
-  // Wait for models to load (can take 30+ seconds) and check if server started successfully
-  setTimeout(async () => {
-    // Check if process is still running
-    if (whisperServerProcess && (whisperServerProcess.killed || whisperServerProcess.exitCode !== null)) {
-      console.error('[Whisper] Server process was killed or exited before health check')
-      return
-    }
-    
-    try {
-      console.log(`[Whisper] Checking server health at ${WHISPER_SERVER_URL}/health (after ${WHISPER_HEALTH_CHECK_DELAY}ms)...`)
-      // Whisper server может не иметь /health endpoint, просто проверяем что процесс жив
-      if (whisperServerProcess && whisperServerProcess.exitCode === null && !whisperServerProcess.killed) {
-        console.log(`[Whisper] ✓ Server process is running on ${WHISPER_SERVER_URL}`)
-        // Сбрасываем счетчик при успешном запуске
-        whisperRestartCount = 0
-      } else {
-        console.log(`[Whisper] Server process status unclear, will use fallback if needed`)
-      }
-    } catch (err) {
-      // Not critical - server will use fallback if HTTP server isn't ready
-      console.log(`[Whisper] Server is starting... (${err?.message || 'unknown error'})`)
-      console.log(`[Whisper] System will use fallback method if HTTP server isn't ready`)
-    }
-  }, WHISPER_HEALTH_CHECK_DELAY) // Увеличено до 35 секунд для загрузки моделей
-}
-
-// Stop TTS server on process exit
-process.on('SIGINT', () => {
-  if (ttsServerProcess) {
-    console.log('[TTS] Stopping TTS server...')
-    ttsServerProcess.kill()
-  }
-  process.exit(0)
-})
-
-process.on('SIGTERM', () => {
-  if (ttsServerProcess) {
-    console.log('[TTS] Stopping TTS server...')
-    ttsServerProcess.kill()
-  }
-  process.exit(0)
-})
-
-// Start TTS server
-startTTSServer()
-// Start Whisper server
-startWhisperServer()
 
 // Инициализация Supabase клиента
 const supabaseUrl = process.env.SUPABASE_URL
@@ -416,17 +174,32 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 // Инициализация AITUNNEL (OpenAI-compatible)
 const AITUNNEL_BASE_URL = process.env.AITUNNEL_BASE_URL || 'https://api.aitunnel.ru/v1/'
 const AITUNNEL_API_KEY = process.env.AITUNNEL_API_KEY
-const AITUNNEL_MODEL = process.env.AITUNNEL_MODEL || 'DeepSeek-V3.2-Speciale'
+const AITUNNEL_MODEL = process.env.AITUNNEL_MODEL || 'gpt-4o'
 // Увеличенный таймаут для долгих запросов (анализ текста на идиомы и т.п.)
 // По умолчанию 900 секунд (15 минут), можно переопределить через переменную окружения AITUNNEL_TIMEOUT_MS
 const AITUNNEL_TIMEOUT_MS = Number.parseInt(process.env.AITUNNEL_TIMEOUT_MS || '900000', 10)
+// Отдельный таймаут для STT запросов (транскрипция аудио может быть очень долгой для больших файлов)
+// По умолчанию 1800 секунд (30 минут), можно переопределить через переменную окружения AITUNNEL_STT_TIMEOUT_MS
+const AITUNNEL_STT_TIMEOUT_MS = Number.parseInt(process.env.AITUNNEL_STT_TIMEOUT_MS || '1800000', 10)
 const AITUNNEL_MAX_RETRIES = Number.parseInt(process.env.AITUNNEL_MAX_RETRIES || '1', 10)
+const AITUNNEL_STT_MODEL = process.env.AITUNNEL_STT_MODEL || 'whisper-1'
+const AITUNNEL_TTS_MODEL = process.env.AITUNNEL_TTS_MODEL || 'gpt-4o-mini-tts'
 
 if (!AITUNNEL_API_KEY) {
   console.error('Missing AITUNNEL_API_KEY environment variable')
   process.exit(1)
 }
 
+// Логируем конфигурацию AITUNNEL при запуске
+console.log('🔧 AITUNNEL configuration loaded:')
+console.log(`   Base URL: ${AITUNNEL_BASE_URL}`)
+console.log(`   Model: ${AITUNNEL_MODEL}`)
+console.log(`   Timeout: ${AITUNNEL_TIMEOUT_MS / 1000} seconds (${AITUNNEL_TIMEOUT_MS / 60000} minutes)`)
+console.log(`   STT Timeout: ${AITUNNEL_STT_TIMEOUT_MS / 1000} seconds (${AITUNNEL_STT_TIMEOUT_MS / 60000} minutes)`)
+console.log(`   Max Retries: ${AITUNNEL_MAX_RETRIES}`)
+console.log(`   API Key: ${AITUNNEL_API_KEY.substring(0, 20)}...`)
+
+// Основной клиент для обычных запросов
 const llm = new OpenAI({
   apiKey: AITUNNEL_API_KEY,
   baseURL: AITUNNEL_BASE_URL,
@@ -453,6 +226,19 @@ function getBearerToken(req) {
   return token
 }
 
+/**
+ * Resolve user id from request: backend JWT or Supabase token.
+ * @returns {Promise<string|null>} user id or null
+ */
+async function resolveUserId(req) {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) return null
+  const decoded = verifyBackendJwt(rawToken)
+  if (decoded?.sub) return decoded.sub
+  const result = await Promise.resolve(supabase.auth.getUser(rawToken)).catch(() => ({ data: { user: null } }))
+  return result?.data?.user?.id ?? null
+}
+
 // Helper function to safely call Supabase with timeout and retry
 async function safeSupabaseCall(callFn, options = {}) {
   const maxRetries = options.maxRetries || 2
@@ -477,10 +263,11 @@ async function safeSupabaseCall(callFn, options = {}) {
       return result
     } catch (error) {
       const errorCode = error?.cause?.code || error?.code
-      const isTimeout = errorCode === 'UND_ERR_CONNECT_TIMEOUT' || 
-                       errorCode === 'ETIMEDOUT' || 
-                       errorCode === 'ECONNRESET' ||
-                       error.message?.includes('timeout')
+      const isTimeout = errorCode === 'UND_ERR_CONNECT_TIMEOUT' ||
+        errorCode === 'ETIMEDOUT' ||
+        errorCode === 'ECONNRESET' ||
+        error.message?.includes('timeout') ||
+        error.message?.toLowerCase?.().includes('fetch failed')
 
       // If it's the last attempt or not a timeout/connection error, throw
       if (attempt === maxRetries || !isTimeout) {
@@ -520,6 +307,8 @@ app.get('/', (req, res) => {
       '/api/chat',
       '/api/transcribe',
       '/api/tts',
+      '/api/agent/stt',
+      '/api/agent/tts',
       '/api/karaoke/transcribe',
       '/api/videos',
       '/api/videos/:id',
@@ -549,6 +338,79 @@ app.get('/api/ping', async (req, res) => {
     timestamp: new Date().toISOString(),
   })
 })
+
+// Balance (monetization) — requires auth
+app.get('/api/balance', asyncHandler(async (req, res) => {
+  const userId = await resolveUserId(req)
+  if (!userId) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization' })
+  }
+  const balance_rub = await getBalance(supabase, userId)
+  return res.json({ balance_rub })
+}))
+
+// Balance transactions history — requires auth
+app.get('/api/balance/transactions', asyncHandler(async (req, res) => {
+  const userId = await resolveUserId(req)
+  if (!userId) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization' })
+  }
+  const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 50), 500)
+  const type = req.query.type // optional: usage, topup_manual, topup_gateway
+  const fromDate = req.query.from // optional ISO date
+  const toDate = req.query.to // optional ISO date
+
+  let query = supabase
+    .from('balance_transactions')
+    .select('id, amount_rub, type, service, metadata, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (type) query = query.eq('type', type)
+  if (fromDate) query = query.gte('created_at', fromDate)
+  if (toDate) query = query.lte('created_at', toDate)
+
+  const { data, error } = await query
+  if (error) throw error
+  return res.json(data || [])
+}))
+
+// Admin: manual balance topup (no gateway). Requires ADMIN_BALANCE_SECRET in header X-Admin-Key or Authorization: Bearer <secret>.
+const ADMIN_BALANCE_SECRET = process.env.ADMIN_BALANCE_SECRET
+const MIN_TOPUP_RUB = 300
+
+app.post('/api/admin/balance/topup', asyncHandler(async (req, res) => {
+  const rawToken = getBearerToken(req)
+  const adminKey = req.headers['x-admin-key']
+  const secret = typeof adminKey === 'string' ? adminKey : rawToken
+  if (!ADMIN_BALANCE_SECRET || secret !== ADMIN_BALANCE_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+
+  const { user_id, email, amount_rub, comment } = req.body || {}
+  let userId = typeof user_id === 'string' ? user_id.trim() : null
+  if (!userId && typeof email === 'string' && email.trim()) {
+    const { data: idRow, error: rpcError } = await supabase.rpc('get_user_id_by_email', { p_email: email.trim() })
+    if (rpcError) throw rpcError
+    userId = idRow || null
+  }
+  if (!userId) {
+    return res.status(400).json({ error: 'Provide user_id or email' })
+  }
+
+  const amount = Number(amount_rub)
+  if (!Number.isFinite(amount) || amount < MIN_TOPUP_RUB) {
+    return res.status(400).json({ error: `amount_rub must be at least ${MIN_TOPUP_RUB}` })
+  }
+
+  const metadata = typeof comment === 'string' && comment.trim() ? { comment: comment.trim() } : null
+  const result = await topupBalance(supabase, userId, amount, 'topup_manual', metadata)
+  if (!result.ok) {
+    return res.status(500).json({ error: result.error || 'Topup failed' })
+  }
+  return res.json({ ok: true, new_balance: result.newBalance })
+}))
 
 // Exchange Supabase access token for backend JWT
 // Expected body: { supabase_token: string }
@@ -639,10 +501,15 @@ app.post('/api/chat', asyncHandler(async (req, res) => {
       return res.status(401).json({ error: 'Missing Authorization Bearer token' })
     }
 
-    // Use backend-issued JWT instead of calling Supabase on every request
     const decoded = verifyBackendJwt(rawToken)
     if (!decoded || !decoded.sub) {
       return res.status(401).json({ error: 'Invalid or expired token' })
+    }
+    const userId = decoded.sub
+
+    const balance = await getBalance(supabase, userId)
+    if (balance < BALANCE_THRESHOLD_RUB) {
+      return res.status(402).json({ error: 'Пополните баланс' })
     }
 
     const { messages, max_tokens } = req.body || {}
@@ -657,6 +524,18 @@ app.post('/api/chat', asyncHandler(async (req, res) => {
       max_tokens: typeof max_tokens === 'number' ? max_tokens : 1500,
     })
 
+    const usage = chatResult?.usage
+    if (usage && (usage.input_tokens || usage.output_tokens)) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { api_chat: true })
+        if (!deductResult.ok) {
+          console.error('[api/chat] Deduct failed:', deductResult.error)
+          return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+        }
+      }
+    }
+
     const assistant = chatResult.choices?.[0]?.message
     return res.json({
       ok: true,
@@ -669,18 +548,18 @@ app.post('/api/chat', asyncHandler(async (req, res) => {
     const errorMessage = err?.message || ''
     const errorCode = err?.cause?.code || err?.code || ''
     const errorName = err?.name || ''
-    
+
     // Handle timeout errors (various formats) - check early to avoid unnecessary logging
     const isTimeout = (
-      errorCode === 'UND_ERR_CONNECT_TIMEOUT' || 
-      errorCode === 'UND_ERR_HEADERS_TIMEOUT' || 
+      errorCode === 'UND_ERR_CONNECT_TIMEOUT' ||
+      errorCode === 'UND_ERR_HEADERS_TIMEOUT' ||
       errorCode === 'ETIMEDOUT' ||
       errorMessage.toLowerCase().includes('timed out') ||
       errorMessage.toLowerCase().includes('request timed out') ||
       errorMessage.toLowerCase().includes('timeout') ||
       errorName === 'TimeoutError'
     )
-    
+
     if (isTimeout) {
       // Check if it's from Supabase (shouldn't happen here, but just in case)
       if (errorMessage.includes('Supabase') || errorMessage.includes('supabase')) {
@@ -693,11 +572,11 @@ app.post('/api/chat', asyncHandler(async (req, res) => {
           }
         })
       }
-      
-      // Otherwise it's AITUNNEL timeout
-      console.error('[api/chat] AITUNNEL timeout:', errorMessage)
+
+      // Otherwise it's AITUNNEL timeout (log code: UND_ERR_CONNECT_TIMEOUT = не удалось установить соединение с api.aitunnel.ru)
+      console.error('[api/chat] AITUNNEL timeout:', { code: errorCode, name: errorName, message: errorMessage })
       return res.status(502).json({
-        error: 'Не удалось подключиться к AITUNNEL (таймаут запроса). Проверьте сеть/фаервол/прокси или увеличьте таймаут.',
+        error: 'Таймаут при обращении к провайдеру (AITUNNEL/DeepSeek). Сервис не ответил вовремя — возможны перегрузки на стороне провайдера. Попробуйте позже.',
         details: {
           code: errorCode,
           message: errorMessage,
@@ -705,13 +584,13 @@ app.post('/api/chat', asyncHandler(async (req, res) => {
         }
       })
     }
-    
+
     // Handle connection reset errors
     if (errorCode === 'ECONNRESET') {
       const details = normalizeAitunnelError(err)
       console.error('[api/chat] Connection reset:', details)
       return res.status(502).json({
-        error: 'Соединение с AITUNNEL было сброшено (ECONNRESET). Проверьте сеть/фаервол/прокси.',
+        error: 'Соединение с провайдером (AITUNNEL/DeepSeek) было сброшено. Возможны временные проблемы на стороне провайдера — попробуйте позже.',
         details,
       })
     }
@@ -721,8 +600,8 @@ app.post('/api/chat', asyncHandler(async (req, res) => {
     console.error('[api/chat] error:', details)
 
     // Default error response
-    return res.status(500).json({ 
-      error: 'Chat request failed', 
+    return res.status(500).json({
+      error: 'Chat request failed',
       details: {
         message: errorMessage,
         code: errorCode,
@@ -734,9 +613,10 @@ app.post('/api/chat', asyncHandler(async (req, res) => {
 }))
 
 // Whisper transcription endpoint — requires backend JWT (independent of Supabase availability)
+// Использует AITunnel API вместо Python скриптов
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   let audioFilePath = null
-  
+
   try {
     const rawToken = getBearerToken(req)
     if (!rawToken) {
@@ -748,99 +628,82 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     if (!decoded || !decoded.sub) {
       return res.status(401).json({ error: 'Invalid or expired token' })
     }
+    const userId = decoded.sub
+
+    const balance = await getBalance(supabase, userId)
+    if (balance < BALANCE_THRESHOLD_RUB) {
+      return res.status(402).json({ error: 'Пополните баланс' })
+    }
 
     if (!req.file) {
       return res.status(400).json({ error: 'No audio or video file provided' })
     }
 
     audioFilePath = req.file.path
-    // Используем small.en - оптимальный баланс скорости и точности для английского языка
-    // small.en обеспечивает отличную точность при приемлемой скорости для production
-    const whisperModel = 'small.en' // Оптимальная модель Whisper для production (только английский)
-    const language = 'en' // Фиксируем английский язык
 
-    // Check if file is a video and extract audio if needed
-    // Whisper can handle video files directly, but we'll keep the original file path
-    const isVideoFile = req.file.mimetype?.startsWith('video/') || 
-                        req.file.originalname?.match(/\.(mp4|mov|avi|mkv|webm)$/i)
+    // Проверяем, что файл существует и не пустой
+    if (!fs.existsSync(audioFilePath)) {
+      return res.status(400).json({ error: 'Audio file not found on server' })
+    }
+    const stats = fs.statSync(audioFilePath)
+    if (stats.size === 0) {
+      return res.status(400).json({ error: 'Audio file is empty' })
+    }
 
-    // Use Whisper HTTP server (model stays in memory - MUCH FASTER!)
-    let result
-    try {
-      const whisperResponse = await fetch(`${WHISPER_SERVER_URL}/transcribe`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          audio_path: audioFilePath.replace(/\\/g, '/'),
-          model: whisperModel,
-          language: language,
-        }),
-        // Timeout for Whisper transcription (60 seconds)
-        signal: AbortSignal.timeout(60000)
-      })
-      
-      if (!whisperResponse.ok) {
-        const errorData = await whisperResponse.json().catch(() => ({}))
-        throw new Error(errorData.error || `Whisper server error: ${whisperResponse.status}`)
+    // Определяем расширение файла на основе mimetype или оригинального имени
+    let fileName = req.file.originalname
+    if (!fileName || !fileName.includes('.')) {
+      const extMap = {
+        'audio/webm': 'webm',
+        'audio/mpeg': 'mp3',
+        'audio/mp3': 'mp3',
+        'audio/wav': 'wav',
+        'audio/x-wav': 'wav',
+        'audio/ogg': 'ogg',
+        'audio/m4a': 'm4a',
+        'audio/mp4': 'm4a',
+        'video/mp4': 'mp4',
+        'video/webm': 'webm',
+        'video/quicktime': 'mov'
       }
-      
-      result = await whisperResponse.json()
-      
-      console.log('[api/transcribe] Using Whisper HTTP server (model in memory)')
-    } catch (fetchError) {
-      // If Whisper server is not available, fallback to old method
-      const errorCode = fetchError.code || fetchError.cause?.code || 
-                       (fetchError.cause?.errors?.[0]?.code) ||
-                       (fetchError.cause?.code)
-      
-      const isConnectionError = (
-        errorCode === 'ECONNREFUSED' || 
-        fetchError.name === 'AbortError' ||
-        fetchError.message?.includes('ECONNREFUSED') ||
-        fetchError.message?.includes('fetch failed')
-      )
-      
-      if (isConnectionError) {
-        console.warn('[api/transcribe] Whisper HTTP server not available, falling back to script method (this is normal if Whisper server failed to start)')
-        // Fallback to old method (for backward compatibility)
-        const pythonScript = path.join(__dirname, 'whisper_transcribe.py')
-        const defaultPython = process.platform === 'win32' ? 'py' : 'python3'
-        const pythonCommand = process.env.PYTHON_COMMAND || defaultPython
-        
-        const scriptPath = pythonScript.replace(/\\/g, '/')
-        const filePath = audioFilePath.replace(/\\/g, '/')
-        const command = `${pythonCommand} "${scriptPath}" "${filePath}" "${whisperModel}" "${language}"`
-        
-        const { stdout, stderr } = await execAsync(command)
-        
-        // Filter out harmless warnings
-        if (stderr) {
-          const harmlessWarnings = [
-            'Using cache',
-            'FP16 is not supported on CPU',
-            'UserWarning: FP16'
-          ]
-          const hasRealError = !harmlessWarnings.some(warning => 
-            stderr.includes(warning)
-          )
-          if (hasRealError) {
-            console.error('[whisper] stderr:', stderr)
-          }
-        }
-        
-        result = JSON.parse(stdout)
-      } else {
-        throw fetchError
+      const ext = extMap[req.file.mimetype] || 'webm'
+      fileName = `audio.${ext}`
+    }
+    const ext = path.extname(fileName).slice(1) || 'webm'
+
+    // API определяет формат по имени файла. Multer сохраняет без расширения —
+    // переименовываем файл, чтобы путь заканчивался на .webm/.mp3 и т.д.
+    if (!audioFilePath.toLowerCase().endsWith(`.${ext}`)) {
+      const pathWithExt = `${audioFilePath}.${ext}`
+      fs.renameSync(audioFilePath, pathWithExt)
+      audioFilePath = pathWithExt
+    }
+
+    // Используем реальный fs.ReadStream — путь уже с расширением, API распознает формат
+    const fileStream = fs.createReadStream(audioFilePath)
+
+    fileStream.on('error', (streamErr) => {
+      console.error('[api/transcribe] File stream error:', streamErr)
+    })
+
+    const startTime = Date.now()
+    const { text } = await sttTranscribe(fileStream, { language: 'en' })
+    const duration = Date.now() - startTime
+    console.log('[api/transcribe] Request completed in', duration + 'ms')
+
+    const durationSec = Math.max(1, Math.ceil(stats.size / (128 * 1024)))
+    const costRub = getCost('whisper-1', { duration_sec: durationSec })
+    if (costRub > 0) {
+      const deductResult = await deductBalance(supabase, userId, costRub, 'whisper-1', { duration_sec: durationSec })
+      if (!deductResult.ok) {
+        console.error('[api/transcribe] Deduct failed:', deductResult.error)
+        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
       }
     }
 
-    if (!result.success) {
-      return res.status(500).json({
-        error: 'Transcription failed',
-        details: result.error
-      })
+    if (!text) {
+      console.warn('[api/transcribe] Empty transcription result')
+      return res.json({ ok: true, text: '', language: 'en', segments: [] })
     }
 
     // Не сохраняем голосовые записи пользователя в базу - они нужны только для транскрибирования
@@ -848,28 +711,54 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 
     return res.json({
       ok: true,
-      text: result.text,
-      language: result.language,
-      segments: result.segments || []
+      text,
+      language: 'en',
+      segments: []
     })
   } catch (err) {
     console.error('[api/transcribe] error:', err)
-    
-    // Handle specific error types
+
     const code = err?.cause?.code || err?.code
-    if (code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT') {
-      return res.status(502).json({
-        error: 'Таймаут соединения. Проверьте сеть и доступность сервисов.',
+    const errorMessage = err?.message || ''
+    const isTimeoutError = code === 'UND_ERR_CONNECT_TIMEOUT' ||
+      code === 'ETIMEDOUT' ||
+      code === 'ECONNRESET' ||
+      errorMessage.toLowerCase().includes('timed out') ||
+      errorMessage.includes('Request timed out') ||
+      errorMessage.includes('timeout') ||
+      err?.name === 'TimeoutError' ||
+      err?.type === 'aborted'
+
+    if (isTimeoutError) {
+      return res.status(504).json({
+        error: 'Таймаут транскрипции аудио',
         details: {
           code,
-          message: err.message
+          message: errorMessage,
+          timeout: AITUNNEL_STT_TIMEOUT_MS / 1000 + ' seconds',
+          suggestion: 'Попробуйте уменьшить размер аудиофайла или разделить его на части. Проверьте доступность AITunnel API.'
         }
       })
     }
-    
-    return res.status(500).json({ 
-      error: 'Transcription request failed', 
-      details: err.message 
+
+    // Обработка ошибок от OpenAI API
+    if (err?.response?.data) {
+      return res.status(err?.status || err?.statusCode || 500).json({
+        error: 'Transcription request failed',
+        details: err.response.data
+      })
+    }
+
+    if (err?.error) {
+      return res.status(err?.status || err?.statusCode || 500).json({
+        error: 'Transcription request failed',
+        details: err.error
+      })
+    }
+
+    return res.status(500).json({
+      error: 'Transcription request failed',
+      details: err?.message || 'Unknown error'
     })
   } finally {
     // Clean up uploaded file immediately after transcription
@@ -889,7 +778,8 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   }
 })
 
-// TTS synthesis endpoint — requires backend JWT (independent of Supabase availability)
+// TTS synthesis endpoint — принимает backend JWT или Supabase access token (словарь и др. шлют Supabase)
+// Использует AITunnel API вместо Python скриптов
 app.post('/api/tts', async (req, res) => {
   try {
     const rawToken = getBearerToken(req)
@@ -897,267 +787,1852 @@ app.post('/api/tts', async (req, res) => {
       return res.status(401).json({ error: 'Missing Authorization Bearer token' })
     }
 
-    // Use backend-issued JWT instead of calling Supabase on every request
+    // Сначала пробуем backend JWT; если нет — проверяем Supabase (для словаря, караоке, видео)
+    let userId = null
     const decoded = verifyBackendJwt(rawToken)
-    if (!decoded || !decoded.sub) {
+    if (decoded?.sub) {
+      userId = decoded.sub
+    } else {
+      const result = await Promise.resolve(supabase.auth.getUser(rawToken)).catch(() => ({ data: { user: null }, error: { message: 'Invalid token' } }))
+      if (result?.data?.user?.id) {
+        userId = result.data.user.id
+      }
+    }
+    if (!userId) {
       return res.status(401).json({ error: 'Invalid or expired token' })
     }
 
-    const { text, model } = req.body || {}
-    
+    const balance = await getBalance(supabase, userId)
+    if (balance < BALANCE_THRESHOLD_RUB) {
+      return res.status(402).json({ error: 'Пополните баланс' })
+    }
+
+    const { text, voice } = req.body || {}
+
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ error: 'Text is required and must be a non-empty string' })
     }
 
-    // Remove emojis and other Unicode symbols that TTS can't handle
-    // This regex removes emojis, emoticons, and other Unicode symbols
-    const textWithoutEmojis = text
-      .replace(/[\u{1F600}-\u{1F64F}]/gu, '') // Emoticons
-      .replace(/[\u{1F300}-\u{1F5FF}]/gu, '') // Misc Symbols and Pictographs
-      .replace(/[\u{1F680}-\u{1F6FF}]/gu, '') // Transport and Map
-      .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '') // Flags (iOS)
-      .replace(/[\u{2600}-\u{26FF}]/gu, '') // Misc symbols
-      .replace(/[\u{2700}-\u{27BF}]/gu, '') // Dingbats
-      .replace(/[\u{FE00}-\u{FE0F}]/gu, '') // Variation Selectors
-      .replace(/[\u{1F900}-\u{1F9FF}]/gu, '') // Supplemental Symbols and Pictographs
-      .replace(/[\u{1FA00}-\u{1FA6F}]/gu, '') // Chess Symbols
-      .replace(/[\u{1FA70}-\u{1FAFF}]/gu, '') // Symbols and Pictographs Extended-A
-      .trim()
+    const startTime = Date.now()
+    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice })
+    const duration = Date.now() - startTime
+    console.log('[api/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
 
-    if (!textWithoutEmojis) {
-      return res.status(400).json({ error: 'Text contains only emojis or unsupported characters' })
+    const costRub = getCost('gpt-4o-mini-tts', { characters })
+    if (costRub > 0) {
+      const deductResult = await deductBalance(supabase, userId, costRub, 'gpt-4o-mini-tts', { characters })
+      if (!deductResult.ok) {
+        console.error('[api/tts] Deduct failed:', deductResult.error)
+        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+      }
     }
 
-    // Limit text length
-    const maxLength = 500
-    const textToSynthesize = textWithoutEmojis.length > maxLength ? textWithoutEmojis.substring(0, maxLength) + "..." : textWithoutEmojis
-    
-    // Используем tacotron2-DDC — модель, которая уже полностью скачана локально
-    // Она даёт хорошее качество английской речи и гарантированно доступна
-    const ttsModel = model || 'tts_models/en/ljspeech/tacotron2-DDC'
-    
-    // Use TTS HTTP server (model stays in memory - MUCH FASTER!)
-    let result
-    try {
-      // Try to connect with retry logic
-      let ttsResponse = null
-      let lastError = null
-      
-      // Try up to 2 times with short delay
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          ttsResponse = await fetch(`${TTS_SERVER_URL}/synthesize`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              text: textToSynthesize,
-              model: ttsModel,
-              output_dir: ttsOutputDir
-            })
-          })
-          
-          // If we got a response (even error), server is running
-          break
-        } catch (fetchErr) {
-          lastError = fetchErr
-          // If connection refused, wait a bit and retry once
-          if (fetchErr.code === 'ECONNREFUSED' && attempt === 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000))
-            continue
-          }
-          // If timeout, don't retry - fallback to script method
-          // For other errors, also throw to fallback
-          throw fetchErr
-        }
-      }
-      
-      if (!ttsResponse) {
-        throw lastError || new Error('Failed to connect to TTS server')
-      }
-      
-      if (!ttsResponse.ok) {
-        const errorData = await ttsResponse.json().catch(() => ({}))
-        throw new Error(errorData.error || `TTS server error: ${ttsResponse.status}`)
-      }
-      
-      result = await ttsResponse.json()
-      
-      // Log cache information
-      if (result.cached) {
-        console.log('[api/tts] Using cached audio file')
-      }
-    } catch (fetchError) {
-      // If TTS server is not available, fallback to old method
-      // Handle AggregateError with nested causes (common with fetch failures)
-      const errorCode = fetchError.code || fetchError.cause?.code || 
-                       (fetchError.cause?.errors?.[0]?.code) ||
-                       (fetchError.cause?.code)
-      
-      const errorName = fetchError.name || fetchError.constructor?.name || ''
-      const errorMessage = fetchError.message || String(fetchError) || ''
-      
-      const isConnectionError = (
-        errorCode === 'ECONNREFUSED' || 
-        errorName === 'AbortError' ||
-        errorName === 'TimeoutError' ||
-        errorMessage.includes('ECONNREFUSED') ||
-        errorMessage.includes('fetch failed') ||
-        errorMessage.includes('timeout') ||
-        errorMessage.includes('timed out') ||
-        errorMessage.includes('aborted due to timeout') ||
-        errorMessage.includes('signal timed out')
-      )
-      
-      if (isConnectionError) {
-        const reason = errorName === 'TimeoutError' || errorMessage.includes('timeout') 
-          ? 'timeout' 
-          : 'connection refused'
-        console.warn(`[api/tts] TTS HTTP server ${reason}, falling back to script method`)
-        console.warn('[api/tts] Note: TTS server provides faster synthesis. Check server logs for startup issues.')
-        // Fallback to old method (for backward compatibility)
-        const pythonScript = path.join(__dirname, 'tts_synthesize.py')
-        const defaultPython = process.platform === 'win32' ? 'py' : 'python3'
-        const pythonCommand = process.env.PYTHON_COMMAND || defaultPython
-        const ttsOutputPath = ttsOutputDir.replace(/\\/g, '/')
-        const escapedText = textToSynthesize.replace(/"/g, '\\"').replace(/\$/g, '\\$')
-        const escapedOutputPath = ttsOutputPath.replace(/"/g, '\\"').replace(/\$/g, '\\$')
-        const scriptPath = pythonScript.replace(/\\/g, '/')
-        const command = `${pythonCommand} "${scriptPath}" "${escapedText}" "${ttsModel}" "${escapedOutputPath}"`
-        
-        const { stdout } = await execAsync(command)
-        const jsonMatch = stdout.match(/\{[\s\S]*\}/)
-        result = JSON.parse(jsonMatch ? jsonMatch[0] : stdout.trim().split('\n').pop())
-      } else {
-        throw fetchError
-      }
-    }
-    
-    // Check if synthesis failed (even if command succeeded)
-    if (!result.success) {
-      console.error('[api/tts] TTS synthesis error:', result.error)
-      
-      // Special handling for language unsupported error
-      if (result.language_unsupported) {
-        return res.status(400).json({ 
-          error: 'TTS is only available for English text',
-          details: result.error,
-          language_unsupported: true
-        })
-      }
-      
-      return res.status(500).json({ 
-        error: 'TTS synthesis failed', 
-        details: result.error 
-      })
-    }
-
-    const audioPath = result.audio_path
-    
-    // Check if file exists
-    if (!fs.existsSync(audioPath)) {
-      return res.status(500).json({
-        error: 'Generated audio file not found',
-        details: audioPath
-      })
-    }
-
-    // Send audio file
-    res.setHeader('Content-Type', 'audio/wav')
-    res.setHeader('Content-Disposition', `inline; filename="tts_audio.wav"`)
-    res.setHeader('Content-Length', result.file_size)
+    res.setHeader('Content-Type', 'audio/mpeg')
+    res.setHeader('Content-Disposition', 'inline; filename="tts_audio.mp3"')
+    res.setHeader('Content-Length', String(buffer.length))
     res.setHeader('Cache-Control', 'public, max-age=31536000') // Cache for 1 year
-    
-    // Передаем путь к файлу в заголовке для последующего удаления после воспроизведения
-    // Удаляем только новые файлы (не кэшированные), чтобы не терять кэш
-    if (!result.cached) {
-      // Используем относительный путь от корня проекта для безопасности
-      const relativePath = path.relative(path.join(__dirname, '..'), audioPath)
-      res.setHeader('X-Audio-File-Path', relativePath)
-      console.log('[api/tts] Created new audio file (will be deleted after playback):', audioPath)
-    } else {
-      console.log('[api/tts] Using cached audio file (will be kept):', audioPath)
-    }
-    
-    const audioStream = fs.createReadStream(audioPath)
-    audioStream.pipe(res)
+
+    return res.send(buffer)
   } catch (err) {
-    console.error('[api/tts] error:', err)
-    
-    // Handle specific error types
-    const code = err?.cause?.code || err?.code
-    if (code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT') {
+    const errorDetails = {
+      message: err?.message,
+      code: err?.code || err?.cause?.code,
+      status: err?.status,
+      statusCode: err?.statusCode,
+      response: err?.response?.data || err?.error,
+      error: err?.error,
+      name: err?.name,
+      type: err?.type,
+      cause: err?.cause,
+    }
+
+    const isTimeoutError =
+      errorDetails.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+      errorDetails.code === 'ETIMEDOUT' ||
+      errorDetails.code === 'ECONNRESET' ||
+      errorDetails.message?.toLowerCase().includes('timed out') ||
+      errorDetails.message?.includes('Request timed out') ||
+      errorDetails.message?.includes('timeout') ||
+      errorDetails.name === 'TimeoutError' ||
+      errorDetails.type === 'aborted'
+
+    console.error('[api/tts] error:', {
+      ...errorDetails,
+      isTimeoutError,
+      timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
+      model: AITUNNEL_TTS_MODEL,
+      baseURL: AITUNNEL_BASE_URL
+    })
+
+    if (isTimeoutError) {
       return res.status(502).json({
-        error: 'Таймаут соединения. Проверьте сеть и доступность сервисов.',
+        error: 'Таймаут AITunnel TTS',
         details: {
-          code,
-          message: err.message
+          code: errorDetails.code,
+          message: errorDetails.message,
+          timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
+          suggestion: 'Проверьте подключение к AITunnel API или увеличьте таймаут'
         }
       })
     }
-    
-    return res.status(500).json({ 
-      error: 'TTS synthesis request failed', 
-      details: err.message 
+
+    if (errorDetails.message?.includes('unsupported characters')) {
+      return res.status(400).json({ error: 'Text contains only unsupported characters' })
+    }
+
+    // Проверка на ошибки API
+    if (errorDetails.response) {
+      return res.status(errorDetails.status || errorDetails.statusCode || 500).json({
+        error: 'TTS request failed',
+        details: errorDetails.response
+      })
+    }
+
+    return res.status(500).json({
+      error: 'TTS request failed',
+      details: errorDetails.message || 'Unknown error',
     })
   }
 })
 
-// Delete TTS audio file after playback
-app.delete('/api/tts/file', asyncHandler(async (req, res) => {
+// Agent STT (AITunnel Whisper) — для голосового ввода в агенте
+app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
+  console.log('[api/agent/stt] Request received:', {
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    headers: { authorization: req.headers.authorization ? 'present' : 'missing' },
+    hasFile: !!req.file
+  })
+  let audioFilePath = null
   try {
     const rawToken = getBearerToken(req)
-    if (!rawToken) {
-      return res.status(401).json({ error: 'Missing Authorization Bearer token' })
-    }
-
-    // Use backend-issued JWT instead of calling Supabase on every request
+    if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
     const decoded = verifyBackendJwt(rawToken)
-    if (!decoded || !decoded.sub) {
-      return res.status(401).json({ error: 'Invalid or expired token' })
+    if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+    const userId = decoded.sub
+
+    const balance = await getBalance(supabase, userId)
+    if (balance < BALANCE_THRESHOLD_RUB) {
+      return res.status(402).json({ error: 'Пополните баланс' })
     }
 
-    const { filePath } = req.body || {}
-    
-    if (!filePath || typeof filePath !== 'string') {
-      return res.status(400).json({ error: 'filePath is required' })
+    if (!req.file) return res.status(400).json({ error: 'No audio file provided' })
+    audioFilePath = req.file.path
+
+    console.log('[api/agent/stt] Processing file:', {
+      path: audioFilePath,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      originalname: req.file.originalname,
+      model: AITUNNEL_STT_MODEL
+    })
+
+    // Проверяем, что файл существует и не пустой
+    if (!fs.existsSync(audioFilePath)) {
+      return res.status(400).json({ error: 'Audio file not found on server' })
+    }
+    const stats = fs.statSync(audioFilePath)
+    if (stats.size === 0) {
+      return res.status(400).json({ error: 'Audio file is empty' })
     }
 
-    // Безопасность: проверяем, что путь находится в tts_output директории
-    const ttsOutputDirNormalized = path.normalize(ttsOutputDir)
-    const requestedPath = path.normalize(path.join(__dirname, '..', filePath))
-    
-    if (!requestedPath.startsWith(ttsOutputDirNormalized)) {
-      return res.status(403).json({ error: 'Invalid file path' })
+    // Определяем расширение файла на основе mimetype или оригинального имени
+    let fileName = req.file.originalname
+    if (!fileName || !fileName.includes('.')) {
+      const extMap = {
+        'audio/webm': 'webm',
+        'audio/mpeg': 'mp3',
+        'audio/mp3': 'mp3',
+        'audio/wav': 'wav',
+        'audio/x-wav': 'wav',
+        'audio/ogg': 'ogg',
+        'audio/m4a': 'm4a',
+        'audio/mp4': 'm4a'
+      }
+      const ext = extMap[req.file.mimetype] || 'webm'
+      fileName = `audio.${ext}`
+    }
+    const ext = path.extname(fileName).slice(1) || 'webm'
+
+    // API определяет формат по имени файла. Multer сохраняет без расширения —
+    // переименовываем файл, чтобы путь заканчивался на .webm/.mp3 и т.д.
+    if (!audioFilePath.toLowerCase().endsWith(`.${ext}`)) {
+      const pathWithExt = `${audioFilePath}.${ext}`
+      fs.renameSync(audioFilePath, pathWithExt)
+      audioFilePath = pathWithExt
     }
 
-    // Проверяем, что файл существует
-    if (!fs.existsSync(requestedPath)) {
-      return res.status(404).json({ error: 'File not found' })
+    // Используем реальный fs.ReadStream — путь уже с расширением, API распознает формат
+    const fileStream = fs.createReadStream(audioFilePath)
+
+    fileStream.on('error', (streamErr) => {
+      console.error('[api/agent/stt] File stream error:', streamErr)
+    })
+
+    const startTime = Date.now()
+    const { text } = await sttTranscribe(fileStream)
+    const duration = Date.now() - startTime
+    console.log('[api/agent/stt] Request completed in', duration + 'ms', { hasText: !!text, textLength: text?.length || 0 })
+
+    const durationSec = Math.max(1, Math.ceil(stats.size / (128 * 1024)))
+    const costRub = getCost('whisper-1', { duration_sec: durationSec })
+    if (costRub > 0) {
+      const deductResult = await deductBalance(supabase, userId, costRub, 'whisper-1', { duration_sec: durationSec })
+      if (!deductResult.ok) {
+        console.error('[api/agent/stt] Deduct failed:', deductResult.error)
+        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+      }
     }
 
-    // Удаляем файл
-    try {
-      fs.unlinkSync(requestedPath)
-      console.log('[api/tts] Deleted audio file after playback:', requestedPath)
-      return res.json({ ok: true, message: 'File deleted successfully' })
-    } catch (unlinkErr) {
-      console.error('[api/tts] Failed to delete file:', unlinkErr)
-      return res.status(500).json({ error: 'Failed to delete file', details: unlinkErr.message })
+    if (!text) {
+      console.warn('[api/agent/stt] Empty transcription result')
+      return res.json({ ok: true, text: '' })
     }
+
+    return res.json({ ok: true, text })
   } catch (err) {
-    console.error('[api/tts/delete] error:', err)
-    return res.status(500).json({ 
-      error: 'Failed to delete audio file', 
-      details: err.message 
+    const errorDetails = {
+      message: err?.message,
+      code: err?.code || err?.cause?.code,
+      status: err?.status,
+      statusCode: err?.statusCode,
+      response: err?.response?.data || err?.error,
+      error: err?.error,
+      name: err?.name,
+      type: err?.type,
+      cause: err?.cause,
+      stack: err?.stack
+    }
+
+    console.error('[api/agent/stt] error:', errorDetails)
+
+    const code = err?.cause?.code || err?.code
+    const errorMessage = err?.message || ''
+    const isTimeoutError = code === 'UND_ERR_CONNECT_TIMEOUT' ||
+      code === 'ETIMEDOUT' ||
+      code === 'ECONNRESET' ||
+      errorMessage.toLowerCase().includes('timed out') ||
+      errorMessage.includes('Request timed out') ||
+      errorMessage.includes('timeout') ||
+      err?.name === 'TimeoutError' ||
+      err?.type === 'aborted'
+
+    if (isTimeoutError) {
+      console.error('[api/agent/stt] Timeout error details:', {
+        code,
+        message: errorMessage,
+        name: err?.name,
+        type: err?.type,
+        timeout: AITUNNEL_STT_TIMEOUT_MS / 1000 + ' seconds',
+        fileSize: req.file?.size,
+        baseURL: AITUNNEL_BASE_URL,
+        model: AITUNNEL_STT_MODEL
+      })
+      return res.status(504).json({
+        error: 'Таймаут транскрипции аудио',
+        details: {
+          code,
+          message: errorMessage,
+          timeout: AITUNNEL_STT_TIMEOUT_MS / 1000 + ' seconds',
+          suggestion: 'Попробуйте уменьшить размер аудиофайла или разделить его на части. Проверьте доступность AITunnel API.'
+        }
+      })
+    }
+
+    // Запись слишком короткая (Whisper требует минимум ~0.1 с)
+    const isAudioTooShort =
+      err?.error?.code === 'audio_too_short' ||
+      (err?.message && /audio.*too short|minimum.*length/i.test(err.message))
+    if (isAudioTooShort) {
+      return res.status(400).json({
+        error: 'Запись слишком короткая. Держите кнопку не менее секунды.',
+        code: 'audio_too_short'
+      })
+    }
+
+    // Обработка ошибок от OpenAI API
+    if (err?.response?.data) {
+      return res.status(err?.status || err?.statusCode || 500).json({
+        error: 'STT request failed',
+        details: err.response.data
+      })
+    }
+
+    if (err?.error) {
+      return res.status(err?.status || err?.statusCode || 500).json({
+        error: 'STT request failed',
+        details: err.error
+      })
+    }
+
+    return res.status(500).json({
+      error: 'STT request failed',
+      details: err?.message || 'Unknown error',
+    })
+  } finally {
+    if (audioFilePath && fs.existsSync(audioFilePath)) {
+      try { fs.unlinkSync(audioFilePath) } catch (e) { console.error('[api/agent/stt] unlink error:', e?.message) }
+    }
+  }
+})
+
+// Agent TTS (AITunnel gpt-4o-mini-tts) — для озвучки ответов агента
+app.post('/api/agent/tts', async (req, res) => {
+  try {
+    const rawToken = getBearerToken(req)
+    if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+    const decoded = verifyBackendJwt(rawToken)
+    if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+    const userId = decoded.sub
+
+    const balance = await getBalance(supabase, userId)
+    if (balance < BALANCE_THRESHOLD_RUB) {
+      return res.status(402).json({ error: 'Пополните баланс' })
+    }
+
+    const { text } = req.body || {}
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: 'Text is required' })
+    }
+
+    const startTime = Date.now()
+    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000 })
+    const duration = Date.now() - startTime
+    console.log('[api/agent/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
+
+    const costRub = getCost('gpt-4o-mini-tts', { characters })
+    if (costRub > 0) {
+      const deductResult = await deductBalance(supabase, userId, costRub, 'gpt-4o-mini-tts', { characters })
+      if (!deductResult.ok) {
+        console.error('[api/agent/tts] Deduct failed:', deductResult.error)
+        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+      }
+    }
+
+    res.setHeader('Content-Type', 'audio/mpeg')
+    res.setHeader('Content-Disposition', 'inline; filename="agent_tts.mp3"')
+    res.setHeader('Content-Length', String(buffer.length))
+    return res.send(buffer)
+  } catch (err) {
+    const errorDetails = {
+      message: err?.message,
+      code: err?.code || err?.cause?.code,
+      status: err?.status,
+      statusCode: err?.statusCode,
+      response: err?.response?.data || err?.error,
+      error: err?.error,
+      name: err?.name,
+      type: err?.type,
+      cause: err?.cause,
+    }
+
+    const isTimeoutError =
+      errorDetails.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+      errorDetails.code === 'ETIMEDOUT' ||
+      errorDetails.code === 'ECONNRESET' ||
+      errorDetails.message?.toLowerCase().includes('timed out') ||
+      errorDetails.message?.includes('Request timed out') ||
+      errorDetails.message?.includes('timeout') ||
+      errorDetails.name === 'TimeoutError' ||
+      errorDetails.type === 'aborted'
+
+    console.error('[api/agent/tts] error:', {
+      ...errorDetails,
+      isTimeoutError,
+      timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
+      model: AITUNNEL_TTS_MODEL,
+      baseURL: AITUNNEL_BASE_URL
+    })
+
+    if (isTimeoutError) {
+      return res.status(502).json({
+        error: 'Таймаут AITunnel TTS',
+        details: {
+          code: errorDetails.code,
+          message: errorDetails.message,
+          timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
+          suggestion: 'Проверьте подключение к AITunnel API или увеличьте таймаут'
+        }
+      })
+    }
+
+    if (errorDetails.message?.includes('unsupported characters')) {
+      return res.status(400).json({ error: 'Text contains only unsupported characters' })
+    }
+
+    // Проверка на ошибки API
+    if (errorDetails.response) {
+      return res.status(errorDetails.status || errorDetails.statusCode || 500).json({
+        error: 'TTS request failed',
+        details: errorDetails.response
+      })
+    }
+
+    return res.status(500).json({
+      error: 'TTS request failed',
+      details: errorDetails.message || 'Unknown error',
     })
   }
-}))
+})
+
+// Agent chat (streaming NDJSON) — заменяет WebSocket /ws/agent
+app.post('/api/agent/chat', async (req, res) => {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  const decoded = verifyBackendJwt(rawToken)
+  if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+  const userId = decoded.sub
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context } = req.body || {}
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Expected { messages: [...] }' })
+  }
+  const maxTokens = typeof max_tokens === 'number' ? max_tokens : 1500
+  const steps = Array.isArray(scenario_steps) && scenario_steps.length > 0
+    ? scenario_steps.filter((s) => s && typeof s.id === 'string')
+    : []
+  const settings = roleplay_settings && typeof roleplay_settings === 'object' ? roleplay_settings : null
+  const slangMode = settings && ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
+  const allowProfanity = Boolean(settings?.allow_profanity)
+  const aiMayUseProfanity = allowProfanity && Boolean(settings?.ai_may_use_profanity)
+  const profanityIntensity = settings && ['light', 'medium', 'hard'].includes(settings.profanity_intensity)
+    ? settings.profanity_intensity
+    : 'light'
+  const freestyleContext = freestyle_context && typeof freestyle_context === 'object' ? freestyle_context : null
+  const freestyleRoleHint = freestyleContext && typeof freestyleContext.role_hint === 'string' ? freestyleContext.role_hint : 'none'
+  const freestyleToneFormality = freestyleContext && Number.isFinite(Number(freestyleContext.tone_formality))
+    ? Math.max(0, Math.min(100, Number(freestyleContext.tone_formality)))
+    : 50
+  const freestyleToneDirectness = freestyleContext && Number.isFinite(Number(freestyleContext.tone_directness))
+    ? Math.max(0, Math.min(100, Number(freestyleContext.tone_directness)))
+    : 50
+  const freestyleMicroGoals = Array.isArray(freestyleContext?.micro_goals)
+    ? freestyleContext.micro_goals.filter((g) => typeof g === 'string').slice(0, 3)
+    : []
+
+  const send = (obj) => {
+    try {
+      res.write(JSON.stringify(obj) + '\n')
+    } catch (e) {
+      console.error('[api/agent/chat] write error:', e?.message)
+    }
+  }
+
+  res.setHeader('Content-Type', 'application/x-ndjson')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.flushHeaders?.()
+
+  const startTime = Date.now()
+  let timeoutId = null
+
+  // Для обычного чата (без сценария) добавляем системный промпт: язык ответа = язык пользователя
+  const roleplaySafetySystem = settings
+    ? {
+      role: 'system',
+      content:
+        'Safety and style policy: follow provided style settings and keep responses contextual. ' +
+        `slang_mode=${slangMode}; allow_profanity=${allowProfanity}; ai_may_use_profanity=${aiMayUseProfanity}; profanity_intensity=${profanityIntensity}. ` +
+        'Never include prohibited content: sexual content involving minors/pedophilia, extremism/terrorism support, instructions for violent wrongdoing, non-consensual sexual violence, doxxing, or direct real-world threats. ' +
+        'If the user requests prohibited content, refuse briefly and steer the dialogue to a safe alternative.',
+    }
+    : null
+  const freestyleCoachSystem = freestyleContext
+    ? {
+      role: 'system',
+      content:
+        'Freestyle coaching context (ephemeral, no progress tracking): ' +
+        `role_hint=${freestyleRoleHint}; tone_formality=${freestyleToneFormality}/100; tone_directness=${freestyleToneDirectness}/100; ` +
+        `micro_goals=${freestyleMicroGoals.join(', ') || 'none'}. ` +
+        'Apply this softly: stay natural and conversational, do not mention these settings explicitly.',
+    }
+    : null
+  const baseMessages = steps.length > 0
+    ? messages
+    : [
+      {
+        role: 'system',
+        content: 'You are a helpful assistant. Always reply in the SAME language the user writes in (e.g. Russian if they write in Russian, English if in English). Do not switch to Chinese or other languages unless the user explicitly writes in that language.',
+      },
+      ...messages,
+    ]
+  const chatMessages = [
+    ...(roleplaySafetySystem ? [roleplaySafetySystem] : []),
+    ...(freestyleCoachSystem ? [freestyleCoachSystem] : []),
+    ...baseMessages,
+  ]
+
+  try {
+    console.log('[api/agent/chat] Starting chat request:', {
+      model: AITUNNEL_MODEL,
+      messagesCount: chatMessages.length,
+      maxTokens,
+      timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
+      baseURL: AITUNNEL_BASE_URL
+    })
+
+    const stream = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: chatMessages,
+      max_tokens: maxTokens,
+      stream: true,
+    })
+
+    timeoutId = setTimeout(() => {
+      console.error('[api/agent/chat] Stream timeout exceeded:', {
+        timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
+        elapsed: Date.now() - startTime
+      })
+    }, AITUNNEL_TIMEOUT_MS)
+
+    let chunkCount = 0
+    let fullReply = ''
+    for await (const chunk of stream) {
+      const elapsed = Date.now() - startTime
+      if (elapsed > AITUNNEL_TIMEOUT_MS) {
+        throw new Error(`Stream timeout: ${elapsed}ms > ${AITUNNEL_TIMEOUT_MS}ms`)
+      }
+      const delta = chunk.choices?.[0]?.delta?.content ?? ''
+      if (delta) {
+        chunkCount++
+        fullReply += delta
+        send({ type: 'chunk', delta })
+      }
+    }
+
+    if (timeoutId) clearTimeout(timeoutId)
+    const duration = Date.now() - startTime
+    console.log('[api/agent/chat] Stream completed:', {
+      chunkCount,
+      duration: duration + 'ms',
+      durationSeconds: (duration / 1000).toFixed(2) + 's'
+    })
+
+    const inputTokens = Math.ceil(chatMessages.reduce((acc, m) => acc + (m.content || '').length, 0) / 4)
+    const outputTokens = Math.ceil((fullReply || '').length / 4)
+    const costRub = getCost('deepseek-v3.2', { input_tokens: inputTokens, output_tokens: outputTokens })
+    if (costRub > 0) {
+      const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { input_tokens: inputTokens, output_tokens: outputTokens })
+      if (!deductResult.ok) {
+        console.error('[api/agent/chat] Deduct failed after stream:', deductResult.error)
+      }
+    }
+
+    if (steps.length > 0 && fullReply.trim()) {
+      try {
+        const stepDesc = (s) => s.titleRu || s.title_ru || s.titleEn || s.title_en || s.id
+        const stepCriteria = (s) => {
+          const c = s && typeof s.completionCriteria === 'object' ? s.completionCriteria : null
+          if (!c) return ''
+          const parts = []
+          if (typeof c.min_user_turns === 'number') parts.push(`min_user_turns=${c.min_user_turns}`)
+          if (typeof c.min_sentences === 'number') parts.push(`min_sentences=${c.min_sentences}`)
+          if (Array.isArray(c.required_markers) && c.required_markers.length > 0) {
+            parts.push(`required_markers=[${c.required_markers.join(', ')}]`)
+          }
+          if (c.must_reference_opponent === true) parts.push('must_reference_opponent=true')
+          if (typeof c.evidence_hint_en === 'string' && c.evidence_hint_en.trim()) {
+            parts.push(`evidence_hint="${c.evidence_hint_en.trim()}"`)
+          }
+          return parts.length > 0 ? ` | criteria: ${parts.join('; ')}` : ''
+        }
+        const stepList = steps
+          .map((s, i) => `Step ${i + 1} (id: ${s.id}): ${stepDesc(s)}${stepCriteria(s)}`)
+          .join('\n')
+        const conversationText = [...messages, { role: 'assistant', content: fullReply }]
+          .map((m) => `${m.role}: ${m.content}`)
+          .join('\n\n')
+        const stepCheckSystem = `You are a step checker for a roleplay scenario. Your job is to output a JSON object with one key: "completedStepIds" (array of step identifiers that the user has completed in the conversation).
+
+Rules:
+- For steps that require CONCRETE information (e.g. pickup address, destination, time, confirmation of booking): the user must have actually stated that information. Mere "hello" or "I need a taxi" without address/destination does NOT count.
+- For steps that mean "start a conversation about X" / "begin discussing X" / "bring up topic X" / "начать разговор о X": the step IS completed when the user has clearly introduced or raised the topic X in their message(s), even if they started with a greeting. Example: "Hello, you have such a nice costume, what is it?" or "Hi! I love your witch costume" — the user started a conversation about costumes, so a step like "Start a conversation about costumes" MUST be marked completed. The assistant replying on the same topic (e.g. about the costume) confirms the step.
+- If a step has criteria, treat those criteria as mandatory. Do not mark the step unless criteria are satisfied.
+- For other step types: include the step if the user's messages clearly satisfy what the step requires.
+- If the evidence is ambiguous or weak, do NOT mark the step completed.
+- For "completedStepIds" use EITHER the exact "id" from the step list OR the position: "step1", "step2", "step3" for 1st/2nd/3rd step, or "1", "2", "3".
+- Output ONLY the JSON object, nothing else. Example: {"completedStepIds":["step1","step2"]} or {"completedStepIds":["pickup","destination"]}`
+        const stepCheckUser = `Steps (what each step means):\n${stepList}\n\nConversation:\n${conversationText}`
+        const stepCompletion = await llm.chat.completions.create({
+          model: AITUNNEL_MODEL,
+          messages: [
+            { role: 'system', content: stepCheckSystem },
+            { role: 'user', content: stepCheckUser },
+          ],
+          max_tokens: 200,
+          stream: false,
+        })
+        const stepUsage = stepCompletion?.usage
+        if (stepUsage && (stepUsage.input_tokens || stepUsage.output_tokens)) {
+          const stepCost = getCost('deepseek-v3.2', {
+            input_tokens: stepUsage.input_tokens || 0,
+            output_tokens: stepUsage.output_tokens || 0,
+          })
+          if (stepCost > 0) {
+            await deductBalance(supabase, userId, stepCost, 'deepseek-v3.2', { step_check: true })
+          }
+        }
+        const raw = stepCompletion.choices?.[0]?.message?.content?.trim() || ''
+        const jsonMatch = raw.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0])
+          const rawIds = Array.isArray(parsed.completedStepIds)
+            ? parsed.completedStepIds.filter((id) => typeof id === 'string').map((id) => String(id).trim())
+            : []
+          const normalized = (id) => id.toLowerCase().replace(/\s+/g, '')
+          const completed = []
+          for (const id of rawIds) {
+            const exact = steps.find((s) => s.id === id || normalized(s.id) === normalized(id))
+            if (exact) {
+              if (!completed.includes(exact.id)) completed.push(exact.id)
+              continue
+            }
+            const byPosition = id.match(/^step\s*_?\s*(\d+)$/i) || id.match(/^(\d+)$/)
+            const idx = byPosition ? parseInt(byPosition[1], 10) - 1 : -1
+            if (idx >= 0 && idx < steps.length && !completed.includes(steps[idx].id)) {
+              completed.push(steps[idx].id)
+            }
+          }
+          send({ type: 'steps', completedStepIds: completed })
+        }
+      } catch (stepErr) {
+        console.error('[api/agent/chat] step-check error:', stepErr?.message)
+      }
+    }
+
+    send({ type: 'done' })
+  } catch (err) {
+    if (timeoutId) clearTimeout(timeoutId)
+    const errorDetails = {
+      message: err?.message,
+      code: err?.code || err?.cause?.code,
+      status: err?.status,
+      statusCode: err?.statusCode,
+      name: err?.name,
+      type: err?.type,
+      cause: err?.cause,
+    }
+    const isTimeoutError =
+      errorDetails.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+      errorDetails.code === 'ETIMEDOUT' ||
+      errorDetails.code === 'ECONNRESET' ||
+      errorDetails.message?.toLowerCase().includes('timed out') ||
+      errorDetails.message?.includes('Request timed out') ||
+      errorDetails.message?.includes('timeout') ||
+      errorDetails.name === 'TimeoutError' ||
+      errorDetails.type === 'aborted'
+    console.error('[api/agent/chat] stream error:', {
+      ...errorDetails,
+      isTimeoutError,
+      timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
+      model: AITUNNEL_MODEL,
+      baseURL: AITUNNEL_BASE_URL
+    })
+    const msg = isTimeoutError
+      ? `Таймаут запроса (${AITUNNEL_TIMEOUT_MS / 1000} сек). Провайдер (AITUNNEL/DeepSeek) не ответил вовремя — возможны сбои на их стороне. Попробуйте позже.`
+      : (err?.message || 'Chat request failed')
+    send({ type: 'error', message: msg, details: errorDetails })
+  } finally {
+    res.end()
+  }
+})
+
+// Roleplay feedback — short, supportive coaching after scenario
+app.post('/api/agent/roleplay-feedback', async (req, res) => {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  const decoded = verifyBackendJwt(rawToken)
+  if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+  const userId = decoded.sub
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const { messages, scenario_id, scenario_title, goal, goal_ru, roleplay_settings } = req.body || {}
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Expected { messages: [{role, content}, ...] }' })
+  }
+
+  const userMessages = messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content)
+    .filter(Boolean)
+    .slice(-10)
+  if (userMessages.length === 0) {
+    return res.status(400).json({ error: 'No user messages to evaluate' })
+  }
+
+  const scenarioGoal = (typeof goal_ru === 'string' && goal_ru.trim()) || (typeof goal === 'string' && goal.trim()) || ''
+  const settings = roleplay_settings && typeof roleplay_settings === 'object' ? roleplay_settings : {}
+  const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
+  const allowProfanity = Boolean(settings.allow_profanity)
+  const aiMayUseProfanity = allowProfanity && Boolean(settings.ai_may_use_profanity)
+  const profanityIntensity = ['light', 'medium', 'hard'].includes(settings.profanity_intensity)
+    ? settings.profanity_intensity
+    : 'light'
+  const FEEDBACK_SYSTEM = `You are a supportive language coach. Give brief, actionable feedback on the user's dialogue in this scenario.
+
+Rules:
+1. Name one concrete STRENGTH: refer to something they said or did well (e.g. "You used 'I'd like to...' well" or "You asked for the address clearly").
+2. Give one concrete SUGGESTION for next time, tied to the scenario goal (e.g. if the goal was to book a taxi, suggest asking about price or confirming the time).
+3. Suggest one USEFUL PHRASE in English they could remember for this type of situation (a typical sentence), and its RUSSIAN translation.
+4. If this scenario uses slang/profanity settings, add one short STYLE NOTE about register control and appropriateness.
+5. If user used very aggressive language, provide one neutral rewrite line.
+Respond ONLY with valid JSON, no markdown, no other text:
+{"feedback": "1-2 short sentences in Russian or English: strength + suggestion.", "useful_phrase": "one typical phrase in English for this situation", "useful_phrase_ru": "translation of useful_phrase in Russian. Empty string if useful_phrase is empty.", "style_note": "short note about slang/profanity appropriateness. Empty string if not applicable.", "rewrite_neutral": "one short neutral rewrite for a rough line. Empty string if not applicable."}`
+
+  const goalBlock = scenarioGoal ? `\nScenario goal (what the user was supposed to achieve): ${scenarioGoal}\n` : ''
+  const settingsBlock = `
+Roleplay style settings:
+- slang_mode: ${slangMode}
+- allow_profanity: ${allowProfanity}
+- ai_may_use_profanity: ${aiMayUseProfanity}
+- profanity_intensity: ${profanityIntensity}
+`
+  const userPrompt = `Scenario: ${scenario_title || 'Roleplay'}.${goalBlock}
+${settingsBlock}
+
+User's dialogue lines (transcript):
+${userMessages.join('\n---\n')}
+
+Return JSON with "feedback" and "useful_phrase".`
+
+  try {
+    const completion = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        { role: 'system', content: FEEDBACK_SYSTEM },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 280,
+      temperature: 0.4,
+    })
+    const usage = completion?.usage
+    if (usage && (usage.input_tokens || usage.output_tokens)) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { roleplay_feedback: true })
+      }
+    }
+    const raw = completion.choices?.[0]?.message?.content?.trim() || ''
+    let feedback = ''
+    let useful_phrase = ''
+    let useful_phrase_ru = ''
+    let style_note = ''
+    let rewrite_neutral = ''
+    try {
+      const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, '').trim())
+      feedback = typeof parsed.feedback === 'string' ? parsed.feedback.trim() : raw
+      useful_phrase = typeof parsed.useful_phrase === 'string' ? parsed.useful_phrase.trim() : ''
+      useful_phrase_ru = typeof parsed.useful_phrase_ru === 'string' ? parsed.useful_phrase_ru.trim() : ''
+      style_note = typeof parsed.style_note === 'string' ? parsed.style_note.trim() : ''
+      rewrite_neutral = typeof parsed.rewrite_neutral === 'string' ? parsed.rewrite_neutral.trim() : ''
+    } catch {
+      feedback = raw
+    }
+    res.json({
+      feedback: feedback || '',
+      useful_phrase: useful_phrase || null,
+      useful_phrase_ru: useful_phrase_ru || null,
+      style_note: style_note || null,
+      rewrite_neutral: rewrite_neutral || null,
+      scenario_id: scenario_id || null,
+      scenario_title: scenario_title || null,
+    })
+  } catch (err) {
+    console.error('[api/agent/roleplay-feedback] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Roleplay feedback failed' })
+  }
+})
+
+// Debate feedback — short, supportive coaching after debate
+app.post('/api/agent/debate-feedback', async (req, res) => {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  const decoded = verifyBackendJwt(rawToken)
+  if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+  const userId = decoded.sub
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const { messages, topic, user_position, ai_position, roleplay_settings } = req.body || {}
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Expected { messages: [{role, content}, ...] }' })
+  }
+
+  const userMessages = messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content)
+    .filter(Boolean)
+    .slice(-10)
+  if (userMessages.length === 0) {
+    return res.status(400).json({ error: 'No user messages to evaluate' })
+  }
+
+  const settings = roleplay_settings && typeof roleplay_settings === 'object' ? roleplay_settings : {}
+  const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
+  const allowProfanity = Boolean(settings.allow_profanity)
+  const aiMayUseProfanity = allowProfanity && Boolean(settings.ai_may_use_profanity)
+  const profanityIntensity = ['light', 'medium', 'hard'].includes(settings.profanity_intensity)
+    ? settings.profanity_intensity
+    : 'light'
+
+  const FEEDBACK_SYSTEM = `You are a supportive English debate coach. Give brief, actionable feedback on the user's debate performance.
+
+Rules:
+1. Identify one concrete STRENGTH and one concrete IMPROVEMENT opportunity.
+2. Use SBI format for both strength and improvement:
+   - situation: where in the debate it happened
+   - behavior: what exactly the user did
+   - impact: why it helped / what to improve
+3. Keep language practical and specific, no generic advice.
+4. Suggest one NEXT-TRY phrase in English and its Russian translation.
+5. If slang/profanity settings are enabled, evaluate register control and appropriateness briefly.
+6. Penalize random profanity with no communicative purpose; reward controlled style switching.
+
+Respond ONLY with valid JSON, no markdown, no other text:
+{
+  "feedback_short_ru": "1-2 short sentences in Russian: strength + suggestion",
+  "strength_sbi": {
+    "situation": "string",
+    "behavior": "string",
+    "impact": "string"
+  },
+  "improvement_sbi": {
+    "situation": "string",
+    "behavior": "string",
+    "impact": "string"
+  },
+  "next_try_phrase_en": "one useful debate phrase in English",
+  "next_try_phrase_ru": "translation to Russian"
+}`
+
+  const topicBlock = topic ? `\nDebate topic: ${topic}\nUser position: ${user_position || 'unknown'}\n` : ''
+  const settingsBlock = `
+Debate style settings:
+- slang_mode: ${slangMode}
+- allow_profanity: ${allowProfanity}
+- ai_may_use_profanity: ${aiMayUseProfanity}
+- profanity_intensity: ${profanityIntensity}
+`
+  const userPrompt = `Debate${topicBlock}
+${settingsBlock}
+User's debate arguments (transcript):
+${userMessages.join('\n---\n')}
+
+Return JSON with the required keys: feedback_short_ru, strength_sbi, improvement_sbi, next_try_phrase_en, next_try_phrase_ru.`
+
+  try {
+    const completion = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        { role: 'system', content: FEEDBACK_SYSTEM },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 420,
+      temperature: 0.4,
+    })
+    const usage = completion?.usage
+    if (usage && (usage.input_tokens || usage.output_tokens)) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { debate_feedback: true })
+      }
+    }
+    const raw = completion.choices?.[0]?.message?.content?.trim() || ''
+    let feedbackShort = ''
+    let useful_phrase = ''
+    let useful_phrase_ru = ''
+    let strength_sbi = { situation: '', behavior: '', impact: '' }
+    let improvement_sbi = { situation: '', behavior: '', impact: '' }
+    try {
+      const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, '').trim())
+      feedbackShort =
+        typeof parsed.feedback_short_ru === 'string' && parsed.feedback_short_ru.trim()
+          ? parsed.feedback_short_ru.trim()
+          : typeof parsed.feedback === 'string'
+            ? parsed.feedback.trim()
+            : ''
+
+      const phraseEn =
+        typeof parsed.next_try_phrase_en === 'string' && parsed.next_try_phrase_en.trim()
+          ? parsed.next_try_phrase_en.trim()
+          : typeof parsed.useful_phrase === 'string'
+            ? parsed.useful_phrase.trim()
+            : ''
+      const phraseRu =
+        typeof parsed.next_try_phrase_ru === 'string' && parsed.next_try_phrase_ru.trim()
+          ? parsed.next_try_phrase_ru.trim()
+          : typeof parsed.useful_phrase_ru === 'string'
+            ? parsed.useful_phrase_ru.trim()
+            : ''
+
+      useful_phrase = phraseEn
+      useful_phrase_ru = phraseRu
+
+      const readSbi = (obj) => ({
+        situation: typeof obj?.situation === 'string' ? obj.situation.trim() : '',
+        behavior: typeof obj?.behavior === 'string' ? obj.behavior.trim() : '',
+        impact: typeof obj?.impact === 'string' ? obj.impact.trim() : '',
+      })
+      strength_sbi = readSbi(parsed.strength_sbi)
+      improvement_sbi = readSbi(parsed.improvement_sbi)
+    } catch {
+      feedbackShort = raw
+    }
+    res.json({
+      // New fields (v2)
+      feedback_short_ru: feedbackShort || '',
+      strength_sbi,
+      improvement_sbi,
+      next_try_phrase_en: useful_phrase || null,
+      next_try_phrase_ru: useful_phrase_ru || null,
+      // Backward-compatible fields
+      feedback: feedbackShort || '',
+      useful_phrase: useful_phrase || null,
+      useful_phrase_ru: useful_phrase_ru || null,
+      topic: topic || null,
+      user_position: user_position || null,
+    })
+  } catch (err) {
+    console.error('[api/agent/debate-feedback] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Debate feedback failed' })
+  }
+})
+
+function normalizeDebateTopicInput(topicRaw) {
+  return String(topicRaw || '').replace(/\s+/g, ' ').trim()
+}
+
+function detectDebateTopicLanguage(topic) {
+  const hasCyrillic = /[А-Яа-яЁё]/.test(topic)
+  const hasLatin = /[A-Za-z]/.test(topic)
+  if (hasCyrillic && !hasLatin) return 'ru'
+  if (hasLatin && !hasCyrillic) return 'en'
+  return 'unknown'
+}
+
+function validateDebateTopicInput(topicRaw) {
+  const normalized = normalizeDebateTopicInput(topicRaw)
+  const language = detectDebateTopicLanguage(normalized)
+  const errors = []
+  const warnings = []
+
+  if (normalized.length < 10) errors.push('Тема слишком короткая. Минимум 10 символов.')
+  if (normalized.length > 180) errors.push('Тема слишком длинная. Максимум 180 символов.')
+  if (!/[A-Za-zА-Яа-яЁё]{3}/.test(normalized)) {
+    errors.push('Добавьте осмысленную тему (буквы, а не только символы).')
+  }
+  if (/[\r\n]/.test(String(topicRaw || ''))) {
+    warnings.push('Тема содержит переносы строк. Лучше оставить одно предложение.')
+  }
+  if (/(ignore|disregard|override).{0,80}(instruction|system|prompt|developer)/i.test(normalized)) {
+    warnings.push('Тема похожа на инструкцию для модели. Формулируйте только предмет дебата.')
+  }
+
+  const status = errors.length > 0 ? 'rejected' : warnings.length > 0 ? 'warning' : 'valid'
+  return { status, normalized, language, errors, warnings }
+}
+
+function inferDebateDifficulty(topic) {
+  const t = topic.toLowerCase()
+  if (topic.length >= 120) return 'hard'
+  if (/(government|econom|policy|democracy|philosoph|ethic|geopolit|capitalism|socialism|immigration|nuclear|privacy|security|регулирован|демократ|полит|философ|этик|геополит|эконом)/i.test(t)) {
+    return 'hard'
+  }
+  if (/(school|student|work|remote|social media|health|climate|education|technology|работ|школ|ученик|соцсет|здоров|климат|образован|технолог)/i.test(t)) {
+    return 'medium'
+  }
+  return 'easy'
+}
+
+// Debate topic preparation: validation + normalization + difficulty recommendation.
+app.post('/api/agent/debate-topic-prepare', async (req, res) => {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  const decoded = verifyBackendJwt(rawToken)
+  if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+
+  const { topic_raw, locale, difficulty_mode } = req.body || {}
+  const rawTopic = typeof topic_raw === 'string' ? topic_raw : ''
+  const mode = typeof difficulty_mode === 'string' ? difficulty_mode.toLowerCase() : 'auto'
+  const localeValue = typeof locale === 'string' ? locale.trim() : 'ru'
+  const validation = validateDebateTopicInput(rawTopic)
+  const allowedModes = new Set(['auto', 'easy', 'medium', 'hard'])
+  const safeMode = allowedModes.has(mode) ? mode : 'auto'
+  const recommendedDifficulty = inferDebateDifficulty(validation.normalized)
+  const selectedDifficulty = safeMode === 'auto' ? recommendedDifficulty : safeMode
+
+  return res.json({
+    is_valid: validation.status !== 'rejected',
+    status: validation.status,
+    normalized_topic: validation.normalized,
+    detected_language: validation.language,
+    recommended_difficulty: recommendedDifficulty,
+    selected_difficulty: selectedDifficulty,
+    difficulty_mode: safeMode,
+    warnings: validation.warnings,
+    errors: validation.errors,
+    locale: localeValue || 'ru',
+  })
+})
+
+// Reply hint — подсказка ответа: и по реплике ИИ, и по шагам сценария
+app.post('/api/agent/reply-hint', async (req, res) => {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  const decoded = verifyBackendJwt(rawToken)
+  if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+  const userId = decoded.sub
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const {
+    mode,
+    last_assistant_message,
+    history,
+    goal,
+    goal_ru,
+    level,
+    steps,
+    completed_step_ids,
+    topic,
+    user_position,
+    ai_position,
+    roleplay_settings,
+    freestyle_context,
+    hint_mode,
+  } = req.body || {}
+  const agentMessage = typeof last_assistant_message === 'string' ? last_assistant_message.trim() : ''
+  if (!agentMessage) {
+    return res.status(400).json({ error: 'Expected { last_assistant_message: "..." }' })
+  }
+  const hintMode = mode === 'debate' ? 'debate' : mode === 'chat' ? 'chat' : 'roleplay'
+  const settings = roleplay_settings && typeof roleplay_settings === 'object' ? roleplay_settings : {}
+  const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
+  const allowProfanity = Boolean(settings.allow_profanity)
+  const aiMayUseProfanity = allowProfanity && Boolean(settings.ai_may_use_profanity)
+  const profanityIntensity = ['light', 'medium', 'hard'].includes(settings.profanity_intensity)
+    ? settings.profanity_intensity
+    : 'light'
+  const hintModeValue = ['natural', 'simpler', 'more_native', 'polite_rewrite', 'no_profanity'].includes(hint_mode)
+    ? hint_mode
+    : 'natural'
+  const freestyleContext = freestyle_context && typeof freestyle_context === 'object' ? freestyle_context : {}
+  const freestyleRoleHint = typeof freestyleContext.role_hint === 'string' ? freestyleContext.role_hint : 'none'
+  const freestyleToneFormality = Number.isFinite(Number(freestyleContext.tone_formality))
+    ? Math.max(0, Math.min(100, Number(freestyleContext.tone_formality)))
+    : 50
+  const freestyleToneDirectness = Number.isFinite(Number(freestyleContext.tone_directness))
+    ? Math.max(0, Math.min(100, Number(freestyleContext.tone_directness)))
+    : 50
+  const freestyleMicroGoals = Array.isArray(freestyleContext.micro_goals)
+    ? freestyleContext.micro_goals.filter((g) => typeof g === 'string').slice(0, 3)
+    : []
+
+  const scenarioGoal = (typeof goal_ru === 'string' && goal_ru.trim()) || (typeof goal === 'string' && goal.trim()) || ''
+  const levelHint = typeof level === 'string' && level.trim()
+    ? level.trim().toUpperCase().replace(/^(EASY|MEDIUM|HARD)$/i, (m) => m.charAt(0) + m.slice(1).toLowerCase())
+    : 'B1'
+
+  const levelGuidance = {
+    A1: 'Use very simple words and short sentences (e.g. "I like...", "Yes, please.", "Thank you.").',
+    A2: 'Use simple, everyday phrases. Short sentences are fine.',
+    B1: 'Use natural everyday English with common phrases and connectors.',
+    B2: 'Use varied vocabulary and natural, flowing sentences.',
+    C1: 'Use idiomatic, natural English with nuance where appropriate.',
+    easy: 'Use simple words and short, clear sentences.',
+    medium: 'Use natural everyday phrases and moderate complexity.',
+    hard: 'Use varied, natural language with more sophisticated expressions.',
+  }
+  const levelText = levelGuidance[levelHint] || levelGuidance.B1
+
+  const stepsList = Array.isArray(steps) && steps.length > 0 ? steps.filter((s) => s && typeof s.id === 'string') : []
+  const completedSet = new Set(Array.isArray(completed_step_ids) ? completed_step_ids.filter((id) => typeof id === 'string') : [])
+  const nextSteps = stepsList.filter((s) => !completedSet.has(s.id))
+  const currentStepLabel = nextSteps.length > 0
+    ? (nextSteps[0].titleRu || nextSteps[0].title_ru || nextSteps[0].titleEn || nextSteps[0].title_en || nextSteps[0].id).trim()
+    : ''
+  const stepsBlock =
+    stepsList.length > 0
+      ? nextSteps.length > 0
+        ? `\nSteps (user should complete these): ${stepsList.map((s) => (s.titleRu || s.title_ru || s.titleEn || s.title_en || s.id).trim()).join('; ')}\nAlready done: ${[...completedSet].join(', ') || 'none'}. Next to do: ${nextSteps.map((s) => (s.titleRu || s.title_ru || s.titleEn || s.title_en || s.id).trim()).join('; ')}. Prefer a reply that naturally moves toward the NEXT step while still answering what the agent said.`
+        : `\nAll steps are done or there are no steps. Suggest a reply that fits the agent's message and the scenario goal.`
+      : ''
+  const historyList = Array.isArray(history)
+    ? history
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      .slice(-10)
+    : []
+  const historyBlock = historyList.length > 0
+    ? `\nRecent conversation context:\n${historyList.map((m) => `${m.role}: ${m.content.trim()}`).join('\n')}`
+    : ''
+
+  const roleplaySystemContent = `You are a language coach. The user is in a roleplay dialogue. The OTHER person (the agent) just said something. Your job is to suggest a natural REPLY the user could say — one that fits the agent's message AND, if the scenario has steps, helps move the dialogue toward the next uncompleted step.
+
+Rules:
+- Output ONLY the suggested reply text, in the SAME language the agent used (usually English). No explanations, no "You could say:", no quotation marks around the whole thing.
+- Match the learner level: ${levelText}
+- The reply must sound like a natural response to what the agent just said (answer their question, react to their line, stay in character).
+- If steps are provided, prefer a reply that both responds to the agent and moves the user toward the next step (e.g. if the next step is "give your address", the hint could include giving or leading to an address). If all steps are done, just suggest a natural reply to the agent.
+- Keep it conversational. One short reply is enough; if two variants fit, you may give 1–2 options on separate lines.`
+
+  const roleplayUserContent =
+    (scenarioGoal ? `Scenario goal: ${scenarioGoal}` : '') +
+    historyBlock +
+    stepsBlock +
+    `\n\nWhat the other person (agent) just said:\n${agentMessage}\n\nSuggest a natural reply the user could say (same language as above, one or two short options).`
+
+  const debateTopic = typeof topic === 'string' ? topic.trim() : ''
+  const userPosition = typeof user_position === 'string' ? user_position.trim() : ''
+  const aiPosition = typeof ai_position === 'string' ? ai_position.trim() : ''
+  const debateSystemContent = `You are a speaking coach for an English debate practice session. The AI opponent just spoke. Your task is to suggest what the USER could reply next.
+
+Rules:
+- Output ONLY the suggested reply text. No explanations, no labels, no quotation marks around the whole answer.
+- Use the SAME language as the opponent's last message.
+- Match learner level: ${levelText}
+- The reply must directly react to the opponent's latest argument and stay logically consistent with recent dialogue context.
+- Keep the user's side consistent with their debate position (do not switch sides).
+- If a current debate step exists, naturally move toward it while still answering the latest opponent point.
+- Style settings for this debate:
+  - slang_mode=${slangMode}
+  - allow_profanity=${allowProfanity}
+  - ai_may_use_profanity=${aiMayUseProfanity}
+  - profanity_intensity=${profanityIntensity}
+- If slang_mode is off: keep wording neutral (no slang).
+- If slang_mode is light/heavy: mirror that style naturally in the suggested reply.
+- If allow_profanity is false: keep the hint clean.
+- If allow_profanity is true but ai_may_use_profanity is false: user hint may include profanity only when contextually needed, avoid excess.
+- If allow_profanity and ai_may_use_profanity are true: hint may include context-appropriate profanity with the selected intensity.
+- Keep it concise and natural (usually 1-3 sentences; optionally 1-2 short variants on separate lines).`
+  const debateUserContent =
+    `${debateTopic ? `Debate topic: ${debateTopic}\n` : ''}` +
+    `${userPosition ? `User position: ${userPosition}\n` : ''}` +
+    `${aiPosition ? `Opponent position: ${aiPosition}\n` : ''}` +
+    `${scenarioGoal ? `Debate completion goal: ${scenarioGoal}\n` : ''}` +
+    `${currentStepLabel ? `Current stage to move toward: ${currentStepLabel}\n` : ''}` +
+    historyBlock +
+    stepsBlock +
+    `\n\nOpponent's latest message:\n${agentMessage}\n\nSuggest the user's next reply.`
+
+  const freestyleModeInstruction =
+    hintModeValue === 'simpler'
+      ? 'Make the suggested reply very simple: short sentence(s), easy vocabulary.'
+      : hintModeValue === 'more_native'
+        ? 'Make the suggested reply sound more native and natural with colloquial flow.'
+        : hintModeValue === 'polite_rewrite'
+          ? 'Rewrite the likely reply in a polite and respectful way, even if context is tense.'
+          : hintModeValue === 'no_profanity'
+            ? 'Keep the suggested reply strictly clean and without profanity.'
+            : 'Keep the suggested reply natural and context-aware.'
+
+  const chatSystemContent = `You are a speaking coach for freestyle conversation practice. The assistant just wrote a message, and you suggest what the USER could reply next.
+
+Rules:
+- Output ONLY the suggested reply text. No explanations, no labels, no quote wrappers.
+- Use the SAME language as the assistant's last message.
+- Match learner level: ${levelText}
+- Keep the suggestion directly relevant to the latest assistant message and recent context.
+- Apply style settings:
+  - slang_mode=${slangMode}
+  - allow_profanity=${allowProfanity}
+  - ai_may_use_profanity=${aiMayUseProfanity}
+  - profanity_intensity=${profanityIntensity}
+- If slang_mode is off: keep wording neutral.
+- If slang_mode is light/heavy: mirror this style naturally.
+- If allow_profanity is false: keep it clean.
+- If hint_mode=no_profanity: keep it clean regardless of other settings.
+- Hint mode: ${hintModeValue}. ${freestyleModeInstruction}
+- Ephemeral freestyle context:
+  - role_hint=${freestyleRoleHint}
+  - tone_formality=${freestyleToneFormality}/100
+  - tone_directness=${freestyleToneDirectness}/100
+  - micro_goals=${freestyleMicroGoals.join(', ') || 'none'}
+- If role_hint is set (not none), phrasing should fit that social context.
+- Higher tone_formality => more polite/formal wording; lower => more casual wording.
+- Higher tone_directness => more direct wording; lower => softer/indirect wording.
+- If micro_goals are present, make the suggested reply naturally include at least one of them.
+- Keep it concise (usually 1-2 sentences; optionally 1-2 short variants on separate lines).`
+
+  const chatUserContent =
+    historyBlock +
+    `\n\nAssistant's latest message:\n${agentMessage}\n\nSuggest the user's next reply.`
+
+  try {
+    const systemContent = hintMode === 'debate'
+      ? debateSystemContent
+      : hintMode === 'chat'
+        ? chatSystemContent
+        : roleplaySystemContent
+    const userContent = hintMode === 'debate'
+      ? debateUserContent
+      : hintMode === 'chat'
+        ? chatUserContent
+        : roleplayUserContent
+    const completion = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        { role: 'system', content: systemContent },
+        { role: 'user', content: userContent },
+      ],
+      max_tokens: 200,
+      temperature: 0.5,
+    })
+    const usage = completion?.usage
+    if (usage && (usage.input_tokens || usage.output_tokens)) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { reply_hint: true })
+      }
+    }
+    const hint = (completion.choices?.[0]?.message?.content ?? '').trim()
+    res.json({ hint: hint || '' })
+  } catch (err) {
+    console.error('[api/agent/reply-hint] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Reply hint failed' })
+  }
+})
+
+// ---------- User roleplay scenarios (personal scenarios: create, list, edit, archive, delete) ----------
+const USER_SCENARIO_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'easy', 'medium', 'hard']
+
+function requireUserScenarioAuth(req, res) {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) {
+    res.status(401).json({ error: 'Missing Authorization Bearer token' })
+    return null
+  }
+  const decoded = verifyBackendJwt(rawToken)
+  if (!decoded || !decoded.sub) {
+    res.status(401).json({ error: 'Invalid or expired token' })
+    return null
+  }
+  return decoded.sub
+}
+
+function buildUserScenarioRow(row) {
+  if (!row) return null
+  const payload = typeof row.payload === 'object' && row.payload !== null ? row.payload : {}
+  return {
+    id: row.id,
+    title: row.title,
+    level: row.level || 'medium',
+    archived: Boolean(row.archived),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    ...payload,
+  }
+}
+
+// List user's scenarios (optional ?archived=false | true)
+app.get('/api/user-scenarios', async (req, res) => {
+  const userId = requireUserScenarioAuth(req, res)
+  if (!userId) return
+
+  const archivedParam = req.query.archived
+  let archivedFilter = null
+  if (archivedParam === 'true') archivedFilter = true
+  else if (archivedParam === 'false') archivedFilter = false
+
+  try {
+    let q = supabase
+      .from('user_roleplay_scenarios')
+      .select('id, user_id, title, level, archived, payload, created_at, updated_at')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+    if (archivedFilter !== null) {
+      q = q.eq('archived', archivedFilter)
+    }
+    const { data, error } = await safeSupabaseCall(() => q, { timeoutMs: 15000, maxRetries: 2 })
+    if (error) {
+      console.error('[api/user-scenarios] list error:', error.message)
+      return res.status(500).json({ error: error.message || 'Failed to list scenarios' })
+    }
+    const list = (data || []).map(buildUserScenarioRow)
+    const scenarioIds = list.map((s) => s.id).filter(Boolean)
+    // «Недавно играли» и счётчики — только из Supabase roleplay_completions, не из localStorage
+    if (scenarioIds.length > 0) {
+      const { data: completions } = await supabase
+        .from('roleplay_completions')
+        .select('scenario_id, completed_at')
+        .eq('user_id', userId)
+        .in('scenario_id', scenarioIds)
+      const byScenario = {}
+      for (const c of completions || []) {
+        const id = c.scenario_id
+        if (!byScenario[id]) byScenario[id] = { count: 0, lastCompletedAt: null }
+        byScenario[id].count += 1
+        const at = c.completed_at ? new Date(c.completed_at).toISOString() : null
+        if (at && (!byScenario[id].lastCompletedAt || at > byScenario[id].lastCompletedAt)) {
+          byScenario[id].lastCompletedAt = at
+        }
+      }
+      for (const s of list) {
+        const stats = byScenario[s.id]
+        s.completions_count = stats ? stats.count : 0
+        s.last_completed_at = stats?.lastCompletedAt ?? null
+      }
+    } else {
+      for (const s of list) {
+        s.completions_count = 0
+        s.last_completed_at = null
+      }
+    }
+    res.json({ scenarios: list })
+  } catch (err) {
+    console.error('[api/user-scenarios] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Failed to list scenarios' })
+  }
+})
+
+// Generate scenario with AI (free-text prompt and/or structured fields + level)
+app.post('/api/user-scenarios/generate', async (req, res) => {
+  const userId = requireUserScenarioAuth(req, res)
+  if (!userId) return
+
+  const body = req.body || {}
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+  const level = USER_SCENARIO_LEVELS.includes(body.level) ? body.level : 'medium'
+  const structured = body.structured && typeof body.structured === 'object' ? body.structured : {}
+  const topic = typeof structured.topic === 'string' ? structured.topic.trim() : ''
+  const place = typeof structured.place === 'string' ? structured.place.trim() : ''
+  const userRole = typeof structured.userRole === 'string' ? structured.userRole.trim() : ''
+  const goal = typeof structured.goal === 'string' ? structured.goal.trim() : ''
+  const slangMode = ['off', 'light', 'heavy'].includes(structured.slangMode) ? structured.slangMode : 'light'
+  const allowProfanity = Boolean(structured.allowProfanity)
+  const aiMayUseProfanity = allowProfanity && Boolean(structured.aiMayUseProfanity)
+  const profanityIntensity = ['light', 'medium', 'hard'].includes(structured.profanityIntensity)
+    ? structured.profanityIntensity
+    : 'light'
+
+  if (!prompt && !topic && !place && !userRole && !goal) {
+    return res.status(400).json({ error: 'Provide either prompt (free text) or structured fields (topic, place, userRole, goal)' })
+  }
+
+  const levelHint = {
+    A1: 'Use very simple vocabulary and short sentences (1–2 words to short phrases).',
+    A2: 'Use simple, everyday vocabulary and short clear sentences.',
+    B1: 'Use intermediate vocabulary and natural but still clear sentences.',
+    B2: 'Use varied vocabulary and more natural, flowing dialogue.',
+    C1: 'Use rich, natural language and idiomatic expressions where appropriate.',
+    easy: 'Use very simple vocabulary and short sentences.',
+    medium: 'Use natural, everyday language and normal sentence length.',
+    hard: 'Use more varied vocabulary and natural, flowing dialogue.',
+  }[level] || 'Use natural, everyday language.'
+
+  const SYSTEM_PROMPT = `You are an expert designer of English roleplay scenarios for language learners. Generate ONE complete scenario. The AI will play one character; the user (learner) plays the other.
+
+CRITICAL: The "systemPrompt" field MUST use exactly this 5-block structure. In the JSON string value, put a newline between blocks (in JSON write \\n for newline). Order: Character → Situation → Goal → Style → First line.
+
+Structure (each block title followed by one or more sentences):
+1) Character: You are a [role]. [One short trait.]
+2) Situation: [One sentence: where and what the user needs.]
+3) Goal: [One sentence: what the AI must achieve in the dialogue.]
+4) Style: Speak only in English. Use short, simple sentences (1–2). [Then: flow for this scenario — what to ask first, confirm what you heard, recast small mistakes naturally, offer simple choice if they struggle. Any extra rule.]
+5) First line: [One sentence: how the AI should start.]
+
+Example (taxi) — in your JSON the systemPrompt string must look like this (use \\n for line breaks):
+Character: You are a friendly taxi driver answering the phone.
+
+Situation: The caller just finished work outside an office building and needs a ride home.
+
+Goal: Get the pick-up location and destination, then confirm the booking.
+
+Style: Speak only in English. Use short, simple sentences (1–2). Ask for pick-up first, then destination. Confirm what you heard. If the user makes a small mistake, recast naturally. If they struggle, offer a simple choice. Only ask about payment after pick-up and destination are clear.
+
+First line: Answer like a taxi driver and ask where they are now.
+
+Output ONLY valid JSON, no markdown, no code fence. Required structure:
+{
+  "title": "Short scenario title in Russian",
+  "description": "One sentence in Russian: what the user will do",
+  "category": "everyday" | "professional" | "fun",
+  "setting": "Where the scene takes place, in English, 1 sentence",
+  "scenarioText": "Situation in English: context for the user",
+  "yourRole": "In English: what the user must do in this dialogue",
+  "settingRu": "Место действия по-русски",
+  "scenarioTextRu": "Ситуация по-русски",
+  "yourRoleRu": "Роль пользователя по-русски",
+  "openingInstruction": "How the AI character should start (instruction in English)",
+  "characterOpening": "Exact first line the AI says (in English)",
+  "difficulty": "easy" | "medium" | "hard",
+  "optionalTwist": "Optional: one sentence hint for a twist (English)",
+  "systemPrompt": "MUST use the 5-block structure: Character: ...\\n\\nSituation: ...\\n\\nGoal: ...\\n\\nStyle: ...\\n\\nFirst line: ...",
+  "goal": "In English: when is the goal reached (one clear sentence)",
+  "goalRu": "Когда цель достигнута, по-русски",
+  "steps": [{"id": "step1", "order": 1, "titleRu": "Шаг по-русски", "titleEn": "Step in English"}, ...],
+  "maxScoreTipsRu": "Short tips in Russian. Optional.",
+  "suggestedFirstLine": "Optional: example first line from user, in English",
+  "slangMode": "off" | "light" | "heavy",
+  "allowProfanity": true | false,
+  "aiMayUseProfanity": true | false,
+  "profanityIntensity": "light" | "medium" | "hard"
+}
+
+Rules:
+- systemPrompt: exactly 5 blocks (Character, Situation, Goal, Style, First line), separated by \\n\\n. Style must include "Speak only in English" and "Use short, simple sentences (1–2)" and recast/choice guidance.
+- Language: scenario and dialogue in English; Russian only for title, description, *Ru, maxScoreTipsRu.
+- steps: 2–4 checkpoints (id: lowercase, no spaces).
+- Always include slangMode/allowProfanity/aiMayUseProfanity/profanityIntensity in output JSON.
+- If allowProfanity is false, aiMayUseProfanity must be false.
+- Concrete and playable in 1–3 minutes.`
+
+  const parts = []
+  if (prompt) parts.push(`User request (free text): ${prompt}`)
+  if (topic) parts.push(`Topic/theme: ${topic}`)
+  if (place) parts.push(`Place: ${place}`)
+  if (userRole) parts.push(`User's role: ${userRole}`)
+  if (goal) parts.push(`Desired goal: ${goal}`)
+  parts.push(`Slang mode: ${slangMode}`)
+  parts.push(`Allow profanity (18+): ${allowProfanity ? 'yes' : 'no'}`)
+  parts.push(`AI may use profanity: ${aiMayUseProfanity ? 'yes' : 'no'}`)
+  parts.push(`Profanity intensity: ${profanityIntensity}`)
+  parts.push('Hard forbidden themes: pedophilia/minors sexual content, extremism/terrorism promotion, violent wrongdoing instructions, non-consensual sexual violence, direct real-world threats, doxxing.')
+  const userPrompt = `${parts.join('\n')}\n\nLevel: ${level}. ${levelHint}\n\nGenerate the scenario JSON now (only the JSON object, no other text).`
+
+  try {
+    const completion = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 2200,
+      temperature: 0.5,
+    })
+    const raw = completion.choices?.[0]?.message?.content?.trim() || ''
+    const jsonStr = raw.replace(/^```json\s*|\s*```$/g, '').trim()
+    let payload
+    try {
+      payload = JSON.parse(jsonStr)
+    } catch (e) {
+      console.error('[api/user-scenarios/generate] Invalid JSON:', raw?.slice(0, 400))
+      return res.status(500).json({ error: 'Scenario generation failed: invalid response from AI' })
+    }
+    if (!payload.systemPrompt || !payload.goal || !payload.goalRu) {
+      return res.status(500).json({ error: 'Scenario generation failed: missing required fields' })
+    }
+    if (!Array.isArray(payload.steps) || payload.steps.length === 0) {
+      payload.steps = [{ id: 'goal', order: 1, titleRu: 'Достичь цели', titleEn: 'Reach the goal' }]
+    }
+    const title = typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim() : 'Новый сценарий'
+    delete payload.title
+    payload.language = 'en'
+    payload.slangMode = ['off', 'light', 'heavy'].includes(payload.slangMode) ? payload.slangMode : slangMode
+    payload.allowProfanity = typeof payload.allowProfanity === 'boolean' ? payload.allowProfanity : allowProfanity
+    payload.aiMayUseProfanity = payload.allowProfanity ? Boolean(payload.aiMayUseProfanity) : false
+    payload.profanityIntensity = ['light', 'medium', 'hard'].includes(payload.profanityIntensity)
+      ? payload.profanityIntensity
+      : profanityIntensity
+    res.json({
+      title: title.slice(0, 500),
+      level,
+      payload,
+    })
+  } catch (err) {
+    console.error('[api/user-scenarios/generate] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Scenario generation failed' })
+  }
+})
+
+// Get one user scenario (for play or edit)
+app.get('/api/user-scenarios/:id', async (req, res) => {
+  const userId = requireUserScenarioAuth(req, res)
+  if (!userId) return
+
+  const { id } = req.params
+  if (!id) return res.status(400).json({ error: 'Missing scenario id' })
+
+  try {
+    const { data, error } = await safeSupabaseCall(
+      () => supabase
+        .from('user_roleplay_scenarios')
+        .select('id, user_id, title, level, archived, payload, created_at, updated_at')
+        .eq('id', id)
+        .eq('user_id', userId)
+        .single(),
+      { timeoutMs: 10000, maxRetries: 2 }
+    )
+    if (error || !data) {
+      if (error?.code === 'PGRST116') return res.status(404).json({ error: 'Scenario not found' })
+      return res.status(500).json({ error: error?.message || 'Failed to get scenario' })
+    }
+    res.json(buildUserScenarioRow(data))
+  } catch (err) {
+    console.error('[api/user-scenarios/:id] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Failed to get scenario' })
+  }
+})
+
+// Create user scenario
+app.post('/api/user-scenarios', async (req, res) => {
+  const userId = requireUserScenarioAuth(req, res)
+  if (!userId) return
+
+  const { title, level, payload } = req.body || {}
+  if (!title || typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'title is required' })
+  }
+  const levelVal = USER_SCENARIO_LEVELS.includes(level) ? level : 'medium'
+  const payloadObj = typeof payload === 'object' && payload !== null ? payload : {}
+
+  try {
+    const { data, error } = await safeSupabaseCall(
+      () => supabase
+        .from('user_roleplay_scenarios')
+        .insert({
+          user_id: userId,
+          title: title.trim().slice(0, 500),
+          level: levelVal,
+          archived: false,
+          payload: payloadObj,
+          updated_at: new Date().toISOString(),
+        })
+        .select('id, user_id, title, level, archived, payload, created_at, updated_at')
+        .single(),
+      { timeoutMs: 15000, maxRetries: 2 }
+    )
+    if (error) {
+      console.error('[api/user-scenarios] insert error:', serializeError(error))
+      if (typeof error?.message === 'string' && error.message.toLowerCase().includes('fetch failed')) {
+        return res.status(503).json({
+          error: 'Не удалось сохранить сценарий: временный сбой соединения с Supabase. Проверьте сеть/VPN и попробуйте снова.',
+        })
+      }
+      return res.status(500).json({ error: error.message || 'Failed to create scenario' })
+    }
+    res.status(201).json(buildUserScenarioRow(data))
+  } catch (err) {
+    console.error('[api/user-scenarios] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Failed to create scenario' })
+  }
+})
+
+// Update user scenario (title, level, archived, payload)
+app.patch('/api/user-scenarios/:id', async (req, res) => {
+  const userId = requireUserScenarioAuth(req, res)
+  if (!userId) return
+
+  const { id } = req.params
+  if (!id) return res.status(400).json({ error: 'Missing scenario id' })
+
+  const { title, level, archived, payload } = req.body || {}
+  const updates = { updated_at: new Date().toISOString() }
+  if (typeof title === 'string' && title.trim()) updates.title = title.trim().slice(0, 500)
+  if (USER_SCENARIO_LEVELS.includes(level)) updates.level = level
+  if (typeof archived === 'boolean') updates.archived = archived
+  if (typeof payload === 'object' && payload !== null) updates.payload = payload
+
+  if (Object.keys(updates).length <= 1) {
+    return res.status(400).json({ error: 'No valid fields to update' })
+  }
+
+  try {
+    const { data, error } = await safeSupabaseCall(
+      () => supabase
+        .from('user_roleplay_scenarios')
+        .update(updates)
+        .eq('id', id)
+        .eq('user_id', userId)
+        .select('id, user_id, title, level, archived, payload, created_at, updated_at')
+        .single(),
+      { timeoutMs: 15000, maxRetries: 2 }
+    )
+    if (error) {
+      if (error?.code === 'PGRST116') return res.status(404).json({ error: 'Scenario not found' })
+      return res.status(500).json({ error: error.message || 'Failed to update scenario' })
+    }
+    res.json(buildUserScenarioRow(data))
+  } catch (err) {
+    console.error('[api/user-scenarios PATCH] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Failed to update scenario' })
+  }
+})
+
+// Delete user scenario
+app.delete('/api/user-scenarios/:id', async (req, res) => {
+  const userId = requireUserScenarioAuth(req, res)
+  if (!userId) return
+
+  const { id } = req.params
+  if (!id) return res.status(400).json({ error: 'Missing scenario id' })
+
+  try {
+    const { error } = await safeSupabaseCall(
+      () => supabase
+        .from('user_roleplay_scenarios')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId),
+      { timeoutMs: 15000, maxRetries: 2 }
+    )
+    if (error) {
+      return res.status(500).json({ error: error.message || 'Failed to delete scenario' })
+    }
+    res.status(204).send()
+  } catch (err) {
+    console.error('[api/user-scenarios DELETE] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Failed to delete scenario' })
+  }
+})
+
+// ---------- End user roleplay scenarios ----------
+
+// Speaking assessment — AI evaluates user speech by rubric (fluency, vocabulary, grammar, pronunciation, completeness, dialogue)
+app.post('/api/agent/assess-speaking', async (req, res) => {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  const decoded = verifyBackendJwt(rawToken)
+  if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+  const userId = decoded.sub
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const { messages, scenario_id, scenario_title, format, agent_session_id, goal, steps, topic, user_position, micro_goals, roleplay_settings } = req.body || {}
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'Expected { messages: [{role, content}, ...] }' })
+  }
+
+  const userMessages = messages.filter((m) => m.role === 'user').map((m) => m.content).filter(Boolean)
+  if (userMessages.length === 0) {
+    return res.status(400).json({ error: 'No user messages to assess' })
+  }
+
+  const fmt = ['dialogue', 'monologue', 'presentation', 'debate'].includes(format) ? format : 'dialogue'
+  const settings = roleplay_settings && typeof roleplay_settings === 'object' ? roleplay_settings : {}
+  const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
+  const allowProfanity = Boolean(settings.allow_profanity)
+  const aiMayUseProfanity = allowProfanity && Boolean(settings.ai_may_use_profanity)
+  const profanityIntensity = ['light', 'medium', 'hard'].includes(settings.profanity_intensity)
+    ? settings.profanity_intensity
+    : 'light'
+  const parsedMicroGoals = Array.isArray(micro_goals)
+    ? micro_goals
+      .filter((g) => g && typeof g === 'object')
+      .map((g) => ({
+        goal_id: typeof g.goal_id === 'string' ? g.goal_id : '',
+        goal_label: typeof g.goal_label === 'string' ? g.goal_label : '',
+      }))
+      .filter((g) => g.goal_id)
+      .slice(0, 3)
+    : []
+
+  const scenarioContext =
+    goal || (Array.isArray(steps) && steps.length > 0)
+      ? [
+        'SCENARIO CONTEXT (use this to judge completeness and dialogue_skills):',
+        goal ? `Goal: ${typeof goal === 'string' ? goal : goal.titleEn || goal.goal || ''}` : '',
+        Array.isArray(steps) && steps.length > 0
+          ? 'Expected from the user: ' +
+          steps.map((s) => (typeof s === 'string' ? s : s.titleEn || s.titleRu || s.title || '')).filter(Boolean).join('; ')
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+      : ''
+
+  const completenessGuidance = scenarioContext
+    ? "\nFor completeness and dialogue_skills: if the user addressed the scenario goal and the expected steps (gave required information, reacted, asked questions, took turns), give 8-10. Do not mark as 'insufficiently informative' or suggest 'give more complete answers' when they followed the scenario."
+    : ''
+
+  const debateGuidance = fmt === 'debate' && topic
+    ? `
+If format is 'debate':
+- Evaluate argumentation quality: logical structure, use of examples, clarity of reasoning
+- Evaluate counter-argument responses: did they address opponent's points directly? Did they challenge the opponent's logic?
+- Evaluate debate phrases: use of connectors ("However", "Moreover", "On the other hand", "I disagree because", "That's not entirely true")
+- Evaluate position defense: how well did they maintain and defend their position? Did they stay consistent?
+- For completeness: did they present their position clearly, provide main arguments, respond to counter-arguments, and defend their stance?
+- For dialogue_skills: did they engage in back-and-forth debate, listen to opponent's points, and respond appropriately?
+`
+    : ''
+  const microGoalsGuidance = fmt === 'debate' && parsedMicroGoals.length > 0
+    ? `
+MICRO-GOALS (track these explicitly):
+${parsedMicroGoals.map((g, i) => `${i + 1}. ${g.goal_label || g.goal_id} (id: ${g.goal_id})`).join('\n')}
+
+For each micro-goal, determine whether the user achieved it in the transcript and include concise evidence.
+`
+    : ''
+  const slangGuidance = (fmt === 'dialogue' || fmt === 'debate') && (slangMode !== 'off' || allowProfanity)
+    ? `
+If this session uses slang/profanity settings:
+- Evaluate appropriateness: slang/profanity should match context and not replace meaning.
+- Penalize random swearing without communicative purpose.
+- Reward controlled register switching and clear intent under emotional tone.
+- Add one concise style advice in "improvements" when needed.
+`
+    : ''
+
+  const ASSESSMENT_SYSTEM = `You are an expert English speaking assessor (TEFL/TESOL). Evaluate the user's spoken English from the TRANSCRIPT of their messages in a conversation.
+
+RUBRIC (1-10 each):
+1. fluency: smooth speech, minimal pauses/hesitations, natural pace
+2. vocabulary_grammar: variety of words, correct grammar, errors don't block understanding
+3. pronunciation: clarity (assume transcript reflects intended pronunciation; evaluate word choice/phonetic plausibility from spelling)
+4. completeness: topic coverage, logical structure, full answers (for roleplay: did they cover what the scenario required?)
+5. dialogue_skills: (for dialogues) listening, reacting, asking questions, turn-taking
+${completenessGuidance}${debateGuidance}${slangGuidance}
+
+Return ONLY valid JSON, no markdown:
+{
+  "criteria_scores": {
+    "fluency": 1-10,
+    "vocabulary_grammar": 1-10,
+    "pronunciation": 1-10,
+    "completeness": 1-10,
+    "dialogue_skills": 1-10
+  },
+  "overall_score": 1-10,
+  "feedback": {
+    "strengths": ["string"],
+    "improvements": ["string"],
+    "summary": "string",
+    "goal_attainment": [
+      {
+        "goal_id": "string",
+        "goal_label": "string",
+        "achieved": true,
+        "evidence": "short proof from transcript",
+        "suggestion": "short next-step suggestion"
+      }
+    ]
+  }
+}${microGoalsGuidance}`
+
+  const userText = userMessages.join('\n---\n')
+  let context = scenario_title ? `Scenario: ${scenario_title}. ` : ''
+  if (scenarioContext) context += '\n\n' + scenarioContext + '\n\n'
+  if (fmt === 'debate' && topic) {
+    context += `Debate topic: ${topic}. `
+    if (user_position) context += `User position: ${user_position}. `
+  }
+  if (fmt === 'debate' && parsedMicroGoals.length > 0) {
+    context += `\nMicro goals: ${parsedMicroGoals.map((g) => `${g.goal_id}${g.goal_label ? ` (${g.goal_label})` : ''}`).join(', ')}. `
+  }
+
+  const userPrompt = `${context}Format: ${fmt}.
+
+Roleplay settings:
+- slang_mode: ${slangMode}
+- allow_profanity: ${allowProfanity}
+- ai_may_use_profanity: ${aiMayUseProfanity}
+- profanity_intensity: ${profanityIntensity}
+
+TRANSCRIPT (user messages only):
+${userText}
+
+Evaluate and return JSON only.`
+
+  try {
+    const completion = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        { role: 'system', content: ASSESSMENT_SYSTEM },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 800,
+      temperature: 0.3,
+    })
+
+    const usage = completion?.usage
+    if (usage && (usage.input_tokens || usage.output_tokens)) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { assess_speaking: true })
+      }
+    }
+
+    const raw = completion.choices?.[0]?.message?.content?.trim() || ''
+    let json
+    const m = raw.match(/\{[\s\S]*\}/)
+    if (m) {
+      try {
+        json = JSON.parse(m[0])
+      } catch {
+        json = null
+      }
+    }
+
+    if (!json || !json.criteria_scores) {
+      console.error('[api/agent/assess-speaking] Invalid LLM response:', raw?.slice(0, 300))
+      return res.status(500).json({ error: 'Assessment parsing failed' })
+    }
+
+    const scores = json.criteria_scores || {}
+    const vals = Object.values(scores).filter((v) => typeof v === 'number')
+    const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+
+    const goalAttainment = Array.isArray(json?.feedback?.goal_attainment)
+      ? json.feedback.goal_attainment
+        .filter((it) => it && typeof it === 'object')
+        .map((it) => ({
+          goal_id: typeof it.goal_id === 'string' ? it.goal_id : '',
+          goal_label: typeof it.goal_label === 'string' ? it.goal_label : '',
+          achieved: Boolean(it.achieved),
+          evidence: typeof it.evidence === 'string' ? it.evidence : '',
+          suggestion: typeof it.suggestion === 'string' ? it.suggestion : '',
+        }))
+        .filter((it) => it.goal_id)
+      : []
+
+    const feedbackObj = json && typeof json.feedback === 'object' && json.feedback !== null
+      ? json.feedback
+      : { strengths: [], improvements: [], summary: '' }
+
+    const result = {
+      criteria_scores: {
+        fluency: clampScore(scores.fluency),
+        vocabulary_grammar: clampScore(scores.vocabulary_grammar),
+        pronunciation: clampScore(scores.pronunciation),
+        completeness: clampScore(scores.completeness),
+        dialogue_skills: clampScore(scores.dialogue_skills),
+      },
+      overall_score: Math.round(overall * 10) / 10,
+      feedback: {
+        ...feedbackObj,
+        goal_attainment: goalAttainment,
+      },
+      user_messages: userMessages,
+      format: fmt,
+      scenario_id: scenario_id || null,
+      scenario_title: scenario_title || null,
+      agent_session_id: agent_session_id || null,
+    }
+    res.json(result)
+  } catch (err) {
+    console.error('[api/agent/assess-speaking] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Assessment failed' })
+  }
+})
+
+function clampScore(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return 5
+  return Math.max(1, Math.min(10, Math.round(n)))
+}
 
 // Karaoke YouTube transcription endpoint — requires Supabase auth
 app.post('/api/karaoke/transcribe', async (req, res) => {
-  
+
   try {
     const token = getBearerToken(req)
     if (!token) {
@@ -1175,14 +2650,14 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
     } catch (authError) {
       const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
       const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-      
+
       console.error('[api/karaoke/transcribe] Supabase auth error:', {
         message: errorMessage,
         code: errorCode,
         cause: authError?.cause,
         fullError: authError
       })
-      
+
       if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
         return res.status(502).json({
           error: 'Не удалось подключиться к Supabase (таймаут соединения). Проверьте SUPABASE_URL и сеть.',
@@ -1200,7 +2675,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
     }
 
     const { youtubeUrl } = req.body || {}
-    
+
     if (!youtubeUrl || typeof youtubeUrl !== 'string' || !youtubeUrl.trim()) {
       return res.status(400).json({ error: 'YouTube URL is required' })
     }
@@ -1228,7 +2703,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
     // Use yt-dlp to download subtitles
     const ytdlpCommand = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
     const downloadUrl = `https://www.youtube.com/watch?v=${videoId}`
-    
+
     // Get video metadata first (title, thumbnail, etc.)
     let videoMetadata = null
     try {
@@ -1241,12 +2716,12 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
       console.warn('[api/karaoke/transcribe] Failed to fetch metadata:', metadataError.message)
       // Continue without metadata
     }
-    
+
     // Create temporary file for subtitles (without extension, yt-dlp will add it)
     const timestamp = Date.now()
     const subtitleBaseName = `subtitle_${timestamp}_${videoId}`
     const subtitleBasePath = path.join(uploadsDir, subtitleBaseName)
-    
+
     // Download subtitles using yt-dlp
     // --write-auto-subs: get auto-generated subtitles
     // --write-subs: get manual subtitles  
@@ -1257,7 +2732,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
     // Note: yt-dlp will create files like: subtitle_123_videoId.en.srt
     // We use %(ext)s placeholder, but for subtitles yt-dlp adds language code
     const subtitleCommand = `"${ytdlpCommand}" --write-auto-subs --write-subs --sub-format srt --convert-subs srt --skip-download -o "${subtitleBasePath.replace(/\\/g, '/')}.%(ext)s" "${downloadUrl}"`
-    
+
     console.log('[api/karaoke/transcribe] Downloading subtitles from YouTube...')
     console.log('[api/karaoke/transcribe] Command:', subtitleCommand)
     let subtitleDownloadOutput
@@ -1270,13 +2745,13 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
       console.error('[yt-dlp] Error downloading subtitles:', downloadError)
       console.error('[yt-dlp] Error stdout:', downloadError.stdout)
       console.error('[yt-dlp] Error stderr:', downloadError.stderr)
-      
+
       // Check if subtitles are not available
       const errorText = (downloadError.message || '') + (downloadError.stderr || '') + (downloadError.stdout || '')
-      if (errorText.includes('No subtitles') || 
-          errorText.includes('subtitles are not available') ||
-          errorText.includes('has no subtitles')) {
-        return res.status(400).json({ 
+      if (errorText.includes('No subtitles') ||
+        errorText.includes('subtitles are not available') ||
+        errorText.includes('has no subtitles')) {
+        return res.status(400).json({
           error: 'Субтитры недоступны для этого видео. Убедитесь, что у видео включены субтитры.',
           details: errorText
         })
@@ -1294,7 +2769,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
     console.log('[api/karaoke/transcribe] Files in uploads dir:', files)
     console.log('[api/karaoke/transcribe] Looking for base name:', subtitleBaseName)
     console.log('[api/karaoke/transcribe] Video ID:', videoId)
-    
+
     // Look for subtitle files matching our pattern
     // yt-dlp might create: subtitle_123_videoId.en.srt, subtitle_123_videoId.srt, etc.
     const subtitleFiles = files.filter(f => {
@@ -1302,9 +2777,9 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
       const isSubtitle = f.endsWith('.srt') || f.endsWith('.vtt')
       return matchesBase && isSubtitle
     })
-    
+
     console.log('[api/karaoke/transcribe] Found subtitle files:', subtitleFiles)
-    
+
     if (subtitleFiles.length > 0) {
       // Prefer .srt format, then .vtt
       // Also prefer English if available
@@ -1328,7 +2803,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
       console.error('[api/karaoke/transcribe] Looking for base name:', subtitleBaseName)
       console.error('[api/karaoke/transcribe] Video ID:', videoId)
       console.error('[api/karaoke/transcribe] yt-dlp output:', subtitleDownloadOutput?.substring(0, 1000))
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Субтитры не найдены для этого видео',
         details: `Не удалось найти файл субтитров после загрузки. Проверьте логи сервера для деталей.`
       })
@@ -1337,7 +2812,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
     // Parse SRT subtitle file
     console.log('[api/karaoke/transcribe] Parsing subtitle file:', actualSubtitleFile)
     const subtitleContent = fs.readFileSync(actualSubtitleFile, 'utf-8')
-    
+
     // Parse SRT format
     // SRT format: 
     // 1
@@ -1346,33 +2821,33 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
     //
     const srtBlocks = subtitleContent.split(/\n\s*\n/).filter(block => block.trim())
     const segments = []
-    
+
     for (const block of srtBlocks) {
       const lines = block.trim().split('\n')
       if (lines.length < 3) continue
-      
+
       // Skip sequence number (first line)
       const timeLine = lines[1]
       const textLines = lines.slice(2)
-      
+
       // Parse time: 00:00:00,000 --> 00:00:02,500
       const timeMatch = timeLine.match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/)
       if (!timeMatch) continue
-      
+
       const startHours = parseInt(timeMatch[1])
       const startMinutes = parseInt(timeMatch[2])
       const startSeconds = parseInt(timeMatch[3])
       const startMs = parseInt(timeMatch[4])
       const start = startHours * 3600 + startMinutes * 60 + startSeconds + startMs / 1000
-      
+
       const endHours = parseInt(timeMatch[5])
       const endMinutes = parseInt(timeMatch[6])
       const endSeconds = parseInt(timeMatch[7])
       const endMs = parseInt(timeMatch[8])
       const end = endHours * 3600 + endMinutes * 60 + endSeconds + endMs / 1000
-      
+
       const text = textLines.join(' ').trim()
-      
+
       if (text) {
         segments.push({
           start: Math.round(start * 100) / 100,
@@ -1381,7 +2856,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
         })
       }
     }
-    
+
     // Clean up subtitle file
     try {
       fs.unlinkSync(actualSubtitleFile)
@@ -1397,7 +2872,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
     }
 
     if (segments.length === 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Субтитры не найдены для этого видео',
         details: 'Не удалось распарсить субтитры из файла'
       })
@@ -1428,7 +2903,7 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
       const { error: dbError } = await supabase
         .from('user_videos')
         .insert([videoData])
-      
+
       if (dbError) {
         console.error('[api/karaoke/transcribe] Error saving to database:', dbError)
         // Continue even if DB save fails - return transcription result anyway
@@ -1438,18 +2913,18 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
       // Continue even if DB save fails
     }
 
-      return res.json({
-        ok: true,
-        videoId: videoId,
-        title: videoMetadata?.title || null,
-        thumbnail: videoMetadata?.thumbnail || null,
-        text: fullText,
-        language: 'youtube-subs',
-        segments: finalSegments
-      })
+    return res.json({
+      ok: true,
+      videoId: videoId,
+      title: videoMetadata?.title || null,
+      thumbnail: videoMetadata?.thumbnail || null,
+      text: fullText,
+      language: 'youtube-subs',
+      segments: finalSegments
+    })
   } catch (err) {
     console.error('[api/karaoke/transcribe] error:', err)
-    
+
     const code = err?.cause?.code || err?.code
     if (code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT') {
       return res.status(502).json({
@@ -1460,10 +2935,10 @@ app.post('/api/karaoke/transcribe', async (req, res) => {
         }
       })
     }
-    
-    return res.status(500).json({ 
-      error: 'Karaoke transcription request failed', 
-      details: err.message 
+
+    return res.status(500).json({
+      error: 'Karaoke transcription request failed',
+      details: err.message
     })
   }
 })
@@ -1488,13 +2963,13 @@ app.get('/api/videos', async (req, res) => {
     } catch (authError) {
       const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
       const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-      
+
       console.error('[api/videos] Supabase auth error:', {
         message: errorMessage,
         code: errorCode,
         cause: authError?.cause
       })
-      
+
       if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
         return res.status(502).json({
           error: 'Не удалось подключиться к Supabase (таймаут соединения). Проверьте SUPABASE_URL и сеть.',
@@ -1529,7 +3004,7 @@ app.get('/api/videos', async (req, res) => {
     })
   } catch (err) {
     console.error('[api/videos] error:', err)
-    
+
     const code = err?.cause?.code || err?.code
     if (code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT') {
       return res.status(502).json({
@@ -1540,10 +3015,10 @@ app.get('/api/videos', async (req, res) => {
         }
       })
     }
-    
-    return res.status(500).json({ 
-      error: 'Failed to fetch videos', 
-      details: err.message 
+
+    return res.status(500).json({
+      error: 'Failed to fetch videos',
+      details: err.message
     })
   }
 })
@@ -1567,7 +3042,7 @@ app.get('/api/videos/:id', async (req, res) => {
     } catch (authError) {
       const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
       const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-      
+
       if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
         return res.status(502).json({
           error: 'Не удалось подключиться к Supabase (таймаут соединения). Проверьте SUPABASE_URL и сеть.',
@@ -1604,15 +3079,15 @@ app.get('/api/videos/:id', async (req, res) => {
 
     if (!video) {
       return res.status(404).json({ error: 'Video not found' })
-      }
+    }
 
-      return res.json({
-        ok: true,
+    return res.json({
+      ok: true,
       video: video
     })
   } catch (err) {
     console.error('[api/videos/:id] error:', err)
-    
+
     const code = err?.cause?.code || err?.code
     if (code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT') {
       return res.status(502).json({
@@ -1623,10 +3098,10 @@ app.get('/api/videos/:id', async (req, res) => {
         }
       })
     }
-    
-    return res.status(500).json({ 
-      error: 'Failed to fetch video', 
-      details: err.message 
+
+    return res.status(500).json({
+      error: 'Failed to fetch video',
+      details: err.message
     })
   }
 })
@@ -1650,7 +3125,7 @@ app.delete('/api/videos/:id', async (req, res) => {
     } catch (authError) {
       const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
       const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-      
+
       if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
         return res.status(502).json({
           error: 'Не удалось подключиться к Supabase (таймаут соединения). Проверьте SUPABASE_URL и сеть.',
@@ -1687,7 +3162,7 @@ app.delete('/api/videos/:id', async (req, res) => {
     })
   } catch (err) {
     console.error('[api/videos/:id DELETE] error:', err)
-    
+
     const code = err?.cause?.code || err?.code
     if (code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT') {
       return res.status(502).json({
@@ -1698,10 +3173,10 @@ app.delete('/api/videos/:id', async (req, res) => {
         }
       })
     }
-    
-    return res.status(500).json({ 
-      error: 'Failed to delete video', 
-      details: err.message 
+
+    return res.status(500).json({
+      error: 'Failed to delete video',
+      details: err.message
     })
   }
 })
@@ -1721,21 +3196,21 @@ function normalizeWord(word) {
 // Извлечение уникальных слов из текста с сохранением позиций
 function extractWordsFromText(text, segments = null) {
   if (!text || typeof text !== 'string') return []
-  
+
   const words = []
   const wordSet = new Set()
-  
+
   // Разбиваем текст на слова (сохраняем позиции)
   const wordRegex = /\b[\w']+\b/g
   let match
-  
+
   while ((match = wordRegex.exec(text)) !== null) {
     const originalWord = match[0]
     const normalized = normalizeWord(originalWord)
-    
+
     // Пропускаем пустые слова и очень короткие (1-2 символа, кроме важных слов)
     if (!normalized || normalized.length < 2) continue
-    
+
     // Пропускаем очень частые слова (a, an, the, is, are, etc.)
     const stopWords = new Set([
       'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
@@ -1744,14 +3219,14 @@ function extractWordsFromText(text, segments = null) {
       'should', 'may', 'might', 'must', 'can', 'i', 'you', 'he', 'she', 'it',
       'we', 'they', 'this', 'that', 'these', 'those', 'me', 'him', 'her', 'us', 'them'
     ])
-    
+
     if (stopWords.has(normalized)) continue
-    
+
     // Извлекаем контекст (10 слов до и после)
     // Находим все вхождения слова и берем первое
     const wordRegex2 = new RegExp(`\\b${originalWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')
     const firstMatch = wordRegex2.exec(text)
-    
+
     let contextText = ''
     if (firstMatch) {
       const wordPos = firstMatch.index
@@ -1759,14 +3234,14 @@ function extractWordsFromText(text, segments = null) {
       const contextStart = Math.max(0, wordPos - 100)
       const contextEnd = Math.min(text.length, wordPos + originalWord.length + 100)
       contextText = text.substring(contextStart, contextEnd).trim()
-      
+
       // Обрезаем до целых слов
       const wordsBefore = contextText.substring(0, wordPos - contextStart).split(/\s+/).length
       const wordsAfter = contextText.substring(wordPos - contextStart + originalWord.length).split(/\s+/).length
       const maxWords = 10
       const wordsToTakeBefore = Math.min(wordsBefore, maxWords)
       const wordsToTakeAfter = Math.min(wordsAfter, maxWords)
-      
+
       const allWordsInContext = contextText.split(/\s+/)
       const startIndex = Math.max(0, wordsBefore - wordsToTakeBefore)
       const endIndex = Math.min(allWordsInContext.length, wordsBefore + wordsToTakeAfter + 1)
@@ -1777,7 +3252,7 @@ function extractWordsFromText(text, segments = null) {
       const contextEnd = Math.min(text.length, match.index + originalWord.length + 100)
       contextText = text.substring(contextStart, contextEnd).trim()
     }
-    
+
     // Добавляем слово с уникальным ключом
     const wordKey = normalized
     if (!wordSet.has(wordKey)) {
@@ -1791,7 +3266,7 @@ function extractWordsFromText(text, segments = null) {
       })
     }
   }
-  
+
   return words
 }
 
@@ -1836,21 +3311,22 @@ async function getWordDefinitionFromAI(word) {
       temperature: 0.3 // Низкая температура для более точных результатов
     })
 
+    const usage = chatResult?.usage || null
     const responseText = chatResult.choices?.[0]?.message?.content?.trim() || '{}'
-    
+
     // Пытаемся извлечь JSON из ответа (может быть обернут в markdown code blocks)
     let jsonText = responseText
     const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
     if (jsonMatch) {
       jsonText = jsonMatch[1]
     }
-    
+
     const definition = JSON.parse(jsonText)
-    
+
     // Валидация и нормализация
-    return {
+    const def = {
       word: definition.word || word,
-      definitions: Array.isArray(definition.translations) 
+      definitions: Array.isArray(definition.translations)
         ? definition.translations.map(t => ({ translation: t, source: 'ai' }))
         : [],
       phonetic_transcription: definition.phonetic_transcription || null,
@@ -1862,18 +3338,22 @@ async function getWordDefinitionFromAI(word) {
       is_phrase: Boolean(definition.is_phrase),
       example_sentences: Array.isArray(definition.example_sentences) ? definition.example_sentences : []
     }
+    return { definition: def, usage }
   } catch (error) {
     console.error('[getWordDefinitionFromAI] Error:', error)
     // Возвращаем минимальную структуру в случае ошибки
     return {
-      word: word,
-      definitions: [],
-      phonetic_transcription: null,
-      part_of_speech: null,
-      difficulty_level: null,
-      frequency_rank: null,
-      is_phrase: false,
-      example_sentences: []
+      definition: {
+        word: word,
+        definitions: [],
+        phonetic_transcription: null,
+        part_of_speech: null,
+        difficulty_level: null,
+        frequency_rank: null,
+        is_phrase: false,
+        example_sentences: []
+      },
+      usage: null
     }
   }
 }
@@ -1936,6 +3416,7 @@ ${text}
     temperature: 0.4
   })
 
+  const usage = chatResult?.usage || null
   const raw = chatResult.choices?.[0]?.message?.content?.trim() || '[]'
 
   // На всякий случай пытаемся вытащить JSON из markdown-кода, если модель так ответит
@@ -1957,7 +3438,7 @@ ${text}
   }
 
   // Нормализуем структуру
-  return idioms
+  const list = idioms
     .filter(i => i && typeof i.phrase === 'string')
     .map(i => ({
       phrase: i.phrase.trim(),
@@ -1965,6 +3446,7 @@ ${text}
       meaning: i.meaning || '',
       usage_examples: Array.isArray(i.usage_examples) ? i.usage_examples : []
     }))
+  return { idioms: list, usage }
 }
 
 // Анализ текста на фразовые глаголы через AI
@@ -2018,6 +3500,7 @@ ${text}
     temperature: 0.4
   })
 
+  const usage = chatResult?.usage || null
   const raw = chatResult.choices?.[0]?.message?.content?.trim() || '[]'
 
   // На всякий случай пытаемся вытащить JSON из markdown-кода, если модель так ответит
@@ -2044,7 +3527,7 @@ ${text}
   }
 
   // Нормализуем структуру
-  return phrasalVerbs
+  const list = phrasalVerbs
     .filter(pv => pv && typeof pv.phrase === 'string')
     .map(pv => ({
       phrase: pv.phrase.trim(),
@@ -2052,6 +3535,7 @@ ${text}
       meaning: pv.meaning || '',
       usage_examples: Array.isArray(pv.usage_examples) ? pv.usage_examples : []
     }))
+  return { phrasalVerbs: list, usage }
 }
 
 // Получение или создание определения слова (с кэшированием)
@@ -2074,11 +3558,11 @@ async function getOrCreateWordDefinition(word) {
   )
 
   if (cached && !cacheError) {
-    return cached
+    return { ...cached, cached_at: cached.cached_at || new Date().toISOString(), usage: null }
   }
 
   // Если нет в кэше, получаем через AI
-  const definition = await getWordDefinitionFromAI(normalizedWord)
+  const { definition, usage } = await getWordDefinitionFromAI(normalizedWord)
 
   // Сохраняем в кэш (используем сервисный ключ, который обходит RLS)
   const { error: insertError } = await safeSupabaseCall(
@@ -2107,7 +3591,8 @@ async function getOrCreateWordDefinition(word) {
   return {
     word: normalizedWord,
     ...definition,
-    cached_at: new Date().toISOString()
+    cached_at: new Date().toISOString(),
+    usage
   }
 }
 
@@ -2133,7 +3618,7 @@ app.post('/api/vocabulary/extract', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -2331,7 +3816,7 @@ app.get('/api/vocabulary/define', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -2344,6 +3829,12 @@ app.get('/api/vocabulary/define', asyncHandler(async (req, res) => {
   if (userErr || !userData?.user) {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
+  const userId = userData.user.id
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
 
   const word = req.query.word
   if (!word || typeof word !== 'string') {
@@ -2352,6 +3843,16 @@ app.get('/api/vocabulary/define', asyncHandler(async (req, res) => {
 
   try {
     const definition = await getOrCreateWordDefinition(word)
+    if (definition.usage) {
+      const costRub = getCost('deepseek-v3.2', definition.usage)
+      if (costRub > 0) {
+        const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { vocabulary_define: true })
+        if (!deductResult.ok) {
+          console.error('[api/vocabulary/define] Deduct failed:', deductResult.error)
+          return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+        }
+      }
+    }
     return res.json({
       ok: true,
       word: definition.word,
@@ -2394,7 +3895,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -2407,9 +3908,15 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
   if (userErr || !userData?.user) {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
+  const userId = userData.user.id
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
 
   const { word, video_id, context } = req.body || {}
-  
+
   if (!word || typeof word !== 'string') {
     return res.status(400).json({ error: 'Word is required' })
   }
@@ -2420,8 +3927,17 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
   }
 
   // Получаем определение слова (с AI только если нет в кэше)
-  // Это оправдано, так как пользователь явно добавляет слово в словарь
   const definition = await getOrCreateWordDefinition(normalizedWord)
+  if (definition.usage) {
+    const costRub = getCost('deepseek-v3.2', definition.usage)
+    if (costRub > 0) {
+      const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { vocabulary_add: true })
+      if (!deductResult.ok) {
+        console.error('[api/vocabulary/add] Deduct failed:', deductResult.error)
+        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+      }
+    }
+  }
 
   // Проверяем, есть ли уже это слово в словаре пользователя
   const { data: existingWord } = await safeSupabaseCall(
@@ -2640,7 +4156,7 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -2749,7 +4265,7 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
   // Получаем прогресс для всех слов
   const wordList = words || []
   let progressMap = {}
-  
+
   if (wordList.length > 0) {
     const wordNormalized = wordList.map(w => w.word)
     const { data: progressData } = await safeSupabaseCall(
@@ -2798,12 +4314,66 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
     }
   }
 
-  // Объединяем слова с прогрессом и категориями
-  let wordsWithProgress = wordList.map(word => ({
-    ...word,
-    progress: progressMap[word.word] || null,
-    categories: categoriesMap[word.id] || []
-  }))
+  // Собираем список video_id из contexts всех слов, чтобы подтянуть метаданные песен
+  const videoIds = Array.from(new Set(
+    wordList
+      .flatMap(word => {
+        if (!word.contexts || !Array.isArray(word.contexts)) return []
+        return word.contexts
+          .map(ctx => ctx?.video_id)
+          .filter(id => !!id)
+      })
+  ))
+
+  let videosById = new Map()
+
+  if (videoIds.length > 0) {
+    const { data: videos, error: videosError } = await safeSupabaseCall(
+      () => supabase
+        .from('user_videos')
+        .select('id, title, video_url, video_type, video_id')
+        .eq('user_id', userData.user.id)
+        .in('id', videoIds),
+      { timeoutMs: 20000, maxRetries: 2 }
+    )
+
+    if (videosError) {
+      console.error('[api/vocabulary/list] Error loading videos:', videosError)
+    } else if (videos) {
+      videosById = new Map(videos.map(v => [v.id, v]))
+    }
+  }
+
+  // Объединяем слова с прогрессом, категориями и видео
+  let wordsWithProgress = wordList.map(word => {
+    // Извлекаем уникальные видео из contexts
+    const wordVideos = []
+    if (word.contexts && Array.isArray(word.contexts)) {
+      const seenVideoIds = new Set()
+      for (const ctx of word.contexts) {
+        if (ctx?.video_id && !seenVideoIds.has(ctx.video_id)) {
+          seenVideoIds.add(ctx.video_id)
+          const video = videosById.get(ctx.video_id)
+          if (video) {
+            wordVideos.push({
+              id: video.id,
+              title: video.title || video.video_url || '',
+              video_type: video.video_type,
+              video_id: video.video_id,
+              video_url: video.video_url
+            })
+          }
+        }
+      }
+    }
+
+    return {
+      ...word,
+      progress: progressMap[word.word] || null,
+      categories: categoriesMap[word.id] || [],
+      videos: wordVideos
+    }
+  })
 
   // Получаем статистику
   const { data: stats } = await safeSupabaseCall(
@@ -2851,7 +4421,7 @@ app.get('/api/vocabulary/export', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -2866,92 +4436,455 @@ app.get('/api/vocabulary/export', asyncHandler(async (req, res) => {
   }
 
   const format = req.query.format || 'json' // csv, json, anki
+  const viewMode = req.query.view_mode || 'words' // words, idioms, phrasal-verbs
+  const search = req.query.search
+  const difficulty = req.query.difficulty
+  const categoryId = req.query.category_id
+  const idiomCategoryId = req.query.idiom_category_id
+  const phrasalVerbCategoryId = req.query.phrasal_verb_category_id
 
-  // Get all vocabulary words (no pagination for export)
-  const { data: words, error: wordsError } = await safeSupabaseCall(
-    () => supabase
+  // Export based on view mode
+  if (viewMode === 'idioms') {
+    // Export idioms
+    let query = supabase
+      .from('user_idioms')
+      .select('id, phrase, literal_translation, meaning, usage_examples, source_video_id, created_at')
+      .eq('user_id', userData.user.id)
+
+    // Filter by category
+    if (idiomCategoryId) {
+      const { data: idiomIds, error: idiomIdsError } = await safeSupabaseCall(
+        () => supabase
+          .from('user_idioms_categories')
+          .select('idiom_id')
+          .eq('user_id', userData.user.id)
+          .eq('category_id', idiomCategoryId),
+        { timeoutMs: 10000, maxRetries: 2 }
+      )
+
+      if (idiomIdsError) {
+        console.error('[api/vocabulary/export] Error fetching category idioms:', idiomIdsError)
+        return res.status(500).json({ error: 'Failed to fetch idioms by category', details: idiomIdsError.message })
+      }
+
+      const ids = (idiomIds || []).map(i => i.idiom_id)
+      if (ids.length === 0) {
+        return res.status(400).json({ error: 'No idioms found with the specified filters' })
+      }
+      query = query.in('id', ids)
+    }
+
+    const { data: idiomRows, error: idiomsError } = await safeSupabaseCall(
+      () => query,
+      { timeoutMs: 20000, maxRetries: 2 }
+    )
+
+    if (idiomsError) {
+      console.error('[api/vocabulary/export] Error loading idioms:', idiomsError)
+      return res.status(500).json({ error: 'Failed to fetch idioms', details: idiomsError.message })
+    }
+
+    const idiomsList = idiomRows || []
+
+    // Get difficulty levels from word_definitions_cache
+    const normalizedPhrases = Array.from(new Set(
+      idiomsList
+        .map(row => (row && typeof row.phrase === 'string' ? normalizeWord(row.phrase) : ''))
+        .filter(w => !!w)
+    ))
+
+    let difficultyByWord = {}
+    if (normalizedPhrases.length > 0) {
+      const { data: defs } = await safeSupabaseCall(
+        () => supabase
+          .from('word_definitions_cache')
+          .select('word, difficulty_level')
+          .in('word', normalizedPhrases),
+        { timeoutMs: 15000, maxRetries: 1 }
+      )
+
+      if (defs) {
+        difficultyByWord = defs.reduce((acc, row) => {
+          if (row && row.word && row.difficulty_level) {
+            acc[row.word] = row.difficulty_level
+          }
+          return acc
+        }, {})
+      }
+    }
+
+    // Apply filters (search and difficulty)
+    let filteredIdioms = idiomsList.filter(row => {
+      if (!row || typeof row.phrase !== 'string') return false
+
+      // Search filter
+      if (search) {
+        const searchLower = search.toLowerCase()
+        const haystack = (
+          row.phrase.toLowerCase() +
+          ' ' +
+          (row.meaning || '').toLowerCase() +
+          ' ' +
+          (row.literal_translation || '').toLowerCase()
+        )
+        if (!haystack.includes(searchLower)) return false
+      }
+
+      // Difficulty filter
+      if (difficulty && difficulty !== 'all') {
+        const normalized = normalizeWord(row.phrase)
+        const idiomDifficulty = normalized ? difficultyByWord[normalized] || null : null
+        if (idiomDifficulty !== difficulty) return false
+      }
+
+      return true
+    })
+
+    // Format idioms for export
+    const exportData = filteredIdioms.map(row => {
+      const normalized = normalizeWord(row.phrase)
+      const difficultyLevel = normalized ? difficultyByWord[normalized] || null : null
+      return {
+        phrase: row.phrase.trim(),
+        literal_translation: row.literal_translation || '',
+        meaning: row.meaning || '',
+        usage_examples: Array.isArray(row.usage_examples) ? row.usage_examples : [],
+        difficulty_level: difficultyLevel,
+        created_at: row.created_at
+      }
+    })
+
+    if (exportData.length === 0) {
+      return res.status(400).json({ error: 'No idioms found with the specified filters' })
+    }
+
+    if (format === 'csv') {
+      const csvHeader = 'phrase,literal_translation,meaning,usage_examples,difficulty_level\n'
+      const csvRows = exportData.map(item => {
+        const examples = Array.isArray(item.usage_examples) ? item.usage_examples.join('; ') : ''
+        return [
+          `"${(item.phrase || '').replace(/"/g, '""')}"`,
+          `"${(item.literal_translation || '').replace(/"/g, '""')}"`,
+          `"${(item.meaning || '').replace(/"/g, '""')}"`,
+          `"${examples.replace(/"/g, '""')}"`,
+          `"${item.difficulty_level || ''}"`
+        ].join(',')
+      })
+      const csvContent = csvHeader + csvRows.join('\n')
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="idioms_${new Date().toISOString().split('T')[0]}.csv"`)
+      return res.send('\ufeff' + csvContent)
+    } else if (format === 'anki') {
+      const csvHeader = 'Front,Back,Tags\n'
+      const csvRows = exportData.map(item => {
+        const back = [item.meaning]
+        if (item.literal_translation) back.push(`(букв. ${item.literal_translation})`)
+        if (Array.isArray(item.usage_examples) && item.usage_examples.length > 0) {
+          back.push('\nПримеры:\n' + item.usage_examples.slice(0, 3).map(e => `• ${e}`).join('\n'))
+        }
+        const tags = []
+        if (item.difficulty_level) tags.push(item.difficulty_level)
+        tags.push('SongTalk', 'Idiom')
+        return `"${item.phrase.replace(/"/g, '""')}","${back.filter(Boolean).join('\n').replace(/"/g, '""')}","${tags.join(' ')}"`
+      })
+      const csvContent = csvHeader + csvRows.join('\n')
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="idioms_anki_${new Date().toISOString().split('T')[0]}.csv"`)
+      return res.send('\ufeff' + csvContent)
+    } else {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="idioms_${new Date().toISOString().split('T')[0]}.json"`)
+      return res.json({
+        version: '1.0',
+        exported_at: new Date().toISOString(),
+        total_idioms: exportData.length,
+        idioms: exportData
+      })
+    }
+  } else if (viewMode === 'phrasal-verbs') {
+    // Export phrasal verbs
+    let query = supabase
+      .from('user_phrasal_verbs')
+      .select('id, phrase, literal_translation, meaning, usage_examples, source_video_id, created_at')
+      .eq('user_id', userData.user.id)
+
+    // Filter by category
+    if (phrasalVerbCategoryId) {
+      const { data: phrasalVerbIds, error: phrasalVerbIdsError } = await safeSupabaseCall(
+        () => supabase
+          .from('user_phrasal_verbs_categories')
+          .select('phrasal_verb_id')
+          .eq('user_id', userData.user.id)
+          .eq('category_id', phrasalVerbCategoryId),
+        { timeoutMs: 10000, maxRetries: 2 }
+      )
+
+      if (phrasalVerbIdsError) {
+        console.error('[api/vocabulary/export] Error fetching category phrasal verbs:', phrasalVerbIdsError)
+        return res.status(500).json({ error: 'Failed to fetch phrasal verbs by category', details: phrasalVerbIdsError.message })
+      }
+
+      const ids = (phrasalVerbIds || []).map(pv => pv.phrasal_verb_id)
+      if (ids.length === 0) {
+        return res.status(400).json({ error: 'No phrasal verbs found with the specified filters' })
+      }
+      query = query.in('id', ids)
+    }
+
+    const { data: phrasalVerbRows, error: phrasalVerbsError } = await safeSupabaseCall(
+      () => query,
+      { timeoutMs: 20000, maxRetries: 2 }
+    )
+
+    if (phrasalVerbsError) {
+      console.error('[api/vocabulary/export] Error loading phrasal verbs:', phrasalVerbsError)
+      return res.status(500).json({ error: 'Failed to fetch phrasal verbs', details: phrasalVerbsError.message })
+    }
+
+    const phrasalVerbsList = phrasalVerbRows || []
+
+    // Get difficulty levels from word_definitions_cache
+    const normalizedPhrases = Array.from(new Set(
+      phrasalVerbsList
+        .map(row => (row && typeof row.phrase === 'string' ? normalizeWord(row.phrase) : ''))
+        .filter(w => !!w)
+    ))
+
+    let difficultyByWord = {}
+    if (normalizedPhrases.length > 0) {
+      const { data: defs } = await safeSupabaseCall(
+        () => supabase
+          .from('word_definitions_cache')
+          .select('word, difficulty_level')
+          .in('word', normalizedPhrases),
+        { timeoutMs: 15000, maxRetries: 1 }
+      )
+
+      if (defs) {
+        difficultyByWord = defs.reduce((acc, row) => {
+          if (row && row.word && row.difficulty_level) {
+            acc[row.word] = row.difficulty_level
+          }
+          return acc
+        }, {})
+      }
+    }
+
+    // Apply filters (search and difficulty)
+    let filteredPhrasalVerbs = phrasalVerbsList.filter(row => {
+      if (!row || typeof row.phrase !== 'string') return false
+
+      // Search filter
+      if (search) {
+        const searchLower = search.toLowerCase()
+        const haystack = (
+          row.phrase.toLowerCase() +
+          ' ' +
+          (row.meaning || '').toLowerCase() +
+          ' ' +
+          (row.literal_translation || '').toLowerCase()
+        )
+        if (!haystack.includes(searchLower)) return false
+      }
+
+      // Difficulty filter
+      if (difficulty && difficulty !== 'all') {
+        const normalized = normalizeWord(row.phrase)
+        const phrasalVerbDifficulty = normalized ? difficultyByWord[normalized] || null : null
+        if (phrasalVerbDifficulty !== difficulty) return false
+      }
+
+      return true
+    })
+
+    // Format phrasal verbs for export
+    const exportData = filteredPhrasalVerbs.map(row => {
+      const normalized = normalizeWord(row.phrase)
+      const difficultyLevel = normalized ? difficultyByWord[normalized] || null : null
+      return {
+        phrase: row.phrase.trim(),
+        literal_translation: row.literal_translation || '',
+        meaning: row.meaning || '',
+        usage_examples: Array.isArray(row.usage_examples) ? row.usage_examples : [],
+        difficulty_level: difficultyLevel,
+        created_at: row.created_at
+      }
+    })
+
+    if (exportData.length === 0) {
+      return res.status(400).json({ error: 'No phrasal verbs found with the specified filters' })
+    }
+
+    if (format === 'csv') {
+      const csvHeader = 'phrase,literal_translation,meaning,usage_examples,difficulty_level\n'
+      const csvRows = exportData.map(item => {
+        const examples = Array.isArray(item.usage_examples) ? item.usage_examples.join('; ') : ''
+        return [
+          `"${(item.phrase || '').replace(/"/g, '""')}"`,
+          `"${(item.literal_translation || '').replace(/"/g, '""')}"`,
+          `"${(item.meaning || '').replace(/"/g, '""')}"`,
+          `"${examples.replace(/"/g, '""')}"`,
+          `"${item.difficulty_level || ''}"`
+        ].join(',')
+      })
+      const csvContent = csvHeader + csvRows.join('\n')
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="phrasal_verbs_${new Date().toISOString().split('T')[0]}.csv"`)
+      return res.send('\ufeff' + csvContent)
+    } else if (format === 'anki') {
+      const csvHeader = 'Front,Back,Tags\n'
+      const csvRows = exportData.map(item => {
+        const back = [item.meaning]
+        if (item.literal_translation) back.push(`(букв. ${item.literal_translation})`)
+        if (Array.isArray(item.usage_examples) && item.usage_examples.length > 0) {
+          back.push('\nПримеры:\n' + item.usage_examples.slice(0, 3).map(e => `• ${e}`).join('\n'))
+        }
+        const tags = []
+        if (item.difficulty_level) tags.push(item.difficulty_level)
+        tags.push('SongTalk', 'PhrasalVerb')
+        return `"${item.phrase.replace(/"/g, '""')}","${back.filter(Boolean).join('\n').replace(/"/g, '""')}","${tags.join(' ')}"`
+      })
+      const csvContent = csvHeader + csvRows.join('\n')
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="phrasal_verbs_anki_${new Date().toISOString().split('T')[0]}.csv"`)
+      return res.send('\ufeff' + csvContent)
+    } else {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="phrasal_verbs_${new Date().toISOString().split('T')[0]}.json"`)
+      return res.json({
+        version: '1.0',
+        exported_at: new Date().toISOString(),
+        total_phrasal_verbs: exportData.length,
+        phrasal_verbs: exportData
+      })
+    }
+  } else {
+    // Export words (default)
+    // Build query with filters
+    let query = supabase
       .from('user_vocabulary')
       .select('*')
       .eq('user_id', userData.user.id)
-      .order('word', { ascending: true }),
-    { timeoutMs: 30000, maxRetries: 2 }
-  )
 
-  if (wordsError) {
-    console.error('[api/vocabulary/export] Error:', wordsError)
-    return res.status(500).json({ error: 'Failed to fetch vocabulary', details: wordsError.message })
-  }
+    // Filter by category
+    if (categoryId) {
+      const { data: vocabularyIds, error: vocabIdsError } = await safeSupabaseCall(
+        () => supabase
+          .from('user_vocabulary_categories')
+          .select('vocabulary_id')
+          .eq('user_id', userData.user.id)
+          .eq('category_id', categoryId),
+        { timeoutMs: 10000, maxRetries: 2 }
+      )
 
-  const wordList = words || []
-
-  if (format === 'csv') {
-    // CSV format: word,translations,difficulty_level,part_of_speech,mastery_level,notes,contexts
-    const csvHeader = 'word,translations,difficulty_level,part_of_speech,mastery_level,notes,contexts\n'
-    const csvRows = wordList.map(word => {
-      const translations = Array.isArray(word.translations) 
-        ? word.translations.map(t => t.translation || t).join('; ')
-        : ''
-      const contexts = Array.isArray(word.contexts)
-        ? word.contexts.map(c => c.text || '').filter(Boolean).join('; ')
-        : ''
-      const notes = (word.notes || '').replace(/"/g, '""') // Escape quotes
-      const contextsEscaped = contexts.replace(/"/g, '""')
-      
-      return [
-        `"${word.word || ''}"`,
-        `"${translations.replace(/"/g, '""')}"`,
-        `"${word.difficulty_level || ''}"`,
-        `"${word.part_of_speech || ''}"`,
-        word.mastery_level || '',
-        `"${notes}"`,
-        `"${contextsEscaped}"`
-      ].join(',')
-    })
-    
-    const csvContent = csvHeader + csvRows.join('\n')
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="vocabulary_${new Date().toISOString().split('T')[0]}.csv"`)
-    return res.send('\ufeff' + csvContent) // BOM for UTF-8
-  } else if (format === 'anki') {
-    // Anki format: Front,Back,Tags
-    const csvHeader = 'Front,Back,Tags\n'
-    const csvRows = wordList.map(word => {
-      const translations = Array.isArray(word.translations) 
-        ? word.translations.map(t => t.translation || t).join(', ')
-        : ''
-      const back = [translations]
-      if (word.part_of_speech) back.push(`(${word.part_of_speech})`)
-      if (word.notes) back.push(word.notes)
-      if (Array.isArray(word.contexts) && word.contexts.length > 0) {
-        back.push('\nПримеры:\n' + word.contexts.slice(0, 3).map(c => `• ${c.text || ''}`).join('\n'))
+      if (vocabIdsError) {
+        console.error('[api/vocabulary/export] Error fetching category words:', vocabIdsError)
+        return res.status(500).json({ error: 'Failed to fetch words by category', details: vocabIdsError.message })
       }
-      
-      const tags = []
-      if (word.difficulty_level) tags.push(word.difficulty_level)
-      if (word.mastery_level) tags.push(`Level${word.mastery_level}`)
-      tags.push('SongTalk')
-      
-      const front = word.word || ''
-      const backText = back.filter(Boolean).join('\n').replace(/"/g, '""')
-      const tagsText = tags.join(' ')
-      
-      return `"${front}","${backText}","${tagsText}"`
-    })
-    
-    const csvContent = csvHeader + csvRows.join('\n')
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="vocabulary_anki_${new Date().toISOString().split('T')[0]}.csv"`)
-    return res.send('\ufeff' + csvContent) // BOM for UTF-8
-  } else {
-    // JSON format
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="vocabulary_${new Date().toISOString().split('T')[0]}.json"`)
-    return res.json({
-      version: '1.0',
-      exported_at: new Date().toISOString(),
-      total_words: wordList.length,
-      words: wordList
-    })
+
+      const ids = (vocabularyIds || []).map(v => v.vocabulary_id)
+      if (ids.length === 0) {
+        return res.status(400).json({ error: 'No words found with the specified filters' })
+      }
+      query = query.in('id', ids)
+    }
+
+    // Apply difficulty filter
+    if (difficulty && difficulty !== 'all' && ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(difficulty)) {
+      query = query.eq('difficulty_level', difficulty)
+    }
+
+    // Apply search filter
+    if (search) {
+      query = query.ilike('word', `%${search}%`)
+    }
+
+    // Get all vocabulary words (no pagination for export)
+    const { data: words, error: wordsError } = await safeSupabaseCall(
+      () => query.order('word', { ascending: true }),
+      { timeoutMs: 30000, maxRetries: 2 }
+    )
+
+    if (wordsError) {
+      console.error('[api/vocabulary/export] Error:', wordsError)
+      return res.status(500).json({ error: 'Failed to fetch vocabulary', details: wordsError.message })
+    }
+
+    const wordList = words || []
+
+    if (wordList.length === 0) {
+      return res.status(400).json({ error: 'No words found with the specified filters' })
+    }
+
+    if (format === 'csv') {
+      // CSV format: word,translations,difficulty_level,part_of_speech,mastery_level,notes,contexts
+      const csvHeader = 'word,translations,difficulty_level,part_of_speech,mastery_level,notes,contexts\n'
+      const csvRows = wordList.map(word => {
+        const translations = Array.isArray(word.translations)
+          ? word.translations.map(t => t.translation || t).join('; ')
+          : ''
+        const contexts = Array.isArray(word.contexts)
+          ? word.contexts.map(c => c.text || '').filter(Boolean).join('; ')
+          : ''
+        const notes = (word.notes || '').replace(/"/g, '""') // Escape quotes
+        const contextsEscaped = contexts.replace(/"/g, '""')
+
+        return [
+          `"${word.word || ''}"`,
+          `"${translations.replace(/"/g, '""')}"`,
+          `"${word.difficulty_level || ''}"`,
+          `"${word.part_of_speech || ''}"`,
+          word.mastery_level || '',
+          `"${notes}"`,
+          `"${contextsEscaped}"`
+        ].join(',')
+      })
+
+      const csvContent = csvHeader + csvRows.join('\n')
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="vocabulary_${new Date().toISOString().split('T')[0]}.csv"`)
+      return res.send('\ufeff' + csvContent) // BOM for UTF-8
+    } else if (format === 'anki') {
+      // Anki format: Front,Back,Tags
+      const csvHeader = 'Front,Back,Tags\n'
+      const csvRows = wordList.map(word => {
+        const translations = Array.isArray(word.translations)
+          ? word.translations.map(t => t.translation || t).join(', ')
+          : ''
+        const back = [translations]
+        if (word.part_of_speech) back.push(`(${word.part_of_speech})`)
+        if (word.notes) back.push(word.notes)
+        if (Array.isArray(word.contexts) && word.contexts.length > 0) {
+          back.push('\nПримеры:\n' + word.contexts.slice(0, 3).map(c => `• ${c.text || ''}`).join('\n'))
+        }
+
+        const tags = []
+        if (word.difficulty_level) tags.push(word.difficulty_level)
+        if (word.mastery_level) tags.push(`Level${word.mastery_level}`)
+        tags.push('SongTalk')
+
+        const front = word.word || ''
+        const backText = back.filter(Boolean).join('\n').replace(/"/g, '""')
+        const tagsText = tags.join(' ')
+
+        return `"${front}","${backText}","${tagsText}"`
+      })
+
+      const csvContent = csvHeader + csvRows.join('\n')
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="vocabulary_anki_${new Date().toISOString().split('T')[0]}.csv"`)
+      return res.send('\ufeff' + csvContent) // BOM for UTF-8
+    } else {
+      // JSON format
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="vocabulary_${new Date().toISOString().split('T')[0]}.json"`)
+      return res.json({
+        version: '1.0',
+        exported_at: new Date().toISOString(),
+        total_words: wordList.length,
+        words: wordList
+      })
+    }
   }
 }))
 
@@ -2973,7 +4906,7 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -2988,7 +4921,7 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
   }
 
   const { format, data } = req.body || {}
-  
+
   if (!format || !['csv', 'json', 'anki'].includes(format)) {
     return res.status(400).json({ error: 'Format must be csv, json, or anki' })
   }
@@ -3007,7 +4940,7 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
       } else {
         parsed = data
       }
-      
+
       // Handle different JSON structures
       if (parsed.words && Array.isArray(parsed.words)) {
         wordsToImport = parsed.words
@@ -3041,10 +4974,10 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
           const word = cells[frontIdx] || ''
           const back = cells[backIdx] || ''
           const tags = tagsIdx >= 0 ? (cells[tagsIdx] || '').split(' ') : []
-          
+
           // Extract difficulty from tags
           const difficulty = tags.find(t => /^[A-C][1-2]$/.test(t)) || null
-          
+
           return {
             word: word.trim().toLowerCase(),
             translations: back ? [{ translation: back }] : [],
@@ -3129,7 +5062,7 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
     }
 
     const normalizedWord = wordData.word.trim().toLowerCase()
-    
+
     // Check if word already exists
     const { data: existing } = await safeSupabaseCall(
       () => supabase
@@ -3146,7 +5079,7 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
         // Update existing word - merge translations and contexts
         const existingTranslations = Array.isArray(existing.translations) ? existing.translations : []
         const existingContexts = Array.isArray(existing.contexts) ? existing.contexts : []
-        
+
         const newTranslations = Array.isArray(wordData.translations) ? wordData.translations : []
         const mergedTranslations = [...existingTranslations]
         newTranslations.forEach(nt => {
@@ -3314,12 +5247,12 @@ function calculateNextReview(score, currentInterval = 0, consecutiveCorrect = 0,
       // After 4+ correct answers, use exponential growth
       // Formula: interval * easeFactor (but capped at reasonable values)
       newInterval = Math.floor(currentInterval * easeFactor)
-      
+
       // Cap interval at 365 days (1 year)
       if (newInterval > 365) {
         newInterval = 365
       }
-      
+
       // Minimum interval of 1 day
       if (newInterval < 1) {
         newInterval = 1
@@ -3369,7 +5302,7 @@ app.get('/api/vocabulary/review-list', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -3410,7 +5343,7 @@ app.get('/api/vocabulary/review-list', asyncHandler(async (req, res) => {
 
   if (wordList.length > 0) {
     const wordNormalized = wordList.map(w => w.word)
-    
+
     // Get vocabulary entries
     const { data: vocabularyData } = await safeSupabaseCall(
       () => supabase
@@ -3485,6 +5418,12 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
   if (userErr || !userData?.user) {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
+  const userId = userData.user.id
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
 
   const { video_id, text, force = false, max_idioms = 20 } = req.body || {}
 
@@ -3531,7 +5470,17 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
   const cleanedText = textToProcess.slice(0, 8000)
 
   // Вызываем AI для анализа идиом
-  const idioms = await analyzeIdiomsWithAI(cleanedText, { maxIdioms: max_idioms })
+  const { idioms, usage: idiomsUsage } = await analyzeIdiomsWithAI(cleanedText, { maxIdioms: max_idioms })
+  if (idiomsUsage) {
+    const costRub = getCost('deepseek-v3.2', idiomsUsage)
+    if (costRub > 0) {
+      const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { idioms_analyze: true })
+      if (!deductResult.ok) {
+        console.error('[api/vocabulary/idioms/analyze] Deduct failed:', deductResult.error)
+        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+      }
+    }
+  }
 
   // Кэшируем по видео, если есть video_id
   if (videoRecord) {
@@ -3575,8 +5524,8 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
         } else {
           // Уровня нет в кеше, получаем через AI
           const def = await getWordDefinitionFromAI(normalized)
-          if (def && def.difficulty_level) {
-            difficultyLevel = def.difficulty_level
+          if (def?.definition?.difficulty_level) {
+            difficultyLevel = def.definition.difficulty_level
           }
         }
       } catch (e) {
@@ -3653,6 +5602,12 @@ app.post('/api/vocabulary/phrasal-verbs/analyze', asyncHandler(async (req, res) 
   if (userErr || !userData?.user) {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
+  const userId = userData.user.id
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
 
   const { video_id, text, force = false, max_phrasal_verbs = 20 } = req.body || {}
 
@@ -3699,7 +5654,17 @@ app.post('/api/vocabulary/phrasal-verbs/analyze', asyncHandler(async (req, res) 
   const cleanedText = textToProcess.slice(0, 8000)
 
   // Вызываем AI для анализа фразовых глаголов
-  const phrasalVerbs = await analyzePhrasalVerbsWithAI(cleanedText, { maxPhrasalVerbs: max_phrasal_verbs })
+  const { phrasalVerbs, usage: pvUsage } = await analyzePhrasalVerbsWithAI(cleanedText, { maxPhrasalVerbs: max_phrasal_verbs })
+  if (pvUsage) {
+    const costRub = getCost('deepseek-v3.2', pvUsage)
+    if (costRub > 0) {
+      const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { phrasal_verbs_analyze: true })
+      if (!deductResult.ok) {
+        console.error('[api/vocabulary/phrasal-verbs/analyze] Deduct failed:', deductResult.error)
+        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+      }
+    }
+  }
 
   // Кэшируем по видео, если есть video_id
   if (videoRecord) {
@@ -3743,8 +5708,8 @@ app.post('/api/vocabulary/phrasal-verbs/analyze', asyncHandler(async (req, res) 
         } else {
           // Уровня нет в кеше, получаем через AI
           const def = await getWordDefinitionFromAI(normalized)
-          if (def && def.difficulty_level) {
-            difficultyLevel = def.difficulty_level
+          if (def?.definition?.difficulty_level) {
+            difficultyLevel = def.definition.difficulty_level
           }
         }
       } catch (e) {
@@ -4232,7 +6197,7 @@ app.post('/api/vocabulary/idioms/:id/categories', asyncHandler(async (req, res) 
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -4771,7 +6736,7 @@ app.post('/api/vocabulary/phrasal-verbs/:id/categories', asyncHandler(async (req
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -4883,7 +6848,7 @@ app.post('/api/vocabulary/review', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -5037,7 +7002,7 @@ app.get('/api/vocabulary/categories', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -5089,7 +7054,7 @@ app.post('/api/vocabulary/categories', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -5159,7 +7124,7 @@ app.put('/api/vocabulary/categories/:id', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -5237,7 +7202,7 @@ app.delete('/api/vocabulary/categories/:id', asyncHandler(async (req, res) => {
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -5291,7 +7256,7 @@ app.post('/api/vocabulary/words/:id/categories', asyncHandler(async (req, res) =
   } catch (authError) {
     const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
     const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
-    
+
     if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
       return res.status(502).json({
         error: 'Не удалось подключиться к Supabase (таймаут соединения).',
@@ -5392,7 +7357,7 @@ app.use((err, req, res, next) => {
     code: err?.cause?.code || err?.code,
     stack: err.stack
   })
-  
+
   // Handle Supabase timeout errors
   const code = err?.cause?.code || err?.code
   if (code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT' || code === 'ECONNRESET') {
@@ -5404,10 +7369,10 @@ app.use((err, req, res, next) => {
       }
     })
   }
-  
-  res.status(500).json({ 
+
+  res.status(500).json({
     error: 'Something went wrong!',
-    details: err.message 
+    details: err.message
   })
 })
 
@@ -5417,13 +7382,64 @@ process.on('unhandledRejection', (reason, promise) => {
   // Don't exit, just log
 })
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Backend server running on port ${PORT}`)
-  console.log(`📡 Supabase URL: ${supabaseUrl ? 'configured' : 'missing'}`)
-  console.log(`⏱️  Server timeout: ${SERVER_TIMEOUT_MS / 1000} seconds (${SERVER_TIMEOUT_MS / 60000} minutes)`)
-})
+// Функция для запуска сервера с автоматическим выбором свободного порта
+function startServer(port, maxAttempts = 10) {
+  return new Promise((resolve, reject) => {
+    // Проверяем, что порт валидный (0-65535)
+    if (port < 0 || port > 65535) {
+      reject(new Error(`Invalid port: ${port}. Port must be between 0 and 65535`))
+      return
+    }
 
-// Устанавливаем таймаут для сервера (для длительных AI запросов)
-server.timeout = SERVER_TIMEOUT_MS
-server.keepAliveTimeout = SERVER_TIMEOUT_MS
-server.headersTimeout = SERVER_TIMEOUT_MS
+    const server = http.createServer(app)
+    server.listen(port, () => {
+      console.log(`🚀 Backend server running on port ${port}`)
+      console.log(`📡 Supabase URL: ${supabaseUrl ? 'configured' : 'missing'}`)
+      console.log(`⏱️  Server timeout: ${SERVER_TIMEOUT_MS / 1000} seconds (${SERVER_TIMEOUT_MS / 60000} minutes)`)
+      console.log(`🤖 AITUNNEL configuration:`)
+      console.log(`   Base URL: ${AITUNNEL_BASE_URL}`)
+      console.log(`   Model: ${AITUNNEL_MODEL}`)
+      console.log(`   Timeout: ${AITUNNEL_TIMEOUT_MS / 1000} seconds (${AITUNNEL_TIMEOUT_MS / 60000} minutes)`)
+      console.log(`   API Key: ${AITUNNEL_API_KEY ? AITUNNEL_API_KEY.substring(0, 20) + '...' : 'missing'}`)
+      resolve(server)
+    })
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        if (maxAttempts > 0 && port < 65535) {
+          const nextPort = port + 1
+          console.warn(`⚠ Port ${port} is in use, trying ${nextPort} instead.`)
+          server.once('close', () => {
+            startServer(nextPort, maxAttempts - 1)
+              .then(resolve)
+              .catch(reject)
+          })
+          server.close()
+        } else {
+          reject(new Error(`Could not find a free port. Tried up to port ${port}`))
+        }
+      } else {
+        reject(err)
+      }
+    })
+  })
+}
+
+let server
+let actualPort = PORT
+
+startServer(PORT)
+  .then((srv) => {
+    server = srv
+    actualPort = server.address().port
+
+    server.timeout = SERVER_TIMEOUT_MS
+    server.keepAliveTimeout = SERVER_TIMEOUT_MS
+    server.headersTimeout = SERVER_TIMEOUT_MS
+
+    console.log(`✅ Registered routes: /api/agent/stt, /api/agent/tts, /api/agent/chat, /api/agent/roleplay-feedback, /api/agent/debate-feedback, /api/agent/debate-topic-prepare, /api/agent/assess-speaking, /api/transcribe, /api/tts`)
+  })
+  .catch((err) => {
+    console.error('[Server] Ошибка запуска сервера:', err)
+    process.exit(1)
+  })

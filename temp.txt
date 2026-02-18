@@ -1,0 +1,5 @@
+<header className={styles.header}>
+        <Link href="/" className={styles.logoLink} aria-label="Speakeasy — на главную">
+          <Logo />
+        </Link>
+        <nav className={styles.nav} aria-label="Основная навига
