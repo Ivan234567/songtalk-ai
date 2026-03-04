@@ -1,82 +1,10 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 
-// Текст и волна в одном стиле для логотипа (полная и компактная версии)
-const LOGO_FONT = '"Segoe UI", "SF Pro Display", system-ui, sans-serif';
-const LOGO_TEXT_PROPS = { x: 24, y: 128, fontSize: 72, fontWeight: 700, fontFamily: LOGO_FONT };
-
-// Выразительная звуковая волна: большая амплитуда, плавные кривые (центр ~100, амплитуда ~28)
-const SOUND_WAVE_PATH_MAIN =
-  'M0,100 C25,58 50,142 75,100 C100,58 125,142 150,100 C175,58 200,142 225,100 C250,58 275,142 300,100 C325,58 350,142 375,100 C400,58 425,142 450,100 C475,58 500,142 525,100 C550,58 575,142 600,100';
-// Смещённые волны для объёма (разные фазы)
-const SOUND_WAVE_PATH_UP =
-  'M0,82 C30,52 60,112 90,82 C120,52 150,112 180,82 C210,52 240,112 270,82 C300,52 330,112 360,82 C390,52 420,112 450,82 C480,52 510,112 540,82 C570,52 600,82';
-const SOUND_WAVE_PATH_DOWN =
-  'M0,118 C30,88 60,148 90,118 C120,88 150,148 180,118 C210,88 240,148 270,118 C300,88 330,148 360,118 C390,88 420,148 450,118 C480,88 510,148 540,118 C570,88 600,118';
-
-// Логотип Speakeasy: чёткий текст + звуковая волна, проходящая сквозь буквы (clipPath)
-const SpeakeasyLogoFull: React.FC<{ width?: number }> = ({ width = 200 }) => {
-  const height = (width / 600) * 200;
-  return (
-    <svg width={width} height={height} viewBox="0 0 600 200" xmlns="http://www.w3.org/2000/svg" aria-label="Speakeasy" style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="logoTextGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#2e8b57" />
-          <stop offset="100%" stopColor="#3cb371" />
-        </linearGradient>
-        <linearGradient id="logoWaveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#b8ffb8" stopOpacity={0.95} />
-          <stop offset="50%" stopColor="#e8fff0" stopOpacity={1} />
-          <stop offset="100%" stopColor="#b8ffb8" stopOpacity={0.95} />
-        </linearGradient>
-        <clipPath id="logoLettersClip">
-          <text {...LOGO_TEXT_PROPS}>Speakeasy</text>
-        </clipPath>
-      </defs>
-      {/* Буквы — чёткий текст с градиентом */}
-      <text {...LOGO_TEXT_PROPS} fill="url(#logoTextGrad)">Speakeasy</text>
-      {/* Звуковая волна, обрезанная по форме букв — выразительный пучок волн */}
-      <g clipPath="url(#logoLettersClip)">
-        <path d={SOUND_WAVE_PATH_UP} fill="none" stroke="url(#logoWaveGrad)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
-        <path d={SOUND_WAVE_PATH_MAIN} fill="none" stroke="url(#logoWaveGrad)" strokeWidth={14} strokeLinecap="round" strokeLinejoin="round" />
-        <path d={SOUND_WAVE_PATH_DOWN} fill="none" stroke="url(#logoWaveGrad)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
-      </g>
-    </svg>
-  );
-};
-
-// Компактный логотип: тот же дизайн, вписан в квадрат и отцентрирован для кубика свёрнутого сайдбара
-const SpeakeasyLogoCompact: React.FC<{ size?: number }> = ({ size = 28 }) => {
-  const scale = 32 / 600; // вписать ширину 600 в 32
-  const logoH = 200 * scale; // ~10.67
-  const offsetY = (32 - logoH) / 2;   // центр по вертикали
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-label="Speakeasy" style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="logoTextGradC" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#2e8b57" />
-          <stop offset="100%" stopColor="#3cb371" />
-        </linearGradient>
-        <linearGradient id="logoWaveGradC" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#b8ffb8" stopOpacity={0.95} />
-          <stop offset="50%" stopColor="#e8fff0" stopOpacity={1} />
-          <stop offset="100%" stopColor="#b8ffb8" stopOpacity={0.95} />
-        </linearGradient>
-        <clipPath id="logoLettersClipC">
-          <text {...LOGO_TEXT_PROPS}>Speakeasy</text>
-        </clipPath>
-      </defs>
-      <g transform={`translate(0, ${offsetY}) scale(${scale})`}>
-        <text {...LOGO_TEXT_PROPS} fill="url(#logoTextGradC)">Speakeasy</text>
-        <g clipPath="url(#logoLettersClipC)">
-          <path d={SOUND_WAVE_PATH_UP} fill="none" stroke="url(#logoWaveGradC)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
-          <path d={SOUND_WAVE_PATH_MAIN} fill="none" stroke="url(#logoWaveGradC)" strokeWidth={14} strokeLinecap="round" strokeLinejoin="round" />
-          <path d={SOUND_WAVE_PATH_DOWN} fill="none" stroke="url(#logoWaveGradC)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
-        </g>
-      </g>
-    </svg>
-  );
-};
+// Иконка приложения (как во вкладке браузера — favicon)
+const AppLogoIcon: React.FC<{ size?: number }> = ({ size = 32 }) => (
+  <img src="/favicon.svg" alt="Speakeasy" width={size} height={size} style={{ display: 'block' }} />
+);
 
 const DashboardIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -137,7 +65,7 @@ const LogoutIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   </svg>
 );
 
-type SidebarTabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance';
+type SidebarTabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'account';
 
 export interface SidebarProps {
   activeTab: SidebarTabKey;
@@ -157,6 +85,15 @@ const PALETTE = {
 
 const RADIUS = 16;
 
+function getEmailHue(email: string): number {
+  let hash = 0;
+  for (let i = 0; i < email.length; i += 1) {
+    hash = (hash << 5) - hash + email.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
 const tabs: { key: SidebarTabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'dashboard', label: 'Главная', icon: <DashboardIcon size={20} /> },
   { key: 'karaoke', label: 'Караоке', icon: <KaraokeIcon size={20} /> },
@@ -174,7 +111,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userEmail,
 }) => {
   const emailInitial = (userEmail || '').trim().charAt(0).toUpperCase() || '?';
+  const emailHue = getEmailHue((userEmail || 'guest').toLowerCase());
   const [expanded, setExpanded] = useState(false);
+  const isAccountActive = activeTab === 'account';
 
   return (
     <aside
@@ -240,7 +179,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }}
           >
             {expanded ? (
-              <SpeakeasyLogoFull width={168} />
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  width: '100%',
+                  justifyContent: 'center',
+                }}
+              >
+                <AppLogoIcon size={32} />
+                <span
+                  style={{
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    letterSpacing: '-0.01em',
+                    color: 'var(--sidebar-text)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Speakeasy
+                </span>
+              </div>
             ) : (
               <div
                 style={{
@@ -256,7 +216,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   transition: 'all 0.25s ease',
                 }}
               >
-                <SpeakeasyLogoCompact size={24} />
+                <AppLogoIcon size={24} />
               </div>
             )}
           </div>
@@ -381,43 +341,73 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }}
       >
         {expanded && (
-          <div
+          <button
+            type="button"
+            onClick={() => onTabChange('account')}
             style={{
-              padding: '0.65rem 0.75rem',
-              borderRadius: 8,
+              padding: '0.55rem 0.7rem',
+              borderRadius: 12,
               display: 'flex',
               alignItems: 'center',
-              gap: '0.65rem',
-              background: 'var(--sidebar-hover)',
-              border: `1px solid var(--sidebar-border)`,
-              transition: 'all 0.25s ease',
+              gap: '0.7rem',
+              background: isAccountActive
+                ? `linear-gradient(145deg, hsl(${emailHue} 78% 62% / 0.24), hsl(${emailHue} 68% 38% / 0.14))`
+                : `linear-gradient(145deg, hsl(${emailHue} 78% 62% / 0.14), hsl(${emailHue} 68% 38% / 0.08))`,
+              border: isAccountActive
+                ? `1px solid hsl(${emailHue} 88% 72% / 0.72)`
+                : `1px solid hsl(${emailHue} 82% 66% / 0.42)`,
+              boxShadow: isAccountActive
+                ? '0 12px 28px rgba(0, 0, 0, 0.25)'
+                : '0 8px 22px rgba(0, 0, 0, 0.2)',
+              transition: 'all 0.25s ease, filter 0.2s ease',
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--sidebar-active)';
-              e.currentTarget.style.borderColor = 'var(--sidebar-accent)';
+              e.currentTarget.style.background = `linear-gradient(145deg, hsl(${emailHue} 78% 62% / 0.2), hsl(${emailHue} 68% 38% / 0.12))`;
+              e.currentTarget.style.borderColor = `hsl(${emailHue} 88% 72% / 0.72)`;
+              e.currentTarget.style.filter = 'saturate(1.06)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'var(--sidebar-hover)';
-              e.currentTarget.style.borderColor = 'var(--sidebar-border)';
+              e.currentTarget.style.background = `linear-gradient(145deg, hsl(${emailHue} 78% 62% / 0.14), hsl(${emailHue} 68% 38% / 0.08))`;
+              e.currentTarget.style.borderColor = isAccountActive
+                ? `hsl(${emailHue} 88% 72% / 0.72)`
+                : `hsl(${emailHue} 82% 66% / 0.42)`;
+              e.currentTarget.style.filter = 'none';
             }}
           >
             <div
               style={{
                 width: 34,
                 height: 34,
-                borderRadius: 6,
-                background: 'var(--sidebar-active)',
-                border: `1px solid var(--sidebar-border)`,
+                borderRadius: 999,
+                background: `radial-gradient(circle at 28% 22%, hsl(${emailHue} 96% 86% / 0.42), transparent 55%), linear-gradient(145deg, hsl(${emailHue} 82% 64% / 0.32), hsl(${emailHue} 68% 38% / 0.2))`,
+                border: `1px solid hsl(${emailHue} 82% 66% / 0.46)`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '0.8125rem',
                 fontWeight: 700,
-                color: 'var(--sidebar-text)',
+                color: '#f4fff8',
                 flexShrink: 0,
+                position: 'relative',
               }}
             >
               {emailInitial}
+              <span
+                style={{
+                  position: 'absolute',
+                  right: -1,
+                  bottom: -1,
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  background: `hsl(${emailHue} 86% 66%)`,
+                  border: '2px solid rgba(8, 8, 8, 0.95)',
+                  boxShadow: `0 0 10px hsl(${emailHue} 86% 66% / 0.82)`,
+                }}
+              />
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div
@@ -436,8 +426,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div
                 style={{
                   fontSize: '0.8125rem',
-                  fontWeight: 500,
-                  color: 'var(--sidebar-text)',
+                  fontWeight: 600,
+                  color: 'rgba(255, 255, 255, 0.95)',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -447,7 +437,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {userEmail || 'Гость'}
               </div>
             </div>
-          </div>
+          </button>
         )}
 
         <button

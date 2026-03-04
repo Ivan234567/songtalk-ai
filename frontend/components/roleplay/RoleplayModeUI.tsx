@@ -7,6 +7,7 @@ import {
   type RoleplayScenario,
 } from '@/lib/roleplay';
 import { createUserScenario, type UserScenarioLevel } from '@/lib/user-scenarios';
+import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 
 /** Значение фильтра сложности в модалке сценариев */
 type DifficultyFilter = 'all' | 'easy' | 'medium' | 'hard';
@@ -1214,10 +1215,16 @@ export function BriefingView({
             <input
               type="checkbox"
               checked={allowProfanity}
-              onChange={(e) => {
+              onChange={async (e) => {
                 const next = e.target.checked;
-                setAllowProfanity(next);
-                if (!next) setAiMayUseProfanity(false);
+                if (!next) {
+                  setAllowProfanity(false);
+                  setAiMayUseProfanity(false);
+                  return;
+                }
+                const confirmed = await ensureAdultConfirmation('roleplay_briefing');
+                if (!confirmed) return;
+                setAllowProfanity(true);
               }}
             />
             Разрешить нецензурную лексику (18+)
@@ -1255,15 +1262,19 @@ export function BriefingView({
         </div>
         <button
           type="button"
-          onClick={() =>
+          onClick={async () => {
+            if (allowProfanity) {
+              const confirmed = await ensureAdultConfirmation('roleplay_start');
+              if (!confirmed) return;
+            }
             onStart({
               ...scenario,
               slangMode,
               allowProfanity,
               aiMayUseProfanity: allowProfanity ? aiMayUseProfanity : false,
               profanityIntensity,
-            })
-          }
+            });
+          }}
           className="roleplay-briefing-start"
           style={{
             '--accent': '#68c995',

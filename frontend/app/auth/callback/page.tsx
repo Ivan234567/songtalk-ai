@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { logSecurityEvent } from '@/lib/securityEvents'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -55,6 +56,8 @@ export default function AuthCallbackPage() {
           console.error('[auth/callback] Backend JWT exchange error', exchangeError)
           // Не прерываем основной поток авторизации
         }
+
+        await logSecurityEvent('login', { method: code ? 'callback_code' : 'session_restore' })
 
         setMessage('Success. Redirecting…')
         router.push('/')

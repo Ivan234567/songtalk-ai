@@ -20,6 +20,7 @@ import {
   type DebateWhoStarts,
 } from '@/lib/debate';
 import { DEBATE_TOPICS, getTopicById } from '@/lib/debate-topics';
+import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 
 // Цель дебата (статический текст)
 const DEBATE_GOAL_RU = `Дебат успешно завершен, когда:
@@ -2018,7 +2019,7 @@ export function AgentTab() {
     debateSettingsPayload,
   ]);
 
-  const applyFreestylePreset = useCallback((preset: 'neutral' | 'light_slang' | 'heavy_slang' | 'adult_user' | 'adult_dual') => {
+  const applyFreestylePreset = useCallback(async (preset: 'neutral' | 'light_slang' | 'heavy_slang' | 'adult_user' | 'adult_dual') => {
     if (preset === 'neutral') {
       setFreestyleSlangMode('off');
       setFreestyleAllowProfanity(false);
@@ -2047,6 +2048,8 @@ export function AgentTab() {
       return;
     }
     if (preset === 'adult_user') {
+      const confirmed = await ensureAdultConfirmation('freestyle_preset_user');
+      if (!confirmed) return;
       setFreestyleSlangMode('light');
       setFreestyleAllowProfanity(true);
       setFreestyleAiMayUseProfanity(false);
@@ -2055,6 +2058,8 @@ export function AgentTab() {
       setFreestyleToneDirectness(65);
       return;
     }
+    const confirmed = await ensureAdultConfirmation('freestyle_preset_dual');
+    if (!confirmed) return;
     setFreestyleSlangMode('heavy');
     setFreestyleAllowProfanity(true);
     setFreestyleAiMayUseProfanity(true);
@@ -2816,10 +2821,16 @@ export function AgentTab() {
                             <input
                               type="checkbox"
                               checked={freestyleAllowProfanity}
-                              onChange={(e) => {
+                              onChange={async (e) => {
                                 const next = e.target.checked;
-                                setFreestyleAllowProfanity(next);
-                                if (!next) setFreestyleAiMayUseProfanity(false);
+                                if (!next) {
+                                  setFreestyleAllowProfanity(false);
+                                  setFreestyleAiMayUseProfanity(false);
+                                  return;
+                                }
+                                const confirmed = await ensureAdultConfirmation('freestyle_toggle');
+                                if (!confirmed) return;
+                                setFreestyleAllowProfanity(true);
                               }}
                             />
                             18+ включен

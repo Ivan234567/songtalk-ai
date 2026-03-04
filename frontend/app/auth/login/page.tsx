@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { logSecurityEvent } from '@/lib/securityEvents'
 import styles from '../auth.module.css'
 
 export default function LoginPage() {
@@ -41,6 +42,7 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw new Error(translateError(error.message))
+      await logSecurityEvent('login', { method: 'password' })
       router.push('/dashboard')
       router.refresh()
     } catch (err: unknown) {

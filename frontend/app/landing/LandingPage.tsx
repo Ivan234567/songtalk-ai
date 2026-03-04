@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 import { FeatureSlideAgent } from './FeatureSlideAgent';
 import { FeatureSlideKaraoke } from './FeatureSlideKaraoke';
 import { FeatureSlideProgress } from './FeatureSlideProgress';
@@ -119,9 +121,117 @@ function Logo() {
   return <span className={styles.logoText}>Speakeasy</span>;
 }
 
+function getEmailHue(email: string): number {
+  let hash = 0;
+  for (let i = 0; i < email.length; i += 1) {
+    hash = (hash << 5) - hash + email.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
+function UserAvatar({ email }: { email: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const menuId = 'landing-user-menu';
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const firstItemRef = useRef<HTMLAnchorElement>(null);
+  const router = useRouter();
+
+  const initial = (email.split('@')[0]?.[0] ?? '?').toUpperCase();
+  const displayName = email.split('@')[0] || 'Пользователь';
+  const avatarHue = getEmailHue(email);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (open) firstItemRef.current?.focus();
+  }, [open]);
+
+  return (
+    <div ref={ref} className={styles.avatarWrap}>
+      <button
+        ref={buttonRef}
+        className={styles.avatarBtn}
+        style={{ ['--avatar-hue' as string]: String(avatarHue) }}
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Открыть меню пользователя"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        title={email}
+      >
+        <span className={styles.avatarCircle} aria-hidden>
+          <span className={styles.avatarInitial}>{initial}</span>
+          <span className={styles.avatarOnlineDot} />
+        </span>
+        <span className={styles.avatarName}>{displayName}</span>
+        <span className={styles.avatarChevron} aria-hidden>▾</span>
+      </button>
+      {open && (
+        <div id={menuId} className={styles.avatarDropdown} role="menu" aria-label="Меню пользователя">
+          <div className={styles.avatarDropdownHead}>
+            <p className={styles.avatarDropdownName}>{displayName}</p>
+            <p className={styles.avatarDropdownEmail}>{email}</p>
+          </div>
+          <Link
+            ref={firstItemRef}
+            href="/dashboard"
+            className={styles.avatarDropdownItem}
+            onClick={() => setOpen(false)}
+            role="menuitem"
+          >
+            Перейти в dashboard
+          </Link>
+          <button
+            className={styles.avatarDropdownItem}
+            onClick={async () => {
+              await supabase.auth.signOut();
+              setOpen(false);
+              router.push('/');
+              router.refresh();
+            }}
+            role="menuitem"
+          >
+            Выйти
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const [highlightSection, setHighlightSection] = useState<string | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUserEmail(data.session?.user?.email ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserEmail(session?.user?.email ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const scrollToFeature = useCallback((sectionId: string) => {
     if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
@@ -143,12 +253,18 @@ export default function LandingPage() {
           <Logo />
         </Link>
         <nav className={styles.nav} aria-label="Основная навигация">
-          <Link href="/auth/login" className={styles.navBtnOutline}>
-            Войти
-          </Link>
-          <Link href="/auth/register" className={styles.navBtnOutline}>
-            Регистрация
-          </Link>
+          {userEmail ? (
+            <UserAvatar email={userEmail} />
+          ) : (
+            <>
+              <Link href="/auth/login" className={styles.navBtnOutline}>
+                Войти
+              </Link>
+              <Link href="/auth/register" className={styles.navBtnOutline}>
+                Регистрация
+              </Link>
+            </>
+          )}
         </nav>
       </header>
 

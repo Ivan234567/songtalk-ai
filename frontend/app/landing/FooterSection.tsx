@@ -1,8 +1,15 @@
 'use client';
 
 import React from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
 import styles from './landing.module.css';
+
+const TELEGRAM_SUPPORT = 'https://t.me/SPEAKEASY_SUPPORT';
+
+/* Цвета QR в стиле лендинга: мятный на тёмном */
+const QR_FG = '#6bf0b0';
+const QR_BG = 'transparent';
 
 const LINKS_ABOUT = [
   { href: '#hero', label: 'Главная' },
@@ -66,11 +73,33 @@ export function FooterSection() {
                 <Link href="/legal/offer" className={styles.ftLink}>Оферта</Link>
                 <Link href="/legal/privacy" className={styles.ftLink}>Конфиденциальность</Link>
               </div>
-              <p className={styles.ftContact}>
-                <a href="mailto:support@speakeasy.ru" className={styles.ftContactLink}>
-                  support@speakeasy.ru
+            </div>
+
+            {/* Поддержка — Telegram */}
+            <div className={styles.ftColSupport}>
+              <span className={styles.ftColTitle}>Поддержка</span>
+              <div className={styles.ftTelegram}>
+                <a
+                  href={TELEGRAM_SUPPORT}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.ftTelegramLink}
+                  aria-label="Поддержка в Telegram @SPEAKEASY_SUPPORT"
+                >
+                  <span className={styles.ftTelegramQrWrap}>
+                    <QRCodeSVG
+                      value={TELEGRAM_SUPPORT}
+                      size={120}
+                      level="M"
+                      marginSize={1}
+                      fgColor={QR_FG}
+                      bgColor={QR_BG}
+                      className={styles.ftTelegramQr}
+                    />
+                  </span>
+                  <span className={styles.ftTelegramHandle}>@SPEAKEASY_SUPPORT</span>
                 </a>
-              </p>
+              </div>
             </div>
           </div>
 
@@ -80,9 +109,6 @@ export function FooterSection() {
           {/* Нижняя строка */}
           <div className={styles.ftBottom}>
             <span className={styles.ftCopy}>© {new Date().getFullYear()} Speakeasy</span>
-            <Link href="/legal/privacy" className={styles.ftBottomLink}>
-              Политика конфиденциальности
-            </Link>
           </div>
         </div>
       </div>

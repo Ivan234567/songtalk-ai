@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import styles from '../auth.module.css'
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
@@ -16,6 +18,20 @@ export default function UpdatePasswordPage() {
     // In recovery/confirm flows, Supabase may set session from URL on load.
     supabase.auth.getSession().finally(() => setReady(true))
   }, [])
+
+  const translateError = (errorMessage: string): string => {
+    const errorMsg = errorMessage.toLowerCase()
+    if (errorMsg.includes('same password')) {
+      return 'Новый пароль должен отличаться от текущего.'
+    }
+    if (errorMsg.includes('password should be at least')) {
+      return 'Пароль должен содержать минимум 6 символов.'
+    }
+    if (errorMsg.includes('expired')) {
+      return 'Ссылка для восстановления устарела. Запросите сброс пароля заново.'
+    }
+    return errorMessage
+  }
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,100 +48,106 @@ export default function UpdatePasswordPage() {
         router.push('/auth/login')
         router.refresh()
       }, 800)
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось обновить пароль')
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Не удалось обновить пароль'
+      setError(translateError(message))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-    }}>
-      <div style={{
-        background: 'white',
-        padding: '2rem',
-        borderRadius: '12px',
-        boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
-        width: '100%',
-        maxWidth: '420px'
-      }}>
-        <h1 style={{ marginBottom: '1.25rem', textAlign: 'center' }}>Новый пароль</h1>
+    <div className={styles.authPage}>
+      <div className={styles.authCard}>
+        <div className={styles.authAccentLine} />
+        <div className={styles.authHeader}>
+          <h1 className={styles.authTitle}>Новый пароль</h1>
+          <p className={styles.authSubtitle}>
+            Установите новый пароль для входа
+            <span className={styles.authSubline} />
+          </p>
+        </div>
 
-        {!ready ? (
-          <div style={{ color: '#6b7280', textAlign: 'center' }}>Загрузка…</div>
-        ) : (
-          <>
-            {error && (
-              <div style={{
-                padding: '0.75rem',
-                background: '#fee2e2',
-                color: '#dc2626',
-                borderRadius: '6px',
-                marginBottom: '1rem'
-              }}>
-                {error}
-              </div>
-            )}
+        {!ready && (
+          <div className={styles.authSuccess} role="status">
+            <span aria-hidden>⏳</span>
+            <span>Проверяем ссылку для восстановления…</span>
+          </div>
+        )}
 
-            {success && (
-              <div style={{
-                padding: '0.75rem',
-                background: '#dcfce7',
-                color: '#166534',
-                borderRadius: '6px',
-                marginBottom: '1rem'
-              }}>
-                {success}
-              </div>
-            )}
+        {error && (
+          <div className={styles.authError} role="alert">
+            <span className={styles.authErrorIcon} aria-hidden>⚠️</span>
+            <span>{error}</span>
+          </div>
+        )}
 
-            <form onSubmit={handleUpdate}>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-                  Новый пароль
-                </label>
+        {success && (
+          <div className={styles.authSuccess} role="status">
+            <span aria-hidden>✓</span>
+            <span>{success}</span>
+          </div>
+        )}
+
+        {ready && (
+          <form className={styles.authForm} onSubmit={handleUpdate}>
+            <div className={`${styles.authField} ${styles.authFieldLast}`}>
+              <label className={styles.authLabel} htmlFor="update-password">
+                Новый пароль
+                <span className={styles.authLabelHint}>(мин. 6 символов)</span>
+              </label>
+              <div className={`${styles.inputWrap} ${password ? styles.hasValue : ''}`}>
+                <span className={styles.authInputIcon} aria-hidden>🔒</span>
                 <input
-                  type="password"
+                  id="update-password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    if (error) setError(null)
+                  }}
                   required
                   minLength={6}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '1rem'
-                  }}
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                  className={`${styles.authInput} ${styles.authInputPassword}`}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className={styles.authToggle}
+                  title={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                  aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                >
+                  {showPassword ? '👁️' : '👁️‍🗨️'}
+                </button>
               </div>
+            </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  background: loading ? '#9ca3af' : '#111827',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '1rem',
-                  fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {loading ? 'Сохранение...' : 'Обновить пароль'}
-              </button>
-            </form>
-          </>
+            <button
+              type="submit"
+              disabled={loading || !password.trim() || password.length < 6}
+              className={styles.authBtnPrimary}
+            >
+              {loading ? (
+                <>
+                  <span className={styles.authBtnSpinner} aria-hidden />
+                  Сохранение...
+                </>
+              ) : (
+                'Обновить пароль'
+              )}
+            </button>
+          </form>
         )}
+
+        <div className={styles.authDivider}>
+          <p className={styles.authFooterText}>
+            <a href="/auth/login" className={styles.authFooterLinkPrimary}>
+              ← Вернуться ко входу
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   )

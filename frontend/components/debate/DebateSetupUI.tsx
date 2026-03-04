@@ -27,6 +27,7 @@ import {
   type UserDebateTopic,
   type UserDebateTopicDifficulty,
 } from '@/lib/user-debate-topics';
+import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 
 type DebateSetupUIProps = {
   onStart: (
@@ -633,6 +634,10 @@ export function DebateSetupUI({ onStart, onClose, userId, view: externalView }: 
     const topic = activeTopicText;
     if (!topic || !userPosition) return;
     if (topicView === 'custom' && customTopicValidation.status === 'rejected') return;
+    if (debateSettingsForStart.allowProfanity) {
+      const confirmed = await ensureAdultConfirmation('debate_start');
+      if (!confirmed) return;
+    }
 
     if ((topicView === 'custom' || topicView === 'my') && userId) {
       try {
@@ -1065,13 +1070,17 @@ export function DebateSetupUI({ onStart, onClose, userId, view: externalView }: 
                     <input
                       type="checkbox"
                       checked={editDraft.allow_profanity}
-                      onChange={(e) =>
+                      onChange={async (e) => {
+                        const next = e.target.checked;
+                        if (next) {
+                          const confirmed = await ensureAdultConfirmation('debate_topic_edit');
+                          if (!confirmed) return;
+                        }
                         setEditDraft((d) => {
                           if (!d) return d;
-                          const next = e.target.checked;
                           return { ...d, allow_profanity: next, ai_may_use_profanity: next ? d.ai_may_use_profanity : false };
-                        })
-                      }
+                        });
+                      }}
                     />
                     Разрешить нецензурную лексику (18+)
                   </label>
@@ -2262,8 +2271,12 @@ export function DebateSetupUI({ onStart, onClose, userId, view: externalView }: 
                     <input
                       type="checkbox"
                       checked={debateAllowProfanity}
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const next = e.target.checked;
+                        if (next) {
+                          const confirmed = await ensureAdultConfirmation('debate_setup');
+                          if (!confirmed) return;
+                        }
                         setDebateAllowProfanity(next);
                         if (!next) setDebateAiMayUseProfanity(false);
                       }}

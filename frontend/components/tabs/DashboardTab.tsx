@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useDashboardMetrics, formatDuration } from './useDashboardMetrics';
 import styles from './dashboard.module.css';
 
@@ -45,31 +45,59 @@ const ProgressIcon = () => (
   </svg>
 );
 
-const QUICK_ACCESS_ITEMS: { tab: 'karaoke' | 'dictionary' | 'agent' | 'progress'; label: string; icon: React.ReactNode }[] = [
-  { tab: 'karaoke', label: 'Караоке', icon: <KaraokeIcon /> },
-  { tab: 'dictionary', label: 'Словарь', icon: <DictionaryIcon /> },
-  { tab: 'agent', label: 'AI-собеседник', icon: <AgentIcon /> },
-  { tab: 'progress', label: 'Прогресс', icon: <ProgressIcon /> },
+const QUICK_ACCESS_ITEMS: {
+  tab: 'karaoke' | 'dictionary' | 'agent' | 'progress';
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+}[] = [
+  { tab: 'karaoke', label: 'Караоке', description: 'Тренируй ритм и произношение', icon: <KaraokeIcon /> },
+  { tab: 'dictionary', label: 'Словарь', description: 'Закрепляй лексику по темам', icon: <DictionaryIcon /> },
+  { tab: 'agent', label: 'AI-собеседник', description: 'Практикуй живой разговор', icon: <AgentIcon /> },
+  { tab: 'progress', label: 'Прогресс', description: 'Отслеживай рост по навыкам', icon: <ProgressIcon /> },
 ];
 
 export const DashboardTab: React.FC = () => {
   const { metrics, loading, error } = useDashboardMetrics();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const WEEKLY_GOAL_MINUTES = 90;
 
-  const goToTab = (tab: string) => {
+  const goToTab = (tab: 'karaoke' | 'dictionary' | 'agent' | 'progress') => {
     const base = pathname || '/';
-    const sep = base.includes('?') ? '&' : '?';
-    router.replace(`${base}${sep}tab=${tab}`, { scroll: false });
+    const next = new URLSearchParams(searchParams.toString());
+    next.set('tab', tab);
+    router.replace(`${base}?${next.toString()}`, { scroll: false });
   };
+
+  const weeklyGoalProgress = Math.min(100, Math.round((metrics.weekMinutes / WEEKLY_GOAL_MINUTES) * 100));
+  const weekMinutesLeft = Math.max(0, WEEKLY_GOAL_MINUTES - metrics.weekMinutes);
+  const conversationShare = metrics.conversationMinutes > 0
+    ? Math.round((metrics.weekMinutes / metrics.conversationMinutes) * 100)
+    : 0;
+
+  const streakLabel = metrics.streakDays === 1
+    ? 'день подряд'
+    : metrics.streakDays > 1 && metrics.streakDays < 5
+      ? 'дня подряд'
+      : 'дней подряд';
+  const karaokeLabel = metrics.karaokeCount === 1
+    ? 'песня'
+    : metrics.karaokeCount > 1 && metrics.karaokeCount < 5
+      ? 'песни'
+      : 'песен';
+  const wordsRatio = metrics.dictionaryCount > 0 ? Math.round((metrics.wordsCount / metrics.dictionaryCount) * 100) : 0;
+  const idiomsRatio = metrics.dictionaryCount > 0 ? Math.round((metrics.idiomsCount / metrics.dictionaryCount) * 100) : 0;
+  const phrasalRatio = metrics.dictionaryCount > 0 ? Math.round((metrics.phrasalVerbsCount / metrics.dictionaryCount) * 100) : 0;
 
   if (loading) {
     return (
       <div className={styles.wrapper}>
-        <section className={styles.overviewSection}>
-          <div className={styles.metricsRow1}>
-            {[1, 2, 3].map((i) => (
-              <div key={i} className={`${styles.card} ${styles.skeletonCard}`}>
+        <section className={styles.heroSection}>
+          <div className={styles.heroGrid}>
+            {[1, 2].map((i) => (
+              <div key={i} className={`${styles.card} ${styles.skeletonCard} ${styles.skeletonHeroCard}`}>
                 <div className={styles.skeletonTitle} />
                 <div className={styles.skeletonValue} />
               </div>
@@ -77,8 +105,8 @@ export const DashboardTab: React.FC = () => {
           </div>
         </section>
         <section className={styles.metricsSection}>
-          <div className={styles.metricsGrid}>
-            {[1, 2, 3].map((i) => (
+          <div className={styles.kpiGrid}>
+            {[1, 2, 3, 4].map((i) => (
               <div key={i} className={`${styles.card} ${styles.skeletonCard}`}>
                 <div className={styles.skeletonTitle} />
                 <div className={styles.skeletonValue} />
@@ -108,85 +136,164 @@ export const DashboardTab: React.FC = () => {
 
   return (
     <div className={styles.wrapper}>
-      <section className={styles.overviewSection} aria-label="Обзор">
-        <div className={styles.metricsRow1}>
-        <div className={`${styles.card} ${styles.cardStreak}`}>
-          <div className={styles.cardIcon}>
-            <FlameIcon />
+      <section className={styles.heroSection} aria-label="Учебный обзор">
+        <div className={styles.heroGrid}>
+          <div className={`${styles.card} ${styles.heroMainCard}`}>
+            <div className={styles.heroBadge}>Персональный учебный трек</div>
+            <h2 className={styles.heroTitle}>Двигайся к уверенной разговорной речи каждый день</h2>
+            <p className={styles.heroSub}>
+              Комбинируй диалоги с AI, словарь и караоке-практику, чтобы быстрее закреплять лексику и говорить свободнее.
+            </p>
+            <div className={styles.heroStats}>
+              <div className={styles.heroStat}>
+                <span className={styles.heroStatLabel}>На этой неделе</span>
+                <span className={styles.heroStatValue}>{formatDuration(metrics.weekMinutes)}</span>
+              </div>
+              <div className={styles.heroStat}>
+                <span className={styles.heroStatLabel}>Сегодня</span>
+                <span className={styles.heroStatValue}>{formatDuration(metrics.todayMinutes)}</span>
+              </div>
+              <div className={styles.heroStat}>
+                <span className={styles.heroStatLabel}>Streak</span>
+                <span className={styles.heroStatValue}>{metrics.streakDays}</span>
+              </div>
+            </div>
           </div>
-          <div className={styles.cardTitle}>Streak</div>
-          <div className={styles.cardValue}>{metrics.streakDays}</div>
-          <div className={styles.cardSub}>
-            {metrics.streakDays === 0
-              ? 'Позанимайся сегодня'
-              : metrics.streakDays === 1
-                ? 'день подряд'
-                : metrics.streakDays < 5
-                  ? 'дня подряд'
-                  : 'дней подряд'}
+          <div className={`${styles.card} ${styles.heroGoalCard}`}>
+            <div className={styles.goalTitleWrap}>
+              <div className={styles.cardIcon}>
+                <ProgressIcon />
+              </div>
+              <div>
+                <p className={styles.goalCaption}>Недельная цель</p>
+                <h3 className={styles.goalTitle}>{WEEKLY_GOAL_MINUTES} минут практики</h3>
+              </div>
+            </div>
+            <div className={styles.goalProgressBar}>
+              <div className={styles.goalProgressValue} style={{ width: `${weeklyGoalProgress}%` }} />
+            </div>
+            <p className={styles.goalProgressText}>
+              {weeklyGoalProgress}% выполнено
+              {' · '}
+              {weekMinutesLeft > 0 ? `осталось ${formatDuration(weekMinutesLeft)}` : 'цель достигнута'}
+            </p>
+            <button type="button" onClick={() => goToTab('progress')} className={styles.goalActionBtn}>
+              Открыть детальный прогресс
+            </button>
           </div>
-        </div>
-
-        <div className={`${styles.card} ${styles.cardAgent}`}>
-          <div className={styles.cardIcon}>
-            <AgentIcon />
-          </div>
-          <div className={styles.cardTitle}>Сегодня</div>
-          <div className={styles.cardValue}>{formatDuration(metrics.todayMinutes)}</div>
-          <div className={styles.cardSub}>в разговорах с AI</div>
-        </div>
-
-        <div className={`${styles.card} ${styles.cardWeek}`}>
-          <div className={styles.cardIcon}>
-            <AgentIcon />
-          </div>
-          <div className={styles.cardTitle}>На этой неделе</div>
-          <div className={styles.cardValue}>{formatDuration(metrics.weekMinutes)}</div>
-          <div className={styles.cardSub}>в разговорах с AI</div>
-        </div>
         </div>
       </section>
 
-      <section className={styles.metricsSection} aria-label="Статистика">
-        <h2 className={styles.sectionTitle}>Статистика</h2>
-        <div className={styles.metricsGrid}>
-        <div className={`${styles.card} ${styles.cardAgent}`}>
-          <div className={styles.cardIcon}>
-            <AgentIcon />
+      <section className={styles.metricsSection} aria-label="Ключевые метрики">
+        <h2 className={styles.sectionTitle}>Ключевые метрики обучения</h2>
+        <div className={styles.kpiGrid}>
+          <div className={`${styles.card} ${styles.kpiCard} ${styles.cardStreak}`}>
+            <div className={styles.cardIcon}>
+              <FlameIcon />
+            </div>
+            <div className={styles.cardTitle}>Текущий streak</div>
+            <div className={styles.cardValue}>{metrics.streakDays}</div>
+            <div className={styles.cardSub}>
+              {metrics.streakDays === 0 ? 'Запусти практику сегодня' : streakLabel}
+            </div>
           </div>
-          <div className={styles.cardTitle}>Время в разговорах</div>
-          <div className={styles.cardValue}>{formatDuration(metrics.conversationMinutes)}</div>
-          <div className={styles.cardSub}>с AI-собеседником (всего)</div>
+
+          <div className={`${styles.card} ${styles.kpiCard} ${styles.cardAgent}`}>
+            <div className={styles.cardIcon}>
+              <AgentIcon />
+            </div>
+            <div className={styles.cardTitle}>AI-разговоры (всего)</div>
+            <div className={styles.cardValue}>{formatDuration(metrics.conversationMinutes)}</div>
+            <div className={styles.cardSub}>Живая практика с ассистентом</div>
+          </div>
+
+          <div className={`${styles.card} ${styles.kpiCard} ${styles.cardDictionary}`}>
+            <div className={styles.cardIcon}>
+              <DictionaryIcon />
+            </div>
+            <div className={styles.cardTitle}>Словарь</div>
+            <div className={styles.cardValue}>{metrics.dictionaryCount}</div>
+            <div className={styles.cardSub}>Добавленных единиц лексики</div>
+          </div>
+
+          <div className={`${styles.card} ${styles.kpiCard} ${styles.cardKaraoke}`}>
+            <div className={styles.cardIcon}>
+              <KaraokeIcon />
+            </div>
+            <div className={styles.cardTitle}>Караоке-активность</div>
+            <div className={styles.cardValue}>{metrics.karaokeCount}</div>
+            <div className={styles.cardSub}>{karaokeLabel} отработано</div>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.learningSection} aria-label="Развитие навыков">
+        <div className={`${styles.card} ${styles.learningCard}`}>
+          <div className={styles.learningHeader}>
+            <h2 className={styles.sectionTitle}>Фокус недели</h2>
+          </div>
+          <p className={styles.learningLead}>
+            {weekMinutesLeft > 0
+              ? `До недельной цели осталось ${formatDuration(weekMinutesLeft)}. Лучше всего добивать цель короткими ежедневными сессиями.`
+              : 'Ты закрыл недельную цель. Сфокусируйся на качестве: разбирай ошибки и расширяй лексику.'}
+          </p>
+          <div className={styles.learningChecklist}>
+            <button type="button" className={styles.learningStep} onClick={() => goToTab('agent')}>
+              <span className={styles.learningStepTitle}>10-15 минут диалога с AI</span>
+              <span className={styles.learningStepSub}>Прокачка fluency и уверенности</span>
+            </button>
+            <button type="button" className={styles.learningStep} onClick={() => goToTab('dictionary')}>
+              <span className={styles.learningStepTitle}>Добавь 3-5 новых выражений</span>
+              <span className={styles.learningStepSub}>Закрепление слов и идиом в контексте</span>
+            </button>
+            <button type="button" className={styles.learningStep} onClick={() => goToTab('karaoke')}>
+              <span className={styles.learningStepTitle}>Одна песня на повторе</span>
+              <span className={styles.learningStepSub}>Тренировка слуха, ритма и произношения</span>
+            </button>
+          </div>
         </div>
 
-        <div className={`${styles.card} ${styles.cardDictionary}`}>
-          <div className={styles.cardIcon}>
-            <DictionaryIcon />
+        <div className={`${styles.card} ${styles.breakdownCard}`}>
+          <h2 className={styles.sectionTitle}>Структура словаря</h2>
+          <div className={styles.breakdownList}>
+            <div className={styles.breakdownRow}>
+              <div className={styles.breakdownMeta}>
+                <span>Слова</span>
+                <span>{metrics.wordsCount}</span>
+              </div>
+              <div className={styles.breakdownBar}>
+                <div className={styles.breakdownBarValue} style={{ width: `${wordsRatio}%` }} />
+              </div>
+            </div>
+            <div className={styles.breakdownRow}>
+              <div className={styles.breakdownMeta}>
+                <span>Идиомы</span>
+                <span>{metrics.idiomsCount}</span>
+              </div>
+              <div className={styles.breakdownBar}>
+                <div className={styles.breakdownBarValue} style={{ width: `${idiomsRatio}%` }} />
+              </div>
+            </div>
+            <div className={styles.breakdownRow}>
+              <div className={styles.breakdownMeta}>
+                <span>Фразовые глаголы</span>
+                <span>{metrics.phrasalVerbsCount}</span>
+              </div>
+              <div className={styles.breakdownBar}>
+                <div className={styles.breakdownBarValue} style={{ width: `${phrasalRatio}%` }} />
+              </div>
+            </div>
           </div>
-          <div className={styles.cardTitle}>Словарь</div>
-          <div className={styles.cardValue}>{metrics.dictionaryCount}</div>
-          <div className={styles.cardDictionaryBreakdown}>
-            <span>Слова: {metrics.wordsCount}</span>
-            <span>Идиомы: {metrics.idiomsCount}</span>
-            <span>Фразовые глаголы: {metrics.phrasalVerbsCount}</span>
-          </div>
-        </div>
-
-        <div className={`${styles.card} ${styles.cardKaraoke}`}>
-          <div className={styles.cardIcon}>
-            <KaraokeIcon />
-          </div>
-          <div className={styles.cardTitle}>Активность в караоке</div>
-          <div className={styles.cardValue}>{metrics.karaokeCount}</div>
-          <div className={styles.cardSub}>
-            {metrics.karaokeCount === 1 ? 'песня' : metrics.karaokeCount < 5 ? 'песни' : 'песен'}
-          </div>
-        </div>
+          <p className={styles.breakdownFooter}>
+            {metrics.dictionaryCount > 0
+              ? `${conversationShare}% твоего общего разговорного времени приходится на текущую неделю.`
+              : 'Начни добавлять лексику, чтобы видеть структуру словаря и персональные рекомендации.'}
+          </p>
         </div>
       </section>
 
       <section className={styles.quickAccessSection}>
-        <h2 className={styles.sectionTitle}>Быстрый доступ</h2>
+        <h2 className={styles.sectionTitle}>Быстрый старт занятий</h2>
         <div className={styles.quickAccessGrid}>
           {QUICK_ACCESS_ITEMS.map((item) => (
             <button
@@ -197,7 +304,10 @@ export const DashboardTab: React.FC = () => {
               data-tab={item.tab}
             >
               <span className={styles.quickAccessBtnIcon}>{item.icon}</span>
-              <span className={styles.quickAccessBtnLabel}>{item.label}</span>
+              <span className={styles.quickAccessBtnTextWrap}>
+                <span className={styles.quickAccessBtnLabel}>{item.label}</span>
+                <span className={styles.quickAccessBtnSub}>{item.description}</span>
+              </span>
             </button>
           ))}
         </div>

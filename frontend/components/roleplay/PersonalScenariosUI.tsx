@@ -14,6 +14,7 @@ import {
 } from '@/lib/user-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { BriefingView } from './RoleplayModeUI';
+import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 
 type SlangMode = 'off' | 'light' | 'heavy';
 type ProfanityIntensity = 'light' | 'medium' | 'hard';
@@ -1221,10 +1222,16 @@ export function PersonalScenariosUI({
                       <input
                         type="checkbox"
                         checked={createAllowProfanity}
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const next = e.target.checked;
-                          setCreateAllowProfanity(next);
-                          if (!next) setCreateAiMayUseProfanity(false);
+                          if (!next) {
+                            setCreateAllowProfanity(false);
+                            setCreateAiMayUseProfanity(false);
+                            return;
+                          }
+                          const confirmed = await ensureAdultConfirmation('personal_scenario_create');
+                          if (!confirmed) return;
+                          setCreateAllowProfanity(true);
                         }}
                       />
                       Разрешить нецензурную лексику (18+)
@@ -1718,8 +1725,12 @@ export function PersonalScenariosUI({
                       <input
                         type="checkbox"
                         checked={Boolean(p.allowProfanity)}
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const next = e.target.checked;
+                          if (next) {
+                            const confirmed = await ensureAdultConfirmation('personal_scenario_edit');
+                            if (!confirmed) return;
+                          }
                           setPayload({
                             allowProfanity: next,
                             aiMayUseProfanity: next ? Boolean(p.aiMayUseProfanity) : false,
