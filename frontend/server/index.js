@@ -467,25 +467,24 @@ app.post('/api/auth/exchange-supabase-token', asyncHandler(async (req, res) => {
 
     const user = userData.user
 
-    // Приветственный бонус: если у пользователя ещё нет баланса — начисляем 50 ₽
+    // Приветственный бонус: если у пользователя ещё нет записи баланса — начисляем 50 ₽
     const WELCOME_BONUS_RUB = 50
     try {
-      const currentBalance = await getBalance(supabase, user.id)
-      if (currentBalance === 0) {
-        const { data: hasTransactions } = await supabase
-          .from('balance_transactions')
-          .select('id')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle()
+      const { data: balanceRow } = await supabase
+        .from('user_balances')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
 
-        if (!hasTransactions) {
-          const topupResult = await topupBalance(supabase, user.id, WELCOME_BONUS_RUB, 'topup_manual', {
-            reason: 'welcome_bonus',
-          })
-          if (topupResult.ok) {
-            console.log(`[auth/exchange] Welcome bonus ${WELCOME_BONUS_RUB}₽ credited to ${user.email}`)
-          }
+      if (!balanceRow) {
+        console.log(`[auth/exchange] New user detected (no balance row): ${user.email}, crediting ${WELCOME_BONUS_RUB}₽`)
+        const topupResult = await topupBalance(supabase, user.id, WELCOME_BONUS_RUB, 'topup_manual', {
+          reason: 'welcome_bonus',
+        })
+        if (topupResult.ok) {
+          console.log(`[auth/exchange] Welcome bonus ${WELCOME_BONUS_RUB}₽ credited to ${user.email}, new balance: ${topupResult.newBalance}`)
+        } else {
+          console.error(`[auth/exchange] Welcome bonus topup failed:`, topupResult.error)
         }
       }
     } catch (bonusErr) {
