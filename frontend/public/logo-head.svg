@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="90 40 220 190" width="220" height="190">
+  <defs>
+    <radialGradient id="headGrad" cx="40%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#e8fff5"/>
+      <stop offset="50%" stop-color="#a8edd4"/>
+      <stop offset="100%" stop-color="#68c995"/>
+    </radialGradient>
+    <radialGradient id="domeGrad" cx="35%" cy="28%" r="60%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="40%" stop-color="#d4f5e8"/>
+      <stop offset="100%" stop-color="#68c995"/>
+    </radialGradient>
+    <radialGradient id="eyeGrad" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#4adba0"/>
+      <stop offset="100%" stop-color="#1a7a50"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-10%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#1e6640" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <!-- Head base -->
+    <rect x="124" y="148" width="152" height="76" rx="14" fill="url(#headGrad)"/>
+    <!-- Dome -->
+    <ellipse cx="200" cy="148" rx="76" ry="68" fill="url(#domeGrad)"/>
+    <!-- Panel lines -->
+    <line x1="124" y1="170" x2="276" y2="170" stroke="#68c995" stroke-width="1.5" opacity="0.4"/>
+    <line x1="124" y1="192" x2="276" y2="192" stroke="#68c995" stroke-width="1.5" opacity="0.4"/>
+    <!-- Main eye -->
+    <circle cx="200" cy="148" r="32" fill="#1e4a38"/>
+    <circle cx="200" cy="148" r="26" fill="url(#eyeGrad)"/>
+    <circle cx="200" cy="148" r="18" fill="#0d2e1c"/>
+    <circle cx="200" cy="148" r="13" fill="#1a7a50"/>
+    <circle cx="191" cy="139" r="5.5" fill="white" opacity="0.9"/>
+    <circle cx="207" cy="154" r="2.5" fill="white" opacity="0.45"/>
+    <circle cx="200" cy="148" r="29" fill="none" stroke="#68c995" stroke-width="1.5" opacity="0.6"/>
+    <!-- Secondary eye -->
+    <circle cx="248" cy="155" r="12" fill="#1e4a38"/>
+    <circle cx="248" cy="155" r="9" fill="url(#eyeGrad)"/>
+    <circle cx="248" cy="155" r="5.5" fill="#0d2e1c"/>
+    <circle cx="245" cy="151" r="2.5" fill="white" opacity="0.85"/>
+    <!-- Side panels -->
+    <rect x="125" y="175" width="22" height="30" rx="6" fill="white" opacity="0.2"/>
+    <rect x="253" y="175" width="22" height="30" rx="6" fill="white" opacity="0.2"/>
+    <!-- Headphone band -->
+    <path d="M152 112 Q200 72 248 112" fill="none" stroke="#2d8a58" stroke-width="7" stroke-linecap="round"/>
+    <!-- Left ear cup -->
+    <ellipse cx="148" cy="116" rx="14" ry="17" fill="#2d8a58"/>
+    <ellipse cx="148" cy="116" rx="8" ry="10" fill="#3dab74"/>
+    <ellipse cx="148" cy="116" rx="4" ry="5" fill="#68c995" opacity="0.8"/>
+    <ellipse cx="144" cy="110" rx="2.5" ry="2" fill="white" opacity="0.4"/>
+    <!-- Mic boom -->
+    <path d="M155 104 Q168 84 172 64" fill="none" stroke="#2d8a58" stroke-width="3.5" stroke-linecap="round"/>
+    <rect x="165" y="50" width="14" height="20" rx="7" fill="#1e6640"/>
+    <line x1="168" y1="55" x2="176" y2="55" stroke="#68c995" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="168" y1="59" x2="176" y2="59" stroke="#68c995" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="168" y1="63" x2="176" y2="63" stroke="#68c995" stroke-width="1.5" stroke-linecap="round"/>
+    <ellipse cx="168" cy="55" rx="2" ry="1.5" fill="white" opacity="0.3"/>
+    <!-- Mouth grille -->
+    <rect x="164" y="196" width="72" height="16" rx="8" fill="white" opacity="0.3"/>
+    <line x1="172" y1="200" x2="172" y2="208" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="180" y1="198" x2="180" y2="210" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="188" y1="197" x2="188" y2="211" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="196" y1="197" x2="196" y2="211" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="204" y1="197" x2="204" y2="211" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="212" y1="197" x2="212" y2="211" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="220" y1="198" x2="220" y2="210" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="228" y1="200" x2="228" y2="208" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  </g>
+</svg>

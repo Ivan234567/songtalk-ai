@@ -17,6 +17,8 @@ export default function RegisterPage() {
   const [emailError, setEmailError] = useState<string | null>(null)
   const router = useRouter()
 
+  const normalizeEmail = (value: string): string => value.trim().toLowerCase()
+
   const validatePassword = (pass: string): string | null => {
     if (!pass || pass.length < 6) return 'Пароль должен содержать минимум 6 символов'
     if (!/[a-zA-Zа-яА-ЯёЁ]/.test(pass)) return 'Пароль должен содержать хотя бы одну букву'
@@ -59,21 +61,15 @@ export default function RegisterPage() {
   }
 
   const handleEmailBlur = async () => {
-    if (!email || !email.includes('@')) return
+    const normalizedEmail = normalizeEmail(email)
+    if (!normalizedEmail) return
+
     setCheckingEmail(true)
     setEmailError(null)
     try {
-      const res = await fetch('/api/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      const data = await res.json()
-      if (data.exists) {
-        setEmailError('Пользователь с таким email уже зарегистрирован. Войдите в аккаунт или используйте другой email.')
+      if (!normalizedEmail.includes('@')) {
+        setEmailError('Проверьте формат email. Пример: email@example.com')
       }
-    } catch {
-      // ignore
     } finally {
       setCheckingEmail(false)
     }
@@ -110,8 +106,9 @@ export default function RegisterPage() {
     setLoading(true)
     try {
       const emailRedirectTo = `${window.location.origin}/auth/callback`
+      const normalizedEmail = normalizeEmail(email)
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: { emailRedirectTo },
       })
@@ -123,12 +120,16 @@ export default function RegisterPage() {
           errorMsg.includes('user already') ||
           errorMsg.includes('email already') ||
           errorMsg.includes('already been registered') ||
-          errorMsg.includes('user is already registered') ||
-          errorMsg.includes('signup_disabled') ||
-          (error.status === 400 && errorMsg.includes('email'))
+          errorMsg.includes('user is already registered')
         if (isEmailExists) {
           const msg = 'Пользователь с таким email уже зарегистрирован. Войдите в аккаунт или используйте другой email.'
           setEmailError(msg)
+          setError(msg)
+          setLoading(false)
+          return
+        }
+        if (errorMsg.includes('signup_disabled')) {
+          const msg = 'Регистрация временно недоступна. Попробуйте позже или обратитесь в поддержку.'
           setError(msg)
           setLoading(false)
           return
@@ -139,23 +140,6 @@ export default function RegisterPage() {
         router.push('/')
         router.refresh()
         return
-      }
-      try {
-        const checkRes = await fetch('/api/check-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        })
-        const checkData = await checkRes.json()
-        if (checkData.exists) {
-          const msg = 'Пользователь с таким email уже зарегистрирован. Войдите в аккаунт или используйте другой email.'
-          setEmailError(msg)
-          setError(msg)
-          setLoading(false)
-          return
-        }
-      } catch {
-        // ignore
       }
       setSuccess('Проверьте почту: мы отправили письмо для подтверждения email.')
     } catch (err: unknown) {

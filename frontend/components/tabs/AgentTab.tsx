@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { buildMessagesForAgentChat, type RoleplayScenario } from '@/lib/roleplay';
+import { getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
 import { PersonalScenariosUI } from '@/components/roleplay/PersonalScenariosUI';
 import type { SpeakingAssessmentResult, CriteriaScores, GoalAttainmentItem } from '@/lib/speaking-assessment';
@@ -49,8 +51,7 @@ function getApiUrl(): string {
 }
 
 function getBackendToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('backend_jwt');
+  return getStoredBackendToken();
 }
 
 type AgentState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -77,6 +78,20 @@ type Session = {
 };
 
 const MAX_SESSIONS = 50;
+const BALANCE_REDIRECT_NOTICE = 'Похоже, кошелек взял микроперерыв. Пополни баланс, и мы продолжим прокачку без драмы.';
+
+function isInsufficientBalanceError(status: number, message?: string): boolean {
+  if (status === 402) return true;
+  const text = (message || '').toLowerCase();
+  return (
+    text.includes('insufficient') ||
+    text.includes('not enough') ||
+    text.includes('balance') ||
+    text.includes('недостат') ||
+    text.includes('баланс') ||
+    text.includes('пополн')
+  );
+}
 
 function trimTitle(text: string, maxLen: number = 42): string {
   const t = text.trim();
@@ -93,6 +108,9 @@ function formatSessionDate(ts: number): string {
 }
 
 export function AgentTab() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [state, setState] = useState<AgentState>('idle');
   const [subtitlesVisible, setSubtitlesVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -239,8 +257,40 @@ export function AgentTab() {
   );
   const freestyleSettingsSummary = useMemo(
     () =>
-      `Сленг: ${freestyleSlangMode} / 18+: ${freestyleAllowProfanity ? 'on' : 'off'} / Формальность: ${Math.round(freestyleToneFormality / 10)}/10`,
+      `Сленг: ${freestyleSlangMode === 'off' ? 'выкл' : freestyleSlangMode === 'light' ? 'лёгкий' : 'активный'} · 18+: ${freestyleAllowProfanity ? 'вкл' : 'выкл'} · Тон: ${Math.round(freestyleToneFormality / 10)}/10`,
     [freestyleSlangMode, freestyleAllowProfanity, freestyleToneFormality]
+  );
+  const activeFreestylePreset = useMemo<string | null>(() => {
+    const s = freestyleSlangMode;
+    const p = freestyleAllowProfanity;
+    const ai = freestyleAiMayUseProfanity;
+    const pi = freestyleProfanityIntensity;
+    const f = freestyleToneFormality;
+    const d = freestyleToneDirectness;
+    if (s === 'off' && !p && !ai && pi === 'light' && f === 50 && d === 50) return 'neutral';
+    if (s === 'light' && !p && !ai && pi === 'light' && f === 35 && d === 50) return 'light_slang';
+    if (s === 'heavy' && !p && !ai && pi === 'light' && f === 25 && d === 60) return 'heavy_slang';
+    if (s === 'light' && p && !ai && pi === 'medium' && f === 40 && d === 65) return 'adult_user';
+    if (s === 'heavy' && p && ai && pi === 'medium' && f === 30 && d === 75) return 'adult_dual';
+    return null;
+  }, [freestyleSlangMode, freestyleAllowProfanity, freestyleAiMayUseProfanity, freestyleProfanityIntensity, freestyleToneFormality, freestyleToneDirectness]);
+  const redirectToBalance = useCallback(() => {
+    const base = pathname || '/dashboard';
+    const next = new URLSearchParams(searchParams.toString());
+    next.set('tab', 'balance');
+    next.set('balance_notice', BALANCE_REDIRECT_NOTICE);
+    router.replace(`${base}?${next.toString()}`, { scroll: false });
+  }, [pathname, searchParams, router]);
+  const handleInsufficientBalance = useCallback(
+    (status: number, message?: string): boolean => {
+      if (!isInsufficientBalanceError(status, message)) return false;
+      setState('idle');
+      setTranslatorOpen(false);
+      setAiChatOpen(false);
+      redirectToBalance();
+      return true;
+    },
+    [redirectToBalance]
   );
   const debateSettingsPayload = useMemo(
     () => ({
@@ -308,7 +358,7 @@ export function AgentTab() {
           if (resp.ok) {
             const json = await resp.json().catch(() => ({}));
             if (json?.token) {
-              window.localStorage.setItem('backend_jwt', json.token);
+              storeBackendToken(json.token);
               t = json.token;
             }
           }
@@ -598,6 +648,7 @@ export function AgentTab() {
 
         if (!resp.ok || !resp.body) {
           const j = await resp.json().catch(() => ({}));
+          if (handleInsufficientBalance(resp.status, j?.error)) return;
           setError(j?.error || `Ошибка ${resp.status}`);
           setState('idle');
           return;
@@ -629,6 +680,7 @@ export function AgentTab() {
               } else if (data.type === 'done') {
                 break;
               } else if (data.type === 'error') {
+                if (handleInsufficientBalance(0, data.message)) return;
                 setError(data.message || 'Ошибка');
                 setState('idle');
                 return;
@@ -755,6 +807,8 @@ export function AgentTab() {
         });
 
         if (!ttsResp.ok) {
+          const j = await ttsResp.json().catch(() => ({}));
+          if (handleInsufficientBalance(ttsResp.status, j?.error)) return;
           setError('Ошибка озвучки');
           setState('idle');
           return;
@@ -812,6 +866,7 @@ export function AgentTab() {
           ttsRafIdRef.current = requestAnimationFrame(tick);
         }
       } catch (e) {
+        if (e instanceof Error && handleInsufficientBalance(0, e.message)) return;
         setError(e instanceof Error ? e.message : 'Ошибка сети');
         setState('idle');
       }
@@ -841,6 +896,7 @@ export function AgentTab() {
       debateSettingsPayload,
       freestyleSettingsPayload,
       freestyleContextPayload,
+      handleInsufficientBalance,
     ]
   );
 
@@ -896,6 +952,7 @@ export function AgentTab() {
 
         if (!resp.ok || !resp.body) {
           const j = await resp.json().catch(() => ({}));
+          if (handleInsufficientBalance(resp.status, j?.error)) return;
           setError(j?.error || `Ошибка ${resp.status}`);
           setState('idle');
           return;
@@ -923,6 +980,7 @@ export function AgentTab() {
               } else if (data.type === 'done') {
                 break;
               } else if (data.type === 'error') {
+                if (handleInsufficientBalance(0, data.message)) return;
                 setError(data.message || 'Ошибка');
                 setState('idle');
                 return;
@@ -987,6 +1045,8 @@ export function AgentTab() {
         });
 
         if (!ttsResp.ok) {
+          const j = await ttsResp.json().catch(() => ({}));
+          if (handleInsufficientBalance(ttsResp.status, j?.error)) return;
           setError('Ошибка озвучки');
           setState('idle');
           return;
@@ -1044,12 +1104,13 @@ export function AgentTab() {
           ttsRafIdRef.current = requestAnimationFrame(tick);
         }
       } catch (err) {
+        if (err instanceof Error && handleInsufficientBalance(0, err.message)) return;
         console.error('[requestDebateFirstMessage] error:', err);
         setError(err instanceof Error ? err.message : 'Ошибка генерации первой реплики');
         setState('idle');
       }
     },
-    [token, userId, ttsVoice]
+    [token, userId, ttsVoice, handleInsufficientBalance]
   );
 
   // Обработчик смены режима - сброс дебата при переходе в другой режим
@@ -1143,6 +1204,7 @@ export function AgentTab() {
       });
       if (!resp.ok || !resp.body) {
         const j = await resp.json().catch(() => ({}));
+        if (handleInsufficientBalance(resp.status, j?.error)) return;
         setAiChatMessages((prev) => prev.slice(0, -1));
         setAiChatInput(text);
         setAiChatLoading(false);
@@ -1164,6 +1226,7 @@ export function AgentTab() {
             if (data.type === 'chunk' && typeof data.delta === 'string') fullReply += data.delta;
             else if (data.type === 'done') break;
             else if (data.type === 'error') {
+              if (handleInsufficientBalance(0, data.message)) return;
               setAiChatMessages((prev) => prev.slice(0, -1));
               setAiChatInput(text);
               setAiChatLoading(false);
@@ -1212,12 +1275,13 @@ export function AgentTab() {
         }
       }
     } catch (e) {
+      if (e instanceof Error && handleInsufficientBalance(0, e.message)) return;
       setAiChatMessages((prev) => prev.slice(0, -1));
       setAiChatInput(text);
     } finally {
       setAiChatLoading(false);
     }
-  }, [token, userId, aiChatMessages, aiChatInput, aiChatLoading, aiChatCurrentId]);
+  }, [token, userId, aiChatMessages, aiChatInput, aiChatLoading, aiChatCurrentId, handleInsufficientBalance]);
 
 
   /** При выборе сценария: если есть characterOpening — показываем его и озвучиваем; иначе пользователь начинает первым. */
@@ -1267,6 +1331,8 @@ export function AgentTab() {
           body: JSON.stringify({ text: openingLine, voice: ttsVoice }),
         });
         if (!ttsResp.ok) {
+          const j = await ttsResp.json().catch(() => ({}));
+          if (handleInsufficientBalance(ttsResp.status, j?.error)) return;
           setError('Ошибка озвучки');
           setState('idle');
           return;
@@ -1322,7 +1388,7 @@ export function AgentTab() {
       // Нет жёсткой первой реплики — пользователь начинает диалог первым
       setState('idle');
     },
-    [token, userId, ttsVoice]
+    [token, userId, ttsVoice, handleInsufficientBalance]
   );
 
   // Обработчик начала дебата
@@ -2199,12 +2265,14 @@ export function AgentTab() {
           if (resp.ok && data?.text) {
             await runVoiceTurn(data.text);
           } else if (!resp.ok) {
+            if (handleInsufficientBalance(resp.status, data?.error)) return;
             setError(data?.error || `Ошибка распознавания (${resp.status})`);
             setState('idle');
           } else {
             setState('idle');
           }
         } catch (e) {
+          if (e instanceof Error && handleInsufficientBalance(0, e.message)) return;
           setError(e instanceof Error ? e.message : 'Ошибка STT');
           setState('idle');
         }
@@ -2716,15 +2784,17 @@ export function AgentTab() {
               </div>
               {agentMode === 'chat' && (
                 <div
+                  className="freestyle-settings-panel"
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    width: 'min(360px, 100%)',
+                    width: 'min(340px, 100%)',
                     alignSelf: 'flex-end',
-                    padding: '0.7rem',
-                    borderRadius: 12,
+                    borderRadius: 14,
                     border: '1px solid var(--sidebar-border)',
                     background: 'var(--sidebar-hover)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                    overflow: 'hidden',
                   }}
                 >
                   <button
@@ -2740,29 +2810,37 @@ export function AgentTab() {
                       border: 'none',
                       background: 'transparent',
                       color: 'var(--sidebar-text)',
-                      padding: 0,
+                      padding: '0.625rem 0.875rem',
                       cursor: 'pointer',
                       textAlign: 'left',
                     }}
                   >
-                    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', opacity: 0.8 }}>
-                        Настройки фристайла
-                      </span>
-                      <span style={{ fontSize: '0.75rem', opacity: 0.72, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {freestyleSettingsSummary}
-                      </span>
+                    <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }} aria-hidden>
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, letterSpacing: '0.01em' }}>
+                          Настройки стиля
+                        </span>
+                        {!freestyleSettingsOpen && (
+                          <span style={{ fontSize: '0.6875rem', opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {freestyleSettingsSummary}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <svg
-                      width="16"
-                      height="16"
+                      width="14"
+                      height="14"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      style={{ transform: freestyleSettingsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease', flexShrink: 0, opacity: 0.85 }}
+                      style={{ transform: freestyleSettingsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease', flexShrink: 0, opacity: 0.6 }}
                       aria-hidden
                     >
                       <polyline points="6 9 12 15 18 9" />
@@ -2776,48 +2854,76 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginTop: '0.65rem', paddingTop: '0.65rem', borderTop: '1px solid var(--sidebar-border)' }}>
-                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-                          {([
-                            { id: 'neutral', label: 'Нейтрально' },
-                            { id: 'light_slang', label: 'Легкий сленг' },
-                            { id: 'heavy_slang', label: 'Активный сленг' },
-                            { id: 'adult_user', label: '18+ (только пользователь)' },
-                            { id: 'adult_dual', label: '18+ (оба)' },
-                          ] as const).map((preset) => (
-                            <button
-                              key={preset.id}
-                              type="button"
-                              onClick={() => applyFreestylePreset(preset.id)}
-                              style={{
-                                border: '1px solid var(--sidebar-border)',
-                                background: 'var(--sidebar-bg)',
-                                color: 'var(--sidebar-text)',
-                                borderRadius: 999,
-                                padding: '0.24rem 0.6rem',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              {preset.label}
-                            </button>
-                          ))}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 0.875rem' }}>
+                        {/* --- Пресеты --- */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Быстрый выбор
+                          </span>
+                          <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                            {([
+                              { id: 'neutral', label: 'Нейтрально' },
+                              { id: 'light_slang', label: 'Лёгкий сленг' },
+                              { id: 'heavy_slang', label: 'Живой сленг' },
+                              { id: 'adult_user', label: '18+ (я)' },
+                              { id: 'adult_dual', label: '18+ (оба)' },
+                            ] as const).map((preset) => {
+                              const isActive = activeFreestylePreset === preset.id;
+                              return (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  onClick={() => applyFreestylePreset(preset.id)}
+                                  style={{
+                                    border: isActive ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid var(--sidebar-border)',
+                                    background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'var(--sidebar-bg)',
+                                    color: isActive ? 'rgb(129, 140, 248)' : 'var(--sidebar-text)',
+                                    borderRadius: 8,
+                                    padding: '0.3rem 0.6rem',
+                                    fontSize: '0.75rem',
+                                    fontWeight: isActive ? 700 : 500,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                    opacity: isActive ? 1 : 0.85,
+                                  }}
+                                >
+                                  {preset.label}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', justifyContent: 'flex-start' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--sidebar-text)' }}>
-                            <span>Сленг</span>
+
+                        {/* --- Речевой стиль --- */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'var(--sidebar-bg)',
+                            border: '1px solid var(--sidebar-border)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Речевой стиль
+                          </span>
+                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                            <span style={{ opacity: 0.85 }}>Сленг</span>
                             <select
+                              className="roleplay-modern-select"
                               value={freestyleSlangMode}
                               onChange={(e) => setFreestyleSlangMode(e.target.value as FreestyleSlangMode)}
-                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)', padding: '0.2rem 0.45rem', fontSize: '0.8rem' }}
+                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
                             >
-                              <option value="off">off</option>
-                              <option value="light">light</option>
-                              <option value="heavy">heavy</option>
+                              <option value="off">Выключен</option>
+                              <option value="light">Лёгкий</option>
+                              <option value="heavy">Активный</option>
                             </select>
                           </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--sidebar-text)' }}>
+                          <div style={{ height: 1, background: 'var(--sidebar-border)', opacity: 0.6 }} />
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
                             <input
                               type="checkbox"
                               checked={freestyleAllowProfanity}
@@ -2832,35 +2938,58 @@ export function AgentTab() {
                                 if (!confirmed) return;
                                 setFreestyleAllowProfanity(true);
                               }}
+                              style={{ accentColor: 'rgb(99, 102, 241)' }}
                             />
-                            18+ включен
+                            <span>Нецензурная лексика (18+)</span>
                           </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--sidebar-text)', opacity: freestyleAllowProfanity ? 1 : 0.6 }}>
-                            <input
-                              type="checkbox"
-                              checked={freestyleAiMayUseProfanity}
-                              disabled={!freestyleAllowProfanity}
-                              onChange={(e) => setFreestyleAiMayUseProfanity(e.target.checked)}
-                            />
-                            ИИ может использовать 18+
-                          </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--sidebar-text)', opacity: freestyleAllowProfanity ? 1 : 0.6 }}>
-                            <span>Интенсивность</span>
-                            <select
-                              value={freestyleProfanityIntensity}
-                              disabled={!freestyleAllowProfanity}
-                              onChange={(e) => setFreestyleProfanityIntensity(e.target.value as FreestyleProfanityIntensity)}
-                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)', padding: '0.2rem 0.45rem', fontSize: '0.8rem' }}
-                            >
-                              <option value="light">light</option>
-                              <option value="medium">medium</option>
-                              <option value="hard">hard</option>
-                            </select>
-                          </label>
+                          {freestyleAllowProfanity && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', paddingLeft: '1.5rem' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={freestyleAiMayUseProfanity}
+                                  onChange={(e) => setFreestyleAiMayUseProfanity(e.target.checked)}
+                                  style={{ accentColor: 'rgb(99, 102, 241)' }}
+                                />
+                                <span style={{ opacity: 0.9 }}>ИИ тоже может</span>
+                              </label>
+                              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                                <span style={{ opacity: 0.85 }}>Интенсивность</span>
+                                <select
+                                  className="roleplay-modern-select"
+                                  value={freestyleProfanityIntensity}
+                                  onChange={(e) => setFreestyleProfanityIntensity(e.target.value as FreestyleProfanityIntensity)}
+                                  style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
+                                >
+                                  <option value="light">Лёгкая</option>
+                                  <option value="medium">Средняя</option>
+                                  <option value="hard">Сильная</option>
+                                </select>
+                              </label>
+                            </div>
+                          )}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', color: 'var(--sidebar-text)' }}>
-                            <span style={{ minWidth: 58, opacity: 0.85 }}>Формальность</span>
+
+                        {/* --- Тон общения --- */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'var(--sidebar-bg)',
+                            border: '1px solid var(--sidebar-border)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Тон общения
+                          </span>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                              <span style={{ opacity: 0.85 }}>Формальность</span>
+                              <span style={{ fontSize: '0.75rem', opacity: 0.55, fontVariantNumeric: 'tabular-nums' }}>{freestyleToneFormality <= 30 ? 'разговорный' : freestyleToneFormality >= 70 ? 'формальный' : 'нейтральный'}</span>
+                            </div>
                             <input
                               type="range"
                               min={0}
@@ -2868,12 +2997,14 @@ export function AgentTab() {
                               step={1}
                               value={freestyleToneFormality}
                               onChange={(e) => setFreestyleToneFormality(Number(e.target.value))}
-                              style={{ flex: 1 }}
+                              style={{ width: '100%', accentColor: 'rgb(99, 102, 241)' }}
                             />
-                            <span style={{ width: 28, textAlign: 'right', opacity: 0.7 }}>{Math.round(freestyleToneFormality / 10)}</span>
                           </label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', color: 'var(--sidebar-text)' }}>
-                            <span style={{ minWidth: 58, opacity: 0.85 }}>Прямота</span>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                              <span style={{ opacity: 0.85 }}>Прямота</span>
+                              <span style={{ fontSize: '0.75rem', opacity: 0.55, fontVariantNumeric: 'tabular-nums' }}>{freestyleToneDirectness <= 30 ? 'мягкий' : freestyleToneDirectness >= 70 ? 'прямой' : 'нейтральный'}</span>
+                            </div>
                             <input
                               type="range"
                               min={0}
@@ -2881,9 +3012,8 @@ export function AgentTab() {
                               step={1}
                               value={freestyleToneDirectness}
                               onChange={(e) => setFreestyleToneDirectness(Number(e.target.value))}
-                              style={{ flex: 1 }}
+                              style={{ width: '100%', accentColor: 'rgb(99, 102, 241)' }}
                             />
-                            <span style={{ width: 28, textAlign: 'right', opacity: 0.7 }}>{Math.round(freestyleToneDirectness / 10)}</span>
                           </label>
                         </div>
                       </div>
@@ -4619,6 +4749,7 @@ export function AgentTab() {
           token={token}
           userId={userId}
           getApiUrl={getApiUrl}
+          onInsufficientBalance={redirectToBalance}
         />
       )}
       {debateSetupOpen && agentMode === 'debate' && (

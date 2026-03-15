@@ -5,6 +5,7 @@
  */
 
 import type { RoleplayScenario } from '@/lib/roleplay';
+import { getStoredBackendToken } from '@/lib/backend-jwt';
 
 export type UserScenarioLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'easy' | 'medium' | 'hard';
 
@@ -26,8 +27,7 @@ function getApiUrl(): string {
 }
 
 function getBackendToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('backend_jwt');
+  return getStoredBackendToken();
 }
 
 async function fetchApi<T>(

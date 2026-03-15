@@ -17,6 +17,7 @@ import { FinalCtaSection } from './FinalCtaSection';
 import { FaqSection } from './FaqSection';
 import { FooterSection } from './FooterSection';
 import styles from './landing.module.css';
+import { clearBackendToken } from '@/lib/backend-jwt';
 
 const HIGHLIGHT_DURATION_MS = 2600;
 
@@ -118,7 +119,15 @@ function HeroWaves() {
 }
 
 function Logo() {
-  return <span className={styles.logoText}>Speakeasy</span>;
+  return (
+    <span className={styles.logoBrand}>
+      <img src="/logo-head.svg" alt="" aria-hidden width={28} height={28} style={{ display: 'block', objectFit: 'contain' }} />
+      <span className={styles.logoText}>Speakeasy</span>
+      <span className={styles.logoBetaBadge} title="Beta" aria-label="Beta">
+        Beta
+      </span>
+    </span>
+  );
 }
 
 function getEmailHue(email: string): number {
@@ -203,6 +212,7 @@ function UserAvatar({ email }: { email: string }) {
             className={styles.avatarDropdownItem}
             onClick={async () => {
               await supabase.auth.signOut();
+              clearBackendToken();
               setOpen(false);
               router.push('/');
               router.refresh();
@@ -227,7 +237,10 @@ export default function LandingPage() {
       setUserEmail(data.session?.user?.email ?? null);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        clearBackendToken();
+      }
       setUserEmail(session?.user?.email ?? null);
     });
     return () => subscription.unsubscribe();

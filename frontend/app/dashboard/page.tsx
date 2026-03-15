@@ -13,6 +13,7 @@ import { ProgressTab } from '@/components/tabs/ProgressTab';
 import { BalanceTab } from '@/components/tabs/BalanceTab';
 import { AccountTab } from '@/components/tabs/AccountTab';
 import { logSecurityEvent } from '@/lib/securityEvents';
+import { clearBackendToken } from '@/lib/backend-jwt';
 type TabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'account';
 
 function isTabKey(value: string | null): value is TabKey {
@@ -27,6 +28,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const balanceNotice = searchParams.get('balance_notice');
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -44,6 +46,9 @@ export default function DashboardPage() {
     if (currentTab === nextTab) return;
     const next = new URLSearchParams(searchParams.toString());
     next.set('tab', nextTab);
+    if (nextTab !== 'balance') {
+      next.delete('balance_notice');
+    }
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   };
 
@@ -68,6 +73,7 @@ export default function DashboardPage() {
         }
 
         if (event === 'SIGNED_OUT') {
+          clearBackendToken();
           router.replace('/');
         }
       },
@@ -85,6 +91,7 @@ export default function DashboardPage() {
     try {
       await logSecurityEvent('logout', { source: 'dashboard' });
       await supabase.auth.signOut();
+      clearBackendToken();
     } finally {
       router.push('/');
       router.refresh();
@@ -103,7 +110,7 @@ export default function DashboardPage() {
       case 'progress':
         return <ProgressTab />;
       case 'balance':
-        return <BalanceTab />;
+        return <BalanceTab notice={balanceNotice} />;
       case 'account':
         return <AccountTab userEmail={userEmail} onLogout={handleLogout} />;
       case 'dashboard':

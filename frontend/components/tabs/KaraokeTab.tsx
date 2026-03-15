@@ -1194,7 +1194,7 @@ export const KaraokeTab: React.FC = () => {
           </button>
         </div>
 
-        {/* VPN предупреждение */}
+        {/* Предупреждение про доступ к YouTube */}
         <div
           style={{
             marginTop: '1rem',
@@ -1212,7 +1212,7 @@ export const KaraokeTab: React.FC = () => {
         >
           <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>🔒</span>
           <span>
-            <strong>Требуется VPN.</strong> YouTube заблокирован в РФ. Для работы караоке включите VPN.
+            <strong>Требуется прокси.</strong> YouTube заблокирован в РФ. Для работы караоке включите прокси.
           </span>
         </div>
 

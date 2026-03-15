@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { QRCodeSVG } from 'qrcode.react';
 
-// Иконка приложения (как во вкладке браузера — favicon)
 const AppLogoIcon: React.FC<{ size?: number }> = ({ size = 32 }) => (
-  <img src="/favicon.svg" alt="Speakeasy" width={size} height={size} style={{ display: 'block' }} />
+  <img src="/logo-head.svg" alt="Speakeasy" width={size} height={size} style={{ display: 'block', objectFit: 'contain' }} />
 );
 
 const DashboardIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
@@ -65,6 +65,15 @@ const LogoutIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   </svg>
 );
 
+const SupportIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 3C7.03 3 3 6.58 3 11C3 13.2 3.98 15.2 5.6 16.68C5.44 18.08 4.86 19.44 4 20.5C5.66 20.12 7.16 19.42 8.4 18.5C9.52 18.84 10.73 19 12 19C16.97 19 21 15.42 21 11C21 6.58 16.97 3 12 3Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M9.5 10.5H9.51" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <path d="M12 10.5H12.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <path d="M14.5 10.5H14.51" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
 type SidebarTabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'account';
 
 export interface SidebarProps {
@@ -96,12 +105,14 @@ function getEmailHue(email: string): number {
 
 const tabs: { key: SidebarTabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'dashboard', label: 'Главная', icon: <DashboardIcon size={20} /> },
-  { key: 'karaoke', label: 'Караоке', icon: <KaraokeIcon size={20} /> },
+  { key: 'agent', label: 'Практика', icon: <AgentIcon size={20} /> },
   { key: 'dictionary', label: 'Словарь', icon: <DictionaryIcon size={20} /> },
-  { key: 'agent', label: 'Собеседник', icon: <AgentIcon size={20} /> },
+  { key: 'karaoke', label: 'Караоке', icon: <KaraokeIcon size={20} /> },
   { key: 'progress', label: 'Прогресс', icon: <ProgressIcon size={20} /> },
   { key: 'balance', label: 'Баланс', icon: <BalanceIcon size={20} /> },
 ];
+
+const TELEGRAM_SUPPORT = 'https://t.me/SPEAKEASY_SUPPORT';
 
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -113,7 +124,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const emailInitial = (userEmail || '').trim().charAt(0).toUpperCase() || '?';
   const emailHue = getEmailHue((userEmail || 'guest').toLowerCase());
   const [expanded, setExpanded] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const isAccountActive = activeTab === 'account';
+
+  useEffect(() => {
+    if (!qrModalOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setQrModalOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [qrModalOpen]);
 
   return (
     <aside
@@ -122,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        padding: '1rem 0.65rem',
+        padding: '0.7rem 0.55rem',
         background: 'var(--sidebar-bg)',
         color: 'var(--sidebar-text)',
         boxSizing: 'border-box',
@@ -150,7 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       />
 
       {/* Логотип */}
-      <div style={{ marginBottom: '1.4rem', padding: '0 0.75rem', position: 'relative', zIndex: 1 }}>
+      <div style={{ marginBottom: '0.95rem', padding: '0 0.6rem', position: 'relative', zIndex: 1 }}>
         <Link href="/" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div
             style={{
@@ -158,7 +180,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              padding: expanded ? '0.35rem 0.75rem' : '0.4rem',
+              padding: expanded ? '0.3rem 0.65rem' : '0.35rem',
               borderRadius: 8,
               transition: 'background 0.2s ease, transform 0.18s ease',
               position: 'relative',
@@ -189,17 +211,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }}
               >
                 <AppLogoIcon size={32} />
-                <span
+                <div
                   style={{
-                    fontSize: '1rem',
-                    fontWeight: 700,
-                    letterSpacing: '-0.01em',
-                    color: 'var(--sidebar-text)',
-                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
                   }}
                 >
-                  Speakeasy
-                </span>
+                  <span
+                    style={{
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                      letterSpacing: '-0.01em',
+                      color: 'var(--sidebar-text)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Speakeasy
+                  </span>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: 16,
+                      minWidth: 34,
+                      padding: '0 0.34rem',
+                      borderRadius: 999,
+                      border: '1px solid rgba(245, 158, 11, 0.55)',
+                      background: 'rgba(245, 158, 11, 0.18)',
+                      color: 'rgba(255, 233, 183, 0.95)',
+                      fontSize: '0.55rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      lineHeight: 1,
+                    }}
+                    title="Beta"
+                    aria-label="Beta"
+                  >
+                    Beta
+                  </span>
+                </div>
               </div>
             ) : (
               <div
@@ -214,9 +267,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   border: 'none',
                   flexShrink: 0,
                   transition: 'all 0.25s ease',
+                  position: 'relative',
                 }}
               >
                 <AppLogoIcon size={24} />
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: -5,
+                    right: -6,
+                    width: 14,
+                    height: 14,
+                    borderRadius: 999,
+                    border: '1px solid rgba(245, 158, 11, 0.55)',
+                    background: 'rgba(245, 158, 11, 0.18)',
+                    color: 'rgba(255, 233, 183, 0.95)',
+                    fontSize: '0.46rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.03em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    lineHeight: 1,
+                  }}
+                  title="Beta"
+                  aria-label="Beta"
+                >
+                  B
+                </span>
               </div>
             )}
           </div>
@@ -224,7 +302,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Навигация */}
-      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, padding: '0 0.75rem', position: 'relative', zIndex: 1 }}>
+      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '0 0.6rem', position: 'relative', zIndex: 1, minHeight: 0 }}>
         {expanded && (
           <div
             style={{
@@ -234,8 +312,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               textTransform: 'uppercase',
               color: 'var(--sidebar-text)',
               opacity: 0.6,
-              padding: '0 1rem',
-              marginBottom: 8,
+              padding: '0 0.85rem',
+              marginBottom: 6,
             }}
           >
             Навигация
@@ -243,6 +321,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key;
+          const collapsed = !expanded;
           return (
             <button
               key={tab.key}
@@ -254,13 +333,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: expanded ? '0.875rem' : 0,
-                padding: expanded ? '0.75rem 1rem' : '0.75rem',
+                padding: expanded ? '0.58rem 0.85rem' : '0.58rem',
                 justifyContent: expanded ? 'flex-start' : 'center',
                 borderRadius: 8,
                 border: 'none',
-                background: isActive
-                  ? 'var(--sidebar-active)'
-                  : 'transparent',
+                background: expanded && isActive ? 'var(--sidebar-active)' : 'transparent',
                 color: isActive ? 'var(--sidebar-text)' : 'var(--sidebar-text)',
                 opacity: isActive ? 1 : 0.7,
                 cursor: 'pointer',
@@ -269,14 +346,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                 textAlign: 'left',
                 position: 'relative',
-                boxShadow: isActive ? '0 2px 8px rgba(0, 0, 0, 0.1)' : 'none',
+                boxShadow: expanded && isActive ? '0 2px 8px rgba(0, 0, 0, 0.1)' : 'none',
                 outline: 'none',
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
                   e.currentTarget.style.background = 'var(--sidebar-hover)';
                   e.currentTarget.style.opacity = '1';
-                  e.currentTarget.style.transform = 'translateX(4px)';
+                  e.currentTarget.style.transform = expanded ? 'translateX(4px)' : 'translateX(0)';
                 }
               }}
               onMouseLeave={(e) => {
@@ -287,7 +364,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }
               }}
             >
-              {isActive && (
+              {isActive && expanded && (
                 <div
                   style={{
                     position: 'absolute',
@@ -309,9 +386,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
+                  boxSizing: 'border-box',
                   borderRadius: 8,
                   background: isActive ? 'var(--sidebar-active)' : 'var(--sidebar-hover)',
+                  border: '1px solid transparent',
+                  outline: isActive && collapsed ? '1px solid var(--sidebar-accent)' : 'none',
+                  outlineOffset: 0,
                   color: 'inherit',
+                  boxShadow: 'none',
                   transition: 'all 0.2s ease',
                 }}
               >
@@ -332,12 +414,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 8,
-          padding: '1.5rem 0.75rem 1.25rem',
-          marginTop: '0.75rem',
+          gap: 6,
+          padding: '0.7rem 0.6rem 0.7rem',
+          marginTop: '0.45rem',
           borderTop: `1px solid var(--sidebar-border)`,
           position: 'relative',
           zIndex: 1,
+          flexShrink: 0,
         }}
       >
         {expanded && (
@@ -345,11 +428,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="button"
             onClick={() => onTabChange('account')}
             style={{
-              padding: '0.55rem 0.7rem',
-              borderRadius: 12,
+              padding: '0.42rem 0.58rem',
+              borderRadius: 10,
               display: 'flex',
               alignItems: 'center',
-              gap: '0.7rem',
+              gap: '0.55rem',
               background: isAccountActive
                 ? `linear-gradient(145deg, hsl(${emailHue} 78% 62% / 0.24), hsl(${emailHue} 68% 38% / 0.14))`
                 : `linear-gradient(145deg, hsl(${emailHue} 78% 62% / 0.14), hsl(${emailHue} 68% 38% / 0.08))`,
@@ -425,7 +508,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               <div
                 style={{
-                  fontSize: '0.8125rem',
+                  fontSize: '0.76rem',
                   fontWeight: 600,
                   color: 'rgba(255, 255, 255, 0.95)',
                   whiteSpace: 'nowrap',
@@ -440,6 +523,226 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         )}
 
+        {expanded ? (
+          <div
+            style={{
+              width: '100%',
+              borderRadius: 10,
+              border: '1px solid rgba(107, 240, 176, 0.26)',
+              background: 'linear-gradient(145deg, rgba(107, 240, 176, 0.14), rgba(107, 240, 176, 0.06))',
+              padding: '0.4rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.34rem',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setSupportOpen((prev) => !prev)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.5rem',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: 'inherit',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  minWidth: 0,
+                }}
+              >
+                <span
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 7,
+                    background: 'rgba(107, 240, 176, 0.16)',
+                    border: '1px solid rgba(107, 240, 176, 0.35)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'rgba(107, 240, 176, 0.95)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <SupportIcon size={16} />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '0.55rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: 'var(--sidebar-text)',
+                      opacity: 0.7,
+                    }}
+                  >
+                    Поддержка и идеи
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.62rem',
+                      color: 'var(--sidebar-text)',
+                      opacity: 0.85,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                    title="@SPEAKEASY_SUPPORT"
+                  >
+                    @SPEAKEASY_SUPPORT
+                  </div>
+                </div>
+              </div>
+              <span
+                aria-hidden="true"
+                style={{
+                  fontSize: '0.78rem',
+                  color: 'rgba(255,255,255,0.7)',
+                  transform: supportOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease',
+                  lineHeight: 1,
+                  paddingRight: 2,
+                }}
+              >
+                ▾
+              </span>
+            </button>
+
+            <div
+              style={{
+                maxHeight: supportOpen ? 160 : 0,
+                opacity: supportOpen ? 1 : 0,
+                overflow: 'hidden',
+                transition: 'max-height 0.24s ease, opacity 0.2s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.34rem',
+              }}
+            >
+              <div
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                }}
+              >
+                <a
+                  href={TELEGRAM_SUPPORT}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flex: 1,
+                    borderRadius: 8,
+                    border: '1px solid rgba(107, 240, 176, 0.35)',
+                    background: 'rgba(107, 240, 176, 0.12)',
+                    color: 'rgba(223, 255, 237, 0.98)',
+                    fontSize: '0.66rem',
+                    fontWeight: 600,
+                    padding: '0.31rem 0.44rem',
+                    textDecoration: 'none',
+                  }}
+                  title="Открыть поддержку в Telegram"
+                >
+                  Написать
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setQrModalOpen(true)}
+                  style={{
+                    width: 44,
+                    borderRadius: 8,
+                    border: '1px solid rgba(255, 255, 255, 0.18)',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                    padding: '0.3rem 0',
+                    cursor: 'pointer',
+                  }}
+                  title="Показать QR-код Telegram"
+                >
+                  QR
+                </button>
+              </div>
+
+              <a
+                href={TELEGRAM_SUPPORT}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '100%',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  color: 'rgba(255, 255, 255, 0.88)',
+                  fontSize: '0.64rem',
+                  fontWeight: 600,
+                  padding: '0.29rem 0.42rem',
+                  textDecoration: 'none',
+                }}
+                title="Предложить идею в Telegram"
+              >
+                Предложить идею
+              </a>
+            </div>
+          </div>
+        ) : (
+          <a
+            href={TELEGRAM_SUPPORT}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Поддержка и идеи"
+            aria-label="Поддержка и идеи"
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0.65rem',
+              padding: '0.5rem',
+              borderRadius: 8,
+              border: '1px solid rgba(107, 240, 176, 0.3)',
+              background: 'rgba(107, 240, 176, 0.12)',
+              color: 'rgba(107, 240, 176, 0.95)',
+              textDecoration: 'none',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <span
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(107, 240, 176, 0.16)',
+                border: '1px solid rgba(107, 240, 176, 0.3)',
+              }}
+            >
+              <SupportIcon size={18} />
+            </span>
+          </a>
+        )}
+
         <button
           type="button"
           onClick={onLogout}
@@ -449,13 +752,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             alignItems: 'center',
             justifyContent: expanded ? 'flex-start' : 'center',
             gap: expanded ? '0.875rem' : 0,
-            padding: expanded ? '0.75rem 1rem' : '0.75rem',
+            padding: expanded ? '0.58rem 0.85rem' : '0.58rem',
             borderRadius: 8,
             border: 'none',
             background: 'transparent',
             color: 'rgba(241, 241, 244, 0.6)',
             cursor: 'pointer',
             fontSize: '0.9375rem',
+            fontSize: '0.88rem',
             fontWeight: 500,
             transition: 'all 0.25s ease',
             outline: 'none',
@@ -490,6 +794,116 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {expanded && <span>Выйти</span>}
         </button>
       </div>
+
+      {qrModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="QR-код Telegram поддержки"
+          onClick={() => setQrModalOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0, 0, 0, 0.62)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(92vw, 420px)',
+              borderRadius: 16,
+              border: '1px solid rgba(107, 240, 176, 0.35)',
+              background: 'linear-gradient(165deg, rgba(17, 24, 22, 0.96), rgba(10, 15, 14, 0.96))',
+              padding: '1rem',
+              boxShadow: '0 24px 80px rgba(0, 0, 0, 0.55)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.85rem',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.5rem',
+              }}
+            >
+              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'rgba(223, 255, 237, 0.96)' }}>
+                Поддержка и идеи
+              </div>
+              <button
+                type="button"
+                onClick={() => setQrModalOpen(false)}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  border: '1px solid rgba(255, 255, 255, 0.18)',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  color: 'rgba(255, 255, 255, 0.9)',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  lineHeight: 1,
+                }}
+                aria-label="Закрыть модалку QR"
+              >
+                ×
+              </button>
+            </div>
+
+            <a
+              href={TELEGRAM_SUPPORT}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                width: 220,
+                height: 220,
+                borderRadius: 14,
+                border: '1px solid rgba(107, 240, 176, 0.35)',
+                background: 'rgba(0, 0, 0, 0.24)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 10,
+                boxSizing: 'border-box',
+              }}
+              title="Открыть Telegram поддержку"
+            >
+              <QRCodeSVG
+                value={TELEGRAM_SUPPORT}
+                size={200}
+                level="M"
+                marginSize={1}
+                fgColor="#6bf0b0"
+                bgColor="transparent"
+              />
+            </a>
+
+            <a
+              href={TELEGRAM_SUPPORT}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: '0.82rem',
+                color: 'rgba(107, 240, 176, 0.95)',
+                textDecoration: 'none',
+                fontWeight: 600,
+              }}
+            >
+              @SPEAKEASY_SUPPORT
+            </a>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

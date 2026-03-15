@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { clearBackendToken, getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt'
 import type { User } from '@supabase/supabase-js'
 
 type Video = {
@@ -24,8 +25,7 @@ function getApiUrl() {
 }
 
 function getBackendToken(): string | null {
-  if (typeof window === 'undefined') return null
-  return window.localStorage.getItem('backend_jwt')
+  return getStoredBackendToken()
 }
 
 export default function VideosPage() {
@@ -87,7 +87,7 @@ export default function VideosPage() {
               if (resp.ok) {
                 const data = await resp.json().catch(() => null)
                 if (data?.token) {
-                  window.localStorage.setItem('backend_jwt', data.token)
+                  storeBackendToken(data.token)
                   token = data.token
                 }
               }
@@ -123,7 +123,7 @@ export default function VideosPage() {
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session?.user) {
-        window.localStorage.removeItem('backend_jwt')
+        clearBackendToken()
         router.push('/auth/login')
         router.refresh()
         return
@@ -148,7 +148,7 @@ export default function VideosPage() {
             if (resp.ok) {
               const data = await resp.json().catch(() => null)
               if (data?.token) {
-                window.localStorage.setItem('backend_jwt', data.token)
+                storeBackendToken(data.token)
                 setAccessToken(data.token)
                 router.refresh()
                 return
@@ -161,7 +161,7 @@ export default function VideosPage() {
           router.refresh()
         })()
       } else {
-        window.localStorage.removeItem('backend_jwt')
+        clearBackendToken()
         setAccessToken(null)
         router.refresh()
       }

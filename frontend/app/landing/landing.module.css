@@ -47,11 +47,35 @@
   color: inherit;
 }
 
+.logoBrand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .logoText {
   font-weight: 700;
   font-size: 1.25rem;
   letter-spacing: -0.02em;
   color: #fff;
+}
+
+.logoBetaBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 18px;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.18);
+  color: rgba(255, 233, 183, 0.95);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1;
 }
 
 .nav {
@@ -471,6 +495,17 @@
 @media (max-width: 640px) {
   .header {
     padding: 0.65rem 1rem;
+  }
+
+  .logoBrand {
+    gap: 0.35rem;
+  }
+
+  .logoBetaBadge {
+    min-width: 32px;
+    height: 16px;
+    padding: 0 0.3rem;
+    font-size: 0.55rem;
   }
 
   .hero {

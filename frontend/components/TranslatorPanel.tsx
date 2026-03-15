@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { getStoredBackendToken, isBackendTokenExpired, storeBackendToken } from '@/lib/backend-jwt';
 
 export type TranslatorDirection = 'en-ru' | 'ru-en';
 
@@ -17,9 +18,23 @@ type TranslatorPanelProps = {
   token: string | null;
   userId: string | null;
   getApiUrl: () => string;
+  onInsufficientBalance?: () => void;
 };
 
-export function TranslatorPanel({ onClose, token, userId, getApiUrl }: TranslatorPanelProps) {
+function isInsufficientBalanceError(status: number, message?: string): boolean {
+  if (status === 402) return true;
+  const text = (message || '').toLowerCase();
+  return (
+    text.includes('insufficient') ||
+    text.includes('not enough') ||
+    text.includes('balance') ||
+    text.includes('недостат') ||
+    text.includes('баланс') ||
+    text.includes('пополн')
+  );
+}
+
+export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsufficientBalance }: TranslatorPanelProps) {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const dragStartRef = useRef<{ x: number; y: number; startX: number; startY: number; boxW: number; boxH: number } | null>(null);
@@ -43,6 +58,11 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
   const [selectedTextSource, setSelectedTextSource] = useState<'input' | 'output' | null>(null);
   const outputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const redirectToBalanceNotice = useCallback((status: number, message?: string): boolean => {
+    if (!isInsufficientBalanceError(status, message)) return false;
+    onInsufficientBalance?.();
+    return true;
+  }, [onInsufficientBalance]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -159,6 +179,10 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
 
       if (!resp.ok || !resp.body) {
         const j = await resp.json().catch(() => ({}));
+        if (redirectToBalanceNotice(resp.status, j?.error)) {
+          setLoading(false);
+          return;
+        }
         setError(j?.error || `Ошибка ${resp.status}`);
         setLoading(false);
         return;
@@ -182,6 +206,10 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
             } else if (data.type === 'done') {
               break;
             } else if (data.type === 'error') {
+              if (redirectToBalanceNotice(0, data.message)) {
+                setLoading(false);
+                return;
+              }
               setError(data.message || 'Ошибка');
               setLoading(false);
               return;
@@ -226,11 +254,12 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
         }
       }
     } catch (e) {
+      if (e instanceof Error && redirectToBalanceNotice(0, e.message)) return;
       setError(e instanceof Error ? e.message : 'Ошибка сети');
     } finally {
       setLoading(false);
     }
-  }, [direction, input, token, userId, getApiUrl]);
+  }, [direction, input, token, userId, getApiUrl, redirectToBalanceNotice]);
 
   // Функция для получения выделенного текста
   const getSelectedText = useCallback((): string => {
@@ -320,18 +349,16 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
   // Функция для получения актуального backend токена (для agent API)
   const getBackendToken = useCallback(async (): Promise<string | null> => {
     // Сначала проверяем переданный токен
-    if (token) {
+    if (token && !isBackendTokenExpired(token)) {
       return token;
     }
     
     // Если токена нет, пытаемся получить из localStorage
-    if (typeof window !== 'undefined') {
-      const storedToken = window.localStorage.getItem('backend_jwt');
-      if (storedToken) {
-        return storedToken;
-      }
+    const storedToken = getStoredBackendToken();
+    if (storedToken) {
+      return storedToken;
     }
-    
+
     // Если токена нет, пытаемся обменять Supabase токен на backend токен
     try {
       const supabaseToken = await getSupabaseToken();
@@ -344,7 +371,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
         if (resp.ok) {
           const json = await resp.json().catch(() => ({}));
           if (json?.token) {
-            window.localStorage.setItem('backend_jwt', json.token);
+            storeBackendToken(json.token);
             return json.token;
           }
         }
@@ -405,6 +432,9 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
 
       if (!resp.ok || !resp.body) {
         const j = await resp.json().catch(() => ({}));
+        if (redirectToBalanceNotice(resp.status, j?.error)) {
+          throw new Error('Недостаточно средств для выполнения запроса');
+        }
         throw new Error(j?.error || `Ошибка ${resp.status}`);
       }
 
@@ -428,6 +458,9 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
             } else if (data.type === 'done') {
               break;
             } else if (data.type === 'error') {
+              if (redirectToBalanceNotice(0, data.message)) {
+                throw new Error('Недостаточно средств для выполнения запроса');
+              }
               throw new Error(data.message || 'Ошибка');
             }
           } catch {
@@ -453,7 +486,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl }: Translato
       console.error('Error analyzing phrase:', e);
       throw e;
     }
-  }, [getApiUrl, getBackendToken]);
+  }, [getApiUrl, getBackendToken, redirectToBalanceNotice]);
 
   // Функция добавления в словарь
   const addToDictionary = useCallback(async () => {

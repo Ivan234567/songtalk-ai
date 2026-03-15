@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 410" width="400" height="410">
+  <defs>
+    <radialGradient id="headGrad" cx="40%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#e8fff5"/>
+      <stop offset="50%" stop-color="#a8edd4"/>
+      <stop offset="100%" stop-color="#68c995"/>
+    </radialGradient>
+
+    <radialGradient id="bodyGrad" cx="38%" cy="25%" r="70%">
+      <stop offset="0%" stop-color="#f0fffb"/>
+      <stop offset="45%" stop-color="#b8f0d8"/>
+      <stop offset="100%" stop-color="#5ab888"/>
+    </radialGradient>
+
+    <radialGradient id="domeGrad" cx="35%" cy="28%" r="60%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="40%" stop-color="#d4f5e8"/>
+      <stop offset="100%" stop-color="#68c995"/>
+    </radialGradient>
+
+    <radialGradient id="eyeGrad" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#4adba0"/>
+      <stop offset="100%" stop-color="#1a7a50"/>
+    </radialGradient>
+
+    <linearGradient id="panelStripe" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3dab74" stop-opacity="0.3"/>
+      <stop offset="50%" stop-color="#3dab74" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#3dab74" stop-opacity="0.3"/>
+    </linearGradient>
+
+    <filter id="shadow" x="-20%" y="-10%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#1e6640" flood-opacity="0.2"/>
+    </filter>
+
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <clipPath id="headClip">
+      <ellipse cx="200" cy="148" rx="82" ry="78"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="410" fill="#f2fdf7" rx="32"/>
+
+  <!-- Subtle background circles -->
+  <circle cx="60" cy="80" r="40" fill="#68c995" opacity="0.06"/>
+  <circle cx="340" cy="360" r="55" fill="#68c995" opacity="0.06"/>
+  <circle cx="340" cy="90" r="25" fill="#68c995" opacity="0.05"/>
+  <circle cx="55" cy="370" r="30" fill="#68c995" opacity="0.05"/>
+
+  <!-- ═══════════════════════════════ -->
+  <!-- ROBOT BODY GROUP               -->
+  <!-- ═══════════════════════════════ -->
+  <g filter="url(#shadow)">
+
+    <!-- LEGS -->
+    <!-- Left leg -->
+    <rect x="148" y="318" width="36" height="52" rx="12" fill="url(#bodyGrad)"/>
+    <rect x="153" y="318" width="6" height="52" rx="3" fill="#3dab74" opacity="0.25"/>
+    <!-- Left foot -->
+    <rect x="138" y="358" width="50" height="20" rx="10" fill="#5ab888"/>
+    <rect x="144" y="362" width="8" height="10" rx="4" fill="#3dab74" opacity="0.35"/>
+
+    <!-- Right leg -->
+    <rect x="216" y="318" width="36" height="52" rx="12" fill="url(#bodyGrad)"/>
+    <rect x="221" y="318" width="6" height="52" rx="3" fill="#3dab74" opacity="0.25"/>
+    <!-- Right foot -->
+    <rect x="212" y="358" width="50" height="20" rx="10" fill="#5ab888"/>
+    <rect x="238" y="362" width="8" height="10" rx="4" fill="#3dab74" opacity="0.35"/>
+
+    <!-- BODY (torso) -->
+    <rect x="130" y="218" width="140" height="112" rx="22" fill="url(#bodyGrad)"/>
+
+    <!-- Body panel stripes -->
+    <rect x="130" y="235" width="140" height="8" rx="0" fill="url(#panelStripe)"/>
+    <rect x="130" y="295" width="140" height="8" rx="0" fill="url(#panelStripe)"/>
+
+    <!-- Body center panel -->
+    <rect x="160" y="248" width="80" height="46" rx="10" fill="white" opacity="0.35"/>
+    <!-- Center panel details -->
+    <circle cx="178" cy="271" r="8" fill="#3dab74" opacity="0.5"/>
+    <circle cx="178" cy="271" r="4.5" fill="#1e6640" opacity="0.7"/>
+    <circle cx="178" cy="271" r="2" fill="#68c995"/>
+
+    <!-- Sound waves on body panel (replaces buttons) -->
+    <path d="M198 262 Q206 255 206 271 Q206 278 198 271" fill="none" stroke="#3dab74" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+    <path d="M205 258 Q216 250 216 271 Q216 284 205 276" fill="none" stroke="#3dab74" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <path d="M213 254 Q227 245 227 271 Q227 289 213 280" fill="none" stroke="#3dab74" stroke-width="1.5" stroke-linecap="round" opacity="0.35"/>
+
+    <!-- Music note on body -->
+    <ellipse cx="242" cy="261" rx="5" ry="3.5" fill="#1e6640" opacity="0.55" transform="rotate(-15,242,261)"/>
+    <line x1="247" y1="259" x2="247" y2="246" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.55"/>
+    <path d="M247 246 Q255 249 251 254" fill="none" stroke="#1e6640" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/>
+
+    <!-- Body bottom connector to neck -->
+    <rect x="172" y="210" width="56" height="18" rx="8" fill="#7dd4b0"/>
+
+    <!-- ARMS -->
+    <!-- Left arm -->
+    <rect x="96" y="228" width="38" height="24" rx="12" fill="url(#bodyGrad)"/>
+    <!-- Left hand (little claw) -->
+    <circle cx="88" cy="240" r="14" fill="#68c995"/>
+    <circle cx="80" cy="234" r="5.5" fill="#5ab888"/>
+    <circle cx="78" cy="246" r="5.5" fill="#5ab888"/>
+    <circle cx="88" cy="252" r="5.5" fill="#5ab888"/>
+
+    <!-- Right arm -->
+    <rect x="266" y="228" width="38" height="24" rx="12" fill="url(#bodyGrad)"/>
+    <!-- Right hand (little claw) -->
+    <circle cx="312" cy="240" r="14" fill="#68c995"/>
+    <circle cx="320" cy="234" r="5.5" fill="#5ab888"/>
+    <circle cx="322" cy="246" r="5.5" fill="#5ab888"/>
+    <circle cx="312" cy="252" r="5.5" fill="#5ab888"/>
+
+    <!-- HEAD (dome shape — R2-D2 style half-sphere) -->
+    <!-- Head base cylinder -->
+    <rect x="124" y="148" width="152" height="76" rx="14" fill="url(#headGrad)"/>
+    <!-- Dome on top -->
+    <ellipse cx="200" cy="148" rx="76" ry="68" fill="url(#domeGrad)"/>
+
+    <!-- Head panel lines -->
+    <line x1="124" y1="170" x2="276" y2="170" stroke="#68c995" stroke-width="1.5" opacity="0.4"/>
+    <line x1="124" y1="192" x2="276" y2="192" stroke="#68c995" stroke-width="1.5" opacity="0.4"/>
+
+    <!-- ── BIG CUTE EYE (main lens, center) ── -->
+    <circle cx="200" cy="148" r="32" fill="#1e4a38"/>
+    <circle cx="200" cy="148" r="26" fill="url(#eyeGrad)"/>
+    <circle cx="200" cy="148" r="18" fill="#0d2e1c"/>
+    <circle cx="200" cy="148" r="13" fill="#1a7a50"/>
+    <!-- Eye shine highlights -->
+    <circle cx="191" cy="139" r="5.5" fill="white" opacity="0.9"/>
+    <circle cx="207" cy="154" r="2.5" fill="white" opacity="0.45"/>
+    <!-- Outer ring detail -->
+    <circle cx="200" cy="148" r="29" fill="none" stroke="#68c995" stroke-width="1.5" opacity="0.6"/>
+
+    <!-- Small side eye (R2-D2 secondary sensor) -->
+    <circle cx="248" cy="155" r="12" fill="#1e4a38"/>
+    <circle cx="248" cy="155" r="9" fill="url(#eyeGrad)"/>
+    <circle cx="248" cy="155" r="5.5" fill="#0d2e1c"/>
+    <circle cx="245" cy="151" r="2.5" fill="white" opacity="0.85"/>
+
+    <!-- Head side panels -->
+    <rect x="125" y="175" width="22" height="30" rx="6" fill="white" opacity="0.2"/>
+    <rect x="253" y="175" width="22" height="30" rx="6" fill="white" opacity="0.2"/>
+
+    <!-- ── HEADPHONE arc over dome ── -->
+    <!-- Band -->
+    <path d="M152 112 Q200 72 248 112"
+          fill="none" stroke="#2d8a58" stroke-width="7" stroke-linecap="round"/>
+    <!-- Single left ear cup -->
+    <ellipse cx="148" cy="116" rx="14" ry="17" fill="#2d8a58"/>
+    <ellipse cx="148" cy="116" rx="8" ry="10" fill="#3dab74"/>
+    <ellipse cx="148" cy="116" rx="4" ry="5" fill="#68c995" opacity="0.8"/>
+    <ellipse cx="144" cy="110" rx="2.5" ry="2" fill="white" opacity="0.4"/>
+
+    <!-- ── MIC BOOM from headphone ── -->
+    <path d="M155 104 Q168 84 172 64" fill="none" stroke="#2d8a58" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- Mic capsule -->
+    <rect x="165" y="50" width="14" height="20" rx="7" fill="#1e6640"/>
+    <line x1="168" y1="55" x2="176" y2="55" stroke="#68c995" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="168" y1="59" x2="176" y2="59" stroke="#68c995" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="168" y1="63" x2="176" y2="63" stroke="#68c995" stroke-width="1.5" stroke-linecap="round"/>
+    <ellipse cx="168" cy="55" rx="2" ry="1.5" fill="white" opacity="0.3"/>
+
+    <!-- ── MOUTH — cute speaker grille ── -->
+    <rect x="164" y="196" width="72" height="16" rx="8" fill="white" opacity="0.3"/>
+    <line x1="172" y1="200" x2="172" y2="208" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="180" y1="198" x2="180" y2="210" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="188" y1="197" x2="188" y2="211" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="196" y1="197" x2="196" y2="211" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="204" y1="197" x2="204" y2="211" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="212" y1="197" x2="212" y2="211" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="220" y1="198" x2="220" y2="210" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+    <line x1="228" y1="200" x2="228" y2="208" stroke="#1e6640" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+
+  </g>
+
+  <!-- Ground shadow ellipse -->
+  <ellipse cx="200" cy="392" rx="85" ry="10" fill="#1e6640" opacity="0.1"/>
+
+</svg>

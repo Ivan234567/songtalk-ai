@@ -55,7 +55,7 @@ export function FooterSection() {
             {/* Бренд */}
             <div className={styles.ftColBrand}>
               <Link href="/" className={styles.ftLogo}>
-                <span className={styles.ftLogoIcon} aria-hidden>S</span>
+                <img src="/logo-head.svg" alt="" aria-hidden width={32} height={32} style={{ display: 'block', objectFit: 'contain' }} />
                 <span>Speakeasy</span>
               </Link>
               <p className={styles.ftTagline}>

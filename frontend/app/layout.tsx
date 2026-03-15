@@ -2,13 +2,18 @@ import type { Metadata } from 'next'
 import Script from 'next/script'
 import './globals.css'
 
+// Прозрачная 1x1 иконка — вкладка без видимого логотипа
+const transparentIcon =
+  'data:image/svg+xml,' +
+  encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="transparent"/></svg>')
+
 export const metadata: Metadata = {
   title: 'Speakeasy',
   description: 'Speakeasy - платформа для общения и взаимодействия',
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
-    apple: '/favicon.svg',
+    icon: transparentIcon,
+    shortcut: transparentIcon,
+    apple: transparentIcon,
   },
 }
 

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEBATE_TOPICS, type DebateTopic } from '@/lib/debate-topics';
 import { supabase } from '@/lib/supabase';
+import { getStoredBackendToken } from '@/lib/backend-jwt';
 import {
   type DebateProfanityIntensity,
   type DebateSettings,
@@ -64,8 +65,7 @@ function getApiUrl(): string {
 }
 
 function getBackendToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('backend_jwt');
+  return getStoredBackendToken();
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
