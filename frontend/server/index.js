@@ -467,6 +467,31 @@ app.post('/api/auth/exchange-supabase-token', asyncHandler(async (req, res) => {
 
     const user = userData.user
 
+    // Приветственный бонус: если у пользователя ещё нет баланса — начисляем 50 ₽
+    const WELCOME_BONUS_RUB = 50
+    try {
+      const currentBalance = await getBalance(supabase, user.id)
+      if (currentBalance === 0) {
+        const { data: hasTransactions } = await supabase
+          .from('balance_transactions')
+          .select('id')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle()
+
+        if (!hasTransactions) {
+          const topupResult = await topupBalance(supabase, user.id, WELCOME_BONUS_RUB, 'topup_manual', {
+            reason: 'welcome_bonus',
+          })
+          if (topupResult.ok) {
+            console.log(`[auth/exchange] Welcome bonus ${WELCOME_BONUS_RUB}₽ credited to ${user.email}`)
+          }
+        }
+      }
+    } catch (bonusErr) {
+      console.error('[auth/exchange] Welcome bonus error (non-fatal):', bonusErr?.message)
+    }
+
     // Подписываем собственный JWT
     const backendToken = signBackendJwt({
       id: user.id,
