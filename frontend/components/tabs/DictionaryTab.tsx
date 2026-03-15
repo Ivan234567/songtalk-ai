@@ -90,7 +90,7 @@ function plural(n: number, one: string, few: string, many: string): string {
 }
 
 function getApiUrl() {
-  const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const url = process.env.NEXT_PUBLIC_API_URL || '';
   // Убираем trailing slash, если есть
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }

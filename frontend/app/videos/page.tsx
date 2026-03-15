@@ -19,7 +19,7 @@ type Video = {
 }
 
 function getApiUrl() {
-  const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const url = process.env.NEXT_PUBLIC_API_URL || '';
   // Убираем trailing slash, если есть
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }

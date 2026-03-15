@@ -60,7 +60,7 @@ const CUSTOM_TOPIC_MIN_LEN = 10;
 const CUSTOM_TOPIC_MAX_LEN = 180;
 
 function getApiUrl(): string {
-  const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const url = process.env.NEXT_PUBLIC_API_URL || '';
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
