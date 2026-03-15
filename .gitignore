@@ -10,6 +10,8 @@ coverage/
 frontend/.next/
 frontend/out/
 frontend/.vercel
+# копия backend при сборке под Vercel (скрипт copy-backend.js)
+frontend/server/
 
 # Production
 backend/dist/

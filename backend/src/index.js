@@ -22,8 +22,10 @@ import { getCost } from './balance-rates.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// Загружаем переменные окружения из .env файла в корне backend директории
-dotenv.config({ path: path.join(__dirname, '..', '.env') })
+// Загружаем переменные окружения (на Vercel переменные задаются в панели, .env не нужен)
+if (!process.env.VERCEL) {
+  dotenv.config({ path: path.join(__dirname, '..', '.env') })
+}
 
 // Prefer IPv4 on hosts where IPv6 connectivity is flaky (common cause of UND_ERR_CONNECT_TIMEOUT)
 dns.setDefaultResultOrder('ipv4first')
@@ -73,9 +75,12 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '1mb' }))
 
-// Configure multer for file uploads (audio and video)
+// На Vercel нет постоянной файловой системы — используем memory storage для загрузок
+const isVercel = Boolean(process.env.VERCEL)
+const multerStorage = isVercel ? multer.memoryStorage() : { dest: 'uploads/' }
+
 const upload = multer({
-  dest: 'uploads/',
+  storage: multerStorage,
   limits: {
     fileSize: 100 * 1024 * 1024, // 100MB limit for video files
   },
@@ -100,10 +105,23 @@ const upload = multer({
   }
 })
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '..', 'uploads')
-if (!fs.existsSync(uploadsDir)) {
+// Ensure uploads directory exists (only when not on Vercel)
+const uploadsDir = isVercel ? '/tmp' : path.join(__dirname, '..', 'uploads')
+if (!isVercel && !fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true })
+}
+
+/** На Vercel req.file приходит из memory storage (buffer). Возвращаем путь к файлу: либо req.file.path, либо записываем buffer в /tmp. */
+function getUploadPath(req) {
+  if (!req?.file) return null
+  if (req.file.path) return req.file.path
+  if (req.file.buffer && isVercel) {
+    const ext = (req.file.originalname && path.extname(req.file.originalname)) || '.bin'
+    const tmpPath = path.join('/tmp', `upload-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`)
+    fs.writeFileSync(tmpPath, req.file.buffer)
+    return tmpPath
+  }
+  return null
 }
 
 const execAsync = promisify(exec)
@@ -639,7 +657,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No audio or video file provided' })
     }
 
-    audioFilePath = req.file.path
+    audioFilePath = getUploadPath(req)
 
     // Проверяем, что файл существует и не пустой
     if (!fs.existsSync(audioFilePath)) {
@@ -918,7 +936,7 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
     }
 
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' })
-    audioFilePath = req.file.path
+    audioFilePath = getUploadPath(req)
 
     console.log('[api/agent/stt] Processing file:', {
       path: audioFilePath,
@@ -7425,21 +7443,26 @@ function startServer(port, maxAttempts = 10) {
   })
 }
 
+// На Vercel приложение отдаётся как serverless handler — сервер не запускаем
 let server
 let actualPort = PORT
 
-startServer(PORT)
-  .then((srv) => {
-    server = srv
-    actualPort = server.address().port
+if (!process.env.VERCEL) {
+  startServer(PORT)
+    .then((srv) => {
+      server = srv
+      actualPort = server.address().port
 
-    server.timeout = SERVER_TIMEOUT_MS
-    server.keepAliveTimeout = SERVER_TIMEOUT_MS
-    server.headersTimeout = SERVER_TIMEOUT_MS
+      server.timeout = SERVER_TIMEOUT_MS
+      server.keepAliveTimeout = SERVER_TIMEOUT_MS
+      server.headersTimeout = SERVER_TIMEOUT_MS
 
-    console.log(`✅ Registered routes: /api/agent/stt, /api/agent/tts, /api/agent/chat, /api/agent/roleplay-feedback, /api/agent/debate-feedback, /api/agent/debate-topic-prepare, /api/agent/assess-speaking, /api/transcribe, /api/tts`)
-  })
-  .catch((err) => {
-    console.error('[Server] Ошибка запуска сервера:', err)
-    process.exit(1)
-  })
+      console.log(`✅ Registered routes: /api/agent/stt, /api/agent/tts, /api/agent/chat, /api/agent/roleplay-feedback, /api/agent/debate-feedback, /api/agent/debate-topic-prepare, /api/agent/assess-speaking, /api/transcribe, /api/tts`)
+    })
+    .catch((err) => {
+      console.error('[Server] Ошибка запуска сервера:', err)
+      process.exit(1)
+    })
+}
+
+export default app
