@@ -10,8 +10,7 @@ coverage/
 frontend/.next/
 frontend/out/
 frontend/.vercel
-# копия backend при сборке под Vercel (скрипт copy-backend.js)
-frontend/server/
+# Локальная копия backend не игнорируем — при Root=frontend на Vercel backend в деплой не попадает, поэтому server/ коммитим
 
 # Production
 backend/dist/

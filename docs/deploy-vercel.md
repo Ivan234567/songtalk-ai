@@ -5,7 +5,7 @@
 ## Что сделано в репозитории
 
 - **Backend** (`backend/src/index.js`): при `VERCEL=1` не запускает свой сервер, отдаёт только приложение (`export default app`); загрузки файлов идут через memory storage, при необходимости файл пишется в `/tmp`.
-- **Frontend**: перед сборкой скрипт `scripts/copy-backend.js` копирует `backend/src` в `frontend/server/`. Роут `pages/api/[[...path]].js` отдаёт все запросы к `/api/*` в это Express-приложение.
+- **Frontend**: папка `frontend/server/` — копия `backend/src`, **закоммичена в репозиторий**. При деплое на Vercel с Root Directory = `frontend` папки `backend/` в деплое нет, поэтому API берётся из `frontend/server/`. Роут `pages/api/[[...path]].js` отдаёт все запросы к `/api/*` в это Express-приложение. Скрипт `scripts/copy-backend.js` (запускается при `npm run build`) обновляет `frontend/server/` из `backend/src` при локальной сборке; после изменений в `backend/` можно вручную запустить `node scripts/copy-backend.js` в папке frontend и закоммитить обновлённый `frontend/server/`.
 - Зависимости бэкенда (express, cors, multer, openai, jsonwebtoken, dotenv) добавлены в `frontend/package.json`.
 
 ## Шаги деплоя на Vercel
