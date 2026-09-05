@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';
+import { useLearningLanguage } from '@/context/LearningLanguageContext';
 
 const AppLogoIcon: React.FC<{ size?: number }> = ({ size = 32 }) => (
   <img src="/logo-head.svg" alt="Speakeasy" width={size} height={size} style={{ display: 'block', objectFit: 'contain' }} />
@@ -121,6 +122,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   userEmail,
 }) => {
+  const { learningLanguage } = useLearningLanguage();
+  const visibleTabs = tabs.filter((tab) => learningLanguage === 'en' || tab.key !== 'karaoke');
   const emailInitial = (userEmail || '').trim().charAt(0).toUpperCase() || '?';
   const emailHue = getEmailHue((userEmail || 'guest').toLowerCase());
   const [expanded, setExpanded] = useState(false);
@@ -319,7 +322,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Навигация
           </div>
         )}
-        {tabs.map((tab) => {
+        {visibleTabs.map((tab) => {
           const isActive = activeTab === tab.key;
           const collapsed = !expanded;
           return (

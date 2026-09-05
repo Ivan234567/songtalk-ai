@@ -51,12 +51,19 @@
 - Не хранить длинные технические diff-логи.
 - После каждого значимого продуктового решения обновлять соответствующий раздел.
 
-## 8) Detailed System Blueprint
+## 8) Chinese Mode (план внедрения)
+
+- Два режима в одном аккаунте: **English** (default) и **Chinese** (упрощённый, HSK 1–6).
+- Switch в хедере: `[ English | 中文 ]`; караоке только для English.
+- Core path для обоих: `AI-диалог → Словарь → Прогресс`.
+- Поэтапный план (5 ступеней): `docs/chinese-language-roadmap.md`.
+
+## 9) Detailed System Blueprint
 
 - Детальная версия системы (педагогика + техническая архитектура):
   - `docs/LEARNING_SYSTEM_BLUEPRINT_V1.md`
 
-## 9) Recent Technical Decisions (Auth + AI Access)
+## 10) Recent Technical Decisions (Auth + AI Access)
 
 - Зафиксирована причина ошибки `Invalid or expired token`: фронтенд в ряде модулей использовал `backend_jwt` из `localStorage` без проверки срока жизни (`exp`), из-за чего AI-функции могли падать при уже пополненном балансе.
 - Принято решение унифицировать работу с backend JWT через единый helper: `frontend/lib/backend-jwt.ts`.

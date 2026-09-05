@@ -1,0 +1,47 @@
+.switchRoot {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.04);
+  gap: 2px;
+}
+
+.switchRoot[data-language='zh'] {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.switchBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.switchBtn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.38rem 0.72rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.switchBtn:hover {
+  color: var(--text-primary);
+}
+
+.switchBtnActive {
+  color: var(--text-primary);
+  background: rgba(122, 215, 167, 0.22);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.switchRoot[data-language='zh'] .switchBtnActive {
+  background: rgba(251, 191, 36, 0.24);
+  color: rgba(254, 243, 199, 0.98);
+}

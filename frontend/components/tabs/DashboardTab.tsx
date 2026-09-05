@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { useDashboardMetrics, formatDuration } from './useDashboardMetrics';
 import styles from './dashboard.module.css';
 
@@ -58,11 +59,18 @@ const QUICK_ACCESS_ITEMS: {
 ];
 
 export const DashboardTab: React.FC = () => {
+  const { learningLanguage } = useLearningLanguage();
+  const isChineseMode = learningLanguage === 'zh';
   const { metrics, loading, error } = useDashboardMetrics();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const WEEKLY_GOAL_MINUTES = 90;
+
+  const quickAccessItems = useMemo(
+    () => QUICK_ACCESS_ITEMS.filter((item) => !isChineseMode || item.tab !== 'karaoke'),
+    [isChineseMode],
+  );
 
   const goToTab = (tab: 'karaoke' | 'dictionary' | 'agent' | 'progress') => {
     const base = pathname || '/';
@@ -139,10 +147,18 @@ export const DashboardTab: React.FC = () => {
       <section className={styles.heroSection} aria-label="Учебный обзор">
         <div className={styles.heroGrid}>
           <div className={`${styles.card} ${styles.heroMainCard}`}>
-            <div className={styles.heroBadge}>Персональный учебный трек</div>
-            <h2 className={styles.heroTitle}>Двигайся к уверенной разговорной речи каждый день</h2>
+            <div className={styles.heroBadge}>
+              {isChineseMode ? 'Китайский учебный трек' : 'Персональный учебный трек'}
+            </div>
+            <h2 className={styles.heroTitle}>
+              {isChineseMode
+                ? 'Двигайся к уверенной речи на упрощённом китайском каждый день'
+                : 'Двигайся к уверенной разговорной речи каждый день'}
+            </h2>
             <p className={styles.heroSub}>
-              Комбинируй диалоги с AI, словарь и караоке-практику, чтобы быстрее закреплять лексику и говорить свободнее.
+              {isChineseMode
+                ? 'Комбинируй диалоги с AI и словарь, чтобы быстрее закреплять иероглифы, pinyin и живые выражения.'
+                : 'Комбинируй диалоги с AI, словарь и караоке-практику, чтобы быстрее закреплять лексику и говорить свободнее.'}
             </p>
             <div className={styles.heroStats}>
               <div className={styles.heroStat}>
@@ -216,14 +232,16 @@ export const DashboardTab: React.FC = () => {
             <div className={styles.cardSub}>Добавленных единиц лексики</div>
           </div>
 
-          <div className={`${styles.card} ${styles.kpiCard} ${styles.cardKaraoke}`}>
-            <div className={styles.cardIcon}>
-              <KaraokeIcon />
+          {!isChineseMode && (
+            <div className={`${styles.card} ${styles.kpiCard} ${styles.cardKaraoke}`}>
+              <div className={styles.cardIcon}>
+                <KaraokeIcon />
+              </div>
+              <div className={styles.cardTitle}>Караоке-активность</div>
+              <div className={styles.cardValue}>{metrics.karaokeCount}</div>
+              <div className={styles.cardSub}>{karaokeLabel} отработано</div>
             </div>
-            <div className={styles.cardTitle}>Караоке-активность</div>
-            <div className={styles.cardValue}>{metrics.karaokeCount}</div>
-            <div className={styles.cardSub}>{karaokeLabel} отработано</div>
-          </div>
+          )}
         </div>
       </section>
 
@@ -243,13 +261,27 @@ export const DashboardTab: React.FC = () => {
               <span className={styles.learningStepSub}>Прокачка fluency и уверенности</span>
             </button>
             <button type="button" className={styles.learningStep} onClick={() => goToTab('dictionary')}>
-              <span className={styles.learningStepTitle}>Добавь 3-5 новых выражений</span>
-              <span className={styles.learningStepSub}>Закрепление слов и идиом в контексте</span>
+              <span className={styles.learningStepTitle}>
+                {isChineseMode ? 'Добавь 3-5 новых слов или 成语' : 'Добавь 3-5 новых выражений'}
+              </span>
+              <span className={styles.learningStepSub}>
+                {isChineseMode
+                  ? 'Закрепление иероглифов и выражений в контексте'
+                  : 'Закрепление слов и идиом в контексте'}
+              </span>
             </button>
-            <button type="button" className={styles.learningStep} onClick={() => goToTab('karaoke')}>
-              <span className={styles.learningStepTitle}>Одна песня на повторе</span>
-              <span className={styles.learningStepSub}>Тренировка слуха, ритма и произношения</span>
-            </button>
+            {!isChineseMode && (
+              <button type="button" className={styles.learningStep} onClick={() => goToTab('karaoke')}>
+                <span className={styles.learningStepTitle}>Одна песня на повторе</span>
+                <span className={styles.learningStepSub}>Тренировка слуха, ритма и произношения</span>
+              </button>
+            )}
+            {isChineseMode && (
+              <button type="button" className={styles.learningStep} onClick={() => goToTab('progress')}>
+                <span className={styles.learningStepTitle}>Проверь прогресс за неделю</span>
+                <span className={styles.learningStepSub}>Отслеживай рост по навыкам и HSK-фокусу</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -258,7 +290,7 @@ export const DashboardTab: React.FC = () => {
           <div className={styles.breakdownList}>
             <div className={styles.breakdownRow}>
               <div className={styles.breakdownMeta}>
-                <span>Слова</span>
+                <span>{isChineseMode ? '词语' : 'Слова'}</span>
                 <span>{metrics.wordsCount}</span>
               </div>
               <div className={styles.breakdownBar}>
@@ -267,22 +299,24 @@ export const DashboardTab: React.FC = () => {
             </div>
             <div className={styles.breakdownRow}>
               <div className={styles.breakdownMeta}>
-                <span>Идиомы</span>
+                <span>{isChineseMode ? '成语' : 'Идиомы'}</span>
                 <span>{metrics.idiomsCount}</span>
               </div>
               <div className={styles.breakdownBar}>
                 <div className={styles.breakdownBarValue} style={{ width: `${idiomsRatio}%` }} />
               </div>
             </div>
-            <div className={styles.breakdownRow}>
-              <div className={styles.breakdownMeta}>
-                <span>Фразовые глаголы</span>
-                <span>{metrics.phrasalVerbsCount}</span>
+            {!isChineseMode && (
+              <div className={styles.breakdownRow}>
+                <div className={styles.breakdownMeta}>
+                  <span>Фразовые глаголы</span>
+                  <span>{metrics.phrasalVerbsCount}</span>
+                </div>
+                <div className={styles.breakdownBar}>
+                  <div className={styles.breakdownBarValue} style={{ width: `${phrasalRatio}%` }} />
+                </div>
               </div>
-              <div className={styles.breakdownBar}>
-                <div className={styles.breakdownBarValue} style={{ width: `${phrasalRatio}%` }} />
-              </div>
-            </div>
+            )}
           </div>
           <p className={styles.breakdownFooter}>
             {metrics.dictionaryCount > 0
@@ -295,7 +329,7 @@ export const DashboardTab: React.FC = () => {
       <section className={styles.quickAccessSection}>
         <h2 className={styles.sectionTitle}>Быстрый старт занятий</h2>
         <div className={styles.quickAccessGrid}>
-          {QUICK_ACCESS_ITEMS.map((item) => (
+          {quickAccessItems.map((item) => (
             <button
               key={item.tab}
               type="button"
