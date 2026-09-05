@@ -5,6 +5,11 @@ import { supabase } from '@/lib/supabase';
 import { getStoredBackendToken, isBackendTokenExpired, storeBackendToken } from '@/lib/backend-jwt';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { containsChinese, containsEnglish } from '@/lib/vocabulary';
+import {
+  ChineseRubyText,
+  parseStructuredChineseResponse,
+  type StructuredChineseResult,
+} from '@/components/ChineseRubyText';
 
 export type TranslatorDirection = 'en-ru' | 'ru-en' | 'zh-ru' | 'ru-zh';
 
@@ -64,20 +69,44 @@ function getTranslationSystemPrompt(direction: TranslatorDirection): string {
     case 'ru-en':
       return 'You are a helpful translator. Translate the user text from Russian to English. Preserve meaning and tone. Output only the translation.';
     case 'zh-ru':
-      return `Ты переводчик китайско-русский. Переведи китайский текст пользователя на русский язык.
-Формат ответа строго такой:
-Пиньинь: [транскрипция с тонами для всего китайского текста]
-Перевод: [русский перевод]
+      return `Ты переводчик китайско-русский. Переведи китайский текст пользователя на русский.
+Верни ТОЛЬКО JSON без markdown и без пояснений:
+{
+  "segments": [
+    {"hanzi": "你", "pinyin": "nǐ"},
+    {"hanzi": "好", "pinyin": "hǎo"}
+  ],
+  "translation": "русский перевод всего текста"
+}
 
-Сохрани смысл и тон. Не добавляй пояснений, английского текста и лишних комментариев.`;
+Правила:
+- segments: разбей исходный китайский текст на слова или отдельные иероглифы; к каждому сегменту — пиньинь с тонами
+- translation: полный русский перевод
+- не используй английский язык`;
     case 'ru-zh':
       return `Ты переводчик русско-китайский. Переведи русский текст пользователя на китайский.
-Формат ответа строго такой:
-汉字: [китайский перевод]
-Пиньинь: [транскрипция с тонами]
+Верни ТОЛЬКО JSON без markdown и без пояснений:
+{
+  "segments": [
+    {"hanzi": "你", "pinyin": "nǐ"},
+    {"hanzi": "好", "pinyin": "hǎo"}
+  ],
+  "translation": "русский исходник (копия текста пользователя)"
+}
 
-Сохрани смысл и тон. Не добавляй пояснений, английского текста и лишних комментариев.`;
+Правила:
+- segments: китайский перевод, разбитый на слова или иероглифы с пиньинем и тонами
+- translation: исходный русский текст пользователя
+- не используй английский язык`;
   }
+}
+
+function getSourceLanguageLabel(direction: TranslatorDirection): string {
+  return direction === 'zh-ru' || direction === 'en-ru' ? (direction === 'zh-ru' ? '中文' : 'English') : 'Русский';
+}
+
+function getTargetLanguageLabel(direction: TranslatorDirection): string {
+  return direction === 'zh-ru' || direction === 'en-ru' ? 'Русский' : (direction === 'ru-zh' ? '中文' : 'English');
 }
 
 function getInputPlaceholder(direction: TranslatorDirection, isChinese: boolean): string {
@@ -125,6 +154,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
 
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
+  const [structuredOutput, setStructuredOutput] = useState<StructuredChineseResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [direction, setDirection] = useState<TranslatorDirection>(() => getDefaultDirection(isChinese));
@@ -138,6 +168,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
   const [selectedText, setSelectedText] = useState<string>('');
   const [selectedTextSource, setSelectedTextSource] = useState<'input' | 'output' | null>(null);
   const outputTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const outputDisplayRef = useRef<HTMLDivElement>(null);
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const redirectToBalanceNotice = useCallback((status: number, message?: string): boolean => {
     if (!isInsufficientBalanceError(status, message)) return false;
@@ -149,8 +180,8 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     if (typeof window === 'undefined') return;
     const W = window.innerWidth;
     const H = window.innerHeight;
-    const defaultW = Math.min(720, W - 48);
-    const defaultH = Math.min(520, H - 48);
+    const defaultW = Math.min(isChinese ? 520 : 720, W - 48);
+    const defaultH = Math.min(isChinese ? 680 : 520, H - 48);
     const newPos = { x: (W - defaultW) / 2, y: (H - defaultH) / 2 };
     const newSize = { width: defaultW, height: defaultH };
     setPosition((prev) => prev ?? newPos);
@@ -168,6 +199,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     setDirection(getDefaultDirection(isChinese));
     setInput('');
     setOutput('');
+    setStructuredOutput(null);
     setError(null);
     setSelectedText('');
     setSelectedTextSource(null);
@@ -253,6 +285,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     setLoading(true);
     setError(null);
     setOutput('');
+    setStructuredOutput(null);
     const systemPrompt = getTranslationSystemPrompt(direction);
     let fullReply = '';
     try {
@@ -267,7 +300,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
             { role: 'system', content: systemPrompt },
             { role: 'user', content: input.trim() },
           ],
-          max_tokens: 800,
+          max_tokens: isChinese ? 1200 : 800,
         }),
       });
 
@@ -315,7 +348,14 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       }
 
       const trimmed = fullReply.trim();
-      setOutput(trimmed);
+      if (isChinese) {
+        const parsed = parseStructuredChineseResponse(trimmed);
+        setStructuredOutput(parsed);
+        setOutput(parsed?.translation || trimmed);
+      } else {
+        setStructuredOutput(null);
+        setOutput(trimmed);
+      }
       setSelectedText(''); // Очищаем выделение при новом переводе
       setSelectedTextSource(null);
       if (trimmed) {
@@ -353,7 +393,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     } finally {
       setLoading(false);
     }
-  }, [direction, input, token, userId, getApiUrl, redirectToBalanceNotice]);
+  }, [direction, input, token, userId, getApiUrl, redirectToBalanceNotice, isChinese]);
 
   // Функция для получения выделенного текста
   const getSelectedText = useCallback((): string => {
@@ -367,7 +407,21 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
   const checkSelection = useCallback(() => {
     const outputTextarea = outputTextareaRef.current;
     const inputTextarea = inputTextareaRef.current;
-    
+    const outputDisplay = outputDisplayRef.current;
+
+    if (outputDisplay) {
+      const selection = window.getSelection();
+      if (selection && selection.anchorNode && outputDisplay.contains(selection.anchorNode)) {
+        const selected = selection.toString().trim();
+        if (selected) {
+          setSelectedText(selected);
+          setSelectedTextSource('output');
+          if (dictionaryError) setDictionaryError(null);
+          return;
+        }
+      }
+    }
+
     if (!outputTextarea && !inputTextarea) return;
     
     // Проверяем выделение в output textarea
@@ -377,7 +431,6 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       if (start !== end && start >= 0 && end > start) {
         const selected = outputTextarea.value.substring(start, end).trim();
         if (selected) {
-          console.log('Selection detected in output:', selected);
           setSelectedText(selected);
           setSelectedTextSource('output');
           if (dictionaryError) {
@@ -387,7 +440,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
         }
       }
     }
-    
+
     // Проверяем выделение в input textarea
     if (inputTextarea) {
       const start = inputTextarea.selectionStart;
@@ -395,7 +448,6 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       if (start !== end && start >= 0 && end > start) {
         const selected = inputTextarea.value.substring(start, end).trim();
         if (selected) {
-          console.log('Selection detected in input:', selected);
           setSelectedText(selected);
           setSelectedTextSource('input');
           if (dictionaryError) {
@@ -760,9 +812,10 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     } catch (e) {
       console.error('Error adding to dictionary:', e);
       setDictionaryError(e instanceof Error ? e.message : 'Ошибка при добавлении в словарь');
+    } finally {
       setAddingToDictionary(false);
     }
-  }, [userId, direction, input, output, selectedText, selectedTextSource, getSelectedText, analyzePhraseWithAI, getApiUrl, getSupabaseToken, isChinese]);
+  }, [userId, direction, input, output, selectedText, selectedTextSource, analyzePhraseWithAI, getApiUrl, getSupabaseToken, isChinese]);
 
   // Очищаем сообщение об успехе через 5 секунд
   useEffect(() => {
@@ -771,6 +824,48 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       return () => clearTimeout(timer);
     }
   }, [dictionarySuccess]);
+
+  const clearAll = useCallback(() => {
+    setInput('');
+    setOutput('');
+    setStructuredOutput(null);
+    setError(null);
+    setSelectedText('');
+    setSelectedTextSource(null);
+    setDictionaryError(null);
+    setDictionarySuccess(null);
+  }, []);
+
+  const swapDirection = useCallback(() => {
+    setDirection((d) => getOppositeDirection(d));
+    setOutput('');
+    setStructuredOutput(null);
+    setSelectedText('');
+    setSelectedTextSource(null);
+    setDictionaryError(null);
+    setDictionarySuccess(null);
+  }, []);
+
+  const restoreHistoryItem = useCallback((h: TranslatorHistoryItem) => {
+    setInput(h.input);
+    setDirection(h.direction);
+    if (isChinese) {
+      const parsed = parseStructuredChineseResponse(h.output);
+      setStructuredOutput(parsed);
+      setOutput(parsed?.translation || h.output);
+    } else {
+      setStructuredOutput(null);
+      setOutput(h.output);
+    }
+    setHistoryOpen(false);
+  }, [isChinese]);
+
+  const panelBorder = '1px solid var(--sidebar-border)';
+  const accentBtn = {
+    '--accent': '#7ad7a7',
+    '--accent-strong': '#58c18f',
+    '--accent-soft': 'rgba(122, 215, 167, 0.16)',
+  } as React.CSSProperties;
 
   return (
     <div
@@ -847,6 +942,292 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           </button>
         </div>
 
+        {isChinese ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span style={{
+                  padding: '0.35rem 0.65rem',
+                  borderRadius: 8,
+                  background: 'var(--sidebar-hover)',
+                  border: panelBorder,
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                }}>
+                  {getSourceLanguageLabel(direction)}
+                </span>
+                <button
+                  type="button"
+                  onClick={swapDirection}
+                  title="Поменять языки"
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    border: panelBorder,
+                    background: 'var(--sidebar-hover)',
+                    color: 'var(--sidebar-text)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  ⇅
+                </button>
+                <span style={{
+                  padding: '0.35rem 0.65rem',
+                  borderRadius: 8,
+                  background: 'var(--sidebar-hover)',
+                  border: panelBorder,
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                }}>
+                  {getTargetLanguageLabel(direction)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                disabled={history.length === 0}
+                style={{
+                  padding: '0.35rem 0.8rem',
+                  borderRadius: 8,
+                  border: panelBorder,
+                  background: 'var(--sidebar-hover)',
+                  color: 'var(--sidebar-text)',
+                  fontSize: '0.8125rem',
+                  cursor: history.length === 0 ? 'default' : 'pointer',
+                  opacity: history.length === 0 ? 0.5 : 0.9,
+                }}
+              >
+                История
+              </button>
+            </div>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, gap: 0 }}>
+              {/* Верхняя панель — исходный текст */}
+              <div style={{
+                flex: 1,
+                minHeight: 140,
+                display: 'flex',
+                flexDirection: 'column',
+                border: panelBorder,
+                borderRadius: '14px 14px 0 0',
+                background: 'var(--sidebar-hover)',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  padding: '0.45rem 0.75rem',
+                  borderBottom: panelBorder,
+                  fontSize: '0.75rem',
+                  opacity: 0.7,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <span>{getSourceLanguageLabel(direction)}</span>
+                  {input && (
+                    <button
+                      type="button"
+                      onClick={() => { setInput(''); setSelectedText(''); setSelectedTextSource(null); }}
+                      style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', opacity: 0.6, fontSize: '1rem', lineHeight: 1 }}
+                      aria-label="Очистить ввод"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  ref={inputTextareaRef}
+                  placeholder={getInputPlaceholder(direction, isChinese)}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runTranslation();
+                  }}
+                  onMouseUp={checkSelection}
+                  onSelect={checkSelection}
+                  style={{
+                    flex: 1,
+                    width: '100%',
+                    minHeight: 100,
+                    resize: 'none',
+                    padding: '0.75rem',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--sidebar-text)',
+                    fontSize: direction === 'zh-ru' ? '1.25rem' : '0.95rem',
+                    fontFamily: direction === 'zh-ru' ? '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' : 'inherit',
+                    lineHeight: 1.6,
+                    outline: 'none',
+                    userSelect: 'text',
+                  }}
+                />
+                <div style={{
+                  padding: '0.5rem 0.75rem',
+                  borderTop: panelBorder,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  flexWrap: 'wrap',
+                }}>
+                  <button
+                    type="button"
+                    onClick={runTranslation}
+                    disabled={loading || !input.trim()}
+                    style={{
+                      ...accentBtn,
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: 8,
+                      border: '1px solid var(--accent-strong)',
+                      background: 'var(--accent-soft)',
+                      color: 'var(--accent-strong)',
+                      fontSize: '0.8125rem',
+                      fontWeight: 600,
+                      cursor: loading || !input.trim() ? 'default' : 'pointer',
+                      opacity: loading || !input.trim() ? 0.6 : 1,
+                    }}
+                  >
+                    {loading ? 'Переводим…' : 'Перевести'}
+                  </button>
+                  <button type="button" onClick={clearAll} style={{
+                    padding: '0.45rem 0.75rem',
+                    borderRadius: 8,
+                    border: panelBorder,
+                    background: 'transparent',
+                    color: 'var(--sidebar-text)',
+                    fontSize: '0.8125rem',
+                    cursor: 'pointer',
+                  }}>
+                    Очистить
+                  </button>
+                  <span style={{ fontSize: '0.7rem', opacity: 0.5, marginLeft: 'auto' }}>Ctrl/⌘+Enter</span>
+                </div>
+              </div>
+
+              {/* Нижняя панель — перевод */}
+              <div style={{
+                flex: 1,
+                minHeight: 180,
+                display: 'flex',
+                flexDirection: 'column',
+                border: panelBorder,
+                borderTop: 'none',
+                borderRadius: '0 0 14px 14px',
+                background: 'rgba(15, 23, 42, 0.2)',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  padding: '0.45rem 0.75rem',
+                  borderBottom: panelBorder,
+                  fontSize: '0.75rem',
+                  opacity: 0.7,
+                }}>
+                  {getTargetLanguageLabel(direction)}
+                </div>
+                <div
+                  ref={outputDisplayRef}
+                  style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: '0.85rem 0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem',
+                  }}
+                >
+                  {loading && (
+                    <span style={{ opacity: 0.6, fontSize: '0.875rem' }}>Переводим…</span>
+                  )}
+                  {!loading && !structuredOutput && !output && (
+                    <span style={{ opacity: 0.45, fontSize: '0.875rem' }}>
+                      Здесь появится перевод с пиньинем над каждым иероглифом
+                    </span>
+                  )}
+                  {!loading && structuredOutput && (
+                    <>
+                      {(direction === 'zh-ru' || direction === 'ru-zh') && (
+                        <div>
+                          <div style={{ fontSize: '0.7rem', opacity: 0.55, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            {direction === 'zh-ru' ? 'Пиньинь и иероглифы' : '中文'}
+                          </div>
+                          <ChineseRubyText
+                            segments={structuredOutput.segments}
+                            size="lg"
+                            onTextSelect={checkSelection}
+                          />
+                        </div>
+                      )}
+                      {direction === 'zh-ru' && structuredOutput.translation && (
+                        <div>
+                          <div style={{ fontSize: '0.7rem', opacity: 0.55, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Перевод
+                          </div>
+                          <div style={{ fontSize: '1rem', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                            {structuredOutput.translation}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {!loading && !structuredOutput && output && (
+                    <div style={{ fontSize: '0.95rem', lineHeight: 1.55, whiteSpace: 'pre-wrap', opacity: 0.85 }}>
+                      {output}
+                    </div>
+                  )}
+                </div>
+                <div style={{
+                  padding: '0.6rem 0.75rem',
+                  borderTop: panelBorder,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.4rem',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); addToDictionary(); }}
+                      disabled={addingToDictionary || !selectedText || (isLearningLanguageSourceField(direction) ? !input.trim() : !structuredOutput)}
+                      style={{
+                        ...accentBtn,
+                        padding: '0.45rem 0.85rem',
+                        borderRadius: 8,
+                        border: '1px solid var(--accent-strong)',
+                        background: 'var(--accent-soft)',
+                        color: 'var(--accent-strong)',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        cursor: addingToDictionary || !selectedText ? 'default' : 'pointer',
+                        opacity: addingToDictionary || !selectedText ? 0.6 : 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                      }}
+                    >
+                      {addingToDictionary ? 'Добавляем…' : 'Добавить в словарь'}
+                    </button>
+                    {dictionarySuccess && (
+                      <div style={{ fontSize: '0.8125rem', color: 'rgba(34, 197, 94, 0.9)' }}>{dictionarySuccess}</div>
+                    )}
+                    {dictionaryError && (
+                      <div style={{ fontSize: '0.8125rem', color: 'rgba(239, 68, 68, 0.9)' }}>{dictionaryError}</div>
+                    )}
+                  </div>
+                  {((isLearningLanguageSourceField(direction) && input.trim()) || (!isLearningLanguageSourceField(direction) && structuredOutput)) && !selectedText && (
+                    <div style={{ fontSize: '0.72rem', opacity: 0.55 }}>
+                      {isLearningLanguageSourceField(direction)
+                        ? 'Выделите китайское слово или 成语 в поле ввода'
+                        : 'Выделите китайское слово или 成语 в переводе'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <label style={{ fontSize: '0.8125rem', opacity: 0.8 }}>Направление:</label>
           <select
@@ -855,7 +1236,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
             style={{
               padding: '0.4rem 0.6rem',
               borderRadius: 8,
-              border: '1px solid var(--sidebar-border)',
+              border: panelBorder,
               background: 'var(--sidebar-hover)',
               color: 'var(--sidebar-text)',
               fontSize: '0.8125rem',
@@ -867,11 +1248,11 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           </select>
           <button
             type="button"
-            onClick={() => setDirection((d) => getOppositeDirection(d))}
+            onClick={swapDirection}
             style={{
               padding: '0.35rem 0.6rem',
               borderRadius: 8,
-              border: '1px solid var(--sidebar-border)',
+              border: panelBorder,
               background: 'var(--sidebar-hover)',
               color: 'var(--sidebar-text)',
               fontSize: '0.8125rem',
@@ -887,7 +1268,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
             style={{
               padding: '0.35rem 0.8rem',
               borderRadius: 8,
-              border: '1px solid var(--sidebar-border)',
+              border: panelBorder,
               background: 'var(--sidebar-hover)',
               color: 'var(--sidebar-text)',
               fontSize: '0.8125rem',
@@ -949,15 +1330,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           </button>
           <button
             type="button"
-            onClick={() => {
-              setInput('');
-              setOutput('');
-              setError(null);
-              setSelectedText('');
-              setSelectedTextSource(null);
-              setDictionaryError(null);
-              setDictionarySuccess(null);
-            }}
+            onClick={clearAll}
             style={{
               padding: '0.55rem 0.9rem',
               borderRadius: 10,
@@ -973,21 +1346,10 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>Ctrl/⌘+Enter</span>
         </div>
 
-        {error && (
-          <div style={{ fontSize: '0.8125rem', color: 'rgba(239, 68, 68, 0.9)' }}>{error}</div>
-        )}
-
-        <style>{`
-          @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <textarea
             ref={outputTextareaRef}
-            placeholder={isChinese ? 'Здесь появится перевод с пиньинем…' : 'Здесь появится перевод…'}
+            placeholder="Здесь появится перевод…"
             value={output}
             readOnly={false}
             rows={5}
@@ -1085,16 +1447,25 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           </div>
           {((isLearningLanguageSourceField(direction) && input.trim()) || (!isLearningLanguageSourceField(direction) && output.trim())) && !selectedText && (
             <div style={{ fontSize: '0.75rem', opacity: 0.6 }}>
-              {isChinese
-                ? (isLearningLanguageSourceField(direction)
-                  ? 'Выделите китайское слово или 成语 в поле ввода для добавления в словарь'
-                  : 'Выделите китайское слово или 成语 в поле перевода для добавления в словарь')
-                : (isLearningLanguageSourceField(direction)
-                  ? 'Выделите английское слово, идиому или фразовый глагол в поле ввода для добавления в словарь'
-                  : 'Выделите английское слово, идиому или фразовый глагол в поле перевода для добавления в словарь')}
+              {isLearningLanguageSourceField(direction)
+                ? 'Выделите английское слово, идиому или фразовый глагол в поле ввода для добавления в словарь'
+                : 'Выделите английское слово, идиому или фразовый глагол в поле перевода для добавления в словарь'}
             </div>
           )}
         </div>
+          </>
+        )}
+
+        {error && (
+          <div style={{ fontSize: '0.8125rem', color: 'rgba(239, 68, 68, 0.9)' }}>{error}</div>
+        )}
+
+        <style>{`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
 
         {historyOpen && (
           <div
@@ -1184,12 +1555,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                   <button
                     key={`${h.ts}-${i}`}
                     type="button"
-                    onClick={() => {
-                      setInput(h.input);
-                      setOutput(h.output);
-                      setDirection(h.direction);
-                      setHistoryOpen(false);
-                    }}
+                    onClick={() => restoreHistoryItem(h)}
                     style={{
                       textAlign: 'left',
                       border: '1px solid var(--sidebar-border)',
@@ -1206,6 +1572,17 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                       {getDirectionShortLabel(h.direction)} · {new Date(h.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <div style={{ whiteSpace: 'pre-wrap' }}>{h.input}</div>
+                    {isChinese && (() => {
+                      const parsed = parseStructuredChineseResponse(h.output);
+                      if (parsed?.translation) {
+                        return (
+                          <div style={{ opacity: 0.75, marginTop: 4, fontSize: '0.78rem' }}>
+                            → {parsed.translation}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </button>
                 ))}
               </div>
