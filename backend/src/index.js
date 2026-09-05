@@ -192,7 +192,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 // Инициализация AITUNNEL (OpenAI-compatible)
 const AITUNNEL_BASE_URL = process.env.AITUNNEL_BASE_URL || 'https://api.aitunnel.ru/v1/'
 const AITUNNEL_API_KEY = process.env.AITUNNEL_API_KEY
-const AITUNNEL_MODEL = process.env.AITUNNEL_MODEL || 'deepseek-v3-2'
+const AITUNNEL_MODEL = process.env.AITUNNEL_MODEL || 'deepseek-v3.2'
 // Увеличенный таймаут для долгих запросов (анализ текста на идиомы и т.п.)
 // По умолчанию 900 секунд (15 минут), можно переопределить через переменную окружения AITUNNEL_TIMEOUT_MS
 const AITUNNEL_TIMEOUT_MS = Number.parseInt(process.env.AITUNNEL_TIMEOUT_MS || '900000', 10)
