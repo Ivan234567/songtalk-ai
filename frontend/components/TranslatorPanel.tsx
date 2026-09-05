@@ -80,7 +80,9 @@ function getTranslationSystemPrompt(direction: TranslatorDirection): string {
 }
 
 Правила:
-- segments: разбей исходный китайский текст на слова или отдельные иероглифы; к каждому сегменту — пиньинь с тонами
+- segments: разбей исходный китайский текст в основном по 1 иероглифу на сегмент
+- если это знак препинания, оставь его отдельным сегментом и передай pinyin как пустую строку
+- для иероглифа всегда указывай pinyin с тоном (например nǐ, hǎo)
 - translation: полный русский перевод
 - не используй английский язык`;
     case 'ru-zh':
@@ -95,7 +97,9 @@ function getTranslationSystemPrompt(direction: TranslatorDirection): string {
 }
 
 Правила:
-- segments: китайский перевод, разбитый на слова или иероглифы с пиньинем и тонами
+- segments: китайский перевод, разбитый в основном по 1 иероглифу на сегмент
+- если это знак препинания, оставь его отдельным сегментом и передай pinyin как пустую строку
+- для иероглифа всегда указывай pinyin с тоном
 - translation: исходный русский текст пользователя
 - не используй английский язык`;
   }
@@ -180,8 +184,8 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     if (typeof window === 'undefined') return;
     const W = window.innerWidth;
     const H = window.innerHeight;
-    const defaultW = Math.min(isChinese ? 520 : 720, W - 48);
-    const defaultH = Math.min(isChinese ? 680 : 520, H - 48);
+    const defaultW = Math.min(isChinese ? 640 : 720, W - 48);
+    const defaultH = Math.min(isChinese ? 760 : 520, H - 48);
     const newPos = { x: (W - defaultW) / 2, y: (H - defaultH) / 2 };
     const newSize = { width: defaultW, height: defaultH };
     setPosition((prev) => prev ?? newPos);
@@ -815,7 +819,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     } finally {
       setAddingToDictionary(false);
     }
-  }, [userId, direction, input, output, selectedText, selectedTextSource, analyzePhraseWithAI, getApiUrl, getSupabaseToken, isChinese]);
+  }, [userId, input, output, selectedText, selectedTextSource, analyzePhraseWithAI, getApiUrl, getSupabaseToken, isChinese]);
 
   // Очищаем сообщение об успехе через 5 секунд
   useEffect(() => {
@@ -1006,7 +1010,18 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
               </button>
             </div>
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, gap: 0 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, gap: '0.55rem' }}>
+              <div style={{
+                border: panelBorder,
+                borderRadius: 10,
+                background: 'rgba(15, 23, 42, 0.24)',
+                padding: '0.45rem 0.65rem',
+                fontSize: '0.74rem',
+                opacity: 0.8,
+              }}>
+                Режим китайского: каждый блок показывает пару <strong>пиньинь ↔ иероглиф</strong>. Тоны подсвечены цветом.
+              </div>
+
               {/* Верхняя панель — исходный текст */}
               <div style={{
                 flex: 1,
@@ -1014,7 +1029,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                 display: 'flex',
                 flexDirection: 'column',
                 border: panelBorder,
-                borderRadius: '14px 14px 0 0',
+                borderRadius: 14,
                 background: 'var(--sidebar-hover)',
                 overflow: 'hidden',
               }}>
@@ -1107,6 +1122,25 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                 </div>
               </div>
 
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    border: panelBorder,
+                    background: 'var(--sidebar-hover)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: 0.7,
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  ↓
+                </div>
+              </div>
+
               {/* Нижняя панель — перевод */}
               <div style={{
                 flex: 1,
@@ -1114,8 +1148,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                 display: 'flex',
                 flexDirection: 'column',
                 border: panelBorder,
-                borderTop: 'none',
-                borderRadius: '0 0 14px 14px',
+                borderRadius: 14,
                 background: 'rgba(15, 23, 42, 0.2)',
                 overflow: 'hidden',
               }}>
@@ -1143,7 +1176,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                   )}
                   {!loading && !structuredOutput && !output && (
                     <span style={{ opacity: 0.45, fontSize: '0.875rem' }}>
-                      Здесь появится перевод с пиньинем над каждым иероглифом
+                      Здесь появится перевод с четкой связкой иероглифов и пиньиня
                     </span>
                   )}
                   {!loading && structuredOutput && (
@@ -1151,13 +1184,16 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                       {(direction === 'zh-ru' || direction === 'ru-zh') && (
                         <div>
                           <div style={{ fontSize: '0.7rem', opacity: 0.55, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            {direction === 'zh-ru' ? 'Пиньинь и иероглифы' : '中文'}
+                            {direction === 'zh-ru' ? 'Пары пиньинь и иероглифов' : '中文 + 拼音'}
                           </div>
                           <ChineseRubyText
                             segments={structuredOutput.segments}
                             size="lg"
                             onTextSelect={checkSelection}
                           />
+                          <div style={{ fontSize: '0.72rem', opacity: 0.55, marginTop: '0.5rem' }}>
+                            Выделяйте иероглифы мышью в этом блоке, чтобы добавить их в словарь.
+                          </div>
                         </div>
                       )}
                       {direction === 'zh-ru' && structuredOutput.translation && (
