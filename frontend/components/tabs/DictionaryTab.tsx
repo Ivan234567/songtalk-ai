@@ -3,6 +3,13 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
+import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import {
+  getLevelOptions,
+  getWordLevelBadge,
+  isCefrLevel,
+  isHskLevelValue,
+} from '@/lib/vocabulary';
 
 type VocabularyProgress = {
   review_count: number | null;
@@ -28,6 +35,9 @@ type VocabularyCategory = {
 type VocabularyWord = {
   id: string;
   word: string;
+  language?: 'en' | 'zh';
+  pinyin?: string | null;
+  hsk_level?: number | null;
   translations: { translation: string; source?: string }[] | null;
   difficulty_level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | null;
   mastery_level: number | null;
@@ -58,6 +68,8 @@ type UserIdiomVideo = {
 type UserIdiom = {
   id?: string;
   phrase: string;
+  pinyin?: string | null;
+  language?: 'en' | 'zh';
   literal_translation: string;
   meaning: string;
   usage_examples: string[];
@@ -123,6 +135,10 @@ const ChevronUpIcon = () => (
 );
 
 export const DictionaryTab: React.FC = () => {
+  const { learningLanguage, isLanguageReady } = useLearningLanguage();
+  const isChinese = learningLanguage === 'zh';
+  const levelOptions = useMemo(() => getLevelOptions(learningLanguage), [learningLanguage]);
+
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,16 +172,6 @@ export const DictionaryTab: React.FC = () => {
   const [levelDropdownRect, setLevelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const levelDropdownRef = useRef<HTMLDivElement>(null);
   const levelDropdownPortalRef = useRef<HTMLDivElement>(null);
-
-  const LEVEL_OPTIONS = [
-    { value: 'all', label: 'Все уровни' },
-    { value: 'A1', label: 'A1' },
-    { value: 'A2', label: 'A2' },
-    { value: 'B1', label: 'B1' },
-    { value: 'B2', label: 'B2' },
-    { value: 'C1', label: 'C1' },
-    { value: 'C2', label: 'C2' },
-  ] as const;
 
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [exportDropdownRect, setExportDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -222,6 +228,27 @@ export const DictionaryTab: React.FC = () => {
       }
     };
   }, [search]);
+
+  // Reset filters and view when learning language changes
+  useEffect(() => {
+    if (!isLanguageReady) return;
+    setDifficulty('all');
+    setViewMode('words');
+    setSearch('');
+    setDebouncedSearch('');
+    setSelectedWordId(null);
+    setSelectedIdiom(null);
+    setSelectedPhrasalVerb(null);
+    setSelectedWordIds(new Set());
+    setSelectedIdiomPhrases(new Set());
+    setSelectedPhrasalVerbPhrases(new Set());
+  }, [learningLanguage, isLanguageReady]);
+
+  useEffect(() => {
+    if (isChinese && viewMode === 'phrasal-verbs') {
+      setViewMode('words');
+    }
+  }, [isChinese, viewMode]);
 
   useEffect(() => {
     async function loadToken() {
@@ -428,7 +455,7 @@ export const DictionaryTab: React.FC = () => {
   }, [accessToken]);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !isLanguageReady) return;
 
     async function fetchVocabulary() {
       setLoading(true);
@@ -440,7 +467,13 @@ export const DictionaryTab: React.FC = () => {
         params.set('sort_by', sortBy);
         params.set('sort_order', sortOrder);
         if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-        if (difficulty !== 'all') params.set('difficulty_level', difficulty);
+        if (difficulty !== 'all') {
+          if (isChinese && isHskLevelValue(difficulty)) {
+            params.set('hsk_level', difficulty);
+          } else if (!isChinese && isCefrLevel(difficulty)) {
+            params.set('difficulty_level', difficulty);
+          }
+        }
         if (categoryId) params.set('category_id', categoryId);
 
         const resp = await fetch(`${getApiUrl()}/api/vocabulary/list?${params.toString()}`, {
@@ -480,10 +513,10 @@ export const DictionaryTab: React.FC = () => {
     fetchVocabulary();
     // Removed selectedWordId from dependencies to prevent infinite loops
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, debouncedSearch, difficulty, categoryId, status, sortBy, sortOrder]);
+  }, [accessToken, debouncedSearch, difficulty, categoryId, sortBy, sortOrder, learningLanguage, isLanguageReady]);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !isLanguageReady) return;
 
     async function fetchIdioms() {
       setIdiomsLoading(true);
@@ -529,10 +562,16 @@ export const DictionaryTab: React.FC = () => {
 
     fetchIdioms();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, idiomCategoryId]);
+  }, [accessToken, idiomCategoryId, learningLanguage, isLanguageReady]);
 
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !isLanguageReady || isChinese) {
+      if (isChinese) {
+        setPhrasalVerbs([]);
+        setPhrasalVerbsLoading(false);
+      }
+      return;
+    }
 
     async function fetchPhrasalVerbs() {
       setPhrasalVerbsLoading(true);
@@ -926,7 +965,10 @@ export const DictionaryTab: React.FC = () => {
       params.set('sort_by', sortBy);
       params.set('sort_order', sortOrder);
       if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-      if (difficulty !== 'all') params.set('difficulty_level', difficulty);
+      if (difficulty !== 'all') {
+        if (isChinese && isHskLevelValue(difficulty)) params.set('hsk_level', difficulty);
+        else if (!isChinese && isCefrLevel(difficulty)) params.set('difficulty_level', difficulty);
+      }
       if (categoryId) params.set('category_id', categoryId);
 
       const vocabResp = await fetch(`${getApiUrl()}/api/vocabulary/list?${params.toString()}`, {
@@ -1048,14 +1090,16 @@ export const DictionaryTab: React.FC = () => {
         const haystack =
           i.phrase.toLowerCase() +
           ' ' +
+          (i.pinyin || '').toLowerCase() +
+          ' ' +
           i.meaning.toLowerCase() +
           ' ' +
           i.literal_translation.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
 
-      // Apply difficulty filter
-      if (difficulty !== 'all') {
+      // Apply difficulty filter (English idioms only)
+      if (!isChinese && difficulty !== 'all') {
         if (i.difficulty_level !== difficulty) {
           return false;
         }
@@ -1065,7 +1109,7 @@ export const DictionaryTab: React.FC = () => {
     });
 
     return filtered;
-  }, [idioms, debouncedSearch, difficulty]);
+  }, [idioms, debouncedSearch, difficulty, isChinese]);
 
   const filteredPhrasalVerbs = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
@@ -1377,7 +1421,10 @@ export const DictionaryTab: React.FC = () => {
                       params.set('sort_by', sortBy)
                       params.set('sort_order', sortOrder)
                       if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim())
-                      if (difficulty !== 'all') params.set('difficulty_level', difficulty)
+                      if (difficulty !== 'all') {
+                        if (isChinese && isHskLevelValue(difficulty)) params.set('hsk_level', difficulty)
+                        else if (!isChinese && isCefrLevel(difficulty)) params.set('difficulty_level', difficulty)
+                      }
 
                       const resp = await fetch(`${getApiUrl()}/api/vocabulary/list?${params.toString()}`, {
                         method: 'GET',
@@ -1467,8 +1514,9 @@ export const DictionaryTab: React.FC = () => {
               transition: 'all 0.2s',
             }}
           >
-            Идиомы
+            {isChinese ? '成语' : 'Идиомы'}
           </button>
+          {!isChinese && (
           <button
             onClick={() => setViewMode('phrasal-verbs')}
             style={{
@@ -1485,10 +1533,17 @@ export const DictionaryTab: React.FC = () => {
           >
             Фразовые глаголы
           </button>
+          )}
         </div>
         <input
           type="text"
-          placeholder={viewMode === 'words' ? 'Поиск по слову...' : viewMode === 'idioms' ? 'Поиск по идиомам...' : 'Поиск по фразовым глаголам...'}
+          placeholder={
+            viewMode === 'words'
+              ? (isChinese ? 'Поиск по слову или pinyin...' : 'Поиск по слову...')
+              : viewMode === 'idioms'
+                ? (isChinese ? 'Поиск по 成语 или pinyin...' : 'Поиск по идиомам...')
+                : 'Поиск по фразовым глаголам...'
+          }
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{
@@ -1543,7 +1598,7 @@ export const DictionaryTab: React.FC = () => {
             }}
           >
             <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {LEVEL_OPTIONS.find((o) => o.value === difficulty)?.label ?? 'Все уровни'}
+              {levelOptions.find((o) => o.value === difficulty)?.label ?? 'Все уровни'}
             </span>
             {showLevelDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />}
           </button>
@@ -1946,7 +2001,7 @@ export const DictionaryTab: React.FC = () => {
               overflowY: 'auto',
             }}
           >
-            {LEVEL_OPTIONS.map((opt) => (
+            {levelOptions.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
@@ -2498,6 +2553,16 @@ export const DictionaryTab: React.FC = () => {
                               >
                                 {word.word}
                               </div>
+                              {isChinese && word.pinyin && (
+                                <div
+                                  style={{
+                                    fontSize: '0.78rem',
+                                    color: 'rgba(148,163,184,0.95)',
+                                  }}
+                                >
+                                  {word.pinyin}
+                                </div>
+                              )}
                               {word.translations && word.translations.length > 0 && (
                                 <div
                                   style={{
@@ -2554,7 +2619,7 @@ export const DictionaryTab: React.FC = () => {
                                   ))}
                                 </>
                               )}
-                              {word.difficulty_level && (
+                              {getWordLevelBadge(word, learningLanguage) && (
                                 <span
                                   style={{
                                     padding: '0.15rem 0.45rem',
@@ -2564,7 +2629,7 @@ export const DictionaryTab: React.FC = () => {
                                     fontSize: '0.75rem',
                                   }}
                                 >
-                                  {word.difficulty_level}
+                                  {getWordLevelBadge(word, learningLanguage)}
                                 </span>
                               )}
                               {typeof word.mastery_level === 'number' && (
@@ -2720,6 +2785,16 @@ export const DictionaryTab: React.FC = () => {
                               >
                                 {idiom.phrase}
                               </div>
+                              {isChinese && idiom.pinyin && (
+                                <div
+                                  style={{
+                                    fontSize: '0.78rem',
+                                    color: 'rgba(148,163,184,0.95)',
+                                  }}
+                                >
+                                  {idiom.pinyin}
+                                </div>
+                              )}
                               {idiom.meaning && (
                                 <div
                                   style={{
@@ -3075,15 +3150,28 @@ export const DictionaryTab: React.FC = () => {
                         gap: '0.75rem',
                       }}
                     >
-                      <span
-                        style={{
-                          fontSize: '1.1rem',
-                          fontWeight: 700,
-                          color: '#f9fafb',
-                        }}
-                      >
-                        {selectedWord.word}
-                      </span>
+                      <div>
+                        <span
+                          style={{
+                            fontSize: '1.1rem',
+                            fontWeight: 700,
+                            color: '#f9fafb',
+                          }}
+                        >
+                          {selectedWord.word}
+                        </span>
+                        {isChinese && selectedWord.pinyin && (
+                          <div
+                            style={{
+                              fontSize: '0.85rem',
+                              color: 'rgba(148,163,184,0.95)',
+                              marginTop: '0.15rem',
+                            }}
+                          >
+                            {selectedWord.pinyin}
+                          </div>
+                        )}
+                      </div>
                       <button
                         onClick={synthesizeWordAudio}
                         disabled={wordAudioLoading}
@@ -3129,7 +3217,7 @@ export const DictionaryTab: React.FC = () => {
                       color: 'rgba(148,163,184,0.9)',
                     }}
                   >
-                    {selectedWord.difficulty_level && (
+                    {getWordLevelBadge(selectedWord, learningLanguage) && (
                       <span
                         style={{
                           padding: '0.2rem 0.5rem',
@@ -3138,7 +3226,7 @@ export const DictionaryTab: React.FC = () => {
                           color: 'rgba(219,234,254,0.98)',
                         }}
                       >
-                        Уровень: {selectedWord.difficulty_level}
+                        Уровень: {getWordLevelBadge(selectedWord, learningLanguage)}
                       </span>
                     )}
                   </div>
@@ -3359,7 +3447,7 @@ export const DictionaryTab: React.FC = () => {
                         marginBottom: '0.15rem',
                       }}
                     >
-                      Выбранная идиома
+                      {isChinese ? '成语' : 'Выбранная идиома'}
                     </div>
                     <div
                       style={{
@@ -3368,14 +3456,27 @@ export const DictionaryTab: React.FC = () => {
                         gap: '0.75rem',
                       }}
                     >
-                      <div
-                        style={{
-                          fontSize: '1.1rem',
-                          fontWeight: 700,
-                          color: '#f9fafb',
-                        }}
-                      >
-                        {selectedIdiom.phrase}
+                      <div>
+                        <div
+                          style={{
+                            fontSize: '1.1rem',
+                            fontWeight: 700,
+                            color: '#f9fafb',
+                          }}
+                        >
+                          {selectedIdiom.phrase}
+                        </div>
+                        {isChinese && selectedIdiom.pinyin && (
+                          <div
+                            style={{
+                              fontSize: '0.85rem',
+                              color: 'rgba(148,163,184,0.95)',
+                              marginTop: '0.15rem',
+                            }}
+                          >
+                            {selectedIdiom.pinyin}
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={synthesizeIdiomAudio}

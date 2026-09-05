@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import { getWordLevelBadge } from '@/lib/vocabulary';
 
 // YouTube IFrame API types
 declare global {
@@ -20,8 +22,10 @@ type VideoSegment = {
 type WordDefinition = {
   translations: { translation: string; source?: string }[];
   phonetic_transcription: string | null;
+  pinyin?: string | null;
   part_of_speech: string | null;
   difficulty_level: string | null;
+  hsk_level?: number | null;
   frequency_rank: number | null;
   is_phrase: boolean;
   example_sentences: string[];
@@ -47,6 +51,9 @@ function getApiUrl() {
 }
 
 export const KaraokeTab: React.FC = () => {
+  const { learningLanguage } = useLearningLanguage();
+  const isChinese = learningLanguage === 'zh';
+
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +81,7 @@ export const KaraokeTab: React.FC = () => {
   const [idiomsLoading, setIdiomsLoading] = useState(false);
   const [idiomsError, setIdiomsError] = useState<string | null>(null);
   const [idioms, setIdioms] = useState<
-    { phrase: string; literal_translation: string; meaning: string; usage_examples: string[] }[]
+    { phrase: string; pinyin?: string; literal_translation: string; meaning: string; usage_examples: string[] }[]
   >([]);
   const [idiomsAdded, setIdiomsAdded] = useState<Record<string, boolean>>({});
   const [phrasalVerbsModalOpen, setPhrasalVerbsModalOpen] = useState(false);
@@ -661,6 +668,7 @@ export const KaraokeTab: React.FC = () => {
 
   const handleAddIdiomToVocabulary = async (idiom: {
     phrase: string;
+    pinyin?: string;
     literal_translation: string;
     meaning: string;
     usage_examples: string[];
@@ -681,6 +689,7 @@ export const KaraokeTab: React.FC = () => {
         },
         body: JSON.stringify({
           phrase: idiom.phrase,
+          pinyin: idiom.pinyin || null,
           literal_translation: idiom.literal_translation,
           meaning: idiom.meaning,
           usage_examples: idiom.usage_examples,
@@ -2418,7 +2427,7 @@ export const KaraokeTab: React.FC = () => {
                 >
                   <span>✨</span>
                   <span>
-                    {idiomsLoading ? 'Анализ идиом...' : 'Определить идиомы'}
+                    {idiomsLoading ? (isChinese ? 'Анализ 成语...' : 'Анализ идиом...') : (isChinese ? 'Определить 成语' : 'Определить идиомы')}
                   </span>
                 </button>
                 <span
@@ -2441,6 +2450,7 @@ export const KaraokeTab: React.FC = () => {
                   ?
                 </span>
               </div>
+              {!isChinese && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <button
                 onClick={handleAnalyzePhrasalVerbs}
@@ -2504,6 +2514,7 @@ export const KaraokeTab: React.FC = () => {
                   ?
                 </span>
               </div>
+              )}
               <button
                 onClick={() => {
                   // Stop video if playing
@@ -3147,7 +3158,7 @@ export const KaraokeTab: React.FC = () => {
                               color: 'rgba(148,163,184,0.9)',
                             }}
                           >
-                            Идиома
+                            {isChinese ? '成语' : 'Идиома'}
                           </div>
                           <div
                             style={{
@@ -3157,6 +3168,17 @@ export const KaraokeTab: React.FC = () => {
                           >
                             {idiom.phrase}
                           </div>
+                          {idiom.pinyin && (
+                            <div
+                              style={{
+                                fontSize: '0.85rem',
+                                color: 'rgba(148,163,184,0.95)',
+                                marginTop: '0.15rem',
+                              }}
+                            >
+                              {idiom.pinyin}
+                            </div>
+                          )}
                         </div>
                         <button
                           onClick={() => handleAddIdiomToVocabulary(idiom)}
@@ -3175,7 +3197,7 @@ export const KaraokeTab: React.FC = () => {
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {isAdded ? 'В словаре идиом' : 'Добавить в словарь'}
+                          {isAdded ? (isChinese ? 'В словаре 成语' : 'В словаре идиом') : 'Добавить в словарь'}
                         </button>
                       </div>
 
@@ -3538,6 +3560,18 @@ export const KaraokeTab: React.FC = () => {
                 >
                   {selectedWord}
                 </div>
+                {wordDefinition?.pinyin && (
+                  <div
+                    style={{
+                      fontSize: '0.95rem',
+                      color: 'rgba(148,163,184,0.95)',
+                      textAlign: 'center',
+                      marginTop: '0.25rem',
+                    }}
+                  >
+                    {wordDefinition.pinyin}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3654,8 +3688,10 @@ export const KaraokeTab: React.FC = () => {
                 )}
 
                 {(wordDefinition.phonetic_transcription ||
+                  wordDefinition.pinyin ||
                   wordDefinition.part_of_speech ||
-                  wordDefinition.difficulty_level) && (
+                  wordDefinition.difficulty_level ||
+                  wordDefinition.hsk_level) && (
                   <div
                     style={{
                       display: 'flex',
@@ -3675,6 +3711,18 @@ export const KaraokeTab: React.FC = () => {
                         }}
                       >
                         {wordDefinition.phonetic_transcription}
+                      </span>
+                    )}
+                    {wordDefinition.pinyin && (
+                      <span
+                        style={{
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '999px',
+                          background: 'rgba(24,24,27,0.9)',
+                          border: '1px solid rgba(75,85,99,0.9)',
+                        }}
+                      >
+                        {wordDefinition.pinyin}
                       </span>
                     )}
                     {wordDefinition.part_of_speech && (
@@ -3700,6 +3748,19 @@ export const KaraokeTab: React.FC = () => {
                         }}
                       >
                         Уровень: {wordDefinition.difficulty_level}
+                      </span>
+                    )}
+                    {wordDefinition.hsk_level && (
+                      <span
+                        style={{
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '999px',
+                          background: 'rgba(8,47,73,0.95)',
+                          border: '1px solid rgba(56,189,248,0.7)',
+                          color: 'rgba(191,219,254,0.95)',
+                        }}
+                      >
+                        HSK {wordDefinition.hsk_level}
                       </span>
                     )}
                   </div>

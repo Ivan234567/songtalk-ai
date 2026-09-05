@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { fetchUserLearningLanguage, LearningLanguage } from '@/lib/learning-language';
 
 export type DashboardMetrics = {
   conversationMinutes: number;
@@ -32,6 +33,9 @@ export function useDashboardMetrics() {
   const [error, setError] = useState<string | null>(null);
 
   const loadMetrics = useCallback(async (uid: string) => {
+    const learningLanguage: LearningLanguage = await fetchUserLearningLanguage(uid);
+    const isChinese = learningLanguage === 'zh';
+
     const [
       agentSessionsRes,
       vocabularyRes,
@@ -48,15 +52,19 @@ export function useDashboardMetrics() {
       supabase
         .from('user_vocabulary')
         .select('id', { head: true, count: 'exact' })
-        .eq('user_id', uid),
+        .eq('user_id', uid)
+        .eq('language', learningLanguage),
       supabase
         .from('user_idioms')
         .select('id', { head: true, count: 'exact' })
-        .eq('user_id', uid),
-      supabase
-        .from('user_phrasal_verbs')
-        .select('id', { head: true, count: 'exact' })
-        .eq('user_id', uid),
+        .eq('user_id', uid)
+        .eq('language', learningLanguage),
+      isChinese
+        ? Promise.resolve({ error: null, count: 0 })
+        : supabase
+            .from('user_phrasal_verbs')
+            .select('id', { head: true, count: 'exact' })
+            .eq('user_id', uid),
       supabase
         .from('user_videos')
         .select('id', { head: true, count: 'exact' })

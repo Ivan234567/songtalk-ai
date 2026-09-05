@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { fetchUserLearningLanguage } from '@/lib/learning-language';
 
 export type ActivityItem = {
   dateKey: string;
@@ -33,6 +34,9 @@ export function useRecentActivity() {
   const [error, setError] = useState<string | null>(null);
 
   const loadActivities = useCallback(async (uid: string) => {
+    const learningLanguage = await fetchUserLearningLanguage(uid);
+    const isChinese = learningLanguage === 'zh';
+
     const since = new Date();
     since.setDate(since.getDate() - 14);
     const sinceIso = since.toISOString();
@@ -78,20 +82,24 @@ export function useRecentActivity() {
         .from('user_vocabulary')
         .select('created_at')
         .eq('user_id', uid)
+        .eq('language', learningLanguage)
         .gte('created_at', sinceIso)
         .limit(200),
       supabase
         .from('user_idioms')
         .select('created_at')
         .eq('user_id', uid)
+        .eq('language', learningLanguage)
         .gte('created_at', sinceIso)
         .limit(200),
-      supabase
-        .from('user_phrasal_verbs')
-        .select('created_at')
-        .eq('user_id', uid)
-        .gte('created_at', sinceIso)
-        .limit(200),
+      isChinese
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from('user_phrasal_verbs')
+            .select('created_at')
+            .eq('user_id', uid)
+            .gte('created_at', sinceIso)
+            .limit(200),
     ]);
 
     const byDate = new Map<string, ActivityEntry[]>();

@@ -18,6 +18,7 @@ import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
 import { getCost } from './balance-rates.js'
+import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH } from './learning-language.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -70,10 +71,11 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Learning-Language'],
   exposedHeaders: ['Content-Type', 'Authorization']
 }))
 app.use(express.json({ limit: '1mb' }))
+app.use(attachLearningLanguage)
 
 // На Vercel нет постоянной файловой системы — используем memory storage для загрузок
 const isVercel = Boolean(process.env.VERCEL)
@@ -1300,7 +1302,7 @@ app.post('/api/agent/chat', async (req, res) => {
     : [
       {
         role: 'system',
-        content: 'You are a helpful assistant. Always reply in the SAME language the user writes in (e.g. Russian if they write in Russian, English if in English). Do not switch to Chinese or other languages unless the user explicitly writes in that language.',
+        content: getFreestyleChatSystemPrompt(req.learningLanguage || 'en'),
       },
       ...messages,
     ]
@@ -1891,7 +1893,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     ? level.trim().toUpperCase().replace(/^(EASY|MEDIUM|HARD)$/i, (m) => m.charAt(0) + m.slice(1).toLowerCase())
     : 'B1'
 
-  const levelGuidance = {
+  const levelGuidance = req.learningLanguage === 'zh' ? REPLY_HINT_LEVEL_ZH : {
     A1: 'Use very simple words and short sentences (e.g. "I like...", "Yes, please.", "Thank you.").',
     A2: 'Use simple, everyday phrases. Short sentences are fine.',
     B1: 'Use natural everyday English with common phrases and connectors.',
@@ -2019,7 +2021,21 @@ Rules:
     const systemContent = hintMode === 'debate'
       ? debateSystemContent
       : hintMode === 'chat'
-        ? chatSystemContent
+        ? (req.learningLanguage === 'zh'
+          ? buildReplyHintChatSystemZh({
+            levelText,
+            slangMode,
+            allowProfanity,
+            aiMayUseProfanity,
+            profanityIntensity,
+            hintModeValue,
+            freestyleModeInstruction,
+            freestyleRoleHint,
+            freestyleToneFormality,
+            freestyleToneDirectness,
+            freestyleMicroGoals,
+          })
+          : chatSystemContent)
         : roleplaySystemContent
     const userContent = hintMode === 'debate'
       ? debateUserContent
@@ -3315,9 +3331,32 @@ function extractWordsFromText(text, segments = null) {
 // Получение определения слова через AI
 // ВНИМАНИЕ: Эта функция вызывает AI и тратит токены!
 // Вызывать только по явному запросу пользователя (клик на слово, добавление в словарь)
-async function getWordDefinitionFromAI(word) {
+async function getWordDefinitionFromAI(word, language = 'en') {
   try {
-    const prompt = `Проанализируй английское слово "${word}" и верни JSON с следующей структурой:
+    const isChinese = language === 'zh'
+    
+    const prompt = isChinese
+      ? `Проанализируй китайское слово или фразу "${word}" и верни JSON с следующей структурой:
+{
+  "word": "${word}",
+  "translations": ["перевод1 на русский", "перевод2 на русский"],
+  "pinyin": "пиньинь с тонами",
+  "part_of_speech": "noun|verb|adjective|adverb|pronoun|preposition|conjunction|interjection",
+  "hsk_level": 1-6,
+  "frequency_rank": число_от_1_до_10000,
+  "is_phrase": true/false,
+  "example_sentences": ["пример1 на китайском", "пример2 на китайском"]
+}
+
+Учти:
+- hsk_level: 1=начальный, 2=элементарный, 3=средний, 4=средне-продвинутый, 5=продвинутый, 6=высший
+- Если это 成语 (идиома), установи is_phrase: true
+- example_sentences должны быть на китайском языке с контекстом использования
+- frequency_rank: 1 = самое частое, 10000 = редкое
+- pinyin должен включать тона (например: nǐ hǎo)
+
+Отвечай только JSON, без дополнительного текста.`
+      : `Проанализируй английское слово "${word}" и верни JSON с следующей структурой:
 {
   "word": "${word}",
   "translations": ["перевод1", "перевод2"],
@@ -3337,12 +3376,16 @@ async function getWordDefinitionFromAI(word) {
 
 Отвечай только JSON, без дополнительного текста.`
 
+    const systemMessage = isChinese
+      ? 'Ты эксперт по китайскому языку и HSK. Отвечай строго в формате JSON без дополнительных комментариев.'
+      : 'Ты эксперт по английскому языку. Отвечай строго в формате JSON без дополнительных комментариев.'
+
     const chatResult = await llm.chat.completions.create({
       model: AITUNNEL_MODEL,
       messages: [
         {
           role: 'system',
-          content: 'Ты эксперт по английскому языку. Отвечай строго в формате JSON без дополнительных комментариев.'
+          content: systemMessage
         },
         {
           role: 'user',
@@ -3368,14 +3411,17 @@ async function getWordDefinitionFromAI(word) {
     // Валидация и нормализация
     const def = {
       word: definition.word || word,
+      language: language,
       definitions: Array.isArray(definition.translations)
         ? definition.translations.map(t => ({ translation: t, source: 'ai' }))
         : [],
       phonetic_transcription: definition.phonetic_transcription || null,
+      pinyin: definition.pinyin || null,
       part_of_speech: definition.part_of_speech || null,
       difficulty_level: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(definition.difficulty_level)
         ? definition.difficulty_level
         : null,
+      hsk_level: (definition.hsk_level >= 1 && definition.hsk_level <= 6) ? definition.hsk_level : null,
       frequency_rank: typeof definition.frequency_rank === 'number' ? definition.frequency_rank : null,
       is_phrase: Boolean(definition.is_phrase),
       example_sentences: Array.isArray(definition.example_sentences) ? definition.example_sentences : []
@@ -3387,10 +3433,13 @@ async function getWordDefinitionFromAI(word) {
     return {
       definition: {
         word: word,
+        language: language,
         definitions: [],
         phonetic_transcription: null,
+        pinyin: null,
         part_of_speech: null,
         difficulty_level: null,
+        hsk_level: null,
         frequency_rank: null,
         is_phrase: false,
         example_sentences: []
@@ -3413,8 +3462,39 @@ function estimateTokensForText(text = '') {
 // Возвращает массив идиом с переводом и примерами
 async function analyzeIdiomsWithAI(text, options = {}) {
   const maxIdioms = options.maxIdioms || 20
+  const language = options.language || 'en'
+  const isChinese = language === 'zh'
 
-  const prompt = `Ты преподаватель английского, специализирующийся на идиомах и устойчивых выражениях.
+  const prompt = isChinese
+    ? `Ты преподаватель китайского языка, специализирующийся на 成语 (chéngyǔ) - китайских идиомах.
+
+Проанализируй следующий китайский текст и найди в нём 成语 (чэнъюи) - традиционные китайские идиомы из 4 иероглифов.
+
+Для КАЖДОЙ найденной идиомы верни JSON в следующем формате (массив объектов):
+[
+  {
+    "phrase": "成语 иероглифами",
+    "pinyin": "пиньинь с тонами",
+    "literal_translation": "дословный перевод на русском",
+    "meaning": "краткое объяснение смысла на русском",
+    "usage_examples": [
+      "пример предложения 1 на китайском (иероглифами) с переводом на русском в скобках",
+      "пример предложения 2 на китайском (иероглифами) с переводом на русском в скобках"
+    ]
+  }
+]
+
+Требования:
+- Включай только настоящие 成语 (идиомы из 4 иероглифов), не обычные слова.
+- Максимум ${maxIdioms} идиом, выбирай самые важные и полезные.
+- Объяснения должны быть простыми и понятными.
+- Если идиом нет, верни пустой массив [].
+
+ТЕКСТ:
+${text}
+
+Отвечай СТРОГО в формате JSON массива, без пояснений и без markdown.`
+    : `Ты преподаватель английского, специализирующийся на идиомах и устойчивых выражениях.
 
 Проанализируй следующий текст песни и найди в нём английские идиомы, фразовые глаголы и устойчивые выражения.
 
@@ -3442,12 +3522,16 @@ ${text}
 
 Отвечай СТРОГО в формате JSON массива, без пояснений и без markdown.`
 
+  const systemMessage = isChinese
+    ? 'Ты преподаватель китайского языка и эксперт по 成语. Отвечай строго в формате JSON, без дополнительного текста и без markdown.'
+    : 'Ты преподаватель английского языка. Отвечай строго в формате JSON, без дополнительного текста и без markdown.'
+
   const chatResult = await llm.chat.completions.create({
     model: AITUNNEL_MODEL,
     messages: [
       {
         role: 'system',
-        content: 'Ты преподаватель английского языка. Отвечай строго в формате JSON, без дополнительного текста и без markdown.'
+        content: systemMessage
       },
       {
         role: 'user',
@@ -3484,6 +3568,7 @@ ${text}
     .filter(i => i && typeof i.phrase === 'string')
     .map(i => ({
       phrase: i.phrase.trim(),
+      pinyin: i.pinyin || null,
       literal_translation: i.literal_translation || '',
       meaning: i.meaning || '',
       usage_examples: Array.isArray(i.usage_examples) ? i.usage_examples : []
@@ -3583,18 +3668,19 @@ ${text}
 // Получение или создание определения слова (с кэшированием)
 // ВНИМАНИЕ: Вызывает AI только если слова нет в кэше!
 // Использовать только когда пользователь явно запросил определение (клик на слово, добавление)
-async function getOrCreateWordDefinition(word) {
+async function getOrCreateWordDefinition(word, language = 'en') {
   const normalizedWord = normalizeWord(word)
   if (!normalizedWord) {
     throw new Error('Invalid word')
   }
 
-  // Проверяем кэш
+  // Проверяем кэш с учетом языка
   const { data: cached, error: cacheError } = await safeSupabaseCall(
     () => supabase
       .from('word_definitions_cache')
       .select('*')
       .eq('word', normalizedWord)
+      .eq('language', language)
       .single(),
     { timeoutMs: 10000, maxRetries: 1 }
   )
@@ -3604,7 +3690,7 @@ async function getOrCreateWordDefinition(word) {
   }
 
   // Если нет в кэше, получаем через AI
-  const { definition, usage } = await getWordDefinitionFromAI(normalizedWord)
+  const { definition, usage } = await getWordDefinitionFromAI(normalizedWord, language)
 
   // Сохраняем в кэш (используем сервисный ключ, который обходит RLS)
   const { error: insertError } = await safeSupabaseCall(
@@ -3612,16 +3698,19 @@ async function getOrCreateWordDefinition(word) {
       .from('word_definitions_cache')
       .upsert({
         word: normalizedWord,
+        language: language,
         definitions: definition.definitions,
         phonetic_transcription: definition.phonetic_transcription,
+        pinyin: definition.pinyin,
         part_of_speech: definition.part_of_speech,
         difficulty_level: definition.difficulty_level,
+        hsk_level: definition.hsk_level,
         frequency_rank: definition.frequency_rank,
         is_phrase: definition.is_phrase,
         example_sentences: definition.example_sentences,
         updated_at: new Date().toISOString()
       }, {
-        onConflict: 'word'
+        onConflict: 'word,language'
       }),
     { timeoutMs: 10000, maxRetries: 1 }
   )
@@ -3963,13 +4052,24 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Word is required' })
   }
 
+  // Получаем язык пользователя из профиля
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userId)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = profile?.learning_language || 'en'
+
   const normalizedWord = normalizeWord(word)
   if (!normalizedWord) {
     return res.status(400).json({ error: 'Invalid word' })
   }
 
-  // Получаем определение слова (с AI только если нет в кэше)
-  const definition = await getOrCreateWordDefinition(normalizedWord)
+  // Получаем определение слова с учетом языка (с AI только если нет в кэше)
+  const definition = await getOrCreateWordDefinition(normalizedWord, language)
   if (definition.usage) {
     const costRub = getCost('deepseek-v3.2', definition.usage)
     if (costRub > 0) {
@@ -3981,13 +4081,14 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     }
   }
 
-  // Проверяем, есть ли уже это слово в словаре пользователя
+  // Проверяем, есть ли уже это слово в словаре пользователя (с учетом языка)
   const { data: existingWord } = await safeSupabaseCall(
     () => supabase
       .from('user_vocabulary')
-      .select('id, contexts, difficulty_level, part_of_speech, times_seen')
+      .select('id, contexts, difficulty_level, hsk_level, part_of_speech, times_seen, language')
       .eq('user_id', userData.user.id)
       .eq('word', normalizedWord)
+      .eq('language', language)
       .single(),
     { timeoutMs: 10000, maxRetries: 1 }
   )
@@ -4017,16 +4118,24 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     }
 
     // Обновляем запись
+    const updateData = {
+      contexts: contextsArray,
+      difficulty_level: definition.difficulty_level || existingWord.difficulty_level,
+      part_of_speech: definition.part_of_speech || existingWord.part_of_speech,
+      times_seen: (existingWord.times_seen || 0) + 1,
+      updated_at: new Date().toISOString()
+    }
+    
+    // Добавляем китайские поля, если это китайский язык
+    if (language === 'zh') {
+      updateData.pinyin = definition.pinyin || null
+      updateData.hsk_level = definition.hsk_level || existingWord.hsk_level || null
+    }
+    
     const { data: updated, error: updateError } = await safeSupabaseCall(
       () => supabase
         .from('user_vocabulary')
-        .update({
-          contexts: contextsArray,
-          difficulty_level: definition.difficulty_level || existingWord.difficulty_level,
-          part_of_speech: definition.part_of_speech || existingWord.part_of_speech,
-          times_seen: (existingWord.times_seen || 0) + 1,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', existingWord.id)
         .select()
         .single(),
@@ -4046,10 +4155,11 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
         .upsert({
           user_id: userData.user.id,
           word: normalizedWord,
+          language: language,
           added_from_video_id: video_id || null,
           next_review_at: now.toISOString() // Устанавливаем для немедленного повторения
         }, {
-          onConflict: 'user_id,word'
+          onConflict: 'user_id,word,language'
         }),
       { timeoutMs: 10000, maxRetries: 1 }
     )
@@ -4062,19 +4172,28 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
   }
 
   // Создаем новую запись
+  const insertData = {
+    user_id: userData.user.id,
+    word: normalizedWord,
+    language: language,
+    translations: definition.definitions || [],
+    contexts: contextsArray,
+    difficulty_level: definition.difficulty_level,
+    part_of_speech: definition.part_of_speech,
+    mastery_level: 1,
+    times_seen: 1
+  }
+  
+  // Добавляем китайские поля, если это китайский язык
+  if (language === 'zh') {
+    insertData.pinyin = definition.pinyin || null
+    insertData.hsk_level = definition.hsk_level || null
+  }
+  
   const { data: newWord, error: insertError } = await safeSupabaseCall(
     () => supabase
       .from('user_vocabulary')
-      .insert({
-        user_id: userData.user.id,
-        word: normalizedWord,
-        translations: definition.definitions || [],
-        contexts: contextsArray,
-        difficulty_level: definition.difficulty_level,
-        part_of_speech: definition.part_of_speech,
-        mastery_level: 1,
-        times_seen: 1
-      })
+      .insert(insertData)
       .select()
       .single(),
     { timeoutMs: 15000, maxRetries: 2 }
@@ -4093,11 +4212,12 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
       .upsert({
         user_id: userData.user.id,
         word: normalizedWord,
+        language: language,
         added_from_video_id: video_id || null,
         learning_status: 'new',
         next_review_at: now.toISOString() // Устанавливаем для немедленного повторения
       }, {
-        onConflict: 'user_id,word'
+        onConflict: 'user_id,word,language'
       }),
     { timeoutMs: 10000, maxRetries: 1 }
   )
@@ -4212,10 +4332,22 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 
+  // Получаем язык пользователя из профиля
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userData.user.id)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = profile?.learning_language || 'en'
+
   // Параметры запроса
   const {
     status, // learning_status
     difficulty_level,
+    hsk_level,
     mastery_level,
     search, // поиск по слову
     category_id, // фильтр по категории
@@ -4225,11 +4357,12 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
     sort_order = 'desc' // asc, desc
   } = req.query || {}
 
-  // Построение запроса
+  // Построение запроса с фильтром по языку
   let query = supabase
     .from('user_vocabulary')
     .select('*')
     .eq('user_id', userData.user.id)
+    .eq('language', language)
 
   // Фильтр по категории
   if (category_id) {
@@ -4274,6 +4407,10 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
   // Фильтры
   if (difficulty_level && ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(difficulty_level)) {
     query = query.eq('difficulty_level', difficulty_level)
+  }
+
+  if (hsk_level && parseInt(hsk_level) >= 1 && parseInt(hsk_level) <= 6) {
+    query = query.eq('hsk_level', parseInt(hsk_level))
   }
 
   if (mastery_level && parseInt(mastery_level) >= 1 && parseInt(mastery_level) <= 5) {
@@ -4477,6 +4614,17 @@ app.get('/api/vocabulary/export', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 
+  // Получаем язык пользователя из профиля
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userData.user.id)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = profile?.learning_language || 'en'
+
   const format = req.query.format || 'json' // csv, json, anki
   const viewMode = req.query.view_mode || 'words' // words, idioms, phrasal-verbs
   const search = req.query.search
@@ -4487,11 +4635,12 @@ app.get('/api/vocabulary/export', asyncHandler(async (req, res) => {
 
   // Export based on view mode
   if (viewMode === 'idioms') {
-    // Export idioms
+    // Export idioms с фильтром по языку
     let query = supabase
       .from('user_idioms')
-      .select('id, phrase, literal_translation, meaning, usage_examples, source_video_id, created_at')
+      .select('id, phrase, pinyin, literal_translation, meaning, usage_examples, source_video_id, created_at, language')
       .eq('user_id', userData.user.id)
+      .eq('language', language)
 
     // Filter by category
     if (idiomCategoryId) {
@@ -4801,12 +4950,13 @@ app.get('/api/vocabulary/export', asyncHandler(async (req, res) => {
       })
     }
   } else {
-    // Export words (default)
+    // Export words (default) с фильтром по языку
     // Build query with filters
     let query = supabase
       .from('user_vocabulary')
       .select('*')
       .eq('user_id', userData.user.id)
+      .eq('language', language)
 
     // Filter by category
     if (categoryId) {
@@ -4832,8 +4982,12 @@ app.get('/api/vocabulary/export', asyncHandler(async (req, res) => {
     }
 
     // Apply difficulty filter
-    if (difficulty && difficulty !== 'all' && ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(difficulty)) {
-      query = query.eq('difficulty_level', difficulty)
+    if (difficulty && difficulty !== 'all') {
+      if (['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].includes(difficulty)) {
+        query = query.eq('difficulty_level', difficulty)
+      } else if (parseInt(difficulty) >= 1 && parseInt(difficulty) <= 6) {
+        query = query.eq('hsk_level', parseInt(difficulty))
+      }
     }
 
     // Apply search filter
@@ -4961,6 +5115,17 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
   if (userErr || !userData?.user) {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
+
+  // Получаем язык пользователя из профиля
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userData.user.id)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = profile?.learning_language || 'en'
 
   const { format, data } = req.body || {}
 
@@ -5105,13 +5270,14 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
 
     const normalizedWord = wordData.word.trim().toLowerCase()
 
-    // Check if word already exists
+    // Check if word already exists с учетом языка
     const { data: existing } = await safeSupabaseCall(
       () => supabase
         .from('user_vocabulary')
-        .select('id, translations, contexts, notes')
+        .select('id, translations, contexts, notes, language')
         .eq('user_id', userData.user.id)
         .eq('word', normalizedWord)
+        .eq('language', language)
         .single(),
       { timeoutMs: 10000, maxRetries: 1 }
     )
@@ -5160,13 +5326,14 @@ app.post('/api/vocabulary/import', asyncHandler(async (req, res) => {
           updated++
         }
       } else {
-        // Insert new word
+        // Insert new word с учетом языка
         const { error: insertError } = await safeSupabaseCall(
           () => supabase
             .from('user_vocabulary')
             .insert({
               user_id: userData.user.id,
               word: normalizedWord,
+              language: language,
               translations: Array.isArray(wordData.translations) ? wordData.translations : [],
               contexts: Array.isArray(wordData.contexts) ? wordData.contexts : [],
               difficulty_level: wordData.difficulty_level || null,
@@ -5358,13 +5525,25 @@ app.get('/api/vocabulary/review-list', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 
+  // Получаем язык пользователя из профиля
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userData.user.id)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = profile?.learning_language || 'en'
+
   const { limit = 20, status } = req.query || {}
 
-  // Get words that need review (next_review_at <= now)
+  // Get words that need review (next_review_at <= now) с фильтром по языку
   let query = supabase
     .from('words_to_review_today')
     .select('*')
     .eq('user_id', userData.user.id)
+    .eq('language', language)
     .order('next_review_at', { ascending: true })
     .limit(parseInt(limit))
 
@@ -5386,21 +5565,23 @@ app.get('/api/vocabulary/review-list', asyncHandler(async (req, res) => {
   if (wordList.length > 0) {
     const wordNormalized = wordList.map(w => w.word)
 
-    // Get vocabulary entries
+    // Get vocabulary entries с учетом языка
     const { data: vocabularyData } = await safeSupabaseCall(
       () => supabase
         .from('user_vocabulary')
         .select('*')
         .eq('user_id', userData.user.id)
+        .eq('language', language)
         .in('word', wordNormalized),
       { timeoutMs: 15000, maxRetries: 2 }
     )
 
-    // Get definitions
+    // Get definitions с учетом языка
     const { data: definitionsData } = await safeSupabaseCall(
       () => supabase
         .from('word_definitions_cache')
-        .select('word, definitions, phonetic_transcription')
+        .select('word, definitions, phonetic_transcription, pinyin, hsk_level, language')
+        .eq('language', language)
         .in('word', wordNormalized),
       { timeoutMs: 15000, maxRetries: 2 }
     )
@@ -5467,6 +5648,17 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
+  // Получаем язык пользователя из профиля
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userId)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = profile?.learning_language || 'en'
+
   const { video_id, text, force = false, max_idioms = 20 } = req.body || {}
 
   if (!video_id && (!text || typeof text !== 'string')) {
@@ -5511,8 +5703,11 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
 
   const cleanedText = textToProcess.slice(0, 8000)
 
-  // Вызываем AI для анализа идиом
-  const { idioms, usage: idiomsUsage } = await analyzeIdiomsWithAI(cleanedText, { maxIdioms: max_idioms })
+  // Вызываем AI для анализа идиом с учетом языка
+  const { idioms, usage: idiomsUsage } = await analyzeIdiomsWithAI(cleanedText, { 
+    maxIdioms: max_idioms,
+    language: language
+  })
   if (idiomsUsage) {
     const costRub = getCost('deepseek-v3.2', idiomsUsage)
     if (costRub > 0) {
@@ -5546,28 +5741,34 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
       const normalized = normalizeWord(idiom.phrase)
       if (!normalized) continue
 
-      // Определяем уровень сложности идиомы через AI (как для слов)
+      // Определяем уровень сложности идиомы через AI (как для слов) с учетом языка
       // Сначала проверяем кеш, чтобы не тратить токены
       let difficultyLevel = null
+      let hskLevel = null
       try {
-        // Проверяем кеш перед вызовом AI
+        // Проверяем кеш перед вызовом AI с учетом языка
         const { data: cached, error: cacheError } = await safeSupabaseCall(
           () => supabase
             .from('word_definitions_cache')
-            .select('difficulty_level')
+            .select('difficulty_level, hsk_level')
             .eq('word', normalized)
+            .eq('language', language)
             .single(),
           { timeoutMs: 10000, maxRetries: 1 }
         )
 
-        if (cached && !cacheError && cached.difficulty_level) {
+        if (cached && !cacheError) {
           // Уровень уже есть в кеше
           difficultyLevel = cached.difficulty_level
+          hskLevel = cached.hsk_level
         } else {
           // Уровня нет в кеше, получаем через AI
-          const def = await getWordDefinitionFromAI(normalized)
+          const def = await getWordDefinitionFromAI(normalized, language)
           if (def?.definition?.difficulty_level) {
             difficultyLevel = def.definition.difficulty_level
+          }
+          if (def?.definition?.hsk_level) {
+            hskLevel = def.definition.hsk_level
           }
         }
       } catch (e) {
@@ -5587,16 +5788,19 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
           .from('word_definitions_cache')
           .upsert({
             word: normalized,
+            language: language,
             definitions: translationsArray,
             phonetic_transcription: null,
+            pinyin: idiom.pinyin || null,
             part_of_speech: null,
             difficulty_level: difficultyLevel,
+            hsk_level: hskLevel,
             frequency_rank: null,
             is_phrase: true,
             example_sentences: idiom.usage_examples || [],
             updated_at: nowIso
           }, {
-            onConflict: 'word'
+            onConflict: 'word,language'
           }),
         { timeoutMs: 10000, maxRetries: 1 }
       )
@@ -5826,7 +6030,18 @@ app.post('/api/vocabulary/idioms/add', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 
-  const { phrase, literal_translation, meaning, usage_examples, video_id } = req.body || {}
+  // Получаем язык пользователя из профиля
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userData.user.id)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = profile?.learning_language || 'en'
+
+  const { phrase, pinyin, literal_translation, meaning, usage_examples, video_id } = req.body || {}
 
   if (!phrase || typeof phrase !== 'string') {
     return res.status(400).json({ error: 'Phrase is required' })
@@ -5844,13 +6059,15 @@ app.post('/api/vocabulary/idioms/add', asyncHandler(async (req, res) => {
       .upsert({
         user_id: userData.user.id,
         phrase: idiomPhrase,
+        language: language,
+        pinyin: pinyin || null,
         literal_translation: typeof literal_translation === 'string' ? literal_translation : null,
         meaning: typeof meaning === 'string' ? meaning : null,
         usage_examples: examplesArray,
         source_video_id: video_id || null,
         updated_at: new Date().toISOString(),
       }, {
-        onConflict: 'user_id,phrase'
+        onConflict: 'user_id,phrase,language'
       })
       .select()
       .single(),
@@ -5900,14 +6117,26 @@ app.get('/api/vocabulary/idioms/list', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 
+  // Получаем язык пользователя из профиля
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userData.user.id)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = profile?.learning_language || 'en'
+
   // Параметры запроса
   const { category_id } = req.query || {}
 
-  // Построение запроса
+  // Построение запроса с фильтром по языку
   let query = supabase
     .from('user_idioms')
-    .select('id, phrase, literal_translation, meaning, usage_examples, source_video_id, created_at')
+    .select('id, phrase, pinyin, literal_translation, meaning, usage_examples, source_video_id, created_at, language')
     .eq('user_id', userData.user.id)
+    .eq('language', language)
 
   // Фильтр по категории
   if (category_id) {

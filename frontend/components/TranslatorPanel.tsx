@@ -3,6 +3,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getStoredBackendToken, isBackendTokenExpired, storeBackendToken } from '@/lib/backend-jwt';
+import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import { containsChinese, containsEnglish } from '@/lib/vocabulary';
 
 export type TranslatorDirection = 'en-ru' | 'ru-en';
 
@@ -35,6 +37,9 @@ function isInsufficientBalanceError(status: number, message?: string): boolean {
 }
 
 export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsufficientBalance }: TranslatorPanelProps) {
+  const { learningLanguage } = useLearningLanguage();
+  const isChinese = learningLanguage === 'zh';
+
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const dragStartRef = useRef<{ x: number; y: number; startX: number; startY: number; boxW: number; boxH: number } | null>(null);
@@ -391,7 +396,27 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     const backendToken = await getBackendToken();
     if (!backendToken) throw new Error('Необходима авторизация');
 
-    const prompt = `Проанализируй английскую фразу "${phrase}" и определи:
+    const prompt = isChinese
+      ? `Проанализируй китайскую фразу "${phrase}" и определи:
+1. Является ли это отдельным словом (word)
+2. Является ли это 成语 (idiom)
+
+Верни JSON строго в следующем формате:
+{
+  "type": "word" | "idiom",
+  "word": "слово иероглифами (если type=word)",
+  "phrase": "фраза иероглифами (если type=idiom)",
+  "pinyin": "пиньинь с тонами",
+  "translations": ["перевод1", "перевод2"],
+  "literal_translation": "дословный перевод (для 成语)",
+  "meaning": "значение на русском",
+  "usage_examples": ["пример1", "пример2"],
+  "part_of_speech": "noun|verb|adjective|adverb|... (для слов)",
+  "hsk_level": 1-6
+}
+
+Отвечай только JSON, без дополнительного текста.`
+      : `Проанализируй английскую фразу "${phrase}" и определи:
 1. Является ли это отдельным словом (word)
 2. Является ли это идиомой (idiom) 
 3. Является ли это фразовым глаголом (phrasal_verb)
@@ -486,7 +511,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       console.error('Error analyzing phrase:', e);
       throw e;
     }
-  }, [getApiUrl, getBackendToken, redirectToBalanceNotice]);
+  }, [getApiUrl, getBackendToken, redirectToBalanceNotice, isChinese]);
 
   // Функция добавления в словарь
   const addToDictionary = useCallback(async () => {
@@ -523,34 +548,32 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     }
     
     if (!currentSelected) {
-      setDictionaryError('Выделите слово, идиому или фразовый глагол для добавления в словарь');
+      setDictionaryError(isChinese
+        ? 'Выделите китайское слово или 成语 для добавления в словарь'
+        : 'Выделите слово, идиому или фразовый глагол для добавления в словарь');
       return;
     }
 
-    // Определяем английский текст для контекста
-    // Для en-ru: английский в input, русский в output
-    // Для ru-en: русский в input, английский в output
-    let englishText = '';
-    if (direction === 'en-ru') {
-      // Если выделение в input - это английский, используем input как контекст
-      // Если выделение в output - это русский, но нам нужен английский из input
-      englishText = input;
-    } else {
-      // Если выделение в output - это английский, используем output как контекст
-      // Если выделение в input - это русский, но нам нужен английский из output
-      englishText = output;
-    }
-    
-    if (!englishText.trim()) {
+    const contextText = (selectedTextSource === 'input' ? input : output).trim()
+      || input.trim()
+      || output.trim();
+
+    if (!contextText) {
       setDictionaryError('Необходимо выполнить перевод перед добавлением в словарь');
       return;
     }
 
-    // Проверяем, что выделенный текст содержит английские буквы
-    const hasEnglishLetters = /[a-zA-Z]/.test(currentSelected);
-    if (!hasEnglishLetters) {
-      setDictionaryError('Выделите английское слово, идиому или фразовый глагол');
-      return;
+    if (isChinese) {
+      if (!containsChinese(currentSelected)) {
+        setDictionaryError('Выделите китайское слово или 成语');
+        return;
+      }
+    } else {
+      const hasEnglishLetters = containsEnglish(currentSelected);
+      if (!hasEnglishLetters) {
+        setDictionaryError('Выделите английское слово, идиому или фразовый глагол');
+        return;
+      }
     }
 
     setAddingToDictionary(true);
@@ -564,8 +587,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       console.log('AI определил тип:', analysis.type, 'Данные:', analysis.data);
 
       if (analysis.type === 'word') {
-        // Добавляем слово в словарь
-        const word = analysis.data.word || currentSelected.trim().toLowerCase();
+        const word = analysis.data.word || currentSelected.trim();
         const response = await fetch(`${getApiUrl()}/api/vocabulary/add`, {
           method: 'POST',
           headers: {
@@ -573,8 +595,8 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
             Authorization: `Bearer ${supabaseToken}`,
           },
           body: JSON.stringify({
-            word: word,
-            context: englishText,
+            word,
+            context: contextText,
           }),
         });
 
@@ -598,7 +620,8 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
             Authorization: `Bearer ${supabaseToken}`,
           },
           body: JSON.stringify({
-            phrase: phrase,
+            phrase,
+            pinyin: analysis.data.pinyin || null,
             literal_translation: analysis.data.literal_translation || null,
             meaning: analysis.data.meaning || null,
             usage_examples: analysis.data.usage_examples || [],
@@ -610,12 +633,12 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           throw new Error(errorData.error || `Ошибка ${response.status}`);
         }
 
-        setDictionarySuccess(`Идиома "${phrase}" добавлена в словарь`);
+        setDictionarySuccess(isChinese ? `成语 «${phrase}» добавлена в словарь` : `Идиома "${phrase}" добавлена в словарь`);
         // Очищаем выделение после успешного добавления
         window.getSelection()?.removeAllRanges();
         setSelectedText('');
         setSelectedTextSource(null);
-      } else if (analysis.type === 'phrasal_verb') {
+      } else if (analysis.type === 'phrasal_verb' && !isChinese) {
         // Добавляем фразовый глагол в словарь
         const phrase = analysis.data.phrase || currentSelected.trim();
         const response = await fetch(`${getApiUrl()}/api/vocabulary/phrasal-verbs/add`, {
@@ -648,7 +671,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       setDictionaryError(e instanceof Error ? e.message : 'Ошибка при добавлении в словарь');
       setAddingToDictionary(false);
     }
-  }, [userId, direction, input, output, selectedText, selectedTextSource, getSelectedText, analyzePhraseWithAI, getApiUrl, getSupabaseToken]);
+  }, [userId, direction, input, output, selectedText, selectedTextSource, getSelectedText, analyzePhraseWithAI, getApiUrl, getSupabaseToken, isChinese]);
 
   // Очищаем сообщение об успехе через 5 секунд
   useEffect(() => {

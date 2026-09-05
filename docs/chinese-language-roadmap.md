@@ -266,7 +266,7 @@ AI-диалог → Словарь → Прогресс
 
 - [ ] 2.0 TTS/STT spike (или блокер зафиксирован)
 - [x] 2.1 `learningLanguage` прокинут
-- [ ] 2.2 Chat + reply hint на китайском
+- [x] 2.2 Chat + reply hint на китайском
 - [ ] 2.3 STT для `zh`
 - [ ] 2.4 TTS для `zh`
 - [ ] 2.5 Переводчик ZH↔RU
@@ -450,7 +450,7 @@ learningLanguage ──► resolveLanguage(req) ──► getPrompts(lang)
 | 2 — Свободный диалог | ⬜ Не начата |
 | 2.0 — Spike TTS/STT | ⬜ |
 | 2.1 — learningLanguage в API | ✅ |
-| 2.2 — Chat + reply hint | ⬜ |
+| 2.2 — Chat + reply hint | ✅ |
 | 2.3 — STT | ⬜ |
 | 2.4 — TTS | ⬜ |
 | 2.5 — Переводчик ZH↔RU | ⬜ |
