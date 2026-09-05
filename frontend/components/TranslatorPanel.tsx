@@ -6,7 +6,7 @@ import { getStoredBackendToken, isBackendTokenExpired, storeBackendToken } from 
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { containsChinese, containsEnglish } from '@/lib/vocabulary';
 
-export type TranslatorDirection = 'en-ru' | 'ru-en';
+export type TranslatorDirection = 'en-ru' | 'ru-en' | 'zh-ru' | 'ru-zh';
 
 export type TranslatorHistoryItem = {
   input: string;
@@ -14,6 +14,82 @@ export type TranslatorHistoryItem = {
   direction: TranslatorDirection;
   ts: number;
 };
+
+const EN_DIRECTIONS: TranslatorDirection[] = ['en-ru', 'ru-en'];
+const ZH_DIRECTIONS: TranslatorDirection[] = ['zh-ru', 'ru-zh'];
+
+function getDirectionsForLanguage(isChinese: boolean): TranslatorDirection[] {
+  return isChinese ? ZH_DIRECTIONS : EN_DIRECTIONS;
+}
+
+function getDefaultDirection(isChinese: boolean): TranslatorDirection {
+  return isChinese ? 'zh-ru' : 'en-ru';
+}
+
+function getOppositeDirection(direction: TranslatorDirection): TranslatorDirection {
+  switch (direction) {
+    case 'en-ru': return 'ru-en';
+    case 'ru-en': return 'en-ru';
+    case 'zh-ru': return 'ru-zh';
+    case 'ru-zh': return 'zh-ru';
+  }
+}
+
+function getDirectionLabel(direction: TranslatorDirection): string {
+  switch (direction) {
+    case 'en-ru': return 'English → Русский';
+    case 'ru-en': return 'Русский → English';
+    case 'zh-ru': return '中文 → Русский';
+    case 'ru-zh': return 'Русский → 中文';
+  }
+}
+
+function getDirectionShortLabel(direction: TranslatorDirection): string {
+  switch (direction) {
+    case 'en-ru': return 'EN → RU';
+    case 'ru-en': return 'RU → EN';
+    case 'zh-ru': return '中文 → RU';
+    case 'ru-zh': return 'RU → 中文';
+  }
+}
+
+function isLearningLanguageSourceField(direction: TranslatorDirection): boolean {
+  return direction === 'en-ru' || direction === 'zh-ru';
+}
+
+function getTranslationSystemPrompt(direction: TranslatorDirection): string {
+  switch (direction) {
+    case 'en-ru':
+      return 'You are a helpful translator. Translate the user text from English to Russian. Preserve meaning and tone. Output only the translation.';
+    case 'ru-en':
+      return 'You are a helpful translator. Translate the user text from Russian to English. Preserve meaning and tone. Output only the translation.';
+    case 'zh-ru':
+      return `Ты переводчик китайско-русский. Переведи китайский текст пользователя на русский язык.
+Формат ответа строго такой:
+Пиньинь: [транскрипция с тонами для всего китайского текста]
+Перевод: [русский перевод]
+
+Сохрани смысл и тон. Не добавляй пояснений, английского текста и лишних комментариев.`;
+    case 'ru-zh':
+      return `Ты переводчик русско-китайский. Переведи русский текст пользователя на китайский.
+Формат ответа строго такой:
+汉字: [китайский перевод]
+Пиньинь: [транскрипция с тонами]
+
+Сохрани смысл и тон. Не добавляй пояснений, английского текста и лишних комментариев.`;
+  }
+}
+
+function getInputPlaceholder(direction: TranslatorDirection, isChinese: boolean): string {
+  if (isChinese) {
+    return direction === 'zh-ru'
+      ? 'Введите текст на китайском…'
+      : 'Введите текст на русском…';
+  }
+  return direction === 'en-ru'
+    ? 'Введите текст на английском…'
+    : 'Введите текст на русском…';
+}
 
 type TranslatorPanelProps = {
   onClose: () => void;
@@ -51,7 +127,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
   const [output, setOutput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [direction, setDirection] = useState<TranslatorDirection>('en-ru');
+  const [direction, setDirection] = useState<TranslatorDirection>(() => getDefaultDirection(isChinese));
   const [history, setHistory] = useState<TranslatorHistoryItem[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -89,7 +165,22 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
   }, [size, position]);
 
   useEffect(() => {
-    if (!userId) return;
+    setDirection(getDefaultDirection(isChinese));
+    setInput('');
+    setOutput('');
+    setError(null);
+    setSelectedText('');
+    setSelectedTextSource(null);
+    setDictionaryError(null);
+    setDictionarySuccess(null);
+  }, [isChinese]);
+
+  useEffect(() => {
+    if (!userId) {
+      setHistory([]);
+      return;
+    }
+    const allowedDirections = getDirectionsForLanguage(isChinese);
     let mounted = true;
     setHistoryLoading(true);
     setHistoryError(null);
@@ -97,6 +188,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       .from('translator_history')
       .select('input_text, output_text, direction, created_at')
       .eq('user_id', userId)
+      .in('direction', allowedDirections)
       .order('created_at', { ascending: false })
       .limit(50)
       .then(({ data, error: err }) => {
@@ -117,7 +209,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     return () => {
       mounted = false;
     };
-  }, [userId]);
+  }, [userId, isChinese]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -161,10 +253,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     setLoading(true);
     setError(null);
     setOutput('');
-    const systemPrompt =
-      direction === 'en-ru'
-        ? 'You are a helpful translator. Translate the user text from English to Russian. Preserve meaning and tone. Output only the translation.'
-        : 'You are a helpful translator. Translate the user text from Russian to English. Preserve meaning and tone. Output only the translation.';
+    const systemPrompt = getTranslationSystemPrompt(direction);
     let fullReply = '';
     try {
       const resp = await fetch(`${getApiUrl()}/api/agent/chat`, {
@@ -447,7 +536,9 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           messages: [
             {
               role: 'system',
-              content: 'Ты преподаватель английского языка. Отвечай строго в формате JSON, без дополнительного текста и без markdown.',
+              content: isChinese
+                ? 'Ты преподаватель китайского языка. Отвечай строго в формате JSON, без дополнительного текста и без markdown.'
+                : 'Ты преподаватель английского языка. Отвечай строго в формате JSON, без дополнительного текста и без markdown.',
             },
             { role: 'user', content: prompt },
           ],
@@ -770,12 +861,13 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
               fontSize: '0.8125rem',
             }}
           >
-            <option value="en-ru">English → Русский</option>
-            <option value="ru-en">Русский → English</option>
+            {getDirectionsForLanguage(isChinese).map((dir) => (
+              <option key={dir} value={dir}>{getDirectionLabel(dir)}</option>
+            ))}
           </select>
           <button
             type="button"
-            onClick={() => setDirection((d) => (d === 'en-ru' ? 'ru-en' : 'en-ru'))}
+            onClick={() => setDirection((d) => getOppositeDirection(d))}
             style={{
               padding: '0.35rem 0.6rem',
               borderRadius: 8,
@@ -809,7 +901,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
 
         <textarea
           ref={inputTextareaRef}
-          placeholder="Введите текст для перевода…"
+          placeholder={getInputPlaceholder(direction, isChinese)}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -895,7 +987,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <textarea
             ref={outputTextareaRef}
-            placeholder="Здесь появится перевод…"
+            placeholder={isChinese ? 'Здесь появится перевод с пиньинем…' : 'Здесь появится перевод…'}
             value={output}
             readOnly={false}
             rows={5}
@@ -935,7 +1027,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                 console.log('Button clicked, selectedText:', selectedText);
                 addToDictionary();
               }}
-              disabled={addingToDictionary || !selectedText || (direction === 'en-ru' ? !input.trim() : !output.trim())}
+              disabled={addingToDictionary || !selectedText || (isLearningLanguageSourceField(direction) ? !input.trim() : !output.trim())}
               style={{
                 '--accent': '#7ad7a7',
                 '--accent-strong': '#58c18f',
@@ -991,11 +1083,15 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
               <div style={{ fontSize: '0.8125rem', color: 'rgba(239, 68, 68, 0.9)' }}>{dictionaryError}</div>
             )}
           </div>
-          {((direction === 'en-ru' && input.trim()) || (direction === 'ru-en' && output.trim())) && !selectedText && (
+          {((isLearningLanguageSourceField(direction) && input.trim()) || (!isLearningLanguageSourceField(direction) && output.trim())) && !selectedText && (
             <div style={{ fontSize: '0.75rem', opacity: 0.6 }}>
-              {direction === 'en-ru' 
-                ? 'Выделите английское слово, идиому или фразовый глагол в поле ввода для добавления в словарь'
-                : 'Выделите английское слово, идиому или фразовый глагол в поле перевода для добавления в словарь'}
+              {isChinese
+                ? (isLearningLanguageSourceField(direction)
+                  ? 'Выделите китайское слово или 成语 в поле ввода для добавления в словарь'
+                  : 'Выделите китайское слово или 成语 в поле перевода для добавления в словарь')
+                : (isLearningLanguageSourceField(direction)
+                  ? 'Выделите английское слово, идиому или фразовый глагол в поле ввода для добавления в словарь'
+                  : 'Выделите английское слово, идиому или фразовый глагол в поле перевода для добавления в словарь')}
             </div>
           )}
         </div>
@@ -1038,10 +1134,12 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                       setHistory([]);
                       return;
                     }
+                    const allowedDirections = getDirectionsForLanguage(isChinese);
                     const { error: delErr } = await supabase
                       .from('translator_history')
                       .delete()
-                      .eq('user_id', userId);
+                      .eq('user_id', userId)
+                      .in('direction', allowedDirections);
                     if (delErr) {
                       setHistoryError('Не удалось очистить историю');
                       return;
@@ -1105,7 +1203,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                     }}
                   >
                     <div style={{ opacity: 0.7, marginBottom: 2 }}>
-                      {h.direction === 'en-ru' ? 'EN → RU' : 'RU → EN'} · {new Date(h.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                      {getDirectionShortLabel(h.direction)} · {new Date(h.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <div style={{ whiteSpace: 'pre-wrap' }}>{h.input}</div>
                   </button>
