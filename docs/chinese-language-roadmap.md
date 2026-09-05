@@ -154,29 +154,124 @@ AI-диалог → Словарь → Прогресс
 
 **Цель:** первый рабочий end-to-end сценарий — свободный чат с ИИ на китайском.
 
-**Scope (backend):**
+**Принцип разбиения:** каждый этап — один узкий PR, один тип проверки. Не смешивать backend-промпты, голос и переводчик в одной задаче.
 
-- Параметр `learningLanguage` в `POST /api/agent/chat` (body или header `X-Learning-Language`)
-- Промпт-шаблон для chat: «Speak only in Simplified Chinese…» вместо English
-- `POST /api/agent/reply-hint` — учёт языка
-- STT (`POST /api/agent/stt`): язык `zh` для Whisper
-- TTS (`POST /api/agent/tts`): китайский голос (проверить доступность в AITUNNEL)
+**Оценка суммарно:** 2–4 дня (зависит от TTS/STT).
+
+---
+
+#### Этап 2.0 — Spike: TTS/STT для китайского (опционально, ~1–2 ч)
+
+**Зачем:** снять главный риск до кодирования. Если TTS недоступен — заранее выбрать fallback.
+
+**Scope:**
+- Ручной тест AITUNNEL: Whisper с `language=zh`, TTS с китайским голосом
+- Зафиксировать в roadmap или комментарии: model/voice id, которые работают
+
+**Критерий:**
+- [ ] STT распознаёт короткую фразу на китайском
+- [ ] TTS озвучивает китайский текст (или зафиксирован блокер + plan B)
+
+**Backend / frontend:** не трогаем.
+
+---
+
+#### Этап 2.1 — Прокидывание `learningLanguage` (инфраструктура)
+
+**Scope (backend):**
+- Helper `resolveLanguage(req)` → `'en' | 'zh'` (header `X-Learning-Language` или body)
+- Default: `'en'` — English flow не ломается
 
 **Scope (frontend):**
+- Передавать `learningLanguage` из контекста в agent-запросы (`AgentTab`, shared fetch helper если есть)
 
-- Передавать `learningLanguage` из контекста во все agent-запросы
-- Переводчик: добавить направления `zh-ru` / `ru-zh` (параллельно EN↔RU, не заменяя)
+**Не делать:** промпты, STT/TTS, переводчик.
+
+**Критерий:**
+- [ ] В режиме `zh` запросы уходят с `learningLanguage: 'zh'` / header
+- [ ] В режиме `en` поведение как сейчас
+
+**Оценка:** ~0.5 дня.
+
+---
+
+#### Этап 2.2 — Текстовый чат + reply hint на китайском
+
+**Scope (backend):**
+- `POST /api/agent/chat` — промпт «Speak only in Simplified Chinese…» при `lang=zh`
+- `POST /api/agent/reply-hint` — подсказка на китайском при `lang=zh`
+
+**Scope (frontend):**
+- Без изменений UI (если 2.1 готов)
+
+**Критерий:**
+- [ ] 中文 → Собеседник (свободный режим) → ответы на упрощённом китайском
+- [ ] Reply hint предлагает ответ на китайском
+- [ ] English chat не сломан
+
+**Оценка:** ~0.5–1 день.
+
+---
+
+#### Этап 2.3 — STT: распознавание китайской речи
+
+**Scope (backend):**
+- `POST /api/agent/stt`: при `lang=zh` передавать Whisper `language: 'zh'`
+
+**Scope (frontend):**
+- AgentTab: язык STT из контекста
+
+**Критерий:**
+- [ ] Голосовой ввод на китайском транскрибируется корректно
+- [ ] English STT не сломан
+
+**Оценка:** ~0.5 дня.
+
+---
+
+#### Этап 2.4 — TTS: озвучка китайского текста
+
+**Scope (backend):**
+- `POST /api/agent/tts`: китайский голос при `lang=zh` (id из этапа 2.0)
+
+**Scope (frontend):**
+- AgentTab: TTS-вызовы с учётом контекста
+
+**Критерий:**
+- [ ] Ответ ассистента на китайском озвучивается
+- [ ] English TTS не сломан
+
+**Оценка:** ~0.5–1 день.
+
+---
+
+#### Этап 2.5 — Переводчик ZH↔RU
+
+**Scope (backend):**
+- Направления `zh-ru` / `ru-zh` (параллельно EN↔RU, не заменяя)
+
+**Scope (frontend):**
+- `TranslatorPanel`: пары `zh-ru` / `ru-zh`
 - В режиме `zh` переводчик по умолчанию ZH↔RU
 
-**Критерий готовности:**
-
-- [ ] Переключил на 中文 → Собеседник (свободный режим) → ответы на упрощённом китайском
-- [ ] STT распознаёт китайскую речь
-- [ ] TTS озвучивает китайский текст
+**Критерий:**
 - [ ] Переводчик ZH↔RU работает
-- [ ] Reply hint предлагает ответ на китайском
+- [ ] EN↔RU не сломан
 
-**Оценка:** 2–4 дня (зависит от TTS/STT).
+**Оценка:** ~0.5–1 день.
+
+---
+
+#### Ступень 2 — итоговый чеклист
+
+- [ ] 2.0 TTS/STT spike (или блокер зафиксирован)
+- [x] 2.1 `learningLanguage` прокинут
+- [ ] 2.2 Chat + reply hint на китайском
+- [ ] 2.3 STT для `zh`
+- [ ] 2.4 TTS для `zh`
+- [ ] 2.5 Переводчик ZH↔RU
+
+**Ступень 2 считается готовой**, когда все пункты итогового чеклиста отмечены.
 
 ---
 
@@ -317,9 +412,15 @@ learningLanguage ──► resolveLanguage(req) ──► getPrompts(lang)
 ## 7. Порядок работ (сводка)
 
 ```
-Ступень 1: Switch UI + Context          ← старт здесь
+Ступень 1: Switch UI + Context          ✅
     ↓
-Ступень 2: Chat + Translator ZH
+Ступень 2: Свободный диалог (по этапам)
+    2.0  Spike TTS/STT
+    2.1  learningLanguage в API
+    2.2  Chat + reply hint (zh)
+    2.3  STT (zh)
+    2.4  TTS (zh)
+    2.5  Переводчик ZH↔RU
     ↓
 Ступень 3: Словарь (language, HSK, 成语)
     ↓
@@ -334,8 +435,8 @@ learningLanguage ──► resolveLanguage(req) ──► getPrompts(lang)
 
 | Риск | Действие |
 |------|----------|
-| TTS для китайского недоступен в AITUNNEL | Проверить на ступени 2 до больших изменений |
-| Whisper quality для `zh` | Тест STT на ступени 2 |
+| TTS для китайского недоступен в AITUNNEL | Этап **2.0** — проверить до 2.4 |
+| Whisper quality для `zh` | Этап **2.0** / **2.3** |
 | Промпты «English-only» разбросаны по backend (~19 мест) | Постепенная параметризация, не big bang |
 | Смешение данных при миграции | Default `language = 'en'` для существующих записей |
 
@@ -347,6 +448,12 @@ learningLanguage ──► resolveLanguage(req) ──► getPrompts(lang)
 |---------|--------|
 | 1 — Switch + контекст | ✅ Готова |
 | 2 — Свободный диалог | ⬜ Не начата |
+| 2.0 — Spike TTS/STT | ⬜ |
+| 2.1 — learningLanguage в API | ✅ |
+| 2.2 — Chat + reply hint | ⬜ |
+| 2.3 — STT | ⬜ |
+| 2.4 — TTS | ⬜ |
+| 2.5 — Переводчик ZH↔RU | ⬜ |
 | 3 — Словарь | ⬜ Не начата |
 | 4 — Прогресс | ⬜ Не начата |
 | 5 — Roleplay + Debate | ⬜ Не начата |

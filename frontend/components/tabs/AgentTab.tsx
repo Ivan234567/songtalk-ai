@@ -23,6 +23,12 @@ import {
 } from '@/lib/debate';
 import { DEBATE_TOPICS, getTopicById } from '@/lib/debate-topics';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
+import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import {
+  buildAgentAuthHeaders,
+  buildAgentJsonHeaders,
+  withLearningLanguageBody,
+} from '@/lib/agent-request';
 
 // Цель дебата (статический текст)
 const DEBATE_GOAL_RU = `Дебат успешно завершен, когда:
@@ -108,6 +114,7 @@ function formatSessionDate(ts: number): string {
 }
 
 export function AgentTab() {
+  const { learningLanguage } = useLearningLanguage();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -595,11 +602,8 @@ export function AgentTab() {
       try {
         const resp = await fetch(`${getApiUrl()}/api/agent/chat`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
+          headers: buildAgentJsonHeaders(token, learningLanguage),
+          body: JSON.stringify(withLearningLanguageBody({
             messages:
               agentMode === 'debate' && debateTopic && debateUserPosition && debateAIPosition
                 ? [
@@ -643,7 +647,7 @@ export function AgentTab() {
                     ? freestyleSettingsPayload
                     : undefined,
             freestyle_context: agentMode === 'chat' ? freestyleContextPayload : undefined,
-          }),
+          }, learningLanguage)),
         });
 
         if (!resp.ok || !resp.body) {
@@ -799,11 +803,8 @@ export function AgentTab() {
         setState('speaking');
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ text: fullReply.trim(), voice: ttsVoice }),
+          headers: buildAgentJsonHeaders(token, learningLanguage),
+          body: JSON.stringify(withLearningLanguageBody({ text: fullReply.trim(), voice: ttsVoice }, learningLanguage)),
         });
 
         if (!ttsResp.ok) {
@@ -873,6 +874,7 @@ export function AgentTab() {
     },
     [
       token,
+      learningLanguage,
       userId,
       currentSessionId,
       selectedScenario,
@@ -923,11 +925,8 @@ export function AgentTab() {
       try {
         const resp = await fetch(`${getApiUrl()}/api/agent/chat`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
+          headers: buildAgentJsonHeaders(token, learningLanguage),
+          body: JSON.stringify(withLearningLanguageBody({
             messages: [
               {
                 role: 'system',
@@ -947,7 +946,7 @@ export function AgentTab() {
                   profanity_intensity: settings.profanityIntensity ?? 'light',
                 }
               : undefined,
-          }),
+          }, learningLanguage)),
         });
 
         if (!resp.ok || !resp.body) {
@@ -1037,11 +1036,8 @@ export function AgentTab() {
         setState('speaking');
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ text: fullReply.trim(), voice: ttsVoice }),
+          headers: buildAgentJsonHeaders(token, learningLanguage),
+          body: JSON.stringify(withLearningLanguageBody({ text: fullReply.trim(), voice: ttsVoice }, learningLanguage)),
         });
 
         if (!ttsResp.ok) {
@@ -1110,7 +1106,7 @@ export function AgentTab() {
         setState('idle');
       }
     },
-    [token, userId, ttsVoice, handleInsufficientBalance]
+    [token, userId, ttsVoice, learningLanguage, handleInsufficientBalance]
   );
 
   // Обработчик смены режима - сброс дебата при переходе в другой режим
@@ -1193,14 +1189,11 @@ export function AgentTab() {
       const history = [...aiChatMessages, userMessage];
       const resp = await fetch(`${getApiUrl()}/api/agent/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+        headers: buildAgentJsonHeaders(token, learningLanguage),
+        body: JSON.stringify(withLearningLanguageBody({
           messages: history,
           max_tokens: 1500,
-        }),
+        }, learningLanguage)),
       });
       if (!resp.ok || !resp.body) {
         const j = await resp.json().catch(() => ({}));
@@ -1324,11 +1317,8 @@ export function AgentTab() {
         setState('speaking');
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ text: openingLine, voice: ttsVoice }),
+          headers: buildAgentJsonHeaders(token, learningLanguage),
+          body: JSON.stringify(withLearningLanguageBody({ text: openingLine, voice: ttsVoice }, learningLanguage)),
         });
         if (!ttsResp.ok) {
           const j = await ttsResp.json().catch(() => ({}));
@@ -1388,7 +1378,7 @@ export function AgentTab() {
       // Нет жёсткой первой реплики — пользователь начинает диалог первым
       setState('idle');
     },
-    [token, userId, ttsVoice, handleInsufficientBalance]
+    [token, userId, ttsVoice, learningLanguage, handleInsufficientBalance]
   );
 
   // Обработчик начала дебата
@@ -1597,18 +1587,15 @@ export function AgentTab() {
     try {
       const resp = await fetch(`${getApiUrl()}/api/agent/roleplay-feedback`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+        headers: buildAgentJsonHeaders(token, learningLanguage),
+        body: JSON.stringify(withLearningLanguageBody({
           messages,
           scenario_id: selectedScenario.id,
           scenario_title: selectedScenario.title,
           goal: selectedScenario.goal ?? undefined,
           goal_ru: selectedScenario.goalRu ?? undefined,
           roleplay_settings: roleplaySettingsPayload,
-        }),
+        }, learningLanguage)),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -1650,7 +1637,7 @@ export function AgentTab() {
     } finally {
       setRoleplayFeedbackLoading(false);
     }
-  }, [token, userId, selectedScenario, messages, roleplaySettingsPayload]);
+  }, [token, userId, selectedScenario, messages, roleplaySettingsPayload, learningLanguage]);
 
   useEffect(() => {
     if (!goalReached || agentMode !== 'roleplay' || !selectedScenario) return;
@@ -1666,17 +1653,14 @@ export function AgentTab() {
     try {
       const resp = await fetch(`${getApiUrl()}/api/agent/debate-feedback`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+        headers: buildAgentJsonHeaders(token, learningLanguage),
+        body: JSON.stringify(withLearningLanguageBody({
           messages,
           topic: debateTopic,
           user_position: debateUserPosition,
           ai_position: debateAIPosition,
           roleplay_settings: debateSettingsPayload,
-        }),
+        }, learningLanguage)),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -1778,7 +1762,7 @@ export function AgentTab() {
     } finally {
       setDebateFeedbackLoading(false);
     }
-  }, [token, userId, debateTopic, debateUserPosition, debateAIPosition, messages, debateCurrentSessionId, debateCompletionId, debateSettingsPayload]);
+  }, [token, userId, debateTopic, debateUserPosition, debateAIPosition, messages, debateCurrentSessionId, debateCompletionId, debateSettingsPayload, learningLanguage]);
 
   // Сохранение завершения дебата в debate_completions
   const saveDebateCompletion = useCallback(async () => {
@@ -1890,11 +1874,8 @@ export function AgentTab() {
     try {
       const resp = await fetch(`${getApiUrl()}/api/agent/assess-speaking`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+        headers: buildAgentJsonHeaders(token, learningLanguage),
+        body: JSON.stringify(withLearningLanguageBody({
           messages,
           scenario_id: agentMode === 'debate' ? null : selectedScenario?.id ?? null,
           scenario_title: agentMode === 'debate' ? null : selectedScenario?.title ?? null,
@@ -1917,7 +1898,7 @@ export function AgentTab() {
                   return { goal_id: id, goal_label: goal?.labelEn ?? id };
                 })
               : undefined,
-        }),
+        }, learningLanguage)),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -1977,7 +1958,7 @@ export function AgentTab() {
     } finally {
       setAssessmentLoading(false);
     }
-  }, [token, userId, messages, selectedScenario, currentSessionId, agentMode, debateTopic, debateUserPosition, debateCurrentSessionId, debateCompletionId, saveDebateCompletion, debateMicroGoals, debateDifficulty, debateStepsForCurrentDifficulty, roleplaySettingsPayload, debateSettingsPayload]);
+  }, [token, userId, messages, selectedScenario, currentSessionId, agentMode, debateTopic, debateUserPosition, debateCurrentSessionId, debateCompletionId, saveDebateCompletion, debateMicroGoals, debateDifficulty, debateStepsForCurrentDifficulty, roleplaySettingsPayload, debateSettingsPayload, learningLanguage]);
 
   const requestReplyHint = useCallback(async () => {
     if (!token || messages.length === 0) return;
@@ -2048,11 +2029,8 @@ export function AgentTab() {
       }
       const resp = await fetch(`${getApiUrl()}/api/agent/reply-hint`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(bodyPayload),
+        headers: buildAgentJsonHeaders(token, learningLanguage),
+        body: JSON.stringify(withLearningLanguageBody(bodyPayload, learningLanguage)),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -2083,6 +2061,7 @@ export function AgentTab() {
     freestyleHintMode,
     roleplaySettingsPayload,
     debateSettingsPayload,
+    learningLanguage,
   ]);
 
   const applyFreestylePreset = useCallback(async (preset: 'neutral' | 'light_slang' | 'heavy_slang' | 'adult_user' | 'adult_dual') => {
@@ -2258,7 +2237,7 @@ export function AgentTab() {
           fd.append('audio', blob, 'recording.webm');
           const resp = await fetch(`${getApiUrl()}/api/agent/stt`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
+            headers: buildAgentAuthHeaders(token, learningLanguage),
             body: fd,
           });
           const data = await resp.json().catch(() => ({}));
@@ -2283,7 +2262,7 @@ export function AgentTab() {
     } catch {
       setError('Нет доступа к микрофону');
     }
-  }, [token, state, runVoiceTurn]);
+  }, [token, state, runVoiceTurn, learningLanguage]);
 
   const stopRecording = useCallback(() => {
     if (state !== 'listening' || !mediaRecorderRef.current) return;

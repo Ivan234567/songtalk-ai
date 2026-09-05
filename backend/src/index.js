@@ -18,6 +18,7 @@ import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
 import { getCost } from './balance-rates.js'
+import { attachLearningLanguage } from './learning-language.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -70,10 +71,11 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Learning-Language'],
   exposedHeaders: ['Content-Type', 'Authorization']
 }))
 app.use(express.json({ limit: '1mb' }))
+app.use(attachLearningLanguage)
 
 // На Vercel нет постоянной файловой системы — используем memory storage для загрузок
 const isVercel = Boolean(process.env.VERCEL)
