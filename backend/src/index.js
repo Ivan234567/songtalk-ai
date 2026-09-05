@@ -4214,7 +4214,6 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
         word: normalizedWord,
         language: language,
         added_from_video_id: video_id || null,
-        learning_status: 'new',
         next_review_at: now.toISOString() // Устанавливаем для немедленного повторения
       }, {
         onConflict: 'user_id,word,language'

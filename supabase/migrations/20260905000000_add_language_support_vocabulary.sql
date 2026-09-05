@@ -161,8 +161,8 @@ CREATE OR REPLACE FUNCTION create_vocabulary_progress()
 RETURNS TRIGGER AS $$
 BEGIN
   -- Создаем запись прогресса с учетом языка
-  INSERT INTO vocabulary_progress (user_id, word, language, added_from_video_id, learning_status, next_review_at)
-  VALUES (NEW.user_id, NEW.word, NEW.language, NULL, 'new', NOW())
+  INSERT INTO vocabulary_progress (user_id, word, language, added_from_video_id, next_review_at)
+  VALUES (NEW.user_id, NEW.word, NEW.language, NULL, NOW())
   ON CONFLICT (user_id, word, language) DO UPDATE SET
     next_review_at = COALESCE(vocabulary_progress.next_review_at, NOW())
   WHERE vocabulary_progress.next_review_at IS NULL;
@@ -214,7 +214,6 @@ SELECT
   wdc.example_sentences,
   wdc.pinyin as cached_pinyin,
   wdc.hsk_level as cached_hsk_level,
-  vp.learning_status,
   vp.review_count,
   vp.last_review_score,
   vp.consecutive_correct,
@@ -231,14 +230,12 @@ SELECT
   uv.word,
   uv.language,
   uv.next_review_at,
-  vp.learning_status,
   vp.review_count,
   vp.last_review_score
 FROM user_vocabulary uv
 JOIN vocabulary_progress vp ON uv.user_id = vp.user_id AND uv.word = vp.word AND uv.language = vp.language
 WHERE uv.next_review_at IS NOT NULL
   AND uv.next_review_at <= NOW()
-  AND vp.learning_status != 'mastered'
 ORDER BY uv.next_review_at ASC;
 
 -- Обновляем статистику с разделением по языкам
