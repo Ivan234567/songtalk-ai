@@ -10,6 +10,7 @@ import {
   looksLikeStructuredJson,
   parseStructuredChineseResponse,
   sanitizeDisplayText,
+  type ChineseSegment,
   type StructuredChineseResult,
 } from '@/components/ChineseRubyText';
 
@@ -251,6 +252,8 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
   const [addingToDictionary, setAddingToDictionary] = useState(false);
   const [dictionaryError, setDictionaryError] = useState<string | null>(null);
   const [dictionarySuccess, setDictionarySuccess] = useState<string | null>(null);
+  const [savedTranslatorWords, setSavedTranslatorWords] = useState<Set<string>>(() => new Set());
+  const [savingTranslatorWord, setSavingTranslatorWord] = useState<string | null>(null);
   const [selectedText, setSelectedTextState] = useState<string>('');
   const [selectedTextSource, setSelectedTextSource] = useState<'input' | 'output' | null>(null);
   const selectedTextRef = useRef<string>('');
@@ -613,6 +616,62 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       return null;
     }
   }, []);
+
+  const saveChineseWordFromTranslator = useCallback(
+    async (segment: ChineseSegment) => {
+      const hanzi = extractChineseCharacters(segment.hanzi);
+      if (!hanzi || savingTranslatorWord === hanzi) return;
+      if (savedTranslatorWords.has(hanzi)) {
+        setDictionaryError(null);
+        setDictionarySuccess(`«${hanzi}» уже в словаре`);
+        return;
+      }
+
+      setSavingTranslatorWord(hanzi);
+      setDictionaryError(null);
+      setDictionarySuccess(null);
+      try {
+        const supabaseToken = await getSupabaseToken();
+        if (!supabaseToken) {
+          throw new Error('Не удалось получить токен авторизации. Попробуйте перезагрузить страницу.');
+        }
+
+        const isSingle = Array.from(hanzi).length === 1;
+        const endpoint = isSingle
+          ? `${getApiUrl()}/api/vocabulary/characters/add`
+          : `${getApiUrl()}/api/vocabulary/add`;
+        const body = isSingle
+          ? { character: hanzi, pinyin: segment.pinyin || undefined, context: input.trim() || output.trim() }
+          : { word: hanzi, context: input.trim() || output.trim() };
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${supabaseToken}`,
+          },
+          body: JSON.stringify(body),
+        });
+        const errorData = await response.json().catch(() => ({}));
+        if (redirectToBalanceNotice(response.status, errorData?.error)) return;
+        if (!response.ok) {
+          throw new Error(errorData.error || errorData.details || `Ошибка ${response.status}`);
+        }
+
+        setSavedTranslatorWords((prev) => {
+          const next = new Set(prev);
+          next.add(hanzi);
+          return next;
+        });
+        setDictionarySuccess(`«${hanzi}» добавлено в словарь`);
+      } catch (e) {
+        setDictionaryError(e instanceof Error ? e.message : 'Не удалось сохранить слово');
+      } finally {
+        setSavingTranslatorWord(null);
+      }
+    },
+    [getApiUrl, getSupabaseToken, input, output, redirectToBalanceNotice, savedTranslatorWords, savingTranslatorWord]
+  );
 
   // Функция для получения актуального backend токена (для agent API)
   const getBackendToken = useCallback(async (): Promise<string | null> => {
@@ -1397,11 +1456,10 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                           <ChineseRubyText
                             segments={structuredOutput.segments}
                             size="lg"
-                            onTextSelect={checkSelection}
+                            onWordClick={saveChineseWordFromTranslator}
+                            savedWords={savedTranslatorWords}
+                            savingWord={savingTranslatorWord}
                           />
-                          <div style={{ fontSize: '0.72rem', opacity: 0.55, marginTop: '0.5rem' }}>
-                            Выделяйте иероглифы мышью в этом блоке, чтобы добавить их в словарь.
-                          </div>
                         </div>
                       )}
                     </div>
@@ -1448,9 +1506,11 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                   </div>
                   {((isLearningLanguageSourceField(direction) && input.trim()) || (!isLearningLanguageSourceField(direction) && structuredOutput)) && !selectedText && (
                     <div style={{ fontSize: '0.72rem', opacity: 0.55 }}>
-                      {isLearningLanguageSourceField(direction)
-                        ? 'Выделите китайское слово или 成语 в поле ввода'
-                        : 'Выделите китайское слово или 成语 в переводе'}
+                      {structuredOutput?.segments?.length
+                        ? 'Нажмите на слово в пиньине — или выделите 成语 вручную'
+                        : isLearningLanguageSourceField(direction)
+                          ? 'Выделите китайское слово или 成语 в поле ввода'
+                          : 'Выделите китайское слово или 成语 в переводе'}
                     </div>
                   )}
                 </div>
