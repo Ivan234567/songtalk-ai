@@ -33,6 +33,7 @@ import {
 import {
   ChineseRubyText,
   parseStructuredChineseResponse,
+  extractCleanChineseText,
   type ChineseSegment,
 } from '@/components/ChineseRubyText';
 
@@ -2618,8 +2619,8 @@ export function AgentTab() {
       {/* Боковая панель истории диалога */}
       <aside
         style={{
-          width: subtitlesVisible ? 320 : 0,
-          minWidth: subtitlesVisible ? 320 : 0,
+          width: subtitlesVisible ? (learningLanguage === 'zh' && chineseShowPinyin ? 440 : 320) : 0,
+          minWidth: subtitlesVisible ? (learningLanguage === 'zh' && chineseShowPinyin ? 440 : 320) : 0,
           overflow: 'hidden',
           borderRight: subtitlesVisible ? '1px solid var(--sidebar-border)' : 'none',
           background: 'var(--sidebar-hover)',
@@ -2655,30 +2656,38 @@ export function AgentTab() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {conversationMessages.map((m, i) => {
                 // Для китайского режима с пиньинь — парсим структурированный ответ
-                const parsed = learningLanguage === 'zh' && chineseShowPinyin && m.role === 'assistant'
+                const isChinese = learningLanguage === 'zh';
+                const parsed = isChinese && chineseShowPinyin && m.role === 'assistant'
                   ? parseStructuredChineseResponse(m.content)
                   : null;
+                // Чистый текст без метаданных
+                const cleanText = isChinese && m.role === 'assistant'
+                  ? extractCleanChineseText(m.content)
+                  : m.content;
                 return (
                   <div
                     key={i}
                     style={{
                       alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                      maxWidth: '88%',
+                      maxWidth: '92%',
                       padding: '0.75rem 1rem',
                       borderRadius: 14,
                       background: m.role === 'user' ? 'var(--sidebar-active)' : 'var(--sidebar-bg)',
                       border: '1px solid var(--sidebar-border)',
                       fontSize: '0.875rem',
                       lineHeight: 1.45,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
                       color: 'var(--sidebar-text)',
                     }}
                   >
-                    {parsed && parsed.segments.length > 0 ? (
-                      <ChineseRubyText segments={parsed.segments} size="md" />
-                    ) : (
-                      m.content
+                    {/* Основной текст */}
+                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {cleanText}
+                    </div>
+                    {/* Пиньинь-разметка под текстом */}
+                    {parsed && parsed.segments.length > 0 && (
+                      <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--sidebar-border)' }}>
+                        <ChineseRubyText segments={parsed.segments} size="md" />
+                      </div>
                     )}
                   </div>
                 );
@@ -3316,9 +3325,49 @@ export function AgentTab() {
                                 </>
                               )}
                             </button>
-                            <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.6, lineHeight: 1.4, color: 'var(--sidebar-text)' }}>
-                              ИИ предложит вариант ответа на китайском{chineseShowPinyin ? ' с пиньинь' : ''}
-                            </p>
+                            {!replyHintLoading && !replyHintText && (
+                              <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.6, lineHeight: 1.4, color: 'var(--sidebar-text)' }}>
+                                ИИ предложит вариант ответа на китайском{chineseShowPinyin ? ' с пиньинь' : ''}
+                              </p>
+                            )}
+                            {/* Результат подсказки */}
+                            {replyHintText && (() => {
+                              const parsedHint = chineseShowPinyin
+                                ? parseStructuredChineseResponse(replyHintText)
+                                : null;
+                              const cleanHint = extractCleanChineseText(replyHintText);
+                              return (
+                                <div style={{ marginTop: '0.5rem', padding: '0.625rem', borderRadius: 8, background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                                  {/* Основной текст подсказки */}
+                                  <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.5, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                    {cleanHint}
+                                  </p>
+                                  {/* Пиньинь-разметка */}
+                                  {parsedHint && parsedHint.segments.length > 0 && (
+                                    <div style={{ marginTop: '0.625rem', paddingTop: '0.625rem', borderTop: '1px solid rgba(251, 191, 36, 0.25)' }}>
+                                      <ChineseRubyText segments={parsedHint.segments} size="md" />
+                                    </div>
+                                  )}
+                                  {/* Кнопка закрыть */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setReplyHintText(null)}
+                                    style={{
+                                      marginTop: '0.5rem',
+                                      padding: '0.3rem 0.6rem',
+                                      border: 'none',
+                                      borderRadius: 6,
+                                      background: 'rgba(251, 191, 36, 0.2)',
+                                      color: 'rgb(251, 191, 36)',
+                                      fontSize: '0.75rem',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    Скрыть
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
 
@@ -4148,54 +4197,44 @@ export function AgentTab() {
                   )}
                 </>
               )}
-              {agentMode === 'chat' && (replyHintLoading || replyHintText !== null) && (() => {
-                const parsedHint = learningLanguage === 'zh' && chineseShowPinyin && replyHintText
-                  ? parseStructuredChineseResponse(replyHintText)
-                  : null;
-                return (
-                  <div
-                    style={{
-                      marginTop: '0.6rem',
-                      maxWidth: 520,
-                      padding: '0.7rem 0.85rem',
-                      borderRadius: 12,
-                      border: '1px solid rgba(251, 191, 36, 0.35)',
-                      background: 'rgba(251, 191, 36, 0.08)',
-                      alignSelf: 'flex-end',
-                    }}
-                  >
-                    {replyHintLoading ? (
-                      <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.85 }}>
-                        {learningLanguage === 'zh' ? 'ИИ подбирает подсказку…' : 'ИИ подбирает подсказку под выбранный стиль…'}
+              {/* Подсказка ответа (только для английского — для китайского она в панели настроек) */}
+              {agentMode === 'chat' && learningLanguage !== 'zh' && (replyHintLoading || replyHintText !== null) && (
+                <div
+                  style={{
+                    marginTop: '0.6rem',
+                    maxWidth: 520,
+                    padding: '0.7rem 0.85rem',
+                    borderRadius: 12,
+                    border: '1px solid rgba(251, 191, 36, 0.35)',
+                    background: 'rgba(251, 191, 36, 0.08)',
+                    alignSelf: 'flex-end',
+                  }}
+                >
+                  {replyHintLoading ? (
+                    <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.85 }}>
+                      ИИ подбирает подсказку под выбранный стиль…
+                    </p>
+                  ) : replyHintText ? (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
+                        {replyHintText}
                       </p>
-                    ) : replyHintText ? (
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
-                        <div style={{ flex: 1 }}>
-                          {parsedHint && parsedHint.segments.length > 0 ? (
-                            <ChineseRubyText segments={parsedHint.segments} size="md" />
-                          ) : (
-                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                              {replyHintText}
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setReplyHintText(null)}
-                          style={{ border: 'none', background: 'transparent', color: 'var(--sidebar-text)', opacity: 0.65, cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}
-                          aria-label="Скрыть подсказку"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ) : (
-                      <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
-                        Не удалось загрузить. Попробуйте еще раз.
-                      </p>
-                    )}
-                  </div>
-                );
-              })()}
+                      <button
+                        type="button"
+                        onClick={() => setReplyHintText(null)}
+                        style={{ border: 'none', background: 'transparent', color: 'var(--sidebar-text)', opacity: 0.65, cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}
+                        aria-label="Скрыть подсказку"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
+                      Не удалось загрузить. Попробуйте еще раз.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}

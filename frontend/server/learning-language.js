@@ -34,13 +34,11 @@ const FREESTYLE_CHAT_SYSTEM_ZH_WITH_PINYIN =
   'Keep replies concise (1-3 sentences unless the user asks for more). ' +
   'If the user writes in Russian, still reply in Simplified Chinese. ' +
   'Do not switch to English unless the user explicitly asks.\n\n' +
-  'IMPORTANT: Format your reply as follows:\n' +
-  'PINYIN:\n' +
-  '你好 = nǐ hǎo\n' +
-  '我 = wǒ\n' +
-  '(one word/phrase per line: hanzi = pinyin with tones)\n' +
-  'END:\n\n' +
-  'This format helps learners see pronunciation alongside characters.'
+  'IMPORTANT: After your Chinese reply, add pinyin data on a NEW LINE starting with ««PINYIN»» followed by JSON array.\n' +
+  'Format: Your Chinese reply text here\n' +
+  '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"我","p":"wǒ"}]\n' +
+  'Each object: "h" = hanzi word, "p" = pinyin with tone marks.\n' +
+  'Cover ALL words from your reply. Keep the main reply natural - the pinyin line is metadata only.'
 
 export function getFreestyleChatSystemPrompt(lang, options = {}) {
   if (lang === 'zh') {
@@ -64,13 +62,11 @@ export function buildReplyHintChatSystemZh({
   showPinyin = false,
 }) {
   const pinyinInstruction = showPinyin
-    ? '\n\nIMPORTANT: Format your reply as follows:\n' +
-      'PINYIN:\n' +
-      '你好 = nǐ hǎo\n' +
-      '我想 = wǒ xiǎng\n' +
-      '(one word/phrase per line: hanzi = pinyin with tones)\n' +
-      'END:\n\n' +
-      'This format helps learners see pronunciation alongside characters.'
+    ? '\n\nIMPORTANT: After your Chinese reply, add pinyin data on a NEW LINE starting with ««PINYIN»» followed by JSON array.\n' +
+      'Format: Your Chinese reply text here\n' +
+      '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"我想","p":"wǒ xiǎng"}]\n' +
+      'Each object: "h" = hanzi word, "p" = pinyin with tone marks.\n' +
+      'Cover ALL words from your reply. Keep the main reply natural - the pinyin line is metadata only.'
     : ''
   
   return (

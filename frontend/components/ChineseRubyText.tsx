@@ -209,14 +209,70 @@ function parseJsonFormat(raw: string): StructuredChineseResult | null {
   }
 }
 
+/**
+ * Парсит новый формат с ««PINYIN»» маркером.
+ * Формат: "Основной текст\n««PINYIN»»[{"h":"你好","p":"nǐ hǎo"}]"
+ */
+function parsePinyinMarkerFormat(raw: string): StructuredChineseResult | null {
+  const marker = '««PINYIN»»';
+  const idx = raw.indexOf(marker);
+  if (idx === -1) return null;
+
+  const mainText = raw.slice(0, idx).trim();
+  const jsonPart = raw.slice(idx + marker.length).trim();
+
+  try {
+    const parsed = JSON.parse(jsonPart);
+    if (!Array.isArray(parsed)) return null;
+
+    const segments: ChineseSegment[] = parsed
+      .filter((item) => item && typeof item.h === 'string')
+      .map((item) => ({
+        hanzi: item.h,
+        pinyin: typeof item.p === 'string' ? item.p : '',
+      }));
+
+    if (segments.length === 0) return null;
+
+    return { segments, translation: mainText };
+  } catch {
+    return null;
+  }
+}
+
 export function parseStructuredChineseResponse(raw: string): StructuredChineseResult | null {
   const text = (raw || '').trim();
   if (!text) return null;
+
+  // Сначала пробуем новый формат ««PINYIN»»
+  const fromMarker = parsePinyinMarkerFormat(text);
+  if (fromMarker) return fromMarker;
 
   const fromDelimiter = parseDelimiterFormat(text);
   if (fromDelimiter) return fromDelimiter;
 
   return parseJsonFormat(text);
+}
+
+/**
+ * Извлекает чистый текст без метаданных пиньинь.
+ */
+export function extractCleanChineseText(raw: string): string {
+  const marker = '««PINYIN»»';
+  const idx = raw.indexOf(marker);
+  if (idx !== -1) {
+    return raw.slice(0, idx).trim();
+  }
+  // Старый формат PINYIN: ... END:
+  const pinyinStart = raw.indexOf('PINYIN:');
+  if (pinyinStart !== -1) {
+    const endIdx = raw.indexOf('END:', pinyinStart);
+    if (endIdx !== -1) {
+      const after = raw.slice(endIdx + 4).trim();
+      return after || raw.slice(0, pinyinStart).trim();
+    }
+  }
+  return raw.trim();
 }
 
 type ChineseRubyTextProps = {
