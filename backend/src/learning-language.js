@@ -27,8 +27,26 @@ const FREESTYLE_CHAT_SYSTEM_ZH =
   'If the user writes in Russian, still reply in Simplified Chinese. ' +
   'Do not switch to English unless the user explicitly asks.'
 
-export function getFreestyleChatSystemPrompt(lang) {
-  return lang === 'zh' ? FREESTYLE_CHAT_SYSTEM_ZH : FREESTYLE_CHAT_SYSTEM_EN
+const FREESTYLE_CHAT_SYSTEM_ZH_WITH_PINYIN =
+  'You are a friendly Chinese conversation partner for language practice. ' +
+  'Speak ONLY in Simplified Chinese (简体中文). ' +
+  'Use natural, everyday Mandarin at a learner-friendly level (roughly HSK 1-4). ' +
+  'Keep replies concise (1-3 sentences unless the user asks for more). ' +
+  'If the user writes in Russian, still reply in Simplified Chinese. ' +
+  'Do not switch to English unless the user explicitly asks.\n\n' +
+  'IMPORTANT: Format your reply as follows:\n' +
+  'PINYIN:\n' +
+  '你好 = nǐ hǎo\n' +
+  '我 = wǒ\n' +
+  '(one word/phrase per line: hanzi = pinyin with tones)\n' +
+  'END:\n\n' +
+  'This format helps learners see pronunciation alongside characters.'
+
+export function getFreestyleChatSystemPrompt(lang, options = {}) {
+  if (lang === 'zh') {
+    return options.showPinyin ? FREESTYLE_CHAT_SYSTEM_ZH_WITH_PINYIN : FREESTYLE_CHAT_SYSTEM_ZH
+  }
+  return FREESTYLE_CHAT_SYSTEM_EN
 }
 
 export function buildReplyHintChatSystemZh({
@@ -43,7 +61,18 @@ export function buildReplyHintChatSystemZh({
   freestyleToneFormality,
   freestyleToneDirectness,
   freestyleMicroGoals,
+  showPinyin = false,
 }) {
+  const pinyinInstruction = showPinyin
+    ? '\n\nIMPORTANT: Format your reply as follows:\n' +
+      'PINYIN:\n' +
+      '你好 = nǐ hǎo\n' +
+      '我想 = wǒ xiǎng\n' +
+      '(one word/phrase per line: hanzi = pinyin with tones)\n' +
+      'END:\n\n' +
+      'This format helps learners see pronunciation alongside characters.'
+    : ''
+  
   return (
     'You are a speaking coach for Chinese conversation practice. The assistant just wrote a message in Simplified Chinese, and you suggest what the USER could reply next.\n\n' +
     'Rules:\n' +
@@ -59,7 +88,8 @@ export function buildReplyHintChatSystemZh({
     '- If hint_mode=no_profanity: keep it clean regardless of other settings.\n' +
     `- Hint mode: ${hintModeValue}. ${freestyleModeInstruction}\n` +
     `- Ephemeral freestyle context: role_hint=${freestyleRoleHint}; tone_formality=${freestyleToneFormality}/100; tone_directness=${freestyleToneDirectness}/100; micro_goals=${freestyleMicroGoals.join(', ') || 'none'}\n` +
-    '- Keep it concise (usually 1-2 sentences; optionally 1-2 short variants on separate lines).'
+    '- Keep it concise (usually 1-2 sentences; optionally 1-2 short variants on separate lines).' +
+    pinyinInstruction
   )
 }
 

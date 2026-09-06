@@ -30,6 +30,11 @@ import {
   buildAgentJsonHeaders,
   withLearningLanguageBody,
 } from '@/lib/agent-request';
+import {
+  ChineseRubyText,
+  parseStructuredChineseResponse,
+  type ChineseSegment,
+} from '@/components/ChineseRubyText';
 
 // Цель дебата (статический текст)
 const DEBATE_GOAL_RU = `Дебат успешно завершен, когда:
@@ -696,6 +701,7 @@ export function AgentTab() {
                     ? freestyleSettingsPayload
                     : undefined,
             freestyle_context: agentMode === 'chat' ? freestyleContextPayload : undefined,
+            chinese_settings: learningLanguage === 'zh' ? chineseSettingsPayload : undefined,
           }, learningLanguage)),
         });
 
@@ -2091,6 +2097,7 @@ export function AgentTab() {
           roleplay_settings: freestyleSettingsPayload,
           freestyle_context: freestyleContextPayload,
           hint_mode: freestyleHintMode,
+          chinese_settings: learningLanguage === 'zh' ? chineseSettingsPayload : undefined,
         };
       } else {
         return;
@@ -2130,6 +2137,7 @@ export function AgentTab() {
     roleplaySettingsPayload,
     debateSettingsPayload,
     learningLanguage,
+    chineseSettingsPayload,
   ]);
 
   const applyFreestylePreset = useCallback(async (preset: 'neutral' | 'light_slang' | 'heavy_slang' | 'adult_user' | 'adult_dual') => {
@@ -2645,26 +2653,36 @@ export function AgentTab() {
             <p style={{ fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.6, margin: '1rem 0' }}>Пока пусто</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {conversationMessages.map((m, i) => (
-                <div
-                  key={i}
-                  style={{
-                    alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                    maxWidth: '88%',
-                    padding: '0.75rem 1rem',
-                    borderRadius: 14,
-                    background: m.role === 'user' ? 'var(--sidebar-active)' : 'var(--sidebar-bg)',
-                    border: '1px solid var(--sidebar-border)',
-                    fontSize: '0.875rem',
-                    lineHeight: 1.45,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    color: 'var(--sidebar-text)',
-                  }}
-                >
-                  {m.content}
-                </div>
-              ))}
+              {conversationMessages.map((m, i) => {
+                // Для китайского режима с пиньинь — парсим структурированный ответ
+                const parsed = learningLanguage === 'zh' && chineseShowPinyin && m.role === 'assistant'
+                  ? parseStructuredChineseResponse(m.content)
+                  : null;
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                      maxWidth: '88%',
+                      padding: '0.75rem 1rem',
+                      borderRadius: 14,
+                      background: m.role === 'user' ? 'var(--sidebar-active)' : 'var(--sidebar-bg)',
+                      border: '1px solid var(--sidebar-border)',
+                      fontSize: '0.875rem',
+                      lineHeight: 1.45,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      color: 'var(--sidebar-text)',
+                    }}
+                  >
+                    {parsed && parsed.segments.length > 0 ? (
+                      <ChineseRubyText segments={parsed.segments} size="md" />
+                    ) : (
+                      m.content
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -3183,6 +3201,35 @@ export function AgentTab() {
                           </p>
                         </div>
 
+                        {/* --- Пиньинь (между HSK и темпом) --- */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'var(--sidebar-bg)',
+                            border: '1px solid var(--sidebar-border)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Пиньинь (транскрипция)
+                          </span>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={chineseShowPinyin}
+                              onChange={(e) => setChineseShowPinyin(e.target.checked)}
+                              style={{ accentColor: 'rgb(99, 102, 241)' }}
+                            />
+                            <span>Показывать пиньинь</span>
+                          </label>
+                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4, paddingLeft: '1.5rem' }}>
+                            В ответах ИИ и подсказках над каждым иероглифом будет транскрипция с тонами
+                          </p>
+                        </div>
+
                         {/* --- Скорость речи --- */}
                         <div
                           style={{
@@ -3213,47 +3260,67 @@ export function AgentTab() {
                           </label>
                         </div>
 
-                        {/* --- Помощь в обучении --- */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.5rem',
-                            padding: '0.625rem 0.75rem',
-                            borderRadius: 10,
-                            background: 'var(--sidebar-bg)',
-                            border: '1px solid var(--sidebar-border)',
-                          }}
-                        >
-                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                            Помощь в обучении
-                          </span>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
-                            <input
-                              type="checkbox"
-                              checked={chineseShowPinyin}
-                              onChange={(e) => setChineseShowPinyin(e.target.checked)}
-                              style={{ accentColor: 'rgb(99, 102, 241)' }}
-                            />
-                            <span>Показывать пиньинь в ответах</span>
-                          </label>
-                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4, paddingLeft: '1.5rem' }}>
-                            ИИ будет добавлять транскрипцию к иероглифам
-                          </p>
-                          <div style={{ height: 1, background: 'var(--sidebar-border)', opacity: 0.6 }} />
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
-                            <input
-                              type="checkbox"
-                              checked={chineseToneFocus}
-                              onChange={(e) => setChineseToneFocus(e.target.checked)}
-                              style={{ accentColor: 'rgb(99, 102, 241)' }}
-                            />
-                            <span>Фокус на тонах</span>
-                          </label>
-                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4, paddingLeft: '1.5rem' }}>
-                            ИИ будет обращать внимание на правильность тонов
-                          </p>
-                        </div>
+                        {/* --- Подсказка ответа (появляется когда диалог начался) --- */}
+                        {messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.5rem',
+                              padding: '0.625rem 0.75rem',
+                              borderRadius: 10,
+                              background: 'rgba(251, 191, 36, 0.08)',
+                              border: '1px solid rgba(251, 191, 36, 0.25)',
+                            }}
+                          >
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.7, color: 'rgb(251, 191, 36)' }}>
+                              Подсказка
+                            </span>
+                            <button
+                              type="button"
+                              onClick={requestReplyHint}
+                              disabled={replyHintLoading}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.5rem',
+                                padding: '0.5rem 0.75rem',
+                                borderRadius: 8,
+                                border: '1px solid rgba(251, 191, 36, 0.35)',
+                                background: replyHintLoading ? 'rgba(251, 191, 36, 0.1)' : 'rgba(251, 191, 36, 0.15)',
+                                color: 'rgb(251, 191, 36)',
+                                fontSize: '0.8125rem',
+                                fontWeight: 600,
+                                cursor: replyHintLoading ? 'default' : 'pointer',
+                                opacity: replyHintLoading ? 0.7 : 1,
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {replyHintLoading ? (
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+                                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                                    <path d="M12 2a10 10 0 0 1 10 10" />
+                                  </svg>
+                                  Загрузка…
+                                </span>
+                              ) : (
+                                <>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                  </svg>
+                                  Что ответить?
+                                </>
+                              )}
+                            </button>
+                            <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.6, lineHeight: 1.4, color: 'var(--sidebar-text)' }}>
+                              ИИ предложит вариант ответа на китайском{chineseShowPinyin ? ' с пиньинь' : ''}
+                            </p>
+                          </div>
+                        )}
 
                         {/* --- Коррекция ошибок --- */}
                         <div
@@ -3286,6 +3353,35 @@ export function AgentTab() {
                             {chineseCorrectionMode === 'gentle'
                               ? 'ИИ будет корректно продолжать диалог, мягко исправляя серьёзные ошибки'
                               : 'ИИ будет указывать на все ошибки и предлагать правильные варианты'}
+                          </p>
+                        </div>
+
+                        {/* --- Фокус на тонах --- */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'var(--sidebar-bg)',
+                            border: '1px solid var(--sidebar-border)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Дополнительно
+                          </span>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={chineseToneFocus}
+                              onChange={(e) => setChineseToneFocus(e.target.checked)}
+                              style={{ accentColor: 'rgb(99, 102, 241)' }}
+                            />
+                            <span>Фокус на тонах</span>
+                          </label>
+                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4, paddingLeft: '1.5rem' }}>
+                            ИИ будет обращать внимание на правильность тонов
                           </p>
                         </div>
                       </div>
@@ -4052,43 +4148,54 @@ export function AgentTab() {
                   )}
                 </>
               )}
-              {agentMode === 'chat' && (replyHintLoading || replyHintText !== null) && (
-                <div
-                  style={{
-                    marginTop: '0.6rem',
-                    maxWidth: 520,
-                    padding: '0.7rem 0.85rem',
-                    borderRadius: 12,
-                    border: '1px solid rgba(251, 191, 36, 0.35)',
-                    background: 'rgba(251, 191, 36, 0.08)',
-                    alignSelf: 'flex-end',
-                  }}
-                >
-                  {replyHintLoading ? (
-                    <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.85 }}>
-                      ИИ подбирает подсказку под выбранный стиль…
-                    </p>
-                  ) : replyHintText ? (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
-                      <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
-                        {replyHintText}
+              {agentMode === 'chat' && (replyHintLoading || replyHintText !== null) && (() => {
+                const parsedHint = learningLanguage === 'zh' && chineseShowPinyin && replyHintText
+                  ? parseStructuredChineseResponse(replyHintText)
+                  : null;
+                return (
+                  <div
+                    style={{
+                      marginTop: '0.6rem',
+                      maxWidth: 520,
+                      padding: '0.7rem 0.85rem',
+                      borderRadius: 12,
+                      border: '1px solid rgba(251, 191, 36, 0.35)',
+                      background: 'rgba(251, 191, 36, 0.08)',
+                      alignSelf: 'flex-end',
+                    }}
+                  >
+                    {replyHintLoading ? (
+                      <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.85 }}>
+                        {learningLanguage === 'zh' ? 'ИИ подбирает подсказку…' : 'ИИ подбирает подсказку под выбранный стиль…'}
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => setReplyHintText(null)}
-                        style={{ border: 'none', background: 'transparent', color: 'var(--sidebar-text)', opacity: 0.65, cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}
-                        aria-label="Скрыть подсказку"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ) : (
-                    <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
-                      Не удалось загрузить. Попробуйте еще раз.
-                    </p>
-                  )}
-                </div>
-              )}
+                    ) : replyHintText ? (
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
+                        <div style={{ flex: 1 }}>
+                          {parsedHint && parsedHint.segments.length > 0 ? (
+                            <ChineseRubyText segments={parsedHint.segments} size="md" />
+                          ) : (
+                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                              {replyHintText}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setReplyHintText(null)}
+                          style={{ border: 'none', background: 'transparent', color: 'var(--sidebar-text)', opacity: 0.65, cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}
+                          aria-label="Скрыть подсказку"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
+                        Не удалось загрузить. Попробуйте еще раз.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </>
         )}

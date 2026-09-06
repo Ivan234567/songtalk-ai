@@ -1235,10 +1235,13 @@ app.post('/api/agent/chat', async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
-  const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context } = req.body || {}
+  const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context, chinese_settings } = req.body || {}
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'Expected { messages: [...] }' })
   }
+  // Китайские настройки обучения
+  const chineseSettings = chinese_settings && typeof chinese_settings === 'object' ? chinese_settings : null
+  const chineseShowPinyin = Boolean(chineseSettings?.show_pinyin)
   const maxTokens = typeof max_tokens === 'number' ? max_tokens : 1500
   const steps = Array.isArray(scenario_steps) && scenario_steps.length > 0
     ? scenario_steps.filter((s) => s && typeof s.id === 'string')
@@ -1304,7 +1307,7 @@ app.post('/api/agent/chat', async (req, res) => {
     : [
       {
         role: 'system',
-        content: getFreestyleChatSystemPrompt(req.learningLanguage || 'en'),
+        content: getFreestyleChatSystemPrompt(req.learningLanguage || 'en', { showPinyin: chineseShowPinyin }),
       },
       ...messages,
     ]
@@ -1862,6 +1865,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     roleplay_settings,
     freestyle_context,
     hint_mode,
+    chinese_settings,
   } = req.body || {}
   const agentMessage = typeof last_assistant_message === 'string' ? last_assistant_message.trim() : ''
   if (!agentMessage) {
@@ -1869,6 +1873,9 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   }
   const hintMode = mode === 'debate' ? 'debate' : mode === 'chat' ? 'chat' : 'roleplay'
   const settings = roleplay_settings && typeof roleplay_settings === 'object' ? roleplay_settings : {}
+  // Китайские настройки обучения
+  const chineseSettings = chinese_settings && typeof chinese_settings === 'object' ? chinese_settings : {}
+  const chineseShowPinyin = Boolean(chineseSettings.show_pinyin)
   const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
   const allowProfanity = Boolean(settings.allow_profanity)
   const aiMayUseProfanity = allowProfanity && Boolean(settings.ai_may_use_profanity)
@@ -2036,6 +2043,7 @@ Rules:
             freestyleToneFormality,
             freestyleToneDirectness,
             freestyleMicroGoals,
+            showPinyin: chineseShowPinyin,
           })
           : chatSystemContent)
         : roleplaySystemContent
