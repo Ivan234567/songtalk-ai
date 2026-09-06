@@ -256,7 +256,7 @@ export const DictionaryTab: React.FC = () => {
   }, [learningLanguage, isLanguageReady]);
 
   useEffect(() => {
-    if (isChinese && viewMode === 'phrasal-verbs') {
+    if (isChinese && (viewMode === 'phrasal-verbs' || viewMode === 'idioms')) {
       setViewMode('words');
     }
     if (!isChinese && viewMode === 'characters') {
@@ -584,7 +584,13 @@ export const DictionaryTab: React.FC = () => {
   }, [accessToken, debouncedSearch, difficulty, categoryId, sortBy, sortOrder, learningLanguage, isLanguageReady]);
 
   useEffect(() => {
-    if (!accessToken || !isLanguageReady) return;
+    if (!accessToken || !isLanguageReady || isChinese) {
+      if (isChinese) {
+        setIdioms([]);
+        setIdiomsLoading(false);
+      }
+      return;
+    }
 
     async function fetchIdioms() {
       setIdiomsLoading(true);
@@ -630,7 +636,7 @@ export const DictionaryTab: React.FC = () => {
 
     fetchIdioms();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, idiomCategoryId, learningLanguage, isLanguageReady]);
+  }, [accessToken, idiomCategoryId, learningLanguage, isLanguageReady, isChinese]);
 
   useEffect(() => {
     if (!accessToken || !isLanguageReady || isChinese) {
@@ -1607,6 +1613,7 @@ export const DictionaryTab: React.FC = () => {
               汉字
             </button>
           )}
+          {!isChinese && (
           <button
             onClick={() => setViewMode('idioms')}
             style={{
@@ -1621,8 +1628,9 @@ export const DictionaryTab: React.FC = () => {
               transition: 'all 0.2s',
             }}
           >
-            {isChinese ? '成语' : 'Идиомы'}
+            Идиомы
           </button>
+          )}
           {!isChinese && (
           <button
             onClick={() => setViewMode('phrasal-verbs')}
@@ -5092,7 +5100,7 @@ export const DictionaryTab: React.FC = () => {
               >
                 <div>
                   {isChinese
-                    ? 'Нет категорий для китайского словаря. Создайте свою, чтобы группировать слова и 成语.'
+                    ? 'Нет категорий для китайского словаря. Создайте свою, чтобы группировать слова.'
                     : 'Нет категорий. Создайте категорию, чтобы назначить её словам.'}
                 </div>
                 <button
