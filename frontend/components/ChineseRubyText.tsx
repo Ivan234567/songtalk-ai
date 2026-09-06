@@ -337,12 +337,26 @@ type ChineseRubyTextProps = {
   segments: ChineseSegment[];
   size?: 'md' | 'lg';
   onTextSelect?: () => void;
+  onWordClick?: (segment: ChineseSegment) => void;
+  savedWords?: ReadonlySet<string>;
+  savingWord?: string | null;
 };
 
 type SegmentUnit = {
   hanzi: string;
   pinyin: string;
+  wordHanzi: string;
+  wordPinyin: string;
+  clickable: boolean;
 };
+
+const HANZI_RE = /[\u4e00-\u9fff\u3400-\u4dbf]/;
+
+function wordKey(hanzi: string): string {
+  return Array.from(hanzi || '')
+    .filter((ch) => HANZI_RE.test(ch))
+    .join('');
+}
 
 function expandSegments(segments: ChineseSegment[]): SegmentUnit[] {
   const units: SegmentUnit[] = [];
@@ -352,6 +366,8 @@ function expandSegments(segments: ChineseSegment[]): SegmentUnit[] {
     const pinyin = (seg.pinyin || '').trim();
     if (!hanzi || looksLikeStructuredJson(hanzi)) return;
 
+    const key = wordKey(hanzi);
+    const clickable = Boolean(key);
     const chars = Array.from(hanzi);
     const syllables = normalizePinyinSyllables(pinyin);
 
@@ -360,78 +376,138 @@ function expandSegments(segments: ChineseSegment[]): SegmentUnit[] {
         units.push({
           hanzi: char,
           pinyin: syllables[index] || '',
+          wordHanzi: hanzi,
+          wordPinyin: pinyin,
+          clickable: clickable && HANZI_RE.test(char),
         });
       });
       return;
     }
 
-    units.push({ hanzi, pinyin });
+    units.push({ hanzi, pinyin, wordHanzi: hanzi, wordPinyin: pinyin, clickable });
   });
 
   return units;
 }
 
-export function ChineseRubyText({ segments, size = 'md', onTextSelect }: ChineseRubyTextProps) {
+export function ChineseRubyText({
+  segments,
+  size = 'md',
+  onTextSelect,
+  onWordClick,
+  savedWords,
+  savingWord,
+}: ChineseRubyTextProps) {
   const units = expandSegments(segments);
   const hanziSize = size === 'lg' ? '1.75rem' : '1.375rem';
   const pinyinSize = size === 'lg' ? '0.78rem' : '0.72rem';
+  const [hoveredWord, setHoveredWord] = React.useState<string | null>(null);
 
   if (units.length === 0) return null;
 
+  const interactive = Boolean(onWordClick);
+
   return (
-    <div
-      onMouseUp={onTextSelect}
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'flex-end',
-        gap: '0.45rem 0.45rem',
-        userSelect: 'text',
-        cursor: 'text',
-      }}
-    >
-      {units.map((unit, i) => (
-        <span
-          key={`${unit.hanzi}-${unit.pinyin}-${i}`}
-          style={{
-            display: 'inline-flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            minWidth: size === 'lg' ? '2.25rem' : '1.95rem',
-            borderRadius: 10,
-            border: '1px solid rgba(148, 163, 184, 0.25)',
-            background: 'rgba(15, 23, 42, 0.3)',
-            padding: size === 'lg' ? '0.25rem 0.35rem 0.35rem' : '0.2rem 0.3rem 0.3rem',
-          }}
-        >
-          <span
-            style={{
-              fontSize: pinyinSize,
-              color: getToneColor(unit.pinyin),
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              letterSpacing: '0.01em',
-              opacity: unit.pinyin ? 0.95 : 0.35,
-              userSelect: 'none',
-              lineHeight: 1.15,
-              minHeight: '0.9rem',
-              marginBottom: '0.12rem',
-            }}
-          >
-            {unit.pinyin || '·'}
-          </span>
-          <span
-            style={{
-              fontSize: hanziSize,
-              fontFamily: CHINESE_FONT,
-              lineHeight: 1.2,
-              color: 'var(--sidebar-text)',
-            }}
-          >
-            {unit.hanzi}
-          </span>
-        </span>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      <div
+        onMouseUp={onTextSelect}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+          gap: '0.45rem 0.45rem',
+          userSelect: interactive ? 'none' : 'text',
+          cursor: interactive ? 'default' : 'text',
+        }}
+      >
+        {units.map((unit, i) => {
+          const key = wordKey(unit.wordHanzi);
+          const isHovered = interactive && unit.clickable && hoveredWord === key;
+          const isSaved = Boolean(key && savedWords?.has(key));
+          const isSaving = Boolean(key && savingWord === key);
+          const canClick = interactive && unit.clickable && !isSaving;
+
+          return (
+            <span
+              key={`${unit.wordHanzi}-${unit.hanzi}-${unit.pinyin}-${i}`}
+              role={canClick ? 'button' : undefined}
+              tabIndex={canClick ? 0 : undefined}
+              title={canClick ? `Сохранить «${key}» в словарь` : undefined}
+              onMouseEnter={() => {
+                if (unit.clickable && interactive) setHoveredWord(key);
+              }}
+              onMouseLeave={() => {
+                if (hoveredWord === key) setHoveredWord(null);
+              }}
+              onClick={() => {
+                if (!canClick || !onWordClick) return;
+                onWordClick({ hanzi: unit.wordHanzi, pinyin: unit.wordPinyin });
+              }}
+              onKeyDown={(e) => {
+                if (!canClick || !onWordClick) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onWordClick({ hanzi: unit.wordHanzi, pinyin: unit.wordPinyin });
+                }
+              }}
+              style={{
+                display: 'inline-flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                minWidth: size === 'lg' ? '2.25rem' : '1.95rem',
+                borderRadius: 10,
+                border: isSaved
+                  ? '1px solid rgba(34, 197, 94, 0.55)'
+                  : isHovered
+                    ? '1px solid rgba(99, 102, 241, 0.55)'
+                    : '1px solid rgba(148, 163, 184, 0.25)',
+                background: isSaved
+                  ? 'rgba(34, 197, 94, 0.14)'
+                  : isHovered
+                    ? 'rgba(99, 102, 241, 0.16)'
+                    : 'rgba(15, 23, 42, 0.3)',
+                padding: size === 'lg' ? '0.25rem 0.35rem 0.35rem' : '0.2rem 0.3rem 0.3rem',
+                cursor: canClick ? 'pointer' : interactive ? 'default' : 'text',
+                opacity: isSaving ? 0.65 : 1,
+                transition: 'border-color 0.15s ease, background 0.15s ease, transform 0.15s ease',
+                transform: isHovered ? 'translateY(-1px)' : 'none',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: pinyinSize,
+                  color: getToneColor(unit.pinyin),
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  letterSpacing: '0.01em',
+                  opacity: unit.pinyin ? 0.95 : 0.35,
+                  userSelect: 'none',
+                  lineHeight: 1.15,
+                  minHeight: '0.9rem',
+                  marginBottom: '0.12rem',
+                }}
+              >
+                {unit.pinyin || '·'}
+              </span>
+              <span
+                style={{
+                  fontSize: hanziSize,
+                  fontFamily: CHINESE_FONT,
+                  lineHeight: 1.2,
+                  color: 'var(--sidebar-text)',
+                }}
+              >
+                {unit.hanzi}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+      {interactive && (
+        <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.5, lineHeight: 1.35 }}>
+          Нажмите на слово — сразу в словарь
+        </p>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { extractChineseCharacters } from '@/lib/vocabulary';
 import { buildMessagesForAgentChat, type RoleplayScenario } from '@/lib/roleplay';
 import { getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
@@ -247,6 +248,10 @@ export function AgentTab() {
   const [chineseToneFocus, setChineseToneFocus] = useState(false);
   const [chineseCorrectionMode, setChineseCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
   const [chineseHintMode, setChineseHintMode] = useState<ChineseHintMode>('basic');
+  const [savedDialogueWords, setSavedDialogueWords] = useState<Set<string>>(() => new Set());
+  const [savingDialogueWord, setSavingDialogueWord] = useState<string | null>(null);
+  const [vocabToast, setVocabToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const vocabToastTimerRef = useRef<number>(0);
   /** Состояния для режима дебатов */
   const [debateTopic, setDebateTopic] = useState<string | null>(null);
   const [debateTopicSource, setDebateTopicSource] = useState<'catalog' | 'custom'>('catalog');
@@ -370,6 +375,67 @@ export function AgentTab() {
     },
     [redirectToBalance]
   );
+
+  const showVocabToast = useCallback((type: 'ok' | 'err', text: string) => {
+    setVocabToast({ type, text });
+    window.clearTimeout(vocabToastTimerRef.current);
+    vocabToastTimerRef.current = window.setTimeout(() => setVocabToast(null), 2600);
+  }, []);
+
+  const saveChineseWordFromDialogue = useCallback(
+    async (segment: ChineseSegment) => {
+      const hanzi = extractChineseCharacters(segment.hanzi);
+      if (!hanzi) return;
+      if (savingDialogueWord === hanzi) return;
+      if (savedDialogueWords.has(hanzi)) {
+        showVocabToast('ok', `«${hanzi}» уже в словаре`);
+        return;
+      }
+
+      setSavingDialogueWord(hanzi);
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const supabaseToken = sessionData.session?.access_token;
+        if (!supabaseToken) {
+          throw new Error('Войдите в аккаунт, чтобы сохранять слова');
+        }
+
+        const isSingle = Array.from(hanzi).length === 1;
+        const endpoint = isSingle
+          ? `${getApiUrl()}/api/vocabulary/characters/add`
+          : `${getApiUrl()}/api/vocabulary/add`;
+        const body = isSingle
+          ? { character: hanzi, pinyin: segment.pinyin || undefined }
+          : { word: hanzi };
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${supabaseToken}`,
+          },
+          body: JSON.stringify(body),
+        });
+        const errorData = await response.json().catch(() => ({}));
+        if (handleInsufficientBalance(response.status, errorData?.error)) return;
+        if (!response.ok) {
+          throw new Error(errorData.error || errorData.details || `Ошибка ${response.status}`);
+        }
+
+        setSavedDialogueWords((prev) => {
+          const next = new Set(prev);
+          next.add(hanzi);
+          return next;
+        });
+        showVocabToast('ok', `«${hanzi}» добавлено в словарь`);
+      } catch (e) {
+        showVocabToast('err', e instanceof Error ? e.message : 'Не удалось сохранить слово');
+      } finally {
+        setSavingDialogueWord(null);
+      }
+    },
+    [handleInsufficientBalance, savedDialogueWords, savingDialogueWord, showVocabToast]
+  );
   const debateSettingsPayload = useMemo(
     () => ({
       slang_mode: debateSettings.slangMode ?? 'off',
@@ -458,6 +524,10 @@ export function AgentTab() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    return () => window.clearTimeout(vocabToastTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!selectedScenario) setRoleplayCompletedStepIds([]);
@@ -2546,7 +2616,31 @@ export function AgentTab() {
           : 'radial-gradient(120% 120% at 35% 25%, rgba(203, 213, 225, 0.5), rgba(148, 163, 184, 0.35) 50%, rgba(100, 116, 139, 0.4))';
 
   return (
-    <div style={{ display: 'flex', width: '100%', flex: 1, minHeight: 0, gap: 0 }}>
+    <div style={{ display: 'flex', width: '100%', flex: 1, minHeight: 0, gap: 0, position: 'relative' }}>
+      {vocabToast && (
+        <div
+          role="status"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: 18,
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            maxWidth: 'min(360px, calc(100% - 2rem))',
+            padding: '0.55rem 0.9rem',
+            borderRadius: 999,
+            border: vocabToast.type === 'ok' ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(248, 113, 113, 0.4)',
+            background: vocabToast.type === 'ok' ? 'rgba(20, 83, 45, 0.92)' : 'rgba(127, 29, 29, 0.92)',
+            color: '#fff',
+            fontSize: '0.8125rem',
+            fontWeight: 600,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+            pointerEvents: 'none',
+          }}
+        >
+          {vocabToast.text}
+        </div>
+      )}
       {/* Боковая панель истории */}
       <aside
         style={{
@@ -2740,7 +2834,13 @@ export function AgentTab() {
                     {/* Пиньинь-разметка под текстом */}
                     {parsed && parsed.segments.length > 0 && (
                       <div style={{ marginTop: '0.6rem', paddingTop: '0.6rem', borderTop: '1px solid var(--sidebar-border)' }}>
-                        <ChineseRubyText segments={parsed.segments} size="md" />
+                        <ChineseRubyText
+                          segments={parsed.segments}
+                          size="md"
+                          onWordClick={saveChineseWordFromDialogue}
+                          savedWords={savedDialogueWords}
+                          savingWord={savingDialogueWord}
+                        />
                       </div>
                     )}
                   </div>
@@ -3497,7 +3597,13 @@ export function AgentTab() {
                                   {/* Пиньинь-разметка */}
                                   {parsedHint && parsedHint.segments.length > 0 && (
                                     <div style={{ marginTop: '0.625rem', paddingTop: '0.625rem', borderTop: '1px solid rgba(251, 191, 36, 0.25)' }}>
-                                      <ChineseRubyText segments={parsedHint.segments} size="md" />
+                                      <ChineseRubyText
+                                        segments={parsedHint.segments}
+                                        size="md"
+                                        onWordClick={saveChineseWordFromDialogue}
+                                        savedWords={savedDialogueWords}
+                                        savingWord={savingDialogueWord}
+                                      />
                                     </div>
                                   )}
                                   {/* Кнопка закрыть */}
