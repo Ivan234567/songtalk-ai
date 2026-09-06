@@ -631,18 +631,52 @@ textarea {
 .soft-heading { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.01em; }
 .soft-sub { font-size: var(--fs-sm); color: var(--text-muted); }
 
-/* Словарь: адаптивная сетка (одна колонка на мобильных) */
+/* Словарь: заполняет высоту дашборда, колонки скроллятся отдельно */
+.dictionary-tab-root {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.dictionary-tab-header,
+.dictionary-tab-toolbar {
+  flex-shrink: 0;
+}
 .dictionary-tab-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr);
   gap: 1.25rem;
-  min-height: 320px;
+  min-height: 0;
+  flex: 1;
   position: relative;
   z-index: 1;
+  align-items: stretch;
+}
+.dictionary-list-panel {
+  min-height: 0;
+}
+.dictionary-detail-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+@media (min-width: 769px) {
+  .dictionary-tab-grid > * {
+    min-height: 0;
+    max-height: 100%;
+  }
 }
 @media (max-width: 768px) {
+  .dictionary-tab-root {
+    overflow: auto;
+  }
   .dictionary-tab-grid {
     grid-template-columns: 1fr;
+    flex: none;
+  }
+  .dictionary-detail-scroll {
+    max-height: min(70vh, 640px);
   }
   .dictionary-tab-header {
     flex-direction: column;
@@ -710,6 +744,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  padding-bottom: 0.25rem;
 }
 .zh-detail-hero {
   display: flex;
@@ -774,11 +809,17 @@ textarea {
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 1.25rem;
   grid-column: 1 / -1;
-  min-height: 360px;
+  min-height: 0;
+  height: 100%;
 }
 @media (max-width: 768px) {
   .zh-chars-layout {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 360px;
+  }
+  .zh-chars-detail-panel {
+    max-height: min(70vh, 640px);
   }
 }
 .zh-chars-list-panel,
@@ -792,10 +833,14 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 .zh-chars-detail-panel {
   border-color: rgba(17, 98, 47, 0.2);
   padding: 1rem 1.15rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 .zh-chars-list-header {
   display: flex;
@@ -837,7 +882,8 @@ textarea {
   gap: 0.55rem;
   overflow: auto;
   padding: 0.15rem;
-  max-height: min(62vh, 640px);
+  flex: 1;
+  min-height: 0;
 }
 .zh-char-card {
   position: relative;

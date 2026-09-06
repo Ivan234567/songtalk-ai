@@ -1299,6 +1299,7 @@ export const DictionaryTab: React.FC = () => {
 
   return (
     <div
+      className="dictionary-tab-root"
       style={{
         borderRadius: '1.75rem',
         padding: '1.75rem',
@@ -2273,6 +2274,7 @@ export const DictionaryTab: React.FC = () => {
         ) : (
         <>
         <div
+          className="dictionary-list-panel"
           style={{
             borderRadius: '1.25rem',
             background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
@@ -2282,7 +2284,8 @@ export const DictionaryTab: React.FC = () => {
             padding: '0.75rem',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'visible',
+            overflow: 'hidden',
+            minHeight: 0,
           }}
         >
           <div
@@ -2543,6 +2546,7 @@ export const DictionaryTab: React.FC = () => {
           <div
             style={{
               flex: 1,
+              minHeight: 0,
               overflowY: 'auto',
               borderRadius: '0.9rem',
             }}
@@ -3249,6 +3253,7 @@ export const DictionaryTab: React.FC = () => {
 
         {viewMode === 'words' ? (
           <div
+            className="dictionary-detail-scroll"
             style={{
               borderRadius: '1.25rem',
               background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
@@ -3783,6 +3788,7 @@ export const DictionaryTab: React.FC = () => {
           </div>
         ) : viewMode === 'idioms' ? (
           <div
+            className="dictionary-detail-scroll"
             style={{
               borderRadius: '1.25rem',
               background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
@@ -4331,6 +4337,7 @@ export const DictionaryTab: React.FC = () => {
           </div>
         ) : viewMode === 'phrasal-verbs' ? (
           <div
+            className="dictionary-detail-scroll"
             style={{
               borderRadius: '1.25rem',
               background: 'linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%)',
