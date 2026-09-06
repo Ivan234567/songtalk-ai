@@ -1133,6 +1133,7 @@ export function AgentTab() {
   // Обработчик смены режима - сброс дебата при переходе в другой режим
   const handleModeChange = useCallback(
     (mode: 'chat' | 'roleplay' | 'debate') => {
+      if (mode === 'debate' && learningLanguage === 'zh') return;
       setAgentMode(mode);
       if (mode === 'chat') {
         setFreestyleSettingsOpen(false);
@@ -1195,8 +1196,14 @@ export function AgentTab() {
         // Модал открывается через dropdown, не автоматически
       }
     },
-    [debateStarted]
+    [debateStarted, learningLanguage]
   );
+
+  useEffect(() => {
+    if (learningLanguage === 'zh' && agentMode === 'debate') {
+      handleModeChange('chat');
+    }
+  }, [learningLanguage, agentMode, handleModeChange]);
 
   useEffect(() => {
     if (showSystemCatalog) return;
@@ -4812,7 +4819,7 @@ export function AgentTab() {
           onInsufficientBalance={redirectToBalance}
         />
       )}
-      {debateSetupOpen && agentMode === 'debate' && (
+      {debateSetupOpen && agentMode === 'debate' && learningLanguage !== 'zh' && (
         <DebateSetupUI
           key={learningLanguage}
           learningLanguage={learningLanguage}

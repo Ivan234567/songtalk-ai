@@ -458,6 +458,8 @@ export function RoleplayModeUI({
   onDebateViewChange,
 }: RoleplayModeUIProps) {
   const showSystemCatalog = showSystemCatalogProp ?? hasEnglishSystemCatalog(learningLanguage);
+  const showDebate = learningLanguage !== 'zh';
+  const roleplayTabLabel = learningLanguage === 'zh' ? '情景对话' : 'Roleplays';
   const [hintVisible, setHintVisible] = useState(false);
   const [roleplayDropdownOpen, setRoleplayDropdownOpen] = useState(false);
   const [debateDropdownOpen, setDebateDropdownOpen] = useState(false);
@@ -508,7 +510,7 @@ export function RoleplayModeUI({
                 title={mode === 'roleplay' && selectedScenario ? 'Сменить сценарий' : 'Ролевой режим — каталог, создать или мои сценарии'}
               >
                 <span style={{ opacity: mode === 'roleplay' ? 1 : 0.75, display: 'flex', flexShrink: 0 }}>{MODE_ICONS.roleplay}</span>
-                <span style={{ whiteSpace: 'nowrap' }}>Roleplays</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{roleplayTabLabel}</span>
                 {mode === 'roleplay' && selectedScenario ? (
                   <>
                     <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>·</span>
@@ -526,7 +528,7 @@ export function RoleplayModeUI({
                   <div role="presentation" className="roleplay-dropdown-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setRoleplayDropdownOpen(false)} />
                   <div
                     role="menu"
-                    aria-label="Меню Roleplays"
+                    aria-label={`Меню ${roleplayTabLabel}`}
                     className="roleplay-dropdown-panel"
                     style={{
                       position: 'absolute',
@@ -586,6 +588,7 @@ export function RoleplayModeUI({
                 </>
               )}
             </div>
+            {showDebate && (
             <div style={{ position: 'relative', display: 'inline-block' }}>
               <button
                 type="button"
@@ -669,6 +672,7 @@ export function RoleplayModeUI({
                 </>
               )}
             </div>
+            )}
           </div>
         </div>
         {showSystemCatalog && scenarioModalOpen && onScenarioModalOpenChange && scenarioView === 'catalog' && (
