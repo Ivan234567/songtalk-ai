@@ -1,3 +1,5 @@
+import { hasEnglishSystemCatalog, type LearningLanguage } from '@/lib/learning-language';
+
 export type DebateTopic = {
   id: string;
   topic: string;
@@ -194,6 +196,11 @@ export function getTopicsByCategory(category: string): DebateTopic[] {
 
 export function getTopicById(id: string): DebateTopic | undefined {
   return DEBATE_TOPICS.find((t) => t.id === id);
+}
+
+/** Системный каталог дебатов — только для English */
+export function getSystemDebateTopics(lang: LearningLanguage): DebateTopic[] {
+  return hasEnglishSystemCatalog(lang) ? DEBATE_TOPICS : [];
 }
 
 export const DEBATE_CATEGORIES = Array.from(new Set(DEBATE_TOPICS.map((t) => t.category))).sort();

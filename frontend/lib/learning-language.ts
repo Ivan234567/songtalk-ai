@@ -13,6 +13,11 @@ export function isLearningLanguage(value: string | null | undefined): value is L
   return value === 'en' || value === 'zh';
 }
 
+/** Системный каталог (англ. сценарии / дебаты) — только в режиме English */
+export function hasEnglishSystemCatalog(lang: LearningLanguage): boolean {
+  return lang === 'en';
+}
+
 export async function fetchUserLearningLanguage(userId: string): Promise<LearningLanguage> {
   const { data, error } = await supabase
     .from('user_profiles')

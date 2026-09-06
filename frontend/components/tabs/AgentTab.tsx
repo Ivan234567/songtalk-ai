@@ -24,6 +24,7 @@ import {
 import { DEBATE_TOPICS, getTopicById } from '@/lib/debate-topics';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import { hasEnglishSystemCatalog } from '@/lib/learning-language';
 import {
   buildAgentAuthHeaders,
   buildAgentJsonHeaders,
@@ -115,6 +116,8 @@ function formatSessionDate(ts: number): string {
 
 export function AgentTab() {
   const { learningLanguage } = useLearningLanguage();
+  const showSystemCatalog = hasEnglishSystemCatalog(learningLanguage);
+  const systemCatalogView = showSystemCatalog ? 'catalog' as const : 'create' as const;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -136,6 +139,23 @@ export function AgentTab() {
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
   const [scenarioView, setScenarioView] = useState<'catalog' | 'create' | 'my'>('catalog');
   const [debateView, setDebateView] = useState<'catalog' | 'create' | 'my'>('catalog');
+
+  const guardCatalogView = useCallback(
+    (view: 'catalog' | 'create' | 'my'): 'catalog' | 'create' | 'my' =>
+      view === 'catalog' && !showSystemCatalog ? 'create' : view,
+    [showSystemCatalog],
+  );
+
+  const handleScenarioViewChange = useCallback(
+    (view: 'catalog' | 'create' | 'my') => setScenarioView(guardCatalogView(view)),
+    [guardCatalogView],
+  );
+
+  const handleDebateViewChange = useCallback(
+    (view: 'catalog' | 'create' | 'my') => setDebateView(guardCatalogView(view)),
+    [guardCatalogView],
+  );
+
   /** Id сценария, только что скопированного из каталога в «Мои» — для подсветки в списке */
   const [highlightedUserScenarioId, setHighlightedUserScenarioId] = useState<string | null>(null);
   const [translatorOpen, setTranslatorOpen] = useState(false);
@@ -159,7 +179,7 @@ export function AgentTab() {
   const aiChatSizeRef = useRef<{ width: number; height: number } | null>(null);
   const aiChatPositionRef = useRef<{ x: number; y: number } | null>(null);
   const [ttsVoice, setTtsVoice] = useState<'onyx' | 'nova' | 'ballad'>('onyx');
-  /** В ролевом режиме: пользователь нажал «Отметить цель выполненной» — показываем экран «Цель достигнута». */
+  /** В ролевом режиме: пользователь нажал «Сохранить прогресс» — показываем экран «Прогресс сохранён». */
   const [goalReached, setGoalReached] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<SpeakingAssessmentResult | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
@@ -675,6 +695,7 @@ export function AgentTab() {
               if (data.type === 'chunk' && typeof data.delta === 'string') {
                 fullReply += data.delta;
               } else if (data.type === 'steps' && Array.isArray(data.completedStepIds)) {
+                console.log('[Step Checker] Received completed steps from server:', data.completedStepIds);
                 lastCompletedStepIds = data.completedStepIds;
                 if (agentMode === 'roleplay') {
                   setRoleplayCompletedStepIds(data.completedStepIds);
@@ -1177,6 +1198,16 @@ export function AgentTab() {
     [debateStarted]
   );
 
+  useEffect(() => {
+    if (showSystemCatalog) return;
+    setScenarioModalOpen(false);
+    setScenarioView((v) => guardCatalogView(v));
+    setDebateView((v) => guardCatalogView(v));
+    if (debateSetupOpen && debateView === 'catalog') {
+      setDebateSetupOpen(false);
+    }
+  }, [showSystemCatalog, guardCatalogView, debateSetupOpen, debateView]);
+
   const runAiChat = useCallback(async () => {
     const text = aiChatInput.trim();
     if (!text || !token || aiChatLoading) return;
@@ -1529,8 +1560,9 @@ export function AgentTab() {
     setRoleplayFeedbackError(null);
     setMessages([]);
     setCurrentSessionId(null);
+    setScenarioView(systemCatalogView);
     setScenarioModalOpen(true);
-  }, []);
+  }, [systemCatalogView]);
 
   /** Сброс (выход) из диалога досрочно — во всех режимах */
   const handleExitDialogue = useCallback(() => {
@@ -2726,6 +2758,9 @@ export function AgentTab() {
                   <span>ИИ</span>
                 </button>
                 <RoleplayModeUI
+                  key={learningLanguage}
+                  learningLanguage={learningLanguage}
+                  showSystemCatalog={showSystemCatalog}
                   placement="bar"
                   mode={agentMode}
                   onModeChange={handleModeChange}
@@ -2735,7 +2770,7 @@ export function AgentTab() {
                   scenarioModalOpen={scenarioModalOpen}
                   onScenarioModalOpenChange={setScenarioModalOpen}
                   scenarioView={scenarioView}
-                  onScenarioViewChange={setScenarioView}
+                  onScenarioViewChange={handleScenarioViewChange}
                   onCopyToMineSuccess={(id) => {
                     setScenarioView('my');
                     setHighlightedUserScenarioId(id);
@@ -2743,7 +2778,7 @@ export function AgentTab() {
                   debateSetupOpen={debateSetupOpen}
                   onDebateSetupOpenChange={setDebateSetupOpen}
                   debateView={debateView}
-                  onDebateViewChange={setDebateView}
+                  onDebateViewChange={handleDebateViewChange}
                 />
                 {scenarioModalOpen && (scenarioView === 'create' || scenarioView === 'my') && (
                   <PersonalScenariosUI
@@ -3107,7 +3142,33 @@ export function AgentTab() {
                             const steps = selectedScenario.steps as { id: string }[] | undefined;
                             const allStepsDone = !steps || steps.length === 0 || steps.every((s) => roleplayStepsCompletedIds.includes(s.id));
                             const canMarkGoal = !selectedSessionId && allStepsDone;
-                            if (!canMarkGoal) return null;
+                            // Debug logging
+                            console.log('[Progress Debug]', {
+                              steps: steps?.map(s => s.id),
+                              completedIds: roleplayStepsCompletedIds,
+                              allStepsDone,
+                              selectedSessionId,
+                              canMarkGoal,
+                            });
+                            if (!canMarkGoal) {
+                              // Show hint why button is not available
+                              if (selectedSessionId) {
+                                return (
+                                  <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
+                                    Просмотр истории — кнопка недоступна
+                                  </div>
+                                );
+                              }
+                              if (steps && steps.length > 0 && !allStepsDone) {
+                                const remaining = steps.filter(s => !roleplayStepsCompletedIds.includes(s.id));
+                                return (
+                                  <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
+                                    Осталось выполнить: {remaining.length} из {steps.length} шаг(ов)
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }
                             return (
                               <button
                                 type="button"
@@ -3126,8 +3187,18 @@ export function AgentTab() {
                                     supabase
                                       .from('roleplay_completions')
                                       .insert(payload)
-                                      .then(() => {})
-                                      .catch(() => {});
+                                      .then(({ error }) => {
+                                        if (error) {
+                                          console.error('[roleplay_completions] INSERT error:', error);
+                                          alert('Ошибка сохранения прогресса: ' + (error.message || 'неизвестная ошибка'));
+                                        } else {
+                                          console.log('[roleplay_completions] saved successfully:', payload);
+                                        }
+                                      })
+                                      .catch((err) => {
+                                        console.error('[roleplay_completions] unexpected error:', err);
+                                        alert('Ошибка сохранения прогресса');
+                                      });
                                   }
                                 }}
                                 style={{
@@ -3151,7 +3222,7 @@ export function AgentTab() {
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <polyline points="20 6 9 17 4 12" />
                                 </svg>
-                                Цель достигнута
+                                Сохранить прогресс
                               </button>
                             );
                           })()}
@@ -3175,8 +3246,18 @@ export function AgentTab() {
                                     scenario_title: selectedScenario.title ?? null,
                                     scenario_level: (selectedScenario as { level?: string }).level ?? null,
                                   })
-                                  .then(() => {})
-                                  .catch(() => {});
+                                  .then(({ error }) => {
+                                    if (error) {
+                                      console.error('[roleplay_completions] INSERT error (no steps):', error);
+                                      alert('Ошибка сохранения прогресса: ' + (error.message || 'неизвестная ошибка'));
+                                    } else {
+                                      console.log('[roleplay_completions] saved successfully (no steps)');
+                                    }
+                                  })
+                                  .catch((err) => {
+                                    console.error('[roleplay_completions] unexpected error:', err);
+                                    alert('Ошибка сохранения прогресса');
+                                  });
                               }
                             }}
                             style={{
@@ -3200,7 +3281,7 @@ export function AgentTab() {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="20 6 9 17 4 12" />
                             </svg>
-                            Цель достигнута
+                            Сохранить прогресс
                           </button>
                         </section>
                       )}
@@ -3571,7 +3652,7 @@ export function AgentTab() {
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
-                          Цель достигнута
+                          Сохранить прогресс
                         </button>
                           );
                         })()
@@ -3895,7 +3976,7 @@ export function AgentTab() {
               </svg>
             </div>
             <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--sidebar-text)' }}>
-              Цель достигнута
+              Прогресс сохранён!
             </h2>
             {selectedScenario.goalRu && (
               <p style={{ margin: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.8, maxWidth: 360 }}>
@@ -4238,7 +4319,7 @@ export function AgentTab() {
                   setDebateUsefulPhraseRu(null);
                   setDebateFeedbackError(null);
                   setDebateCompletedStepIds([]);
-                  setDebateView('catalog');
+                  setDebateView(systemCatalogView);
                   setDebateSetupOpen(true);
                 }}
                 style={{
@@ -4733,8 +4814,10 @@ export function AgentTab() {
       )}
       {debateSetupOpen && agentMode === 'debate' && (
         <DebateSetupUI
+          key={learningLanguage}
+          learningLanguage={learningLanguage}
           userId={userId}
-          view={debateView}
+          view={guardCatalogView(debateView)}
           onStart={handleStartDebate}
           onClose={() => {
             if (!debateStarted) {

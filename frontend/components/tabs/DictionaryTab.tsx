@@ -10,6 +10,12 @@ import {
   isCefrLevel,
   isHskLevelValue,
 } from '@/lib/vocabulary';
+import {
+  ChineseRubyInline,
+  InteractiveChineseWord,
+} from '@/components/InteractiveChineseWord';
+import { ChineseCharactersDictionary } from '@/components/tabs/ChineseCharactersDictionary';
+import { isHanziChar } from '@/lib/chinese-display';
 
 type VocabularyProgress = {
   review_count: number | null;
@@ -198,7 +204,11 @@ export const DictionaryTab: React.FC = () => {
   const [selectedPhrasalVerbPhrases, setSelectedPhrasalVerbPhrases] = useState<Set<string>>(new Set());
   const [selectedPhrasalVerb, setSelectedPhrasalVerb] = useState<UserPhrasalVerb | null>(null);
   const [phrasalVerbCategoryId, setPhrasalVerbCategoryId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'words' | 'idioms' | 'phrasal-verbs'>('words');
+  const [viewMode, setViewMode] = useState<'words' | 'idioms' | 'phrasal-verbs' | 'characters'>('words');
+  const [chineseCharactersCount, setChineseCharactersCount] = useState(0);
+  const [characterGlossMap, setCharacterGlossMap] = useState<
+    Record<string, { translation?: string | null; pinyin?: string | null }>
+  >({});
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [wordAudioUrl, setWordAudioUrl] = useState<string | null>(null);
@@ -248,7 +258,45 @@ export const DictionaryTab: React.FC = () => {
     if (isChinese && viewMode === 'phrasal-verbs') {
       setViewMode('words');
     }
+    if (!isChinese && viewMode === 'characters') {
+      setViewMode('words');
+    }
   }, [isChinese, viewMode]);
+
+  // Загрузка иероглифов для подсказок при клике в словах/成语
+  useEffect(() => {
+    if (!accessToken || !isChinese) {
+      setCharacterGlossMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${getApiUrl()}/api/vocabulary/characters/list`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (cancelled || !resp.ok || !data.ok) return;
+        const map: Record<string, { translation?: string | null; pinyin?: string | null }> = {};
+        for (const row of data.characters || []) {
+          if (!row?.character) continue;
+          map[row.character] = {
+            translation: Array.isArray(row.translations)
+              ? row.translations.map((t: { translation?: string }) => t.translation).filter(Boolean).join(', ')
+              : null,
+            pinyin: row.pinyin || null,
+          };
+        }
+        setCharacterGlossMap(map);
+        setChineseCharactersCount((data.characters || []).length);
+      } catch {
+        // ignore — подсказки опциональны
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, isChinese, viewMode]);
 
   useEffect(() => {
     async function loadToken() {
@@ -623,6 +671,28 @@ export const DictionaryTab: React.FC = () => {
     () => words.find((w) => w.id === selectedWordId) || words[0] || null,
     [words, selectedWordId],
   );
+
+  /** Значения иероглифов: сначала из таблицы 汉字, иначе одиночные слова словаря */
+  const characterGlosses = useMemo(() => {
+    const map: Record<string, { translation?: string | null; pinyin?: string | null }> = {
+      ...characterGlossMap,
+    };
+    for (const w of words) {
+      const chars = Array.from((w.word || '').trim());
+      if (chars.length === 1 && isHanziChar(chars[0]) && !map[chars[0]]?.translation) {
+        map[chars[0]] = {
+          translation: w.translations?.map((t) => t.translation).join(', ') || null,
+          pinyin: w.pinyin || map[chars[0]]?.pinyin || null,
+        };
+      }
+    }
+    return map;
+  }, [words, characterGlossMap]);
+
+  const selectedWordTranslation = useMemo(() => {
+    if (!selectedWord?.translations?.length) return null;
+    return selectedWord.translations.map((t) => t.translation).join(', ');
+  }, [selectedWord]);
 
   // Synthesize audio for selected word with caching
   useEffect(() => {
@@ -1260,8 +1330,23 @@ export const DictionaryTab: React.FC = () => {
               color: 'var(--text-primary)',
             }}
           >
-            Словарь
+            {isChinese ? 'Словарь · 词典' : 'Словарь'}
           </h2>
+          {isChinese && (
+            <p
+              style={{
+                margin: '0.35rem 0 0',
+                fontSize: '0.8rem',
+                color: 'var(--text-muted)',
+                maxWidth: 420,
+                lineHeight: 1.4,
+                textTransform: 'none',
+                letterSpacing: 'normal',
+              }}
+            >
+              Нажмите на иероглиф — пиньинь, тон и перевод. Вкладка 汉字 хранит отдельные символы.
+            </p>
+          )}
         </div>
         <div
           style={{
@@ -1280,8 +1365,17 @@ export const DictionaryTab: React.FC = () => {
             {viewMode === 'words' && (
               <>Всего слов: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{totalWords}</span></>
             )}
+            {viewMode === 'characters' && (
+              <>
+                Всего иероглифов:{' '}
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{chineseCharactersCount}</span>
+              </>
+            )}
             {viewMode === 'idioms' && (
-              <>Всего идиом: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{filteredIdioms.length}</span></>
+              <>
+                {isChinese ? 'Всего 成语' : 'Всего идиом'}:{' '}
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{filteredIdioms.length}</span>
+              </>
             )}
             {viewMode === 'phrasal-verbs' && (
               <>Всего фразовых глаголов: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{filteredPhrasalVerbs.length}</span></>
@@ -1321,23 +1415,25 @@ export const DictionaryTab: React.FC = () => {
                 {!exporting && (showExportDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />)}
               </button>
             </div>
-            <button
-              onClick={() => openCategoryModal()}
-              style={{
-                padding: '0.4rem 0.8rem',
-                borderRadius: '0.6rem',
-                border: '1px solid var(--stroke)',
-                background: 'var(--card)',
-                color: 'var(--text-primary)',
-                fontSize: '0.75rem',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              }}
-              title="Управление категориями"
-            >
-              <TagIcon /> Категории
-            </button>
+            {!isChinese && (
+              <button
+                onClick={() => openCategoryModal()}
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '0.6rem',
+                  border: '1px solid var(--stroke)',
+                  background: 'var(--card)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                }}
+                title="Управление категориями"
+              >
+                <TagIcon /> Категории
+              </button>
+            )}
             <label
               style={{
                 padding: '0.4rem 0.8rem',
@@ -1498,8 +1594,27 @@ export const DictionaryTab: React.FC = () => {
                 boxShadow: viewMode === 'words' ? '0 2px 8px var(--accent-soft)' : 'none',
               }}
           >
-            Слова
+            {isChinese ? '词语' : 'Слова'}
           </button>
+          {isChinese && (
+            <button
+              onClick={() => setViewMode('characters')}
+              style={{
+                padding: '0.4rem 0.9rem',
+                borderRadius: '0.5rem',
+                border: 'none',
+                background: viewMode === 'characters' ? 'var(--accent)' : 'transparent',
+                color: viewMode === 'characters' ? 'var(--bg)' : 'var(--text-muted)',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                fontWeight: viewMode === 'characters' ? 600 : 400,
+                transition: 'all 0.2s',
+                boxShadow: viewMode === 'characters' ? '0 2px 8px var(--accent-soft)' : 'none',
+              }}
+            >
+              汉字
+            </button>
+          )}
           <button
             onClick={() => setViewMode('idioms')}
             style={{
@@ -1540,9 +1655,11 @@ export const DictionaryTab: React.FC = () => {
           placeholder={
             viewMode === 'words'
               ? (isChinese ? 'Поиск по слову или pinyin...' : 'Поиск по слову...')
-              : viewMode === 'idioms'
-                ? (isChinese ? 'Поиск по 成语 или pinyin...' : 'Поиск по идиомам...')
-                : 'Поиск по фразовым глаголам...'
+              : viewMode === 'characters'
+                ? 'Поиск по иероглифу, pinyin или переводу...'
+                : viewMode === 'idioms'
+                  ? (isChinese ? 'Поиск по 成语 или pinyin...' : 'Поиск по идиомам...')
+                  : 'Поиск по фразовым глаголам...'
           }
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -1603,7 +1720,7 @@ export const DictionaryTab: React.FC = () => {
             {showLevelDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />}
           </button>
         </div>
-        {viewMode === 'words' && (
+        {viewMode === 'words' && !isChinese && (
           <div
             ref={categoryDropdownRef}
             style={{
@@ -1665,7 +1782,7 @@ export const DictionaryTab: React.FC = () => {
             </button>
           </div>
         )}
-        {viewMode === 'idioms' && (
+        {viewMode === 'idioms' && !isChinese && (
           <div
             ref={categoryDropdownRef}
             style={{
@@ -2145,6 +2262,16 @@ export const DictionaryTab: React.FC = () => {
       )}
 
       <div className="dictionary-tab-grid">
+        {viewMode === 'characters' ? (
+          <ChineseCharactersDictionary
+            accessToken={accessToken}
+            apiUrl={getApiUrl()}
+            search={debouncedSearch}
+            hskFilter={difficulty}
+            onCountChange={setChineseCharactersCount}
+          />
+        ) : (
+        <>
         <div
           style={{
             borderRadius: '1.25rem',
@@ -2474,7 +2601,9 @@ export const DictionaryTab: React.FC = () => {
                         </button>
                       </>
                     ) : (
-                      'Словарь пока пуст. Добавляйте слова из караоке, нажимая «Добавить в словарь».'
+                      isChinese
+                        ? 'Словарь пока пуст. Добавляйте слова из переводчика или диалога.'
+                        : 'Словарь пока пуст. Добавляйте слова из караоке, нажимая «Добавить в словарь».'
                     )}
                   </div>
                 ) : (
@@ -2486,7 +2615,7 @@ export const DictionaryTab: React.FC = () => {
                       return (
                         <button
                           key={word.id}
-                          className="dictionary-list-item"
+                          className={`dictionary-list-item${isChinese ? ' dictionary-list-item--zh' : ''}`}
                           onClick={() => setSelectedWordId(word.id)}
                           style={{
                             width: '100%',
@@ -2498,7 +2627,7 @@ export const DictionaryTab: React.FC = () => {
                             background: isSelected
                               ? 'linear-gradient(135deg, rgba(17,98,47,0.25) 0%, rgba(11,81,37,0.2) 100%)'
                               : 'linear-gradient(135deg, rgba(24,24,27,0.95) 0%, rgba(39,39,42,0.9) 100%)',
-                            padding: '0.6rem 0.75rem',
+                            padding: isChinese ? '0.7rem 0.8rem' : '0.6rem 0.75rem',
                             cursor: 'pointer',
                             display: 'flex',
                             boxShadow: isSelected 
@@ -2515,6 +2644,8 @@ export const DictionaryTab: React.FC = () => {
                               display: 'flex',
                               alignItems: 'flex-start',
                               gap: '0.5rem',
+                              minWidth: 0,
+                              flex: 1,
                             }}
                           >
                             <input
@@ -2541,41 +2672,45 @@ export const DictionaryTab: React.FC = () => {
                               style={{
                                 display: 'flex',
                                 flexDirection: 'column',
-                                gap: '0.2rem',
+                                gap: '0.15rem',
+                                minWidth: 0,
                               }}
                             >
-                              <div
-                                style={{
-                                  fontSize: '0.95rem',
-                                  fontWeight: 600,
-                                  color: '#f9fafb',
-                                }}
-                              >
-                                {word.word}
-                              </div>
-                              {isChinese && word.pinyin && (
-                                <div
-                                  style={{
-                                    fontSize: '0.78rem',
-                                    color: 'rgba(148,163,184,0.95)',
-                                  }}
-                                >
-                                  {word.pinyin}
-                                </div>
-                              )}
-                              {word.translations && word.translations.length > 0 && (
-                                <div
-                                  style={{
-                                    fontSize: '0.8rem',
-                                    color: 'rgba(156,163,175,0.95)',
-                                    whiteSpace: 'nowrap',
-                                    textOverflow: 'ellipsis',
-                                    overflow: 'hidden',
-                                    maxWidth: '260px',
-                                  }}
-                                >
-                                  {word.translations.map((t) => t.translation).join(', ')}
-                                </div>
+                              {isChinese ? (
+                                <>
+                                  <ChineseRubyInline word={word.word} pinyin={word.pinyin} size="md" />
+                                  {word.translations && word.translations.length > 0 && (
+                                    <div className="zh-list-translation">
+                                      {word.translations.map((t) => t.translation).join(', ')}
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <div
+                                    style={{
+                                      fontSize: '0.95rem',
+                                      fontWeight: 600,
+                                      color: '#f9fafb',
+                                    }}
+                                  >
+                                    {word.word}
+                                  </div>
+                                  {word.translations && word.translations.length > 0 && (
+                                    <div
+                                      style={{
+                                        fontSize: '0.8rem',
+                                        color: 'rgba(156,163,175,0.95)',
+                                        whiteSpace: 'nowrap',
+                                        textOverflow: 'ellipsis',
+                                        overflow: 'hidden',
+                                        maxWidth: '260px',
+                                      }}
+                                    >
+                                      {word.translations.map((t) => t.translation).join(', ')}
+                                    </div>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
@@ -2586,6 +2721,7 @@ export const DictionaryTab: React.FC = () => {
                               alignItems: 'flex-end',
                               gap: '0.25rem',
                               fontSize: '0.75rem',
+                              flexShrink: 0,
                             }}
                           >
                             <div
@@ -2706,7 +2842,9 @@ export const DictionaryTab: React.FC = () => {
                         </button>
                       </>
                     ) : (
-                      'Идиом пока нет. Включите определитель идиом в караоке и добавьте интересные выражения.'
+                      isChinese
+                        ? '成语 пока нет. Добавляйте выражения из переводчика или диалога.'
+                        : 'Идиом пока нет. Включите определитель идиом в караоке и добавьте интересные выражения.'
                     )}
                   </div>
                 ) : (
@@ -2773,41 +2911,43 @@ export const DictionaryTab: React.FC = () => {
                               style={{
                                 display: 'flex',
                                 flexDirection: 'column',
-                                gap: '0.2rem',
+                                gap: '0.15rem',
+                                minWidth: 0,
                               }}
                             >
-                              <div
-                                style={{
-                                  fontSize: '0.95rem',
-                                  fontWeight: 600,
-                                  color: '#f9fafb',
-                                }}
-                              >
-                                {idiom.phrase}
-                              </div>
-                              {isChinese && idiom.pinyin && (
-                                <div
-                                  style={{
-                                    fontSize: '0.78rem',
-                                    color: 'rgba(148,163,184,0.95)',
-                                  }}
-                                >
-                                  {idiom.pinyin}
-                                </div>
-                              )}
-                              {idiom.meaning && (
-                                <div
-                                  style={{
-                                    fontSize: '0.8rem',
-                                    color: 'rgba(156,163,175,0.95)',
-                                    whiteSpace: 'nowrap',
-                                    textOverflow: 'ellipsis',
-                                    overflow: 'hidden',
-                                    maxWidth: '260px',
-                                  }}
-                                >
-                                  {idiom.meaning}
-                                </div>
+                              {isChinese ? (
+                                <>
+                                  <ChineseRubyInline word={idiom.phrase} pinyin={idiom.pinyin} size="md" />
+                                  {idiom.meaning && (
+                                    <div className="zh-list-translation">{idiom.meaning}</div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <div
+                                    style={{
+                                      fontSize: '0.95rem',
+                                      fontWeight: 600,
+                                      color: '#f9fafb',
+                                    }}
+                                  >
+                                    {idiom.phrase}
+                                  </div>
+                                  {idiom.meaning && (
+                                    <div
+                                      style={{
+                                        fontSize: '0.8rem',
+                                        color: 'rgba(156,163,175,0.95)',
+                                        whiteSpace: 'nowrap',
+                                        textOverflow: 'ellipsis',
+                                        overflow: 'hidden',
+                                        maxWidth: '260px',
+                                      }}
+                                    >
+                                      {idiom.meaning}
+                                    </div>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
@@ -3122,6 +3262,244 @@ export const DictionaryTab: React.FC = () => {
             }}
           >
             {selectedWord ? (
+              isChinese ? (
+                <div className="zh-detail-panel">
+                  <div className="zh-detail-hero">
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: '0.75rem',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '0.72rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.08em',
+                          color: 'rgba(148,163,184,0.9)',
+                        }}
+                      >
+                        Разбор слова
+                      </div>
+                      <div className="zh-detail-meta">
+                        {getWordLevelBadge(selectedWord, learningLanguage) && (
+                          <span className="zh-detail-meta-chip">
+                            {getWordLevelBadge(selectedWord, learningLanguage)}
+                          </span>
+                        )}
+                        {selectedWord.part_of_speech && (
+                          <span
+                            className="zh-detail-meta-chip"
+                            style={{ background: 'rgba(51,65,85,0.95)' }}
+                          >
+                            {selectedWord.part_of_speech}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <InteractiveChineseWord
+                      key={selectedWord.id}
+                      word={selectedWord.word}
+                      pinyin={selectedWord.pinyin}
+                      translation={selectedWordTranslation}
+                      characterGlosses={characterGlosses}
+                      size="lg"
+                      showToneLegend
+                      autoSelectFirst
+                    />
+
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={synthesizeWordAudio}
+                        disabled={wordAudioLoading}
+                        style={{
+                          padding: '0.45rem 0.85rem',
+                          borderRadius: '0.65rem',
+                          border: '1px solid rgba(82,82,91,0.9)',
+                          background: wordAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
+                          color: wordAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
+                          fontSize: '0.8rem',
+                          cursor: wordAudioLoading ? 'default' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          opacity: wordAudioLoading ? 0.7 : 1,
+                          transition: 'all 0.2s',
+                        }}
+                        title={
+                          wordAudioLoading
+                            ? 'Синтез произношения...'
+                            : wordAudioUrl
+                              ? 'Воспроизвести произношение'
+                              : 'Синтезировать и воспроизвести произношение'
+                        }
+                      >
+                        {wordAudioLoading ? (
+                          <>🔊 Синтез...</>
+                        ) : wordAudioUrl ? (
+                          <>▶ Произношение</>
+                        ) : (
+                          <>🔊 Произношение</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {selectedWordTranslation && (
+                    <div className="zh-translation-block">
+                      <div className="zh-translation-label">Перевод</div>
+                      <div className="zh-translation-text">{selectedWordTranslation}</div>
+                    </div>
+                  )}
+
+                  {selectedWord.contexts && selectedWord.contexts.length > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '0.8rem',
+                          color: 'rgba(148,163,184,0.9)',
+                          marginBottom: '0.15rem',
+                        }}
+                      >
+                        Примеры из караоке:
+                      </div>
+                      <ul
+                        style={{
+                          margin: 0,
+                          paddingLeft: '1.1rem',
+                          fontSize: '0.85rem',
+                          color: 'rgba(209,213,219,0.98)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.25rem',
+                          maxHeight: '150px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {selectedWord.contexts.slice(0, 5).map((ctx, idx) => (
+                          <li key={idx}>{ctx.text}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div>
+                    <div
+                      style={{
+                        fontSize: '0.8rem',
+                        color: 'rgba(148,163,184,0.9)',
+                        marginBottom: '0.5rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <span>Категории:</span>
+                      <button
+                        onClick={() => {
+                          setAssigningWordId(selectedWord.id);
+                          setAssigningIdiomId(null);
+                          const currentCategoryIds = selectedWord.categories?.map(c => c.id) || [];
+                          setSelectedCategoryIds(new Set(currentCategoryIds));
+                          setShowAssignCategoriesModal(true);
+                        }}
+                        style={{
+                          padding: '0.3rem 0.6rem',
+                          borderRadius: '0.5rem',
+                          border: '1px solid rgba(75,85,99,0.9)',
+                          background: 'rgba(24,24,27,0.95)',
+                          color: '#e5e7eb',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Изменить
+                      </button>
+                    </div>
+                    {selectedWord.categories && selectedWord.categories.length > 0 ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '0.4rem',
+                        }}
+                      >
+                        {selectedWord.categories.map((cat) => (
+                          <span
+                            key={cat.id}
+                            style={{
+                              padding: '0.25rem 0.6rem',
+                              borderRadius: '999px',
+                              background: cat.color || '#11622f',
+                              color: '#ffffff',
+                              fontSize: '0.8rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                            }}
+                            title={cat.description || cat.name}
+                          >
+                            {cat.icon && <span>{cat.icon}</span>}
+                            <span>{cat.name}</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          fontSize: '0.85rem',
+                          color: 'rgba(148,163,184,0.7)',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        Нет категорий
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedWord.videos && selectedWord.videos.length > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '0.8rem',
+                          color: 'rgba(148,163,184,0.9)',
+                          marginBottom: '0.15rem',
+                        }}
+                      >
+                        Связанные видео:
+                      </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '0.5rem',
+                          fontSize: '0.85rem',
+                        }}
+                      >
+                        {selectedWord.videos.map((v) => (
+                          <span
+                            key={v.id}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '999px',
+                              background: '#256f40',
+                              color: 'rgba(219,234,254,0.98)',
+                            }}
+                          >
+                            {v.title || 'Видео'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <audio ref={wordAudioRef} src={wordAudioUrl || undefined} />
+                </div>
+              ) : (
               <>
                 <div
                   style={{
@@ -3160,17 +3538,6 @@ export const DictionaryTab: React.FC = () => {
                         >
                           {selectedWord.word}
                         </span>
-                        {isChinese && selectedWord.pinyin && (
-                          <div
-                            style={{
-                              fontSize: '0.85rem',
-                              color: 'rgba(148,163,184,0.95)',
-                              marginTop: '0.15rem',
-                            }}
-                          >
-                            {selectedWord.pinyin}
-                          </div>
-                        )}
                       </div>
                       <button
                         onClick={synthesizeWordAudio}
@@ -3398,6 +3765,7 @@ export const DictionaryTab: React.FC = () => {
                 {/* Hidden audio element for pronunciation */}
                 <audio ref={wordAudioRef} src={wordAudioUrl || undefined} />
               </>
+              )
             ) : (
               <div
                 style={{
@@ -3428,6 +3796,229 @@ export const DictionaryTab: React.FC = () => {
             }}
           >
             {selectedIdiom ? (
+              isChinese ? (
+                <div className="zh-detail-panel">
+                  <div className="zh-detail-hero">
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: '0.75rem',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '0.72rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.08em',
+                          color: 'rgba(148,163,184,0.9)',
+                        }}
+                      >
+                        Разбор 成语
+                      </div>
+                      <div className="zh-detail-meta">
+                        {selectedIdiom.difficulty_level && (
+                          <span className="zh-detail-meta-chip">
+                            {selectedIdiom.difficulty_level}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <InteractiveChineseWord
+                      key={selectedIdiom.phrase}
+                      word={selectedIdiom.phrase}
+                      pinyin={selectedIdiom.pinyin}
+                      translation={selectedIdiom.meaning || selectedIdiom.literal_translation}
+                      characterGlosses={characterGlosses}
+                      size="lg"
+                      showToneLegend
+                      autoSelectFirst
+                    />
+
+                    <button
+                      onClick={synthesizeIdiomAudio}
+                      disabled={idiomAudioLoading}
+                      style={{
+                        alignSelf: 'flex-start',
+                        padding: '0.45rem 0.85rem',
+                        borderRadius: '0.65rem',
+                        border: '1px solid rgba(82,82,91,0.9)',
+                        background: idiomAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
+                        color: idiomAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
+                        fontSize: '0.8rem',
+                        cursor: idiomAudioLoading ? 'default' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        opacity: idiomAudioLoading ? 0.7 : 1,
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      {idiomAudioLoading ? (
+                        <>🔊 Синтез...</>
+                      ) : idiomAudioUrl ? (
+                        <>▶ Произношение</>
+                      ) : (
+                        <>🔊 Произношение</>
+                      )}
+                    </button>
+                    <audio ref={idiomAudioRef} src={idiomAudioUrl || undefined} />
+                  </div>
+
+                  {selectedIdiom.meaning && (
+                    <div className="zh-translation-block">
+                      <div className="zh-translation-label">Значение</div>
+                      <div className="zh-translation-text">{selectedIdiom.meaning}</div>
+                    </div>
+                  )}
+
+                  {selectedIdiom.literal_translation && (
+                    <div className="zh-translation-block" style={{ opacity: 0.92 }}>
+                      <div className="zh-translation-label">Дословно</div>
+                      <div
+                        className="zh-translation-text"
+                        style={{ fontSize: '0.95rem', fontWeight: 500, fontStyle: 'italic' }}
+                      >
+                        {selectedIdiom.literal_translation}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedIdiom.usage_examples && selectedIdiom.usage_examples.length > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '0.8rem',
+                          color: 'rgba(148,163,184,0.9)',
+                          marginBottom: '0.15rem',
+                        }}
+                      >
+                        Примеры использования:
+                      </div>
+                      <ul
+                        style={{
+                          margin: 0,
+                          paddingLeft: '1.1rem',
+                          fontSize: '0.85rem',
+                          color: 'rgba(209,213,219,0.98)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.25rem',
+                          maxHeight: '150px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {selectedIdiom.usage_examples.map((ex, idx) => (
+                          <li key={idx}>{ex}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedIdiom.id && (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '0.8rem',
+                          color: 'rgba(148,163,184,0.9)',
+                          marginBottom: '0.5rem',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span>Категории:</span>
+                        <button
+                          onClick={() => {
+                            setAssigningIdiomId(selectedIdiom.id!);
+                            setAssigningWordId(null);
+                            setAssigningPhrasalVerbId(null);
+                            const currentCategoryIds = selectedIdiom.categories?.map(c => c.id) || [];
+                            setSelectedCategoryIds(new Set(currentCategoryIds));
+                            setShowAssignCategoriesModal(true);
+                          }}
+                          style={{
+                            padding: '0.3rem 0.6rem',
+                            borderRadius: '0.5rem',
+                            border: '1px solid rgba(75,85,99,0.9)',
+                            background: 'rgba(24,24,27,0.95)',
+                            color: '#e5e7eb',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Изменить
+                        </button>
+                      </div>
+                      {selectedIdiom.categories && selectedIdiom.categories.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          {selectedIdiom.categories.map((cat) => (
+                            <span
+                              key={cat.id}
+                              style={{
+                                padding: '0.25rem 0.6rem',
+                                borderRadius: '999px',
+                                background: cat.color || '#11622f',
+                                color: '#ffffff',
+                                fontSize: '0.8rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                              }}
+                              title={cat.description || cat.name}
+                            >
+                              {cat.icon && <span>{cat.icon}</span>}
+                              <span>{cat.name}</span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            fontSize: '0.85rem',
+                            color: 'rgba(148,163,184,0.7)',
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          Нет категорий
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedIdiom.videos && selectedIdiom.videos.length > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '0.8rem',
+                          color: 'rgba(148,163,184,0.9)',
+                          marginBottom: '0.15rem',
+                        }}
+                      >
+                        Связанные видео:
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', fontSize: '0.85rem' }}>
+                        {selectedIdiom.videos.map((v) => (
+                          <span
+                            key={v.id}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '999px',
+                              background: '#256f40',
+                              color: 'rgba(219,234,254,0.98)',
+                            }}
+                          >
+                            {v.title || 'Видео'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
               <>
                 <div
                   style={{
@@ -3447,7 +4038,7 @@ export const DictionaryTab: React.FC = () => {
                         marginBottom: '0.15rem',
                       }}
                     >
-                      {isChinese ? '成语' : 'Выбранная идиома'}
+                      Выбранная идиома
                     </div>
                     <div
                       style={{
@@ -3466,17 +4057,6 @@ export const DictionaryTab: React.FC = () => {
                         >
                           {selectedIdiom.phrase}
                         </div>
-                        {isChinese && selectedIdiom.pinyin && (
-                          <div
-                            style={{
-                              fontSize: '0.85rem',
-                              color: 'rgba(148,163,184,0.95)',
-                              marginTop: '0.15rem',
-                            }}
-                          >
-                            {selectedIdiom.pinyin}
-                          </div>
-                        )}
                       </div>
                       <button
                         onClick={synthesizeIdiomAudio}
@@ -3733,6 +4313,7 @@ export const DictionaryTab: React.FC = () => {
                 )}
 
               </>
+              )
             ) : (
               <div
                 style={{
@@ -4133,6 +4714,8 @@ export const DictionaryTab: React.FC = () => {
             )}
           </div>
         ) : null}
+        </>
+        )}
       </div>
 
       {/* Idioms error display */}

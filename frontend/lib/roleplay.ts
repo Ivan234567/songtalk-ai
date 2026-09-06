@@ -7,6 +7,7 @@
  */
 
 import scenariosData from '@/data/roleplay-scenarios.json';
+import { hasEnglishSystemCatalog, type LearningLanguage } from '@/lib/learning-language';
 
 /** Категория сценария */
 export type RoleplayCategory = 'everyday' | 'professional' | 'fun';
@@ -146,7 +147,10 @@ export function getRoleplayScenariosByTheme(themeId: RoleplayThemeId): RoleplayS
 /**
  * Группирует все сценарии по темам для UI. Темы в порядке ROLEPLAY_THEME_ORDER.
  */
-export function getRoleplayScenariosGroupedByTheme(): { themeId: RoleplayThemeId; label: string; scenarios: RoleplayScenario[] }[] {
+export function getRoleplayScenariosGroupedByTheme(
+  lang: LearningLanguage = 'en',
+): { themeId: RoleplayThemeId; label: string; scenarios: RoleplayScenario[] }[] {
+  if (!hasEnglishSystemCatalog(lang)) return [];
   return ROLEPLAY_THEME_ORDER.filter((tid) => scenarios.some((s) => s.themeId === tid)).map((themeId) => ({
     themeId,
     label: ROLEPLAY_THEME_LABELS[themeId] ?? themeId,

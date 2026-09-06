@@ -4,10 +4,12 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getStoredBackendToken, isBackendTokenExpired, storeBackendToken } from '@/lib/backend-jwt';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
-import { containsChinese, containsEnglish } from '@/lib/vocabulary';
+import { containsChinese, containsEnglish, extractChineseCharacters } from '@/lib/vocabulary';
 import {
   ChineseRubyText,
+  looksLikeStructuredJson,
   parseStructuredChineseResponse,
+  sanitizeDisplayText,
   type StructuredChineseResult,
 } from '@/components/ChineseRubyText';
 
@@ -62,6 +64,10 @@ function isLearningLanguageSourceField(direction: TranslatorDirection): boolean 
   return direction === 'en-ru' || direction === 'zh-ru';
 }
 
+function isChineseDirection(direction: TranslatorDirection): boolean {
+  return direction === 'zh-ru' || direction === 'ru-zh';
+}
+
 function getTranslationSystemPrompt(direction: TranslatorDirection): string {
   switch (direction) {
     case 'en-ru':
@@ -69,39 +75,45 @@ function getTranslationSystemPrompt(direction: TranslatorDirection): string {
     case 'ru-en':
       return 'You are a helpful translator. Translate the user text from Russian to English. Preserve meaning and tone. Output only the translation.';
     case 'zh-ru':
-      return `Ты переводчик китайско-русский. Переведи китайский текст пользователя на русский.
-Верни ТОЛЬКО JSON без markdown и без пояснений:
-{
-  "segments": [
-    {"hanzi": "你", "pinyin": "nǐ"},
-    {"hanzi": "好", "pinyin": "hǎo"}
-  ],
-  "translation": "русский перевод всего текста"
-}
+      return `Ты переводчик китайско-русский.
+Переведи китайский текст пользователя на русский.
+
+Ответ СТРОГО в этом текстовом формате (без JSON, без markdown, без пояснений):
+
+TRANSLATION:
+полный русский перевод всего текста
+
+PINYIN:
+слово_или_иероглиф = pīnyīn
+слово_или_иероглиф = pīnyīn
+
+END:
 
 Правила:
-- segments: разбей исходный китайский текст в основном по 1 иероглифу на сегмент
-- если это знак препинания, оставь его отдельным сегментом и передай pinyin как пустую строку
-- для иероглифа всегда указывай pinyin с тоном (например nǐ, hǎo)
-- translation: полный русский перевод
-- не используй английский язык`;
+- После TRANSLATION: сразу полный русский перевод
+- В PINYIN: по одной строке на слово/иероглиф в формате: 你好 = nǐ hǎo
+- Пиньинь с тонами, слоги через пробел
+- Не используй JSON, фигурные скобки и markdown`;
     case 'ru-zh':
-      return `Ты переводчик русско-китайский. Переведи русский текст пользователя на китайский.
-Верни ТОЛЬКО JSON без markdown и без пояснений:
-{
-  "segments": [
-    {"hanzi": "你", "pinyin": "nǐ"},
-    {"hanzi": "好", "pinyin": "hǎo"}
-  ],
-  "translation": "русский исходник (копия текста пользователя)"
-}
+      return `Ты переводчик русско-китайский.
+Переведи русский текст пользователя на китайский.
+
+Ответ СТРОГО в этом текстовом формате (без JSON, без markdown, без пояснений):
+
+TRANSLATION:
+полный китайский перевод иероглифами
+
+PINYIN:
+слово_или_иероглиф = pīnyīn
+слово_или_иероглиф = pīnyīn
+
+END:
 
 Правила:
-- segments: китайский перевод, разбитый в основном по 1 иероглифу на сегмент
-- если это знак препинания, оставь его отдельным сегментом и передай pinyin как пустую строку
-- для иероглифа всегда указывай pinyin с тоном
-- translation: исходный русский текст пользователя
-- не используй английский язык`;
+- После TRANSLATION: сразу полный китайский перевод
+- В PINYIN: тот же текст по словам, формат: 你好 = nǐ hǎo
+- Пиньинь с тонами, слоги через пробел
+- Не используй JSON, фигурные скобки и markdown`;
   }
 }
 
@@ -122,6 +134,76 @@ function getInputPlaceholder(direction: TranslatorDirection, isChinese: boolean)
   return direction === 'en-ru'
     ? 'Введите текст на английском…'
     : 'Введите текст на русском…';
+}
+
+function collectHanziText(segments: StructuredChineseResult['segments']): string {
+  return segments
+    .map((seg) => seg.hanzi || '')
+    .join('')
+    .trim();
+}
+
+function normalizeChineseTranslationReply(
+  rawReply: string,
+  direction: TranslatorDirection,
+): { structured: StructuredChineseResult | null; plainOutput: string } {
+  const trimmed = (rawReply || '').trim();
+  if (!trimmed) {
+    return { structured: null, plainOutput: '' };
+  }
+
+  const parsed = parseStructuredChineseResponse(trimmed);
+  if (parsed) {
+    const safeTranslation = sanitizeDisplayText(parsed.translation || '');
+    const safeSegments = (parsed.segments || []).filter((s) => {
+      const hanzi = (s.hanzi || '').replace(/\s+/g, '');
+      return Boolean(hanzi) && !looksLikeStructuredJson(s.hanzi);
+    });
+    const hanziText = sanitizeDisplayText(collectHanziText(safeSegments));
+    const plain =
+      direction === 'zh-ru'
+        ? safeTranslation
+        : safeTranslation || hanziText;
+
+    if (!plain && safeSegments.length === 0) {
+      return { structured: null, plainOutput: '' };
+    }
+
+    return {
+      structured: {
+        translation: safeTranslation || plain,
+        segments: safeSegments,
+      },
+      plainOutput: plain,
+    };
+  }
+
+  // Never show raw model dumps (JSON / code) to the user.
+  if (looksLikeStructuredJson(trimmed)) {
+    return { structured: null, plainOutput: '' };
+  }
+
+  return { structured: null, plainOutput: sanitizeDisplayText(trimmed) };
+}
+
+function getChineseResultText(
+  structured: StructuredChineseResult | null,
+  output: string,
+  direction: TranslatorDirection,
+): string {
+  if (direction === 'zh-ru') {
+    return (
+      sanitizeDisplayText(structured?.translation) ||
+      sanitizeDisplayText(output) ||
+      ''
+    );
+  }
+  return (
+    sanitizeDisplayText(structured?.translation) ||
+    sanitizeDisplayText(collectHanziText(structured?.segments || [])) ||
+    sanitizeDisplayText(output) ||
+    ''
+  );
 }
 
 type TranslatorPanelProps = {
@@ -169,8 +251,14 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
   const [addingToDictionary, setAddingToDictionary] = useState(false);
   const [dictionaryError, setDictionaryError] = useState<string | null>(null);
   const [dictionarySuccess, setDictionarySuccess] = useState<string | null>(null);
-  const [selectedText, setSelectedText] = useState<string>('');
+  const [selectedText, setSelectedTextState] = useState<string>('');
   const [selectedTextSource, setSelectedTextSource] = useState<'input' | 'output' | null>(null);
+  const selectedTextRef = useRef<string>('');
+
+  const setSelectedText = useCallback((value: string) => {
+    selectedTextRef.current = value;
+    setSelectedTextState(value);
+  }, []);
   const outputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const outputDisplayRef = useRef<HTMLDivElement>(null);
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -304,7 +392,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
             { role: 'system', content: systemPrompt },
             { role: 'user', content: input.trim() },
           ],
-          max_tokens: isChinese ? 1200 : 800,
+          max_tokens: isChinese ? 4000 : 800,
         }),
       });
 
@@ -350,12 +438,33 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           }
         }
       }
+      // Flush trailing SSE/NDJSON line that may remain after stream end.
+      if (buffer.trim()) {
+        try {
+          const data = JSON.parse(buffer);
+          if (data.type === 'chunk' && typeof data.delta === 'string') {
+            fullReply += data.delta;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
 
       const trimmed = fullReply.trim();
-      if (isChinese) {
-        const parsed = parseStructuredChineseResponse(trimmed);
-        setStructuredOutput(parsed);
-        setOutput(parsed?.translation || trimmed);
+      if (isChineseDirection(direction)) {
+        const normalized = normalizeChineseTranslationReply(trimmed, direction);
+        // Never fall back to raw model JSON/text dumps in the result pane.
+        setStructuredOutput(normalized.structured);
+        setOutput(normalized.plainOutput);
+        if (!normalized.structured && !normalized.plainOutput) {
+          setError('Не удалось корректно разобрать ответ переводчика. Попробуйте еще раз.');
+        } else if (
+          direction === 'zh-ru' &&
+          !normalized.plainOutput &&
+          (normalized.structured?.segments?.length || 0) > 0
+        ) {
+          setError('Пиньинь получен, но русский перевод обрезан. Нажмите «Перевести» ещё раз.');
+        }
       } else {
         setStructuredOutput(null);
         setOutput(trimmed);
@@ -413,10 +522,19 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     const inputTextarea = inputTextareaRef.current;
     const outputDisplay = outputDisplayRef.current;
 
+    const normalizeSelected = (raw: string) => {
+      const selected = (raw || '').trim();
+      if (!selected) return '';
+      if (isChinese && containsChinese(selected)) {
+        return extractChineseCharacters(selected) || selected;
+      }
+      return selected;
+    };
+
     if (outputDisplay) {
       const selection = window.getSelection();
       if (selection && selection.anchorNode && outputDisplay.contains(selection.anchorNode)) {
-        const selected = selection.toString().trim();
+        const selected = normalizeSelected(selection.toString());
         if (selected) {
           setSelectedText(selected);
           setSelectedTextSource('output');
@@ -433,7 +551,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       const start = outputTextarea.selectionStart;
       const end = outputTextarea.selectionEnd;
       if (start !== end && start >= 0 && end > start) {
-        const selected = outputTextarea.value.substring(start, end).trim();
+        const selected = normalizeSelected(outputTextarea.value.substring(start, end));
         if (selected) {
           setSelectedText(selected);
           setSelectedTextSource('output');
@@ -450,7 +568,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       const start = inputTextarea.selectionStart;
       const end = inputTextarea.selectionEnd;
       if (start !== end && start >= 0 && end > start) {
-        const selected = inputTextarea.value.substring(start, end).trim();
+        const selected = normalizeSelected(inputTextarea.value.substring(start, end));
         if (selected) {
           setSelectedText(selected);
           setSelectedTextSource('input');
@@ -465,7 +583,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     // Если выделения нет, очищаем
     setSelectedText('');
     setSelectedTextSource(null);
-  }, [dictionaryError]);
+  }, [dictionaryError, isChinese, setSelectedText]);
 
   // Обновляем выделенный текст при изменении выделения
   useEffect(() => {
@@ -674,8 +792,9 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
       return;
     }
 
-    // Получаем выделенный текст из состояния или напрямую из textarea
-    let currentSelected = selectedText;
+    // Получаем выделенный текст из ref/state или напрямую из textarea
+    // ref устойчив к сбросу selection при клике на кнопку
+    let currentSelected = selectedTextRef.current || selectedText;
     if (!currentSelected) {
       // Пытаемся получить выделение напрямую из textarea
       const outputTextarea = outputTextareaRef.current;
@@ -728,23 +847,77 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     setDictionarySuccess(null);
 
     try {
+      // Для китайского: извлекаем иероглифы и добавляем напрямую (без AI — быстрее и надёжнее)
+      if (isChinese) {
+        const hanzi = extractChineseCharacters(currentSelected);
+        if (!hanzi) {
+          throw new Error('Не удалось распознать иероглифы. Выделите китайское слово ещё раз.');
+        }
+        
+        const charCount = Array.from(hanzi).length;
+        
+        // 4 иероглифа — возможно 成语, проверяем через AI
+        if (charCount === 4) {
+          // продолжаем к AI анализу ниже
+        } else {
+          // 1, 2, 3, 5+ иероглифов — добавляем как слово в user_vocabulary
+          const response = await fetch(`${getApiUrl()}/api/vocabulary/add`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${supabaseToken}`,
+            },
+            body: JSON.stringify({ word: hanzi, context: contextText }),
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.details || `Ошибка ${response.status}`);
+          }
+          
+          setDictionarySuccess(`«${hanzi}» добавлено в словарь`);
+          window.getSelection()?.removeAllRanges();
+          setSelectedText('');
+          setSelectedTextSource(null);
+          return;
+        }
+      }
+
       // Анализируем фразу через AI для определения типа (слово/идиома/фразовый глагол)
       console.log('Анализируем фразу через AI:', currentSelected);
       const analysis = await analyzePhraseWithAI(currentSelected);
       console.log('AI определил тип:', analysis.type, 'Данные:', analysis.data);
 
       if (analysis.type === 'word') {
-        const word = analysis.data.word || currentSelected.trim();
-        const response = await fetch(`${getApiUrl()}/api/vocabulary/add`, {
+        // Для китайского всегда берём иероглифы из выделения —
+        // AI часто кладёт в data.word перевод (RU/EN), из‑за чего бэкенд отвечал Invalid word.
+        const word = isChinese
+          ? (extractChineseCharacters(currentSelected) ||
+              extractChineseCharacters(String(analysis.data?.word || '')))
+          : String(analysis.data?.word || currentSelected).trim();
+
+        if (!word || (isChinese && !containsChinese(word))) {
+          throw new Error(isChinese
+            ? 'Не удалось распознать иероглифы. Выделите китайское слово ещё раз.'
+            : 'Invalid word');
+        }
+
+        // Одиночный иероглиф → отдельная таблица 汉字
+        const isSingleHanzi = isChinese && Array.from(word).length === 1;
+        const endpoint = isSingleHanzi
+          ? `${getApiUrl()}/api/vocabulary/characters/add`
+          : `${getApiUrl()}/api/vocabulary/add`;
+        const body = isSingleHanzi
+          ? { character: word, context: contextText }
+          : { word, context: contextText };
+
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${supabaseToken}`,
           },
-          body: JSON.stringify({
-            word,
-            context: contextText,
-          }),
+          body: JSON.stringify(body),
         });
 
         if (!response.ok) {
@@ -752,14 +925,29 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           throw new Error(errorData.error || `Ошибка ${response.status}`);
         }
 
-        setDictionarySuccess(`Слово "${word}" добавлено в словарь`);
+        setDictionarySuccess(
+          isSingleHanzi
+            ? `Иероглиф «${word}» добавлен в 汉字`
+            : `Слово "${word}" добавлено в словарь`,
+        );
         // Очищаем выделение после успешного добавления
         window.getSelection()?.removeAllRanges();
         setSelectedText('');
         setSelectedTextSource(null);
       } else if (analysis.type === 'idiom') {
         // Добавляем идиому в словарь
-        const phrase = analysis.data.phrase || currentSelected.trim();
+        const phrase = isChinese
+          ? (extractChineseCharacters(String(analysis.data?.phrase || '')) ||
+              extractChineseCharacters(currentSelected) ||
+              String(analysis.data?.phrase || currentSelected).trim())
+          : String(analysis.data?.phrase || currentSelected).trim();
+
+        if (!phrase || (isChinese && !containsChinese(phrase))) {
+          throw new Error(isChinese
+            ? 'Не удалось распознать 成语. Выделите выражение ещё раз.'
+            : 'Invalid phrase');
+        }
+
         const response = await fetch(`${getApiUrl()}/api/vocabulary/idioms/add`, {
           method: 'POST',
           headers: {
@@ -812,6 +1000,28 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
         window.getSelection()?.removeAllRanges();
         setSelectedText('');
         setSelectedTextSource(null);
+      } else if (isChinese && analysis.type === 'phrasal_verb') {
+        // На китайском phrasal_verb нет — сохраняем как слово
+        const word = extractChineseCharacters(currentSelected);
+        if (!word) {
+          throw new Error('Не удалось распознать иероглифы. Выделите китайское слово ещё раз.');
+        }
+        const response = await fetch(`${getApiUrl()}/api/vocabulary/add`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${supabaseToken}`,
+          },
+          body: JSON.stringify({ word, context: contextText }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Ошибка ${response.status}`);
+        }
+        setDictionarySuccess(`Слово "${word}" добавлено в словарь`);
+        window.getSelection()?.removeAllRanges();
+        setSelectedText('');
+        setSelectedTextSource(null);
       }
     } catch (e) {
       console.error('Error adding to dictionary:', e);
@@ -853,16 +1063,17 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
   const restoreHistoryItem = useCallback((h: TranslatorHistoryItem) => {
     setInput(h.input);
     setDirection(h.direction);
-    if (isChinese) {
-      const parsed = parseStructuredChineseResponse(h.output);
-      setStructuredOutput(parsed);
-      setOutput(parsed?.translation || h.output);
+    setError(null);
+    if (isChineseDirection(h.direction)) {
+      const normalized = normalizeChineseTranslationReply(h.output, h.direction);
+      setStructuredOutput(normalized.structured);
+      setOutput(normalized.plainOutput);
     } else {
       setStructuredOutput(null);
       setOutput(h.output);
     }
     setHistoryOpen(false);
-  }, [isChinese]);
+  }, []);
 
   const panelBorder = '1px solid var(--sidebar-border)';
   const accentBtn = {
@@ -1010,22 +1221,12 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
               </button>
             </div>
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, gap: '0.55rem' }}>
-              <div style={{
-                border: panelBorder,
-                borderRadius: 10,
-                background: 'rgba(15, 23, 42, 0.24)',
-                padding: '0.45rem 0.65rem',
-                fontSize: '0.74rem',
-                opacity: 0.8,
-              }}>
-                Режим китайского: каждый блок показывает пару <strong>пиньинь ↔ иероглиф</strong>. Тоны подсвечены цветом.
-              </div>
-
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, gap: '0.55rem', overflow: 'hidden' }}>
               {/* Верхняя панель — исходный текст */}
               <div style={{
-                flex: 1,
-                minHeight: 140,
+                flex: '0 0 auto',
+                maxHeight: '34%',
+                minHeight: 120,
                 display: 'flex',
                 flexDirection: 'column',
                 border: panelBorder,
@@ -1067,7 +1268,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                   style={{
                     flex: 1,
                     width: '100%',
-                    minHeight: 100,
+                    minHeight: 72,
                     resize: 'none',
                     padding: '0.75rem',
                     border: 'none',
@@ -1078,6 +1279,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                     lineHeight: 1.6,
                     outline: 'none',
                     userSelect: 'text',
+                    overflowY: 'auto',
                   }}
                 />
                 <div style={{
@@ -1122,29 +1324,11 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <div
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: '50%',
-                    border: panelBorder,
-                    background: 'var(--sidebar-hover)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: 0.7,
-                    fontSize: '0.9rem',
-                  }}
-                >
-                  ↓
-                </div>
-              </div>
-
               {/* Нижняя панель — перевод */}
               <div style={{
-                flex: 1,
-                minHeight: 180,
+                flex: '1 1 auto',
+                minHeight: 0,
+                minWidth: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 border: panelBorder,
@@ -1157,18 +1341,21 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                   borderBottom: panelBorder,
                   fontSize: '0.75rem',
                   opacity: 0.7,
+                  flex: '0 0 auto',
                 }}>
                   {getTargetLanguageLabel(direction)}
                 </div>
                 <div
                   ref={outputDisplayRef}
                   style={{
-                    flex: 1,
-                    overflowY: 'auto',
+                    flex: '1 1 auto',
+                    minHeight: 0,
+                    overflowY: 'scroll',
+                    overflowX: 'hidden',
+                    WebkitOverflowScrolling: 'touch',
+                    overscrollBehavior: 'contain',
                     padding: '0.85rem 0.75rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '1rem',
+                    display: 'block',
                   }}
                 >
                   {loading && (
@@ -1176,15 +1363,36 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                   )}
                   {!loading && !structuredOutput && !output && (
                     <span style={{ opacity: 0.45, fontSize: '0.875rem' }}>
-                      Здесь появится перевод с четкой связкой иероглифов и пиньиня
+                      Здесь появится полный перевод и разбор иероглифов с пиньинем
                     </span>
                   )}
-                  {!loading && structuredOutput && (
-                    <>
-                      {(direction === 'zh-ru' || direction === 'ru-zh') && (
+                  {!loading && (structuredOutput || output) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '0.5rem' }}>
+                      {!!getChineseResultText(structuredOutput, output, direction) && (
+                        <div>
+                          <div style={{ fontSize: '0.7rem', opacity: 0.55, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            {direction === 'zh-ru' ? 'Перевод' : 'Готовый китайский текст'}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: direction === 'ru-zh' ? '1.22rem' : '1.05rem',
+                              lineHeight: 1.65,
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              fontFamily: direction === 'ru-zh'
+                                ? '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
+                                : 'inherit',
+                            }}
+                          >
+                            {getChineseResultText(structuredOutput, output, direction)}
+                          </div>
+                        </div>
+                      )}
+
+                      {structuredOutput && structuredOutput.segments.length > 0 && (
                         <div>
                           <div style={{ fontSize: '0.7rem', opacity: 0.55, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            {direction === 'zh-ru' ? 'Пары пиньинь и иероглифов' : '中文 + 拼音'}
+                            {direction === 'zh-ru' ? 'Пиньинь и иероглифы' : '中文 + 拼音'}
                           </div>
                           <ChineseRubyText
                             segments={structuredOutput.segments}
@@ -1196,21 +1404,6 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                           </div>
                         </div>
                       )}
-                      {direction === 'zh-ru' && structuredOutput.translation && (
-                        <div>
-                          <div style={{ fontSize: '0.7rem', opacity: 0.55, marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            Перевод
-                          </div>
-                          <div style={{ fontSize: '1rem', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                            {structuredOutput.translation}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {!loading && !structuredOutput && output && (
-                    <div style={{ fontSize: '0.95rem', lineHeight: 1.55, whiteSpace: 'pre-wrap', opacity: 0.85 }}>
-                      {output}
                     </div>
                   )}
                 </div>
@@ -1220,10 +1413,12 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '0.4rem',
+                  flex: '0 0 auto',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button
                       type="button"
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); addToDictionary(); }}
                       disabled={addingToDictionary || !selectedText || (isLearningLanguageSourceField(direction) ? !input.trim() : !structuredOutput)}
                       style={{
@@ -1419,6 +1614,7 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1608,12 +1804,12 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                       {getDirectionShortLabel(h.direction)} · {new Date(h.ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <div style={{ whiteSpace: 'pre-wrap' }}>{h.input}</div>
-                    {isChinese && (() => {
-                      const parsed = parseStructuredChineseResponse(h.output);
-                      if (parsed?.translation) {
+                    {isChineseDirection(h.direction) && (() => {
+                      const normalized = normalizeChineseTranslationReply(h.output, h.direction);
+                      if (normalized.plainOutput) {
                         return (
                           <div style={{ opacity: 0.75, marginTop: 4, fontSize: '0.78rem' }}>
-                            → {parsed.translation}
+                            → {normalized.plainOutput}
                           </div>
                         );
                       }

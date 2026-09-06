@@ -8,6 +8,7 @@ import {
 } from '@/lib/roleplay';
 import { createUserScenario, type UserScenarioLevel } from '@/lib/user-scenarios';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
+import { hasEnglishSystemCatalog, type LearningLanguage } from '@/lib/learning-language';
 
 /** Значение фильтра сложности в модалке сценариев */
 type DifficultyFilter = 'all' | 'easy' | 'medium' | 'hard';
@@ -72,6 +73,9 @@ type AgentMode = 'chat' | 'roleplay' | 'debate';
 export type DebateView = 'catalog' | 'create' | 'my';
 
 export type RoleplayModeUIProps = {
+  learningLanguage: LearningLanguage;
+  /** Явный флаг из AgentTab — единый источник правды */
+  showSystemCatalog?: boolean;
   mode: AgentMode;
   onModeChange: (mode: AgentMode) => void;
   selectedScenario: RoleplayScenario | null;
@@ -435,6 +439,8 @@ const barStyles = {
 };
 
 export function RoleplayModeUI({
+  learningLanguage,
+  showSystemCatalog: showSystemCatalogProp,
   mode,
   onModeChange,
   selectedScenario,
@@ -451,18 +457,21 @@ export function RoleplayModeUI({
   debateView = 'catalog',
   onDebateViewChange,
 }: RoleplayModeUIProps) {
+  const showSystemCatalog = showSystemCatalogProp ?? hasEnglishSystemCatalog(learningLanguage);
   const [hintVisible, setHintVisible] = useState(false);
   const [roleplayDropdownOpen, setRoleplayDropdownOpen] = useState(false);
   const [debateDropdownOpen, setDebateDropdownOpen] = useState(false);
 
   if (placement === 'bar') {
     const openRoleplayWithView = (view: 'catalog' | 'create' | 'my') => {
+      if (view === 'catalog' && !showSystemCatalog) return;
       onModeChange('roleplay');
       onScenarioViewChange?.(view);
       onScenarioModalOpenChange?.(true);
       setRoleplayDropdownOpen(false);
     };
     const openDebateWithView = (view: DebateView) => {
+      if (view === 'catalog' && !showSystemCatalog) return;
       onModeChange('debate');
       onDebateViewChange?.(view);
       onDebateSetupOpenChange?.(true);
@@ -540,6 +549,7 @@ export function RoleplayModeUI({
                       </span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {showSystemCatalog && (
                       <button
                         type="button"
                         role="menuitem"
@@ -550,6 +560,7 @@ export function RoleplayModeUI({
                         <span style={{ display: 'flex', color: 'var(--sidebar-text)', opacity: 0.85 }}>{ROLEPLAY_MENU_ICONS.catalog}</span>
                         <span>Каталог сценариев</span>
                       </button>
+                      )}
                       <button
                         type="button"
                         role="menuitem"
@@ -621,6 +632,7 @@ export function RoleplayModeUI({
                       </span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {showSystemCatalog && (
                       <button
                         type="button"
                         role="menuitem"
@@ -631,6 +643,7 @@ export function RoleplayModeUI({
                         <span style={{ display: 'flex', color: 'var(--sidebar-text)', opacity: 0.85 }}>{DEBATE_MENU_ICONS.catalog}</span>
                         <span>Каталог дебатов</span>
                       </button>
+                      )}
                       <button
                         type="button"
                         role="menuitem"
@@ -658,8 +671,9 @@ export function RoleplayModeUI({
             </div>
           </div>
         </div>
-        {scenarioModalOpen && onScenarioModalOpenChange && scenarioView === 'catalog' && (
+        {showSystemCatalog && scenarioModalOpen && onScenarioModalOpenChange && scenarioView === 'catalog' && (
           <ScenarioModal
+            learningLanguage={learningLanguage}
             onSelect={(s) => {
               onSelectScenario(s);
               onScenarioModalOpenChange(false);
@@ -1369,11 +1383,13 @@ export function BriefingView({
 }
 
 function ScenarioModal({
+  learningLanguage,
   onSelect,
   onClose,
   onScenarioViewChange,
   onCopyToMineSuccess,
 }: {
+  learningLanguage: LearningLanguage;
   onSelect: (s: RoleplayScenario) => void;
   onClose: () => void;
   onScenarioViewChange?: (view: 'catalog' | 'create' | 'my') => void;
@@ -1402,7 +1418,7 @@ function ScenarioModal({
 
   const query = searchQuery.trim().toLowerCase();
   const sections = useMemo(() => {
-    return getRoleplayScenariosGroupedByTheme()
+    return getRoleplayScenariosGroupedByTheme(learningLanguage)
       .map(({ themeId, label, scenarios: list }) => ({
         themeId,
         label,
@@ -1418,7 +1434,7 @@ function ScenarioModal({
         }),
       }))
       .filter((s) => s.scenarios.length > 0);
-  }, [query, difficultyFilter]);
+  }, [query, difficultyFilter, learningLanguage]);
 
   const handleCardSelect = (scenario: RoleplayScenario) => {
     setBriefingScenario(scenario);

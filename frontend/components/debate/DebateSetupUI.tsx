@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEBATE_TOPICS, type DebateTopic } from '@/lib/debate-topics';
+import { DEBATE_TOPICS, getSystemDebateTopics, type DebateTopic } from '@/lib/debate-topics';
 import { supabase } from '@/lib/supabase';
 import { getStoredBackendToken } from '@/lib/backend-jwt';
 import {
@@ -29,8 +29,10 @@ import {
   type UserDebateTopicDifficulty,
 } from '@/lib/user-debate-topics';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
+import { hasEnglishSystemCatalog, type LearningLanguage } from '@/lib/learning-language';
 
 type DebateSetupUIProps = {
+  learningLanguage: LearningLanguage;
   onStart: (
     topic: string,
     userPosition: DebatePosition,
@@ -181,13 +183,14 @@ const PROFANITY_OPTIONS: Array<{ value: DebateProfanityIntensity; label: string 
   { value: 'hard', label: 'Жестко' },
 ];
 
-export function DebateSetupUI({ onStart, onClose, userId, view: externalView }: DebateSetupUIProps) {
+export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view: externalView }: DebateSetupUIProps) {
+  const showSystemCatalog = hasEnglishSystemCatalog(learningLanguage);
   const [setupStep, setSetupStep] = useState<SetupStep>('topic');
   const mapExternalView = (v?: 'catalog' | 'create' | 'my'): TopicView => {
-    if (v === 'catalog') return 'list';
+    if (v === 'catalog') return showSystemCatalog ? 'list' : 'custom';
     if (v === 'create') return 'custom';
     if (v === 'my') return 'my';
-    return 'list';
+    return showSystemCatalog ? 'list' : 'custom';
   };
   const [topicView, setTopicView] = useState<TopicView>(() => mapExternalView(externalView));
   const [selectedTopic, setSelectedTopic] = useState<DebateTopic | null>(null);
@@ -251,11 +254,17 @@ export function DebateSetupUI({ onStart, onClose, userId, view: externalView }: 
       setTopicView(mapped);
       setSetupStep('topic');
     }
-  }, [externalView]);
+  }, [externalView, showSystemCatalog]);
+
+  useEffect(() => {
+    if (!showSystemCatalog && topicView === 'list') {
+      setTopicView('custom');
+    }
+  }, [showSystemCatalog, topicView]);
 
   const filteredTopics = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return DEBATE_TOPICS.filter((topic) => {
+    return getSystemDebateTopics(learningLanguage).filter((topic) => {
       if (difficultyFilter !== 'all' && topic.difficulty !== difficultyFilter) return false;
       if (!q) return true;
       const categoryLabel = CATEGORY_LABELS[topic.category] ?? topic.category;
@@ -266,7 +275,7 @@ export function DebateSetupUI({ onStart, onClose, userId, view: externalView }: 
         categoryLabel.toLowerCase().includes(q)
       );
     });
-  }, [difficultyFilter, searchQuery]);
+  }, [difficultyFilter, searchQuery, learningLanguage]);
 
   const sections = useMemo(() => {
     const grouped = new Map<string, DebateTopic[]>();
@@ -1328,7 +1337,7 @@ export function DebateSetupUI({ onStart, onClose, userId, view: externalView }: 
 
           {setupStep === 'topic' ? (
             <>
-              {topicView === 'list' ? (
+              {topicView === 'list' && showSystemCatalog ? (
                 <>
                   <label style={{ position: 'relative', display: 'block' }}>
                     <input
@@ -1633,7 +1642,7 @@ export function DebateSetupUI({ onStart, onClose, userId, view: externalView }: 
                     </div>
                   )}
                 </>
-              ) : topicView === 'custom' ? (
+              ) : topicView === 'custom' || (topicView === 'list' && !showSystemCatalog) ? (
                 <>
                   <p style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: 'var(--sidebar-text)', opacity: 0.85, lineHeight: 1.45, flexShrink: 0 }}>
                     Введите тему на английском или русском. Выберите сложность, чтобы настроить уровень аргументов.

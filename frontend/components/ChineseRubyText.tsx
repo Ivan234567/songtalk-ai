@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { CHINESE_FONT, getToneColor, normalizePinyinSyllables } from '@/lib/chinese-display';
 
 export type ChineseSegment = { hanzi: string; pinyin: string };
 
@@ -9,27 +10,213 @@ export type StructuredChineseResult = {
   translation?: string;
 };
 
-export function parseStructuredChineseResponse(raw: string): StructuredChineseResult | null {
+function decodeJsonLikeString(value: string): string {
   try {
-    let jsonText = raw.trim();
-    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) jsonText = jsonMatch[1];
+    return JSON.parse(`"${value}"`);
+  } catch {
+    return value
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t');
+  }
+}
+
+/** True if text looks like model JSON / code dump — must never be shown to user. */
+export function looksLikeStructuredJson(raw: string): boolean {
+  const text = (raw || '').trim();
+  if (!text) return false;
+  if (/```/.test(text)) return true;
+  if (/^\s*[{[]/.test(text)) return true;
+  if (/[{[]/.test(text) && /("|')?(segments|translation|hanzi|pinyin)("|')?\s*:/.test(text)) {
+    return true;
+  }
+  if (/"hanzi"\s*:|"pinyin"\s*:|"segments"\s*:/.test(text)) return true;
+  return false;
+}
+
+export function sanitizeDisplayText(raw: string | null | undefined): string {
+  const value = (raw || '').trim();
+  if (!value) return '';
+  if (looksLikeStructuredJson(value)) return '';
+  return value;
+}
+
+function extractQuotedField(raw: string, field: string): string {
+  const re = new RegExp(`["']${field}["']\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`);
+  const match = raw.match(re);
+  return match?.[1] ? decodeJsonLikeString(match[1]).trim() : '';
+}
+
+function extractSegmentsFallback(raw: string): ChineseSegment[] {
+  const segments: ChineseSegment[] = [];
+  const re =
+    /\{\s*["']hanzi["']\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*["']pinyin["']\s*:\s*"((?:\\.|[^"\\])*)"\s*\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(raw)) !== null) {
+    const hanzi = decodeJsonLikeString(match[1] || '');
+    if (!hanzi.replace(/\s+/g, '') || looksLikeStructuredJson(hanzi)) continue;
+    segments.push({
+      hanzi,
+      pinyin: decodeJsonLikeString(match[2] || '').trim(),
+    });
+  }
+
+  if (segments.length > 0) return segments;
+
+  const looseHanzi = [...raw.matchAll(/["']hanzi["']\s*:\s*"((?:\\.|[^"\\])*)"/g)];
+  const loosePinyin = [...raw.matchAll(/["']pinyin["']\s*:\s*"((?:\\.|[^"\\])*)"/g)].map((m) =>
+    decodeJsonLikeString(m[1] || '').trim(),
+  );
+  let i = 0;
+  for (const m of looseHanzi) {
+    const hanzi = decodeJsonLikeString(m[1] || '');
+    if (!hanzi.replace(/\s+/g, '') || looksLikeStructuredJson(hanzi)) continue;
+    segments.push({ hanzi, pinyin: loosePinyin[i] || '' });
+    i += 1;
+  }
+  return segments;
+}
+
+function parseDelimiterFormat(raw: string): StructuredChineseResult | null {
+  const text = raw.replace(/\r\n/g, '\n').trim();
+  if (!/TRANSLATION:|PINYIN:|SEGMENTS:/i.test(text)) return null;
+
+  let translation = '';
+  const translationMatch = text.match(
+    /TRANSLATION:\s*([\s\S]*?)(?=\n\s*(?:PINYIN:|SEGMENTS:|END:)|$)/i,
+  );
+  if (translationMatch) {
+    translation = translationMatch[1].trim();
+  }
+
+  const segments: ChineseSegment[] = [];
+  const pinyinBlockMatch = text.match(
+    /(?:PINYIN|SEGMENTS):\s*([\s\S]*?)(?=\n\s*END:|$)/i,
+  );
+  const block = (pinyinBlockMatch?.[1] || '').trim();
+  if (block) {
+    for (const line of block.split('\n')) {
+      const cleaned = line.trim();
+      if (!cleaned || /^END:?$/i.test(cleaned)) continue;
+      // Formats: 你好 = nǐ hǎo   OR   你好|nǐ hǎo   OR   你好\tnǐ hǎo
+      const parts = cleaned.split(/\s*=\s*|\s*\|\s*|\t+/);
+      const hanzi = (parts[0] || '').trim();
+      const pinyin = (parts.slice(1).join(' ').trim()) || '';
+      if (!hanzi || looksLikeStructuredJson(hanzi)) continue;
+      segments.push({ hanzi, pinyin });
+    }
+  }
+
+  translation = sanitizeDisplayText(translation);
+  if (!translation && segments.length === 0) return null;
+
+  return { translation, segments };
+}
+
+function normalizeSegmentList(items: any[]): ChineseSegment[] {
+  return items
+    .map((s) => ({
+      hanzi: typeof s?.hanzi === 'string' ? String(s.hanzi) : '',
+      pinyin: typeof s?.pinyin === 'string' ? String(s.pinyin) : '',
+    }))
+    .filter((s) => {
+      const hanzi = (s.hanzi || '').replace(/\s+/g, '');
+      return Boolean(hanzi) && !looksLikeStructuredJson(s.hanzi);
+    });
+}
+
+/** Best-effort parse for truncated model JSON (common when segments precede translation). */
+function tryParsePossiblyTruncatedJson(jsonText: string): any | null {
+  const attempts: string[] = [];
+  const end = jsonText.lastIndexOf('}');
+  if (end !== -1) attempts.push(jsonText.slice(0, end + 1));
+  attempts.push(jsonText);
+
+  for (const original of attempts) {
+    let candidate = original.trim();
+    // Drop trailing incomplete object / field after the last complete element.
+    candidate = candidate.replace(/,\s*\{[\s\S]*$/, '');
+    candidate = candidate.replace(/,\s*"[^"]*$/, '');
+    candidate = candidate.replace(/,\s*$/, '');
+
+    const stack: string[] = [];
+    let inString = false;
+    let escape = false;
+    for (const ch of candidate) {
+      if (inString) {
+        if (escape) escape = false;
+        else if (ch === '\\') escape = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === '{' || ch === '[') stack.push(ch);
+      else if ((ch === '}' || ch === ']') && stack.length) stack.pop();
+    }
+    if (inString) candidate += '"';
+    while (stack.length) {
+      const open = stack.pop();
+      candidate += open === '{' ? '}' : ']';
+    }
+
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+function parseJsonFormat(raw: string): StructuredChineseResult | null {
+  try {
+    let jsonText = (raw || '').trim();
+    if (!jsonText) return null;
+
+    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (jsonMatch) jsonText = jsonMatch[1].trim();
+
     const start = jsonText.indexOf('{');
-    const end = jsonText.lastIndexOf('}');
-    if (start === -1 || end === -1) return null;
-    const parsed = JSON.parse(jsonText.slice(start, end + 1));
-    if (!Array.isArray(parsed.segments)) return null;
-    const segments = parsed.segments
-      .filter((s: ChineseSegment) => s?.hanzi)
-      .map((s: ChineseSegment) => ({ hanzi: String(s.hanzi), pinyin: typeof s?.pinyin === 'string' ? String(s.pinyin) : '' }));
-    if (segments.length === 0) return null;
-    return {
-      segments,
-      translation: typeof parsed.translation === 'string' ? parsed.translation : '',
-    };
+    if (start === -1) return null;
+    jsonText = jsonText.slice(start);
+
+    const parsed = tryParsePossiblyTruncatedJson(jsonText);
+
+    let segments: ChineseSegment[] = [];
+    let translation = '';
+
+    if (parsed && typeof parsed === 'object') {
+      translation = typeof parsed.translation === 'string' ? parsed.translation.trim() : '';
+      if (Array.isArray(parsed.segments)) {
+        segments = normalizeSegmentList(parsed.segments);
+      }
+    }
+
+    if (!translation) {
+      translation = extractQuotedField(jsonText, 'translation');
+    }
+    if (segments.length === 0) {
+      segments = extractSegmentsFallback(jsonText);
+    }
+
+    translation = sanitizeDisplayText(translation);
+    if (segments.length === 0 && !translation) return null;
+
+    return { segments, translation };
   } catch {
     return null;
   }
+}
+
+export function parseStructuredChineseResponse(raw: string): StructuredChineseResult | null {
+  const text = (raw || '').trim();
+  if (!text) return null;
+
+  const fromDelimiter = parseDelimiterFormat(text);
+  if (fromDelimiter) return fromDelimiter;
+
+  return parseJsonFormat(text);
 }
 
 type ChineseRubyTextProps = {
@@ -43,21 +230,13 @@ type SegmentUnit = {
   pinyin: string;
 };
 
-function normalizePinyinSyllables(pinyin: string): string[] {
-  return pinyin
-    .replace(/-/g, ' ')
-    .split(/\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 function expandSegments(segments: ChineseSegment[]): SegmentUnit[] {
   const units: SegmentUnit[] = [];
 
   segments.forEach((seg) => {
     const hanzi = (seg.hanzi || '').trim();
     const pinyin = (seg.pinyin || '').trim();
-    if (!hanzi) return;
+    if (!hanzi || looksLikeStructuredJson(hanzi)) return;
 
     const chars = Array.from(hanzi);
     const syllables = normalizePinyinSyllables(pinyin);
@@ -78,18 +257,12 @@ function expandSegments(segments: ChineseSegment[]): SegmentUnit[] {
   return units;
 }
 
-function getToneColor(pinyin: string): string {
-  if (/[āēīōūǖĀĒĪŌŪǕ]/.test(pinyin)) return '#ef4444';
-  if (/[áéíóúǘÁÉÍÓÚǗ]/.test(pinyin)) return '#f59e0b';
-  if (/[ǎěǐǒǔǚǍĚǏǑǓǙ]/.test(pinyin)) return '#10b981';
-  if (/[àèìòùǜÀÈÌÒÙǛ]/.test(pinyin)) return '#3b82f6';
-  return 'var(--sidebar-text)';
-}
-
 export function ChineseRubyText({ segments, size = 'md', onTextSelect }: ChineseRubyTextProps) {
   const units = expandSegments(segments);
   const hanziSize = size === 'lg' ? '1.75rem' : '1.375rem';
   const pinyinSize = size === 'lg' ? '0.78rem' : '0.72rem';
+
+  if (units.length === 0) return null;
 
   return (
     <div
@@ -136,7 +309,7 @@ export function ChineseRubyText({ segments, size = 'md', onTextSelect }: Chinese
           <span
             style={{
               fontSize: hanziSize,
-              fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
+              fontFamily: CHINESE_FONT,
               lineHeight: 1.2,
               color: 'var(--sidebar-text)',
             }}

@@ -688,3 +688,518 @@ textarea {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+/* Китайский словарь: интерактивные иероглифы */
+@keyframes zh-insight-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.zh-char-tile:hover {
+  filter: brightness(1.08);
+}
+.zh-char-tile:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.zh-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.zh-detail-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 1.1rem;
+  background:
+    radial-gradient(ellipse at top left, rgba(17, 98, 47, 0.18), transparent 55%),
+    linear-gradient(160deg, rgba(24, 24, 27, 0.95), rgba(39, 39, 42, 0.75));
+  border: 1px solid rgba(17, 98, 47, 0.28);
+}
+.zh-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.zh-detail-meta-chip {
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #256f40;
+  color: rgba(220, 252, 231, 0.98);
+}
+.zh-translation-block {
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.9rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+.zh-translation-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.9);
+  margin-bottom: 0.3rem;
+}
+.zh-translation-text {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.35;
+}
+.dictionary-list-item--zh {
+  align-items: flex-start !important;
+}
+.dictionary-list-item--zh .zh-list-translation {
+  font-size: 0.8rem;
+  color: rgba(156, 163, 175, 0.95);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 260px;
+  margin-top: 0.15rem;
+}
+
+/* Вкладка 汉字 */
+.zh-chars-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  grid-column: 1 / -1;
+  min-height: 360px;
+}
+@media (max-width: 768px) {
+  .zh-chars-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.zh-chars-list-panel,
+.zh-chars-detail-panel {
+  border-radius: 1.25rem;
+  background: linear-gradient(135deg, var(--card) 0%, var(--card-strong) 100%);
+  border: 1px solid var(--stroke);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.zh-chars-detail-panel {
+  border-color: rgba(17, 98, 47, 0.2);
+  padding: 1rem 1.15rem;
+}
+.zh-chars-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 0.15rem 0.35rem 0.65rem;
+}
+.zh-chars-delete-btn {
+  padding: 0.3rem 0.65rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fecaca;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.zh-chars-error {
+  margin: 0 0.35rem 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(127, 29, 29, 0.25);
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+  font-size: 0.82rem;
+}
+.zh-chars-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: rgba(148, 163, 184, 0.9);
+  line-height: 1.45;
+}
+.zh-chars-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.6rem, 1fr));
+  gap: 0.55rem;
+  overflow: auto;
+  padding: 0.15rem;
+  max-height: min(62vh, 640px);
+}
+.zh-char-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.7rem 0.45rem 0.55rem;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(17, 98, 47, 0.18);
+  background: linear-gradient(160deg, rgba(24, 24, 27, 0.96), rgba(39, 39, 42, 0.88));
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
+  text-align: center;
+  min-height: 6.4rem;
+}
+.zh-char-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(17, 98, 47, 0.45);
+}
+.zh-char-card--selected {
+  border-color: rgba(17, 98, 47, 0.65);
+  background: linear-gradient(160deg, rgba(17, 98, 47, 0.28), rgba(24, 24, 27, 0.92));
+}
+.zh-char-card-check {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+}
+.zh-char-card-pinyin {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  min-height: 0.9rem;
+}
+.zh-char-card-hanzi {
+  font-size: 1.85rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #f8fafc;
+}
+.zh-char-card-gloss {
+  font-size: 0.68rem;
+  color: rgba(156, 163, 175, 0.95);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 0.15rem;
+}
+.zh-char-card-hsk {
+  margin-top: 0.15rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: #256f40;
+  color: rgba(220, 252, 231, 0.98);
+}
+.zh-char-hero-stage {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.zh-char-hero-glyph {
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 1.15rem;
+  border: 1.5px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.zh-char-hero-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.zh-char-hero-pinyin {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.zh-char-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+@media (max-width: 520px) {
+  .zh-char-facts {
+    grid-template-columns: 1fr;
+  }
+}
+.zh-char-fact {
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.85rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.zh-char-fact-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.9);
+}
+.zh-char-fact-value {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: #f1f5f9;
+}
+
+/* Тоновая статистика */
+.zh-tone-stats {
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 0.65rem;
+  border-radius: 0.95rem;
+  background: linear-gradient(135deg, rgba(17, 98, 47, 0.12), rgba(15, 23, 42, 0.65));
+  border: 1px solid rgba(17, 98, 47, 0.22);
+}
+.zh-tone-stats-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.9);
+  margin-bottom: 0.55rem;
+}
+.zh-tone-stats-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.zh-tone-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.zh-tone-bar-label {
+  width: 1.1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+.zh-tone-bar-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+}
+.zh-tone-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.zh-tone-bar-count {
+  width: 1.5rem;
+  font-size: 0.72rem;
+  color: rgba(226, 232, 240, 0.85);
+  text-align: right;
+}
+
+/* Фильтр по тону */
+.zh-tone-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.65rem;
+  padding: 0 0.25rem;
+  flex-wrap: wrap;
+}
+.zh-tone-filter-label {
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.9);
+}
+.zh-tone-filter-chips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.zh-tone-chip {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.zh-tone-chip:hover {
+  filter: brightness(1.15);
+}
+.zh-tone-chip--active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Индикатор заметки на карточке */
+.zh-char-card-note-icon {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  font-size: 0.65rem;
+  opacity: 0.75;
+}
+
+/* Похожие иероглифы */
+.zh-similar-section {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.95rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+.zh-similar-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.9);
+  margin-bottom: 0.55rem;
+}
+.zh-similar-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.zh-similar-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(24, 24, 27, 0.7);
+  cursor: default;
+  opacity: 0.5;
+  transition: all 0.15s;
+}
+.zh-similar-chip--known {
+  opacity: 1;
+  cursor: pointer;
+  border-color: rgba(17, 98, 47, 0.45);
+  background: rgba(17, 98, 47, 0.15);
+}
+.zh-similar-chip--known:hover {
+  border-color: rgba(17, 98, 47, 0.7);
+  transform: translateY(-1px);
+}
+.zh-similar-hanzi {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+.zh-similar-py {
+  font-size: 0.62rem;
+  font-weight: 600;
+  margin-top: 0.1rem;
+}
+.zh-similar-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.7rem;
+  color: rgba(148, 163, 184, 0.7);
+}
+
+/* Мнемоника / заметки */
+.zh-notes-section {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.95rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+.zh-notes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.45rem;
+}
+.zh-notes-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.9);
+}
+.zh-notes-edit-btn {
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(17, 98, 47, 0.45);
+  background: rgba(17, 98, 47, 0.2);
+  color: rgba(220, 252, 231, 0.95);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.zh-notes-edit-btn:hover {
+  background: rgba(17, 98, 47, 0.35);
+}
+.zh-notes-content {
+  font-size: 0.88rem;
+  color: rgba(226, 232, 240, 0.95);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.zh-notes-empty {
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.7);
+  font-style: italic;
+}
+.zh-notes-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.zh-notes-textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.6);
+  color: #f1f5f9;
+  font-size: 0.88rem;
+  resize: vertical;
+  min-height: 4rem;
+}
+.zh-notes-textarea:focus {
+  outline: none;
+  border-color: rgba(17, 98, 47, 0.55);
+}
+.zh-notes-actions {
+  display: flex;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+.zh-notes-cancel {
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: transparent;
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.zh-notes-save {
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.5rem;
+  border: none;
+  background: rgba(17, 98, 47, 0.85);
+  color: #fff;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.zh-notes-save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+

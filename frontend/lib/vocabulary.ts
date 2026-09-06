@@ -48,7 +48,15 @@ export function isHskLevelValue(value: string): value is `${HskLevel}` {
 }
 
 export function containsChinese(text: string): boolean {
-  return /[\u4e00-\u9fff]/.test(text);
+  return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
+}
+
+/** Извлекает только иероглифы (для ключа словаря). */
+export function extractChineseCharacters(text: string): string {
+  if (!text) return '';
+  return Array.from(text)
+    .filter((ch) => /[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch))
+    .join('');
 }
 
 export function containsEnglish(text: string): boolean {

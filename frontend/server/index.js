@@ -336,6 +336,8 @@ app.get('/', (req, res) => {
       '/api/vocabulary/define',
       '/api/vocabulary/add',
       '/api/vocabulary/list',
+      '/api/vocabulary/characters/add',
+      '/api/vocabulary/characters/list',
       '/api/vocabulary/review-list',
       '/api/vocabulary/review'
     ]
@@ -3243,12 +3245,27 @@ app.delete('/api/videos/:id', async (req, res) => {
 // Vocabulary API - Вспомогательные функции
 // ============================================================================
 
-// Нормализация слова: lowercase, удаление пунктуации в начале/конце
+// Нормализация слова: lowercase (для EN), удаление пунктуации по краям.
+// Для китайского ключ словаря = только иероглифы (включая одиночные: 你, 好, 是).
+function extractHanzi(text) {
+  if (!text || typeof text !== 'string') return ''
+  return Array.from(text)
+    .filter((ch) => /[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch))
+    .join('')
+}
+
 function normalizeWord(word) {
   if (!word || typeof word !== 'string') return ''
-  // Приводим к lowercase и удаляем пунктуацию в начале/конце
-  // Оставляем апострофы для слов типа "don't", "I'm"
-  return word.toLowerCase().trim().replace(/^[^a-zA-Z0-9']+|[^a-zA-Z0-9']+$/g, '')
+  const trimmed = word.trim()
+  if (!trimmed) return ''
+
+  // Если в строке есть иероглифы — ключ словаря = только они
+  // (AI иногда возвращает "你好 / привет" или перевод вместо иероглифов)
+  const hanzi = extractHanzi(trimmed)
+  if (hanzi) return hanzi
+
+  // English: lowercase, strip edge punctuation, keep apostrophes ("don't", "I'm")
+  return trimmed.toLowerCase().replace(/^[^a-zA-Z0-9']+|[^a-zA-Z0-9']+$/g, '')
 }
 
 // Извлечение уникальных слов из текста с сохранением позиций
@@ -3336,7 +3353,7 @@ async function getWordDefinitionFromAI(word, language = 'en') {
     const isChinese = language === 'zh'
     
     const prompt = isChinese
-      ? `Проанализируй китайское слово или фразу "${word}" и верни JSON с следующей структурой:
+      ? `Проанализируй китайское слово или иероглиф "${word}" и верни JSON с следующей структурой:
 {
   "word": "${word}",
   "translations": ["перевод1 на русский", "перевод2 на русский"],
@@ -3345,7 +3362,9 @@ async function getWordDefinitionFromAI(word, language = 'en') {
   "hsk_level": 1-6,
   "frequency_rank": число_от_1_до_10000,
   "is_phrase": true/false,
-  "example_sentences": ["пример1 на китайском", "пример2 на китайском"]
+  "example_sentences": ["пример1 на китайском", "пример2 на китайском"],
+  "radical": "радикал/ключ 部首 или null",
+  "stroke_count": число_черт_или_null
 }
 
 Учти:
@@ -3354,6 +3373,7 @@ async function getWordDefinitionFromAI(word, language = 'en') {
 - example_sentences должны быть на китайском языке с контекстом использования
 - frequency_rank: 1 = самое частое, 10000 = редкое
 - pinyin должен включать тона (например: nǐ hǎo)
+- radical и stroke_count заполняй только для одиночного иероглифа; для слов из нескольких иероглифов ставь null
 
 Отвечай только JSON, без дополнительного текста.`
       : `Проанализируй английское слово "${word}" и верни JSON с следующей структурой:
@@ -3424,7 +3444,13 @@ async function getWordDefinitionFromAI(word, language = 'en') {
       hsk_level: (definition.hsk_level >= 1 && definition.hsk_level <= 6) ? definition.hsk_level : null,
       frequency_rank: typeof definition.frequency_rank === 'number' ? definition.frequency_rank : null,
       is_phrase: Boolean(definition.is_phrase),
-      example_sentences: Array.isArray(definition.example_sentences) ? definition.example_sentences : []
+      example_sentences: Array.isArray(definition.example_sentences) ? definition.example_sentences : [],
+      radical: typeof definition.radical === 'string' && definition.radical.trim()
+        ? definition.radical.trim()
+        : null,
+      stroke_count: (typeof definition.stroke_count === 'number' && definition.stroke_count > 0)
+        ? Math.round(definition.stroke_count)
+        : null,
     }
     return { definition: def, usage }
   } catch (error) {
@@ -3442,7 +3468,9 @@ async function getWordDefinitionFromAI(word, language = 'en') {
         hsk_level: null,
         frequency_rank: null,
         is_phrase: false,
-        example_sentences: []
+        example_sentences: [],
+        radical: null,
+        stroke_count: null,
       },
       usage: null
     }
@@ -4063,6 +4091,16 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
   )
   const language = profile?.learning_language || 'en'
 
+  if (language === 'zh') {
+    const hanziOnly = extractHanzi(word)
+    if (!hanziOnly) {
+      return res.status(400).json({
+        error: 'Invalid word',
+        details: 'Для китайского словаря нужны иероглифы (汉字)',
+      })
+    }
+  }
+
   const normalizedWord = normalizeWord(word)
   if (!normalizedWord) {
     return res.status(400).json({ error: 'Invalid word' })
@@ -4164,6 +4202,17 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
       { timeoutMs: 10000, maxRetries: 1 }
     )
 
+    if (language === 'zh') {
+      try {
+        await syncChineseCharactersFromWord(userData.user.id, normalizedWord, definition, {
+          video_id,
+          context,
+        })
+      } catch (syncErr) {
+        console.error('[api/vocabulary/add] Character sync error:', syncErr)
+      }
+    }
+
     return res.json({
       ok: true,
       word: updated || existingWord,
@@ -4233,11 +4282,425 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     { timeoutMs: 10000, maxRetries: 1 }
   )
 
+  if (language === 'zh') {
+    try {
+      await syncChineseCharactersFromWord(userData.user.id, normalizedWord, definition, {
+        video_id,
+        context,
+      })
+    } catch (syncErr) {
+      console.error('[api/vocabulary/add] Character sync error:', syncErr)
+    }
+  }
+
   return res.json({
     ok: true,
     word: newWord,
     message: 'Word added to vocabulary'
   })
+}))
+
+// ---------------------------------------------------------------------------
+// Chinese characters (汉字) — отдельный словарь иероглифов
+// ---------------------------------------------------------------------------
+
+function splitPinyinSyllables(pinyin) {
+  if (!pinyin || typeof pinyin !== 'string') return []
+  return pinyin
+    .replace(/-/g, ' ')
+    .split(/\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+/** Upsert одного иероглифа в user_chinese_characters (без обязательного AI). */
+async function upsertUserChineseCharacter(userId, {
+  character,
+  pinyin = null,
+  translations = null,
+  radical = null,
+  stroke_count = null,
+  hsk_level = null,
+  context = null,
+  video_id = null,
+  bumpSeen = true,
+} = {}) {
+  const hanzi = extractHanzi(character)
+  if (!hanzi || Array.from(hanzi).length !== 1) return null
+
+  const { data: existing } = await safeSupabaseCall(
+    () => supabase
+      .from('user_chinese_characters')
+      .select('id, contexts, times_seen, pinyin, translations, radical, stroke_count, hsk_level')
+      .eq('user_id', userId)
+      .eq('character', hanzi)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+
+  let contextsArray = Array.isArray(existing?.contexts) ? [...existing.contexts] : []
+  if (video_id && context) {
+    const exists = contextsArray.some((c) => c.video_id === video_id && c.text === context)
+    if (!exists) {
+      contextsArray.push({
+        video_id,
+        text: context,
+        timestamp: new Date().toISOString(),
+      })
+    }
+  }
+
+  const now = new Date().toISOString()
+  const mergedTranslations =
+    Array.isArray(translations) && translations.length > 0
+      ? translations
+      : (existing?.translations || [])
+
+  const payload = {
+    user_id: userId,
+    character: hanzi,
+    pinyin: pinyin || existing?.pinyin || null,
+    translations: mergedTranslations,
+    radical: radical || existing?.radical || null,
+    stroke_count: stroke_count || existing?.stroke_count || null,
+    hsk_level: hsk_level || existing?.hsk_level || null,
+    contexts: contextsArray,
+    times_seen: bumpSeen ? ((existing?.times_seen || 0) + 1) : (existing?.times_seen || 1),
+    updated_at: now,
+  }
+
+  if (!existing) {
+    payload.mastery_level = 1
+    payload.next_review_at = now
+    payload.created_at = now
+  }
+
+  const { data, error } = await safeSupabaseCall(
+    () => supabase
+      .from('user_chinese_characters')
+      .upsert(payload, { onConflict: 'user_id,character' })
+      .select()
+      .single(),
+    { timeoutMs: 15000, maxRetries: 2 }
+  )
+
+  if (error) {
+    console.error('[upsertUserChineseCharacter] Error:', error)
+    return null
+  }
+  return data
+}
+
+/**
+ * При добавлении китайского слова — кладём каждый иероглиф в отдельную таблицу.
+ * Для одиночного иероглифа используем полное определение; для составных — слог pinyin.
+ */
+async function syncChineseCharactersFromWord(userId, word, definition, { video_id, context } = {}) {
+  const hanzi = extractHanzi(word)
+  if (!hanzi) return []
+
+  const chars = Array.from(hanzi)
+  const syllables = splitPinyinSyllables(definition?.pinyin || '')
+  const results = []
+
+  if (chars.length === 1) {
+    const row = await upsertUserChineseCharacter(userId, {
+      character: chars[0],
+      pinyin: definition?.pinyin || syllables[0] || null,
+      translations: definition?.definitions || [],
+      radical: definition?.radical || null,
+      stroke_count: definition?.stroke_count || null,
+      hsk_level: definition?.hsk_level || null,
+      video_id,
+      context,
+    })
+    if (row) results.push(row)
+    return results
+  }
+
+  for (let i = 0; i < chars.length; i++) {
+    const row = await upsertUserChineseCharacter(userId, {
+      character: chars[i],
+      pinyin: syllables[i] || null,
+      video_id,
+      context,
+      bumpSeen: true,
+    })
+    if (row) results.push(row)
+  }
+  return results
+}
+
+// Add chinese character — requires Supabase auth
+app.post('/api/vocabulary/characters/add', asyncHandler(async (req, res) => {
+  const token = getBearerToken(req)
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  }
+
+  let userData, userErr
+  try {
+    const result = await Promise.resolve(supabase.auth.getUser(token)).catch((err) => {
+      throw err
+    })
+    userData = result.data
+    userErr = result.error
+  } catch (authError) {
+    const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
+    const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
+    if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
+      return res.status(502).json({
+        error: 'Не удалось подключиться к Supabase (таймаут соединения).',
+        details: { code: errorCode, message: errorMessage },
+      })
+    }
+    throw authError
+  }
+
+  if (userErr || !userData?.user) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+  const userId = userData.user.id
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const { character, word, video_id, context, pinyin, translations, radical, stroke_count, hsk_level } = req.body || {}
+  const raw = character || word
+  const hanzi = extractHanzi(raw || '')
+  if (!hanzi || Array.from(hanzi).length !== 1) {
+    return res.status(400).json({
+      error: 'Invalid character',
+      details: 'Нужен ровно один иероглиф (汉字)',
+    })
+  }
+
+  // AI-определение, если клиент не передал полный пакет
+  let definition = null
+  let usage = null
+  const needsAi = !pinyin || !translations || !Array.isArray(translations) || translations.length === 0
+  if (needsAi) {
+    const result = await getOrCreateWordDefinition(hanzi, 'zh')
+    definition = result
+    usage = result?.usage || null
+    if (usage) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', {
+          vocabulary_characters_add: true,
+        })
+        if (!deductResult.ok) {
+          return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+        }
+      }
+    }
+  }
+
+  const row = await upsertUserChineseCharacter(userId, {
+    character: hanzi,
+    pinyin: pinyin || definition?.pinyin || null,
+    translations: Array.isArray(translations) && translations.length > 0
+      ? translations
+      : (definition?.definitions || []),
+    radical: radical || definition?.radical || null,
+    stroke_count: stroke_count || definition?.stroke_count || null,
+    hsk_level: hsk_level || definition?.hsk_level || null,
+    video_id,
+    context,
+  })
+
+  if (!row) {
+    return res.status(500).json({ error: 'Failed to add character' })
+  }
+
+  return res.json({
+    ok: true,
+    character: row,
+    message: 'Character added to dictionary',
+  })
+}))
+
+// List chinese characters — requires Supabase auth
+app.get('/api/vocabulary/characters/list', asyncHandler(async (req, res) => {
+  const token = getBearerToken(req)
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  }
+
+  let userData, userErr
+  try {
+    const result = await Promise.resolve(supabase.auth.getUser(token)).catch((err) => {
+      throw err
+    })
+    userData = result.data
+    userErr = result.error
+  } catch (authError) {
+    const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
+    const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
+    if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
+      return res.status(502).json({
+        error: 'Не удалось подключиться к Supabase (таймаут соединения).',
+        details: { code: errorCode, message: errorMessage },
+      })
+    }
+    throw authError
+  }
+
+  if (userErr || !userData?.user) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
+  const hskLevel = req.query.hsk_level ? parseInt(req.query.hsk_level, 10) : null
+  const sortOrder = req.query.sort_order === 'asc' ? 'asc' : 'desc'
+
+  let query = supabase
+    .from('user_chinese_characters')
+    .select('*')
+    .eq('user_id', userData.user.id)
+    .order('created_at', { ascending: sortOrder === 'asc' })
+
+  if (hskLevel >= 1 && hskLevel <= 6) {
+    query = query.eq('hsk_level', hskLevel)
+  }
+
+  const { data, error } = await safeSupabaseCall(
+    () => query,
+    { timeoutMs: 20000, maxRetries: 2 }
+  )
+
+  if (error) {
+    console.error('[api/vocabulary/characters/list] Error:', error)
+    return res.status(500).json({ error: 'Failed to list characters', details: error.message })
+  }
+
+  let characters = data || []
+  if (search) {
+    const q = search.toLowerCase()
+    characters = characters.filter((c) => {
+      const hanzi = c.character || ''
+      const py = (c.pinyin || '').toLowerCase()
+      const tr = Array.isArray(c.translations)
+        ? c.translations.map((t) => (t.translation || '').toLowerCase()).join(' ')
+        : ''
+      const radical = (c.radical || '').toLowerCase()
+      return hanzi.includes(search) || py.includes(q) || tr.includes(q) || radical.includes(q)
+    })
+  }
+
+  return res.json({
+    ok: true,
+    characters,
+    total: characters.length,
+  })
+}))
+
+// Bulk delete chinese characters — requires Supabase auth
+app.post('/api/vocabulary/characters/bulk-delete', asyncHandler(async (req, res) => {
+  const token = getBearerToken(req)
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  }
+
+  let userData, userErr
+  try {
+    const result = await Promise.resolve(supabase.auth.getUser(token)).catch((err) => {
+      throw err
+    })
+    userData = result.data
+    userErr = result.error
+  } catch (authError) {
+    const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
+    const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
+    if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
+      return res.status(502).json({
+        error: 'Не удалось подключиться к Supabase (таймаут соединения).',
+        details: { code: errorCode, message: errorMessage },
+      })
+    }
+    throw authError
+  }
+
+  if (userErr || !userData?.user) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((id) => typeof id === 'string') : []
+  if (ids.length === 0) {
+    return res.status(400).json({ error: 'ids array is required' })
+  }
+
+  const { error } = await safeSupabaseCall(
+    () => supabase
+      .from('user_chinese_characters')
+      .delete()
+      .eq('user_id', userData.user.id)
+      .in('id', ids),
+    { timeoutMs: 15000, maxRetries: 2 }
+  )
+
+  if (error) {
+    console.error('[api/vocabulary/characters/bulk-delete] Error:', error)
+    return res.status(500).json({ error: 'Failed to delete characters', details: error.message })
+  }
+
+  return res.json({ ok: true, deleted: ids.length })
+}))
+
+// Update notes for a chinese character — requires Supabase auth
+app.post('/api/vocabulary/characters/update-notes', asyncHandler(async (req, res) => {
+  const token = getBearerToken(req)
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  }
+
+  let userData, userErr
+  try {
+    const result = await Promise.resolve(supabase.auth.getUser(token)).catch((err) => {
+      throw err
+    })
+    userData = result.data
+    userErr = result.error
+  } catch (authError) {
+    const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
+    const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
+    if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
+      return res.status(502).json({
+        error: 'Не удалось подключиться к Supabase (таймаут соединения).',
+        details: { code: errorCode, message: errorMessage },
+      })
+    }
+    throw authError
+  }
+
+  if (userErr || !userData?.user) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+
+  const { id, notes } = req.body || {}
+  if (!id || typeof id !== 'string') {
+    return res.status(400).json({ error: 'id is required' })
+  }
+
+  const { data, error } = await safeSupabaseCall(
+    () => supabase
+      .from('user_chinese_characters')
+      .update({ notes: notes || null, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('user_id', userData.user.id)
+      .select()
+      .single(),
+    { timeoutMs: 10000, maxRetries: 2 }
+  )
+
+  if (error) {
+    console.error('[api/vocabulary/characters/update-notes] Error:', error)
+    return res.status(500).json({ error: 'Failed to update notes', details: error.message })
+  }
+
+  return res.json({ ok: true, character: data })
 }))
 
 // Bulk delete words from vocabulary — requires Supabase auth
