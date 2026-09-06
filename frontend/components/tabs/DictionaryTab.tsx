@@ -31,6 +31,7 @@ type VocabularyCategory = {
   description: string | null;
   color: string;
   icon: string | null;
+  language?: 'en' | 'zh';
   word_count?: number;
   idiom_count?: number;
   phrasal_verb_count?: number;
@@ -472,26 +473,45 @@ export const DictionaryTab: React.FC = () => {
     );
   }, []);
 
-  // Load categories
+  const reloadCategories = useCallback(async () => {
+    if (!accessToken || !isLanguageReady) return;
+    const resp = await fetch(
+      `${getApiUrl()}/api/vocabulary/categories?language=${learningLanguage}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data?.error || 'Не удалось загрузить категории');
+    }
+    setCategories(data.categories || []);
+  }, [accessToken, isLanguageReady, learningLanguage]);
+
+  const allowedCategoryIds = useMemo(
+    () => new Set(categories.map((c) => c.id)),
+    [categories],
+  );
+  const categoriesForCurrentLanguage = useCallback(
+    (list?: VocabularyCategory[]) => (list || []).filter((c) => allowedCategoryIds.has(c.id)),
+    [allowedCategoryIds],
+  );
+
   useEffect(() => {
-    if (!accessToken) return;
+    setCategoryId(null);
+    setIdiomCategoryId(null);
+  }, [learningLanguage]);
+
+  useEffect(() => {
+    if (!accessToken || !isLanguageReady) return;
 
     async function fetchCategories() {
       setCategoriesLoading(true);
       try {
-        const resp = await fetch(`${getApiUrl()}/api/vocabulary/categories`, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-
-        const data = await resp.json();
-        if (!resp.ok || !data.ok) {
-          throw new Error(data?.error || 'Не удалось загрузить категории');
-        }
-
-        setCategories(data.categories || []);
+        await reloadCategories();
       } catch (e: any) {
         console.error('Error loading categories:', e);
       } finally {
@@ -500,7 +520,7 @@ export const DictionaryTab: React.FC = () => {
     }
 
     fetchCategories();
-  }, [accessToken]);
+  }, [accessToken, isLanguageReady, reloadCategories]);
 
   useEffect(() => {
     if (!accessToken || !isLanguageReady) return;
@@ -899,6 +919,7 @@ export const DictionaryTab: React.FC = () => {
           description: categoryForm.description.trim() || null,
           color: categoryForm.color,
           icon: categoryForm.icon.trim() || null,
+          language: learningLanguage,
         }),
       });
 
@@ -907,17 +928,7 @@ export const DictionaryTab: React.FC = () => {
         throw new Error(data?.error || 'Не удалось создать категорию');
       }
 
-      // Reload categories
-      const categoriesResp = await fetch(`${getApiUrl()}/api/vocabulary/categories`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      const categoriesData = await categoriesResp.json();
-      if (categoriesData.ok) {
-        setCategories(categoriesData.categories || []);
-      }
+      await reloadCategories();
 
       setShowCategoryModal(false);
       setCategoryForm({ name: '', description: '', color: '#11622f', icon: '' });
@@ -926,7 +937,7 @@ export const DictionaryTab: React.FC = () => {
       console.error('Error creating category:', e);
       alert(e?.message || 'Не удалось создать категорию');
     }
-  }, [accessToken, categoryForm]);
+  }, [accessToken, categoryForm, learningLanguage, reloadCategories]);
 
   const handleUpdateCategory = useCallback(async () => {
     if (!accessToken || !editingCategory || !categoryForm.name.trim()) return;
@@ -951,17 +962,7 @@ export const DictionaryTab: React.FC = () => {
         throw new Error(data?.error || 'Не удалось обновить категорию');
       }
 
-      // Reload categories
-      const categoriesResp = await fetch(`${getApiUrl()}/api/vocabulary/categories`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      const categoriesData = await categoriesResp.json();
-      if (categoriesData.ok) {
-        setCategories(categoriesData.categories || []);
-      }
+      await reloadCategories();
 
       setShowCategoryModal(false);
       setCategoryForm({ name: '', description: '', color: '#11622f', icon: '' });
@@ -970,7 +971,7 @@ export const DictionaryTab: React.FC = () => {
       console.error('Error updating category:', e);
       alert(e?.message || 'Не удалось обновить категорию');
     }
-  }, [accessToken, editingCategory, categoryForm]);
+  }, [accessToken, editingCategory, categoryForm, reloadCategories]);
 
   const handleDeleteCategory = useCallback(async (deletedCategoryId: string) => {
     if (!accessToken || !confirm('Вы уверены, что хотите удалить эту категорию?')) return;
@@ -988,27 +989,19 @@ export const DictionaryTab: React.FC = () => {
         throw new Error(data?.error || 'Не удалось удалить категорию');
       }
 
-      // Reload categories
-      const categoriesResp = await fetch(`${getApiUrl()}/api/vocabulary/categories`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      const categoriesData = await categoriesResp.json();
-      if (categoriesData.ok) {
-        setCategories(categoriesData.categories || []);
-      }
+      await reloadCategories();
 
-      // Clear category filter if deleted category was selected
       if (categoryId === deletedCategoryId) {
         setCategoryId(null);
+      }
+      if (idiomCategoryId === deletedCategoryId) {
+        setIdiomCategoryId(null);
       }
     } catch (e: any) {
       console.error('Error deleting category:', e);
       alert(e?.message || 'Не удалось удалить категорию');
     }
-  }, [accessToken, categoryId]);
+  }, [accessToken, categoryId, idiomCategoryId, reloadCategories]);
 
   const handleAssignCategories = useCallback(async (wordId: string, categoryIds: string[]) => {
     if (!accessToken) return;
@@ -1416,25 +1409,23 @@ export const DictionaryTab: React.FC = () => {
                 {!exporting && (showExportDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />)}
               </button>
             </div>
-            {!isChinese && (
-              <button
-                onClick={() => openCategoryModal()}
-                style={{
-                  padding: '0.4rem 0.8rem',
-                  borderRadius: '0.6rem',
-                  border: '1px solid var(--stroke)',
-                  background: 'var(--card)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.75rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                }}
-                title="Управление категориями"
-              >
-                <TagIcon /> Категории
-              </button>
-            )}
+            <button
+              onClick={() => openCategoryModal()}
+              style={{
+                padding: '0.4rem 0.8rem',
+                borderRadius: '0.6rem',
+                border: '1px solid var(--stroke)',
+                background: 'var(--card)',
+                color: 'var(--text-primary)',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              }}
+              title={isChinese ? 'Управление категориями · 分类' : 'Управление категориями'}
+            >
+              <TagIcon /> {isChinese ? '分类' : 'Категории'}
+            </button>
             <label
               style={{
                 padding: '0.4rem 0.8rem',
@@ -1721,7 +1712,7 @@ export const DictionaryTab: React.FC = () => {
             {showLevelDropdown ? <ChevronUpIcon /> : <ChevronDownIcon />}
           </button>
         </div>
-        {viewMode === 'words' && !isChinese && (
+        {viewMode === 'words' && (
           <div
             ref={categoryDropdownRef}
             style={{
@@ -1783,7 +1774,7 @@ export const DictionaryTab: React.FC = () => {
             </button>
           </div>
         )}
-        {viewMode === 'idioms' && !isChinese && (
+        {viewMode === 'idioms' && (
           <div
             ref={categoryDropdownRef}
             style={{
@@ -2736,9 +2727,9 @@ export const DictionaryTab: React.FC = () => {
                                 justifyContent: 'flex-end',
                               }}
                             >
-                              {word.categories && word.categories.length > 0 && (
+                              {categoriesForCurrentLanguage(word.categories).length > 0 && (
                                 <>
-                                  {word.categories.map((cat) => (
+                                  {categoriesForCurrentLanguage(word.categories).map((cat) => (
                                     <span
                                       key={cat.id}
                                       style={{
@@ -2972,9 +2963,9 @@ export const DictionaryTab: React.FC = () => {
                                 justifyContent: 'flex-end',
                               }}
                             >
-                              {idiom.categories && idiom.categories.length > 0 && (
+                              {categoriesForCurrentLanguage(idiom.categories).length > 0 && (
                                 <>
-                                  {idiom.categories.map((cat) => (
+                                  {categoriesForCurrentLanguage(idiom.categories).map((cat) => (
                                     <span
                                       key={cat.id}
                                       style={{
@@ -3401,7 +3392,8 @@ export const DictionaryTab: React.FC = () => {
                         onClick={() => {
                           setAssigningWordId(selectedWord.id);
                           setAssigningIdiomId(null);
-                          const currentCategoryIds = selectedWord.categories?.map(c => c.id) || [];
+                          const currentCategoryIds = (selectedWord.categories?.map(c => c.id) || [])
+                            .filter((id) => categories.some((c) => c.id === id));
                           setSelectedCategoryIds(new Set(currentCategoryIds));
                           setShowAssignCategoriesModal(true);
                         }}
@@ -3418,7 +3410,7 @@ export const DictionaryTab: React.FC = () => {
                         Изменить
                       </button>
                     </div>
-                    {selectedWord.categories && selectedWord.categories.length > 0 ? (
+                    {categoriesForCurrentLanguage(selectedWord.categories).length > 0 ? (
                       <div
                         style={{
                           display: 'flex',
@@ -3426,7 +3418,7 @@ export const DictionaryTab: React.FC = () => {
                           gap: '0.4rem',
                         }}
                       >
-                        {selectedWord.categories.map((cat) => (
+                        {categoriesForCurrentLanguage(selectedWord.categories).map((cat) => (
                           <span
                             key={cat.id}
                             style={{
@@ -3666,7 +3658,8 @@ export const DictionaryTab: React.FC = () => {
                       onClick={() => {
                         setAssigningWordId(selectedWord.id);
                         setAssigningIdiomId(null);
-                        const currentCategoryIds = selectedWord.categories?.map(c => c.id) || [];
+                        const currentCategoryIds = (selectedWord.categories?.map(c => c.id) || [])
+                          .filter((id) => categories.some((c) => c.id === id));
                         setSelectedCategoryIds(new Set(currentCategoryIds));
                         setShowAssignCategoriesModal(true);
                       }}
@@ -3683,7 +3676,7 @@ export const DictionaryTab: React.FC = () => {
                       Изменить
                     </button>
                   </div>
-                  {selectedWord.categories && selectedWord.categories.length > 0 ? (
+                  {categoriesForCurrentLanguage(selectedWord.categories).length > 0 ? (
                     <div
                       style={{
                         display: 'flex',
@@ -3691,7 +3684,7 @@ export const DictionaryTab: React.FC = () => {
                         gap: '0.4rem',
                       }}
                     >
-                      {selectedWord.categories.map((cat) => (
+                      {categoriesForCurrentLanguage(selectedWord.categories).map((cat) => (
                         <span
                           key={cat.id}
                           style={{
@@ -3935,7 +3928,8 @@ export const DictionaryTab: React.FC = () => {
                             setAssigningIdiomId(selectedIdiom.id!);
                             setAssigningWordId(null);
                             setAssigningPhrasalVerbId(null);
-                            const currentCategoryIds = selectedIdiom.categories?.map(c => c.id) || [];
+                            const currentCategoryIds = (selectedIdiom.categories?.map(c => c.id) || [])
+                              .filter((id) => categories.some((c) => c.id === id));
                             setSelectedCategoryIds(new Set(currentCategoryIds));
                             setShowAssignCategoriesModal(true);
                           }}
@@ -3952,9 +3946,9 @@ export const DictionaryTab: React.FC = () => {
                           Изменить
                         </button>
                       </div>
-                      {selectedIdiom.categories && selectedIdiom.categories.length > 0 ? (
+                      {categoriesForCurrentLanguage(selectedIdiom.categories).length > 0 ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                          {selectedIdiom.categories.map((cat) => (
+                          {categoriesForCurrentLanguage(selectedIdiom.categories).map((cat) => (
                             <span
                               key={cat.id}
                               style={{
@@ -4216,7 +4210,8 @@ export const DictionaryTab: React.FC = () => {
                         onClick={() => {
                           setAssigningIdiomId(selectedIdiom.id!);
                           setAssigningWordId(null);
-                          const currentCategoryIds = selectedIdiom.categories?.map(c => c.id) || [];
+                          const currentCategoryIds = (selectedIdiom.categories?.map(c => c.id) || [])
+                            .filter((id) => categories.some((c) => c.id === id));
                           setSelectedCategoryIds(new Set(currentCategoryIds));
                           setShowAssignCategoriesModal(true);
                         }}
@@ -4233,7 +4228,7 @@ export const DictionaryTab: React.FC = () => {
                         Изменить
                       </button>
                     </div>
-                    {selectedIdiom.categories && selectedIdiom.categories.length > 0 ? (
+                    {categoriesForCurrentLanguage(selectedIdiom.categories).length > 0 ? (
                       <div
                         style={{
                           display: 'flex',
@@ -4241,7 +4236,7 @@ export const DictionaryTab: React.FC = () => {
                           gap: '0.4rem',
                         }}
                       >
-                        {selectedIdiom.categories.map((cat) => (
+                        {categoriesForCurrentLanguage(selectedIdiom.categories).map((cat) => (
                           <span
                             key={cat.id}
                             style={{
@@ -4794,7 +4789,9 @@ export const DictionaryTab: React.FC = () => {
                 marginBottom: '1rem',
               }}
             >
-              {editingCategory ? 'Редактировать категорию' : 'Создать категорию'}
+              {editingCategory
+                ? (isChinese ? 'Редактировать категорию · 分类' : 'Редактировать категорию')
+                : (isChinese ? 'Создать категорию · 分类' : 'Создать категорию')}
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -4813,7 +4810,7 @@ export const DictionaryTab: React.FC = () => {
                   type="text"
                   value={categoryForm.name}
                   onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                  placeholder="Название категории"
+                  placeholder={isChinese ? 'например 食物, 旅行, 家庭' : 'Название категории'}
                   style={{
                     width: '100%',
                     padding: '0.6rem 0.8rem',
@@ -4965,7 +4962,7 @@ export const DictionaryTab: React.FC = () => {
                     marginBottom: '1rem',
                   }}
                 >
-                  Все категории
+                  {isChinese ? 'Категории китайского словаря' : 'Все категории'}
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {categories.map((cat) => (
@@ -5082,7 +5079,7 @@ export const DictionaryTab: React.FC = () => {
                 marginBottom: '1rem',
               }}
             >
-              Выбрать категории
+              {isChinese ? 'Выбрать категории · 选择分类' : 'Выбрать категории'}
             </h3>
 
             {categories.length === 0 ? (
@@ -5093,7 +5090,33 @@ export const DictionaryTab: React.FC = () => {
                   color: 'rgba(148,163,184,0.9)',
                 }}
               >
-                Нет категорий. Создайте категорию, чтобы назначить её словам.
+                <div>
+                  {isChinese
+                    ? 'Нет категорий для китайского словаря. Создайте свою, чтобы группировать слова и 成语.'
+                    : 'Нет категорий. Создайте категорию, чтобы назначить её словам.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAssignCategoriesModal(false);
+                    setAssigningWordId(null);
+                    setAssigningIdiomId(null);
+                    setAssigningPhrasalVerbId(null);
+                    openCategoryModal();
+                  }}
+                  style={{
+                    marginTop: '1rem',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '0.65rem',
+                    border: 'none',
+                    background: 'rgba(17,98,47,0.9)',
+                    color: '#f9fafb',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {isChinese ? 'Создать категорию · 分类' : 'Создать категорию'}
+                </button>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
