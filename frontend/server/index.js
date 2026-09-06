@@ -1876,6 +1876,8 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   // Китайские настройки обучения
   const chineseSettings = chinese_settings && typeof chinese_settings === 'object' ? chinese_settings : {}
   const chineseShowPinyin = Boolean(chineseSettings.show_pinyin)
+  const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
+  const chineseHintMode = ['basic', 'vocabulary', 'formal', 'colloquial'].includes(chineseSettings.hint_mode) ? chineseSettings.hint_mode : 'basic'
   const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
   const allowProfanity = Boolean(settings.allow_profanity)
   const aiMayUseProfanity = allowProfanity && Boolean(settings.ai_may_use_profanity)
@@ -1898,9 +1900,12 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     : []
 
   const scenarioGoal = (typeof goal_ru === 'string' && goal_ru.trim()) || (typeof goal === 'string' && goal.trim()) || ''
-  const levelHint = typeof level === 'string' && level.trim()
-    ? level.trim().toUpperCase().replace(/^(EASY|MEDIUM|HARD)$/i, (m) => m.charAt(0) + m.slice(1).toLowerCase())
-    : 'B1'
+  // Для китайского используем HSK уровень из настроек, для английского — level из запроса
+  const levelHint = req.learningLanguage === 'zh'
+    ? chineseHskLevel
+    : (typeof level === 'string' && level.trim()
+        ? level.trim().toUpperCase().replace(/^(EASY|MEDIUM|HARD)$/i, (m) => m.charAt(0) + m.slice(1).toLowerCase())
+        : 'B1')
 
   const levelGuidance = req.learningLanguage === 'zh' ? REPLY_HINT_LEVEL_ZH : {
     A1: 'Use very simple words and short sentences (e.g. "I like...", "Yes, please.", "Thank you.").',
@@ -2044,6 +2049,7 @@ Rules:
             freestyleToneDirectness,
             freestyleMicroGoals,
             showPinyin: chineseShowPinyin,
+            chineseHintMode,
           })
           : chatSystemContent)
         : roleplaySystemContent

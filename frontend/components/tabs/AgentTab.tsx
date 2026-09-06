@@ -57,6 +57,15 @@ const FREESTYLE_HINT_MODE_LABELS: Record<FreestyleHintMode, string> = {
   no_profanity: 'Без мата',
 };
 
+// Режимы подсказки для китайского языка
+type ChineseHintMode = 'basic' | 'vocabulary' | 'formal' | 'colloquial';
+const CHINESE_HINT_MODE_LABELS: Record<ChineseHintMode, { label: string; desc: string }> = {
+  basic: { label: 'Базовый', desc: 'Простая фраза по уровню HSK' },
+  vocabulary: { label: 'С лексикой', desc: 'С полезными словами по теме' },
+  formal: { label: 'Вежливый', desc: 'Формальный/уважительный стиль' },
+  colloquial: { label: 'Разговорный', desc: 'Как говорят в жизни' },
+};
+
 
 function getApiUrl(): string {
   const url = process.env.NEXT_PUBLIC_API_URL || '';
@@ -233,6 +242,7 @@ export function AgentTab() {
   const [chineseShowPinyin, setChineseShowPinyin] = useState(true);
   const [chineseToneFocus, setChineseToneFocus] = useState(false);
   const [chineseCorrectionMode, setChineseCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
+  const [chineseHintMode, setChineseHintMode] = useState<ChineseHintMode>('basic');
   /** Состояния для режима дебатов */
   const [debateTopic, setDebateTopic] = useState<string | null>(null);
   const [debateTopicSource, setDebateTopicSource] = useState<'catalog' | 'custom'>('catalog');
@@ -313,8 +323,9 @@ export function AgentTab() {
       show_pinyin: chineseShowPinyin,
       tone_focus: chineseToneFocus,
       correction_mode: chineseCorrectionMode,
+      hint_mode: chineseHintMode,
     }),
-    [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin, chineseToneFocus, chineseCorrectionMode]
+    [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin, chineseToneFocus, chineseCorrectionMode, chineseHintMode]
   );
   const chineseSettingsSummary = useMemo(() => {
     const hsk = `HSK ${chineseHskLevel}`;
@@ -3275,7 +3286,7 @@ export function AgentTab() {
                             style={{
                               display: 'flex',
                               flexDirection: 'column',
-                              gap: '0.5rem',
+                              gap: '0.625rem',
                               padding: '0.625rem 0.75rem',
                               borderRadius: 10,
                               background: 'rgba(251, 191, 36, 0.08)',
@@ -3283,8 +3294,38 @@ export function AgentTab() {
                             }}
                           >
                             <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.7, color: 'rgb(251, 191, 36)' }}>
-                              Подсказка
+                              Подсказка ответа
                             </span>
+                            {/* Выбор режима подсказки */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                              <span style={{ fontSize: '0.6875rem', opacity: 0.6, color: 'var(--sidebar-text)' }}>Режим:</span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                                {(Object.entries(CHINESE_HINT_MODE_LABELS) as [ChineseHintMode, { label: string; desc: string }][]).map(([mode, { label }]) => (
+                                  <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => setChineseHintMode(mode)}
+                                    style={{
+                                      padding: '0.3rem 0.55rem',
+                                      borderRadius: 6,
+                                      border: chineseHintMode === mode ? '1px solid rgb(251, 191, 36)' : '1px solid var(--sidebar-border)',
+                                      background: chineseHintMode === mode ? 'rgba(251, 191, 36, 0.2)' : 'var(--sidebar-bg)',
+                                      color: chineseHintMode === mode ? 'rgb(251, 191, 36)' : 'var(--sidebar-text)',
+                                      fontSize: '0.75rem',
+                                      fontWeight: chineseHintMode === mode ? 600 : 400,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease',
+                                    }}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                              <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.35, color: 'var(--sidebar-text)' }}>
+                                {CHINESE_HINT_MODE_LABELS[chineseHintMode].desc}
+                              </p>
+                            </div>
+                            {/* Кнопка запроса подсказки */}
                             <button
                               type="button"
                               onClick={requestReplyHint}
@@ -3321,15 +3362,10 @@ export function AgentTab() {
                                     <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
                                     <line x1="12" y1="17" x2="12.01" y2="17" />
                                   </svg>
-                                  Что ответить?
+                                  Получить подсказку
                                 </>
                               )}
                             </button>
-                            {!replyHintLoading && !replyHintText && (
-                              <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.6, lineHeight: 1.4, color: 'var(--sidebar-text)' }}>
-                                ИИ предложит вариант ответа на китайском{chineseShowPinyin ? ' с пиньинь' : ''}
-                              </p>
-                            )}
                             {/* Результат подсказки */}
                             {replyHintText && (() => {
                               const parsedHint = chineseShowPinyin
@@ -3386,16 +3422,16 @@ export function AgentTab() {
                           <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
                             Исправление ошибок
                           </span>
-                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
-                            <span style={{ opacity: 0.85 }}>Режим коррекции</span>
+                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', overflow: 'hidden' }}>
+                            <span style={{ opacity: 0.85, flexShrink: 0 }}>Режим коррекции</span>
                             <select
                               className="roleplay-modern-select"
                               value={chineseCorrectionMode}
                               onChange={(e) => setChineseCorrectionMode(e.target.value as ChineseCorrectionMode)}
-                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
+                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.75rem', minWidth: 0, maxWidth: '55%' }}
                             >
-                              <option value="gentle">Мягкий — исправляю изредка</option>
-                              <option value="active">Активный — исправляю всё</option>
+                              <option value="gentle">Мягкий</option>
+                              <option value="active">Активный</option>
                             </select>
                           </label>
                           <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4 }}>
@@ -4068,7 +4104,8 @@ export function AgentTab() {
                 <>
                   {messages[messages.length - 1]?.role === 'assistant' && (
                     <>
-                      {agentMode === 'chat' && (
+                      {/* Режим подсказки и кнопка — только для английского (для китайского они в панели настроек) */}
+                      {agentMode === 'chat' && learningLanguage !== 'zh' && (
                         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.55rem', borderRadius: 10, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', fontSize: '0.75rem' }}>
                           <span style={{ opacity: 0.8 }}>Режим подсказки</span>
                           <select
@@ -4082,7 +4119,7 @@ export function AgentTab() {
                           </select>
                         </label>
                       )}
-                      {agentMode === 'chat' && (
+                      {agentMode === 'chat' && learningLanguage !== 'zh' && (
                         <button
                           type="button"
                           onClick={requestReplyHint}
