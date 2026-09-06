@@ -1886,6 +1886,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   // Китайские настройки обучения
   const chineseSettings = chinese_settings && typeof chinese_settings === 'object' ? chinese_settings : {}
   const chineseShowPinyin = Boolean(chineseSettings.show_pinyin)
+  const chineseShowTranslation = Boolean(chineseSettings.show_translation)
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
   const chineseHintMode = ['basic', 'vocabulary', 'formal', 'colloquial'].includes(chineseSettings.hint_mode) ? chineseSettings.hint_mode : 'basic'
   const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
@@ -2059,6 +2060,7 @@ Rules:
             freestyleToneDirectness,
             freestyleMicroGoals,
             showPinyin: chineseShowPinyin,
+            showTranslation: chineseShowTranslation,
             chineseHintMode,
           })
           : chatSystemContent)

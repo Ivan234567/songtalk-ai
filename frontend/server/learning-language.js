@@ -88,31 +88,37 @@ function buildChineseSystemPrompt(options = {}) {
       '- You may occasionally include tone reminders like "记住：mā 妈(妈妈), má 麻(麻烦), mǎ 马(马上), mà 骂(骂人)"'
   }
   
-  // Метаданные (пиньинь и перевод)
-  const needsMetadata = showPinyin || showTranslation
-  if (needsMetadata) {
-    prompt += '\n\nIMPORTANT: After your Chinese reply, add metadata on NEW LINES:\n'
-    prompt += 'Format:\n'
-    prompt += 'Your Chinese reply text here\n'
-    
-    if (showPinyin) {
-      prompt += '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"我","p":"wǒ"}]\n'
-    }
-    if (showTranslation) {
-      prompt += '««TRANSLATION»»Русский перевод вашего ответа\n'
-    }
-    
-    prompt += '\nRules:\n'
-    if (showPinyin) {
-      prompt += '- PINYIN: JSON array, "h" = hanzi word, "p" = pinyin with tone marks. Cover ALL words.\n'
-    }
-    if (showTranslation) {
-      prompt += '- TRANSLATION: Natural Russian translation of your Chinese reply. Keep it concise.\n'
-    }
-    prompt += '- Keep the main Chinese reply natural - metadata lines are for learning assistance only.'
-  }
-  
+  prompt += buildChineseMetadataInstruction({ showPinyin, showTranslation })
   return prompt
+}
+
+function buildChineseMetadataInstruction({ showPinyin = false, showTranslation = false } = {}) {
+  if (!showPinyin && !showTranslation) return ''
+
+  let instruction = '\n\nIMPORTANT: After the Chinese text, add metadata on separate new lines. ' +
+    'The spoken/main Chinese text must never include pinyin JSON or Russian translation.\n' +
+    'Required format:\n' +
+    '你好！今天天气很好。\n'
+
+  if (showPinyin) {
+    instruction += '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"今天","p":"jīn tiān"},{"h":"天气","p":"tiān qì"},{"h":"很好","p":"hěn hǎo"}]\n'
+  }
+  if (showTranslation) {
+    instruction += '««TRANSLATION»»Привет! Сегодня очень хорошая погода.\n'
+  }
+
+  instruction += '\nRules:\n'
+  if (showPinyin && showTranslation) {
+    instruction += '- You MUST include BOTH lines: PINYIN and TRANSLATION. Never skip pinyin.\n'
+  }
+  if (showPinyin) {
+    instruction += '- PINYIN: valid JSON array only. "h" = hanzi word, "p" = pinyin with tone marks. Cover ALL words.\n'
+  }
+  if (showTranslation) {
+    instruction += '- TRANSLATION: natural Russian translation of the Chinese text only. Keep it concise.\n'
+  }
+  instruction += '- Do not put metadata inside the main Chinese reply.'
+  return instruction
 }
 
 export function getFreestyleChatSystemPrompt(lang, options = {}) {
@@ -135,27 +141,22 @@ export function buildReplyHintChatSystemZh({
   freestyleToneDirectness,
   freestyleMicroGoals,
   showPinyin = false,
+  showTranslation = false,
   chineseHintMode = 'basic',
 }) {
-  const pinyinInstruction = showPinyin
-    ? '\n\nIMPORTANT: After your Chinese reply, add pinyin data on a NEW LINE starting with ««PINYIN»» followed by JSON array.\n' +
-      'Format: Your Chinese reply text here\n' +
-      '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"我想","p":"wǒ xiǎng"}]\n' +
-      'Each object: "h" = hanzi word, "p" = pinyin with tone marks.\n' +
-      'Cover ALL words from your reply. Keep the main reply natural - the pinyin line is metadata only.'
-    : ''
+  const metadataInstruction = buildChineseMetadataInstruction({ showPinyin, showTranslation })
   
   const hintModeInstruction = CHINESE_HINT_MODE_INSTRUCTIONS[chineseHintMode] || CHINESE_HINT_MODE_INSTRUCTIONS.basic
   
   return (
     'You are a speaking coach for Chinese conversation practice. The assistant just wrote a message in Simplified Chinese, and you suggest what the USER could reply next.\n\n' +
     'Rules:\n' +
-    '- Output ONLY the suggested reply text in Simplified Chinese (简体中文). No explanations, no labels, no quote wrappers.\n' +
+    '- The main suggestion must be Simplified Chinese only. No explanations or quote wrappers in that part.\n' +
     `- STRICTLY match learner level: ${levelText}\n` +
     `- Hint style: ${hintModeInstruction}\n` +
     '- Keep the suggestion directly relevant to the latest assistant message and recent context.\n' +
     '- Keep it concise (usually 1-2 short sentences).' +
-    pinyinInstruction
+    metadataInstruction
   )
 }
 

@@ -209,35 +209,72 @@ function parseJsonFormat(raw: string): StructuredChineseResult | null {
   }
 }
 
-/**
- * Парсит новый формат с ««PINYIN»» маркером.
- * Формат: "Основной текст\n««PINYIN»»[{"h":"你好","p":"nǐ hǎo"}]"
- */
-function parsePinyinMarkerFormat(raw: string): StructuredChineseResult | null {
-  const marker = '««PINYIN»»';
+const PINYIN_MARKER = '««PINYIN»»';
+const TRANSLATION_MARKER = '««TRANSLATION»»';
+const NEXT_META_MARKER_RE = /««[A-Z]+»»/;
+
+function extractMarkedValue(raw: string, marker: string): string | null {
   const idx = raw.indexOf(marker);
   if (idx === -1) return null;
+  const after = raw.slice(idx + marker.length);
+  const next = after.search(NEXT_META_MARKER_RE);
+  const value = (next === -1 ? after : after.slice(0, next)).trim();
+  return value || null;
+}
 
-  const mainText = raw.slice(0, idx).trim();
-  const jsonPart = raw.slice(idx + marker.length).trim();
+function firstMetadataIndex(raw: string): number {
+  const indices = [raw.indexOf(PINYIN_MARKER), raw.indexOf(TRANSLATION_MARKER)].filter((i) => i !== -1);
+  return indices.length ? Math.min(...indices) : -1;
+}
 
-  try {
-    const parsed = JSON.parse(jsonPart);
-    if (!Array.isArray(parsed)) return null;
+function normalizePinyinItem(item: any): ChineseSegment | null {
+  if (!item || typeof item !== 'object') return null;
+  const hanzi = typeof item.h === 'string' ? item.h : typeof item.hanzi === 'string' ? item.hanzi : '';
+  const pinyin = typeof item.p === 'string' ? item.p : typeof item.pinyin === 'string' ? item.pinyin : '';
+  if (!hanzi.trim() || looksLikeStructuredJson(hanzi)) return null;
+  return { hanzi, pinyin };
+}
 
-    const segments: ChineseSegment[] = parsed
-      .filter((item) => item && typeof item.h === 'string')
-      .map((item) => ({
-        hanzi: item.h,
-        pinyin: typeof item.p === 'string' ? item.p : '',
-      }));
+function parsePinyinJsonBlock(raw: string): ChineseSegment[] {
+  const start = raw.indexOf('[');
+  if (start === -1) return [];
 
-    if (segments.length === 0) return null;
+  const jsonText = raw.slice(start).trim();
+  const attempts = [jsonText];
+  const end = jsonText.lastIndexOf(']');
+  if (end !== -1) attempts.unshift(jsonText.slice(0, end + 1));
 
-    return { segments, translation: mainText };
-  } catch {
-    return null;
+  for (const candidate of attempts) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (!Array.isArray(parsed)) continue;
+      const segments = parsed.map(normalizePinyinItem).filter((s): s is ChineseSegment => Boolean(s));
+      if (segments.length > 0) return segments;
+    } catch {
+      /* try next */
+    }
   }
+
+  const recovered = tryParsePossiblyTruncatedJson(jsonText);
+  if (Array.isArray(recovered)) {
+    return recovered.map(normalizePinyinItem).filter((s): s is ChineseSegment => Boolean(s));
+  }
+  if (recovered && Array.isArray(recovered.segments)) {
+    return normalizeSegmentList(recovered.segments);
+  }
+  return extractSegmentsFallback(raw);
+}
+
+/** Парсит ««PINYIN»» / ««TRANSLATION»» независимо от порядка маркеров. */
+function parsePinyinMarkerFormat(raw: string): StructuredChineseResult | null {
+  if (!raw.includes(PINYIN_MARKER) && !raw.includes(TRANSLATION_MARKER)) return null;
+
+  const pinyinBlock = extractMarkedValue(raw, PINYIN_MARKER);
+  const translation = sanitizeDisplayText(extractMarkedValue(raw, TRANSLATION_MARKER) || '');
+  const segments = pinyinBlock ? parsePinyinJsonBlock(pinyinBlock) : [];
+
+  if (segments.length === 0 && !translation) return null;
+  return { segments, translation };
 }
 
 export function parseStructuredChineseResponse(raw: string): StructuredChineseResult | null {
@@ -258,23 +295,13 @@ export function parseStructuredChineseResponse(raw: string): StructuredChineseRe
  * Извлекает чистый текст без метаданных пиньинь и перевода.
  */
 export function extractCleanChineseText(raw: string): string {
-  let text = raw;
-  
-  // Убираем маркер перевода
-  const translationMarker = '««TRANSLATION»»';
-  const translationIdx = text.indexOf(translationMarker);
-  if (translationIdx !== -1) {
-    text = text.slice(0, translationIdx).trim();
+  let text = raw || '';
+
+  const metaIdx = firstMetadataIndex(text);
+  if (metaIdx !== -1) {
+    text = text.slice(0, metaIdx);
   }
-  
-  // Убираем маркер пиньинь
-  const pinyinMarker = '««PINYIN»»';
-  const pinyinIdx = text.indexOf(pinyinMarker);
-  if (pinyinIdx !== -1) {
-    return text.slice(0, pinyinIdx).trim();
-  }
-  
-  // Старый формат PINYIN: ... END:
+
   const pinyinStart = text.indexOf('PINYIN:');
   if (pinyinStart !== -1) {
     const endIdx = text.indexOf('END:', pinyinStart);
@@ -282,22 +309,28 @@ export function extractCleanChineseText(raw: string): string {
       const after = text.slice(endIdx + 4).trim();
       return after || text.slice(0, pinyinStart).trim();
     }
+    text = text.slice(0, pinyinStart);
   }
+
   return text.trim();
 }
 
 /**
- * Извлекает перевод из ответа ИИ.
+ * Извлекает перевод из ответа ИИ — только блок TRANSLATION, без пиньинь.
  */
 export function extractTranslation(raw: string): string | null {
-  const marker = '««TRANSLATION»»';
-  const idx = raw.indexOf(marker);
-  if (idx === -1) return null;
-  
-  // Перевод идёт после маркера до конца или до следующей строки с маркером
-  const afterMarker = raw.slice(idx + marker.length).trim();
-  // Берём всё до конца (перевод обычно последний)
-  return afterMarker || null;
+  const value = extractMarkedValue(raw || '', TRANSLATION_MARKER);
+  const translation = sanitizeDisplayText(value || '');
+  return translation || null;
+}
+
+/** Текст для озвучки: только китайская реплика, без перевода и метаданных. */
+export function extractSpeakableChineseText(raw: string): string {
+  return extractCleanChineseText(raw)
+    .split('\n')
+    .filter((line) => !/^\s*✏️/.test(line) && !/^\s*Исправление\s*:/i.test(line))
+    .join('\n')
+    .trim();
 }
 
 type ChineseRubyTextProps = {

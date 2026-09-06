@@ -35,6 +35,7 @@ import {
   parseStructuredChineseResponse,
   extractCleanChineseText,
   extractTranslation,
+  extractSpeakableChineseText,
   type ChineseSegment,
 } from '@/components/ChineseRubyText';
 
@@ -872,10 +873,15 @@ export function AgentTab() {
         }
 
         setState('speaking');
+        const ttsText = learningLanguage === 'zh' ? extractSpeakableChineseText(fullReply) : fullReply.trim();
+        if (!ttsText) {
+          setState('idle');
+          return;
+        }
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
-          body: JSON.stringify(withLearningLanguageBody({ text: fullReply.trim(), voice: ttsVoice }, learningLanguage)),
+          body: JSON.stringify(withLearningLanguageBody({ text: ttsText, voice: ttsVoice }, learningLanguage)),
         });
 
         if (!ttsResp.ok) {
@@ -3466,12 +3472,20 @@ export function AgentTab() {
                                 ? parseStructuredChineseResponse(replyHintText)
                                 : null;
                               const cleanHint = extractCleanChineseText(replyHintText);
+                              const hintTranslation = chineseShowTranslation
+                                ? extractTranslation(replyHintText)
+                                : null;
                               return (
                                 <div style={{ marginTop: '0.5rem', padding: '0.625rem', borderRadius: 8, background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
                                   {/* Основной текст подсказки */}
                                   <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.5, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                                     {cleanHint}
                                   </p>
+                                  {hintTranslation && (
+                                    <p style={{ margin: '0.5rem 0 0', paddingTop: '0.5rem', borderTop: '1px dashed rgba(34, 197, 94, 0.35)', fontSize: '0.8125rem', color: 'rgba(34, 197, 94, 0.9)', fontStyle: 'italic', lineHeight: 1.4 }}>
+                                      {hintTranslation}
+                                    </p>
+                                  )}
                                   {/* Пиньинь-разметка */}
                                   {parsedHint && parsedHint.segments.length > 0 && (
                                     <div style={{ marginTop: '0.625rem', paddingTop: '0.625rem', borderTop: '1px solid rgba(251, 191, 36, 0.25)' }}>

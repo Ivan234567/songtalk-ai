@@ -40,9 +40,22 @@ function getModel() {
  * @param {{ maxLength?: number }} [options] — maxLength по умолчанию 2000
  * @returns {string}
  */
+function stripLearningMetadata(text) {
+  const pinyinIdx = text.indexOf('««PINYIN»»')
+  const translationIdx = text.indexOf('««TRANSLATION»»')
+  const indices = [pinyinIdx, translationIdx].filter((i) => i !== -1)
+  const cut = indices.length ? Math.min(...indices) : -1
+  let out = cut === -1 ? text : text.slice(0, cut)
+  out = out
+    .split('\n')
+    .filter((line) => !/^\s*✏️/.test(line) && !/^\s*Исправление\s*:/i.test(line))
+    .join('\n')
+  return out.trim()
+}
+
 function prepareInput(text, options = {}) {
   const maxLength = options.maxLength ?? 2000
-  const clean = text.replace(EMOJI_REGEX, '').trim()
+  const clean = stripLearningMetadata(text).replace(EMOJI_REGEX, '').trim()
   return clean.length > maxLength ? clean.slice(0, maxLength) + '…' : clean
 }
 
