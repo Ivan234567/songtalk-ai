@@ -255,24 +255,49 @@ export function parseStructuredChineseResponse(raw: string): StructuredChineseRe
 }
 
 /**
- * Извлекает чистый текст без метаданных пиньинь.
+ * Извлекает чистый текст без метаданных пиньинь и перевода.
  */
 export function extractCleanChineseText(raw: string): string {
-  const marker = '««PINYIN»»';
-  const idx = raw.indexOf(marker);
-  if (idx !== -1) {
-    return raw.slice(0, idx).trim();
+  let text = raw;
+  
+  // Убираем маркер перевода
+  const translationMarker = '««TRANSLATION»»';
+  const translationIdx = text.indexOf(translationMarker);
+  if (translationIdx !== -1) {
+    text = text.slice(0, translationIdx).trim();
   }
+  
+  // Убираем маркер пиньинь
+  const pinyinMarker = '««PINYIN»»';
+  const pinyinIdx = text.indexOf(pinyinMarker);
+  if (pinyinIdx !== -1) {
+    return text.slice(0, pinyinIdx).trim();
+  }
+  
   // Старый формат PINYIN: ... END:
-  const pinyinStart = raw.indexOf('PINYIN:');
+  const pinyinStart = text.indexOf('PINYIN:');
   if (pinyinStart !== -1) {
-    const endIdx = raw.indexOf('END:', pinyinStart);
+    const endIdx = text.indexOf('END:', pinyinStart);
     if (endIdx !== -1) {
-      const after = raw.slice(endIdx + 4).trim();
-      return after || raw.slice(0, pinyinStart).trim();
+      const after = text.slice(endIdx + 4).trim();
+      return after || text.slice(0, pinyinStart).trim();
     }
   }
-  return raw.trim();
+  return text.trim();
+}
+
+/**
+ * Извлекает перевод из ответа ИИ.
+ */
+export function extractTranslation(raw: string): string | null {
+  const marker = '««TRANSLATION»»';
+  const idx = raw.indexOf(marker);
+  if (idx === -1) return null;
+  
+  // Перевод идёт после маркера до конца или до следующей строки с маркером
+  const afterMarker = raw.slice(idx + marker.length).trim();
+  // Берём всё до конца (перевод обычно последний)
+  return afterMarker || null;
 }
 
 type ChineseRubyTextProps = {

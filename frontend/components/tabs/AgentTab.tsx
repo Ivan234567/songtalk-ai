@@ -34,6 +34,7 @@ import {
   ChineseRubyText,
   parseStructuredChineseResponse,
   extractCleanChineseText,
+  extractTranslation,
   type ChineseSegment,
 } from '@/components/ChineseRubyText';
 
@@ -241,6 +242,7 @@ export function AgentTab() {
   const [chineseHskLevel, setChineseHskLevel] = useState<ChineseHskLevel>(3);
   const [chineseSpeechSpeed, setChineseSpeechSpeed] = useState<ChineseSpeechSpeed>(1);
   const [chineseShowPinyin, setChineseShowPinyin] = useState(true);
+  const [chineseShowTranslation, setChineseShowTranslation] = useState(true);
   const [chineseToneFocus, setChineseToneFocus] = useState(false);
   const [chineseCorrectionMode, setChineseCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
   const [chineseHintMode, setChineseHintMode] = useState<ChineseHintMode>('basic');
@@ -322,11 +324,12 @@ export function AgentTab() {
       hsk_level: chineseHskLevel,
       speech_speed: chineseSpeechSpeed,
       show_pinyin: chineseShowPinyin,
+      show_translation: chineseShowTranslation,
       tone_focus: chineseToneFocus,
       correction_mode: chineseCorrectionMode,
       hint_mode: chineseHintMode,
     }),
-    [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin, chineseToneFocus, chineseCorrectionMode, chineseHintMode]
+    [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin, chineseShowTranslation, chineseToneFocus, chineseCorrectionMode, chineseHintMode]
   );
   const chineseSettingsSummary = useMemo(() => {
     const hsk = `HSK ${chineseHskLevel}`;
@@ -2643,8 +2646,8 @@ export function AgentTab() {
       {/* Боковая панель истории диалога */}
       <aside
         style={{
-          width: subtitlesVisible ? (learningLanguage === 'zh' && chineseShowPinyin ? 440 : 320) : 0,
-          minWidth: subtitlesVisible ? (learningLanguage === 'zh' && chineseShowPinyin ? 440 : 320) : 0,
+          width: subtitlesVisible ? (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation) ? 440 : 320) : 0,
+          minWidth: subtitlesVisible ? (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation) ? 440 : 320) : 0,
           overflow: 'hidden',
           borderRight: subtitlesVisible ? '1px solid var(--sidebar-border)' : 'none',
           background: 'var(--sidebar-hover)',
@@ -2679,15 +2682,20 @@ export function AgentTab() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {conversationMessages.map((m, i) => {
-                // Для китайского режима с пиньинь — парсим структурированный ответ
+                // Для китайского режима — парсим структурированный ответ
                 const isChinese = learningLanguage === 'zh';
-                const parsed = isChinese && chineseShowPinyin && m.role === 'assistant'
+                const isAssistant = m.role === 'assistant';
+                const parsed = isChinese && chineseShowPinyin && isAssistant
                   ? parseStructuredChineseResponse(m.content)
                   : null;
                 // Чистый текст без метаданных
-                const cleanText = isChinese && m.role === 'assistant'
+                const cleanText = isChinese && isAssistant
                   ? extractCleanChineseText(m.content)
                   : m.content;
+                // Перевод
+                const translation = isChinese && isAssistant && chineseShowTranslation
+                  ? extractTranslation(m.content)
+                  : null;
                 return (
                   <div
                     key={i}
@@ -2707,9 +2715,25 @@ export function AgentTab() {
                     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {cleanText}
                     </div>
+                    {/* Перевод */}
+                    {translation && (
+                      <div
+                        style={{
+                          marginTop: '0.5rem',
+                          paddingTop: '0.5rem',
+                          borderTop: '1px dashed rgba(34, 197, 94, 0.3)',
+                          fontSize: '0.8125rem',
+                          color: 'rgba(34, 197, 94, 0.85)',
+                          fontStyle: 'italic',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {translation}
+                      </div>
+                    )}
                     {/* Пиньинь-разметка под текстом */}
                     {parsed && parsed.segments.length > 0 && (
-                      <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--sidebar-border)' }}>
+                      <div style={{ marginTop: '0.6rem', paddingTop: '0.6rem', borderTop: '1px solid var(--sidebar-border)' }}>
                         <ChineseRubyText segments={parsed.segments} size="md" />
                       </div>
                     )}
@@ -3234,12 +3258,12 @@ export function AgentTab() {
                           </p>
                         </div>
 
-                        {/* --- Пиньинь (между HSK и темпом) --- */}
+                        {/* --- Отображение (пиньинь + перевод) --- */}
                         <div
                           style={{
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '0.5rem',
+                            gap: '0.625rem',
                             padding: '0.625rem 0.75rem',
                             borderRadius: 10,
                             background: 'var(--sidebar-bg)',
@@ -3247,20 +3271,64 @@ export function AgentTab() {
                           }}
                         >
                           <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                            Пиньинь (транскрипция)
+                            Отображение
                           </span>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
+                          {/* Пиньинь */}
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              padding: '0.5rem 0.625rem',
+                              borderRadius: 8,
+                              background: chineseShowPinyin ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                              border: chineseShowPinyin ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid transparent',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
                             <input
                               type="checkbox"
                               checked={chineseShowPinyin}
                               onChange={(e) => setChineseShowPinyin(e.target.checked)}
-                              style={{ accentColor: 'rgb(99, 102, 241)' }}
+                              style={{ accentColor: 'rgb(99, 102, 241)', width: 16, height: 16 }}
                             />
-                            <span>Показывать пиньинь</span>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: '0.8125rem', color: 'var(--sidebar-text)', fontWeight: 500 }}>Пиньинь</span>
+                              <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.5, lineHeight: 1.3 }}>
+                                Транскрипция с тонами
+                              </p>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>拼音</span>
                           </label>
-                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4, paddingLeft: '1.5rem' }}>
-                            В ответах ИИ и подсказках над каждым иероглифом будет транскрипция с тонами
-                          </p>
+                          {/* Перевод */}
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              padding: '0.5rem 0.625rem',
+                              borderRadius: 8,
+                              background: chineseShowTranslation ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+                              border: chineseShowTranslation ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid transparent',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={chineseShowTranslation}
+                              onChange={(e) => setChineseShowTranslation(e.target.checked)}
+                              style={{ accentColor: 'rgb(34, 197, 94)', width: 16, height: 16 }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: '0.8125rem', color: 'var(--sidebar-text)', fontWeight: 500 }}>Перевод</span>
+                              <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.5, lineHeight: 1.3 }}>
+                                Русский перевод ответов
+                              </p>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', opacity: 0.5 }}>翻译</span>
+                          </label>
                         </div>
 
                         {/* --- Скорость речи --- */}

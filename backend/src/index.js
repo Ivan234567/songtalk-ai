@@ -1242,6 +1242,7 @@ app.post('/api/agent/chat', async (req, res) => {
   // Китайские настройки обучения
   const chineseSettings = chinese_settings && typeof chinese_settings === 'object' ? chinese_settings : null
   const chineseShowPinyin = Boolean(chineseSettings?.show_pinyin)
+  const chineseShowTranslation = Boolean(chineseSettings?.show_translation)
   const chineseCorrectionMode = ['gentle', 'active'].includes(chineseSettings?.correction_mode) ? chineseSettings.correction_mode : 'gentle'
   const chineseToneFocus = Boolean(chineseSettings?.tone_focus)
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings?.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
@@ -1312,6 +1313,7 @@ app.post('/api/agent/chat', async (req, res) => {
         role: 'system',
         content: getFreestyleChatSystemPrompt(req.learningLanguage || 'en', {
           showPinyin: chineseShowPinyin,
+          showTranslation: chineseShowTranslation,
           correctionMode: chineseCorrectionMode,
           toneFocus: chineseToneFocus,
           hskLevel: chineseHskLevel,

@@ -20,7 +20,7 @@ const FREESTYLE_CHAT_SYSTEM_EN =
   'You are a helpful assistant. Always reply in the SAME language the user writes in (e.g. Russian if they write in Russian, English if in English). Do not switch to Chinese or other languages unless the user explicitly writes in that language.'
 
 function buildChineseSystemPrompt(options = {}) {
-  const { showPinyin, correctionMode, toneFocus, hskLevel } = options
+  const { showPinyin, showTranslation, correctionMode, toneFocus, hskLevel } = options
   
   // Базовый промпт
   let prompt = 'You are a friendly Chinese conversation partner for language practice. ' +
@@ -58,13 +58,28 @@ function buildChineseSystemPrompt(options = {}) {
       '- You may occasionally include tone reminders like "记住：mā 妈(妈妈), má 麻(麻烦), mǎ 马(马上), mà 骂(骂人)"'
   }
   
-  // Пиньинь
-  if (showPinyin) {
-    prompt += '\n\nIMPORTANT: After your Chinese reply, add pinyin data on a NEW LINE starting with ««PINYIN»» followed by JSON array.\n' +
-      'Format: Your Chinese reply text here\n' +
-      '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"我","p":"wǒ"}]\n' +
-      'Each object: "h" = hanzi word, "p" = pinyin with tone marks.\n' +
-      'Cover ALL words from your reply. Keep the main reply natural - the pinyin line is metadata only.'
+  // Метаданные (пиньинь и перевод)
+  const needsMetadata = showPinyin || showTranslation
+  if (needsMetadata) {
+    prompt += '\n\nIMPORTANT: After your Chinese reply, add metadata on NEW LINES:\n'
+    prompt += 'Format:\n'
+    prompt += 'Your Chinese reply text here\n'
+    
+    if (showPinyin) {
+      prompt += '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"我","p":"wǒ"}]\n'
+    }
+    if (showTranslation) {
+      prompt += '««TRANSLATION»»Русский перевод вашего ответа\n'
+    }
+    
+    prompt += '\nRules:\n'
+    if (showPinyin) {
+      prompt += '- PINYIN: JSON array, "h" = hanzi word, "p" = pinyin with tone marks. Cover ALL words.\n'
+    }
+    if (showTranslation) {
+      prompt += '- TRANSLATION: Natural Russian translation of your Chinese reply. Keep it concise.\n'
+    }
+    prompt += '- Keep the main Chinese reply natural - metadata lines are for learning assistance only.'
   }
   
   return prompt
