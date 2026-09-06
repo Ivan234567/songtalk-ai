@@ -3224,9 +3224,17 @@ export function AgentTab() {
                       display: 'grid',
                       gridTemplateRows: chineseSettingsOpen ? '1fr' : '0fr',
                       transition: 'grid-template-rows 0.24s ease',
+                      minHeight: 0,
                     }}
                   >
-                    <div style={{ overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        overflow: chineseSettingsOpen ? 'auto' : 'hidden',
+                        maxHeight: chineseSettingsOpen ? 'min(52vh, 440px)' : 0,
+                        overscrollBehavior: 'contain',
+                        scrollbarGutter: 'stable',
+                      }}
+                    >
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 0.875rem' }}>
                         {/* --- Уровень HSK --- */}
                         <div
