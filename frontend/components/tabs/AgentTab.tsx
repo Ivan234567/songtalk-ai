@@ -73,6 +73,11 @@ type FreestyleSlangMode = 'off' | 'light' | 'heavy';
 type FreestyleProfanityIntensity = 'light' | 'medium' | 'hard';
 type FreestyleHintMode = 'natural' | 'simpler' | 'more_native' | 'polite_rewrite' | 'no_profanity';
 
+// Китайские настройки для 自由对话
+type ChineseHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
+type ChineseSpeechSpeed = 'slow' | 'normal' | 'fast';
+type ChineseCorrectionMode = 'gentle' | 'active';
+
 type Session = {
   id: string;
   title: string;
@@ -215,6 +220,13 @@ export function AgentTab() {
   const [freestyleProfanityIntensity, setFreestyleProfanityIntensity] = useState<FreestyleProfanityIntensity>('light');
   const [freestyleToneFormality, setFreestyleToneFormality] = useState(50);
   const [freestyleToneDirectness, setFreestyleToneDirectness] = useState(50);
+  /** Китайские настройки для 自由对话 */
+  const [chineseSettingsOpen, setChineseSettingsOpen] = useState(false);
+  const [chineseHskLevel, setChineseHskLevel] = useState<ChineseHskLevel>(3);
+  const [chineseSpeechSpeed, setChineseSpeechSpeed] = useState<ChineseSpeechSpeed>('normal');
+  const [chineseShowPinyin, setChineseShowPinyin] = useState(true);
+  const [chineseToneFocus, setChineseToneFocus] = useState(false);
+  const [chineseCorrectionMode, setChineseCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
   /** Состояния для режима дебатов */
   const [debateTopic, setDebateTopic] = useState<string | null>(null);
   const [debateTopicSource, setDebateTopicSource] = useState<'catalog' | 'custom'>('catalog');
@@ -287,6 +299,23 @@ export function AgentTab() {
       `Сленг: ${freestyleSlangMode === 'off' ? 'выкл' : freestyleSlangMode === 'light' ? 'лёгкий' : 'активный'} · 18+: ${freestyleAllowProfanity ? 'вкл' : 'выкл'} · Тон: ${Math.round(freestyleToneFormality / 10)}/10`,
     [freestyleSlangMode, freestyleAllowProfanity, freestyleToneFormality]
   );
+  /** Payload китайских настроек для отправки на бэкенд */
+  const chineseSettingsPayload = useMemo(
+    () => ({
+      hsk_level: chineseHskLevel,
+      speech_speed: chineseSpeechSpeed,
+      show_pinyin: chineseShowPinyin,
+      tone_focus: chineseToneFocus,
+      correction_mode: chineseCorrectionMode,
+    }),
+    [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin, chineseToneFocus, chineseCorrectionMode]
+  );
+  const chineseSettingsSummary = useMemo(() => {
+    const hsk = `HSK ${chineseHskLevel}`;
+    const speed = chineseSpeechSpeed === 'slow' ? 'медленно' : chineseSpeechSpeed === 'fast' ? 'быстро' : 'норм.';
+    const pinyin = chineseShowPinyin ? 'пиньинь' : '';
+    return [hsk, speed, pinyin].filter(Boolean).join(' · ');
+  }, [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin]);
   const activeFreestylePreset = useMemo<string | null>(() => {
     const s = freestyleSlangMode;
     const p = freestyleAllowProfanity;
@@ -2803,7 +2832,8 @@ export function AgentTab() {
                   />
                 )}
               </div>
-              {agentMode === 'chat' && (
+              {/* Настройки для английского Freestyle Mode */}
+              {agentMode === 'chat' && learningLanguage !== 'zh' && (
                 <div
                   className="freestyle-settings-panel"
                   style={{
@@ -3036,6 +3066,227 @@ export function AgentTab() {
                               style={{ width: '100%', accentColor: 'rgb(99, 102, 241)' }}
                             />
                           </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Настройки для китайского 自由对话 */}
+              {agentMode === 'chat' && learningLanguage === 'zh' && (
+                <div
+                  className="chinese-settings-panel"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    width: 'min(340px, 100%)',
+                    alignSelf: 'flex-end',
+                    borderRadius: 14,
+                    border: '1px solid var(--sidebar-border)',
+                    background: 'var(--sidebar-hover)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setChineseSettingsOpen((v) => !v)}
+                    aria-expanded={chineseSettingsOpen}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.75rem',
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--sidebar-text)',
+                      padding: '0.625rem 0.875rem',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }} aria-hidden>
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, letterSpacing: '0.01em' }}>
+                          Настройки обучения
+                        </span>
+                        {!chineseSettingsOpen && (
+                          <span style={{ fontSize: '0.6875rem', opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {chineseSettingsSummary}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ transform: chineseSettingsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease', flexShrink: 0, opacity: 0.6 }}
+                      aria-hidden
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateRows: chineseSettingsOpen ? '1fr' : '0fr',
+                      transition: 'grid-template-rows 0.24s ease',
+                    }}
+                  >
+                    <div style={{ overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 0.875rem' }}>
+                        {/* --- Уровень HSK --- */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'var(--sidebar-bg)',
+                            border: '1px solid var(--sidebar-border)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Уровень сложности
+                          </span>
+                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                            <span style={{ opacity: 0.85 }}>Уровень HSK</span>
+                            <select
+                              className="roleplay-modern-select"
+                              value={chineseHskLevel}
+                              onChange={(e) => setChineseHskLevel(Number(e.target.value) as ChineseHskLevel)}
+                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
+                            >
+                              <option value={1}>HSK 1 — начальный</option>
+                              <option value={2}>HSK 2 — базовый</option>
+                              <option value={3}>HSK 3 — средний</option>
+                              <option value={4}>HSK 4 — выше среднего</option>
+                              <option value={5}>HSK 5 — продвинутый</option>
+                              <option value={6}>HSK 6 — свободный</option>
+                            </select>
+                          </label>
+                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4 }}>
+                            ИИ будет использовать лексику и грамматику вашего уровня
+                          </p>
+                        </div>
+
+                        {/* --- Скорость речи --- */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'var(--sidebar-bg)',
+                            border: '1px solid var(--sidebar-border)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Темп диалога
+                          </span>
+                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                            <span style={{ opacity: 0.85 }}>Скорость речи</span>
+                            <select
+                              className="roleplay-modern-select"
+                              value={chineseSpeechSpeed}
+                              onChange={(e) => setChineseSpeechSpeed(e.target.value as ChineseSpeechSpeed)}
+                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
+                            >
+                              <option value="slow">Медленная — для начинающих</option>
+                              <option value="normal">Обычная</option>
+                              <option value="fast">Быстрая — как носитель</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        {/* --- Помощь в обучении --- */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'var(--sidebar-bg)',
+                            border: '1px solid var(--sidebar-border)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Помощь в обучении
+                          </span>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={chineseShowPinyin}
+                              onChange={(e) => setChineseShowPinyin(e.target.checked)}
+                              style={{ accentColor: 'rgb(99, 102, 241)' }}
+                            />
+                            <span>Показывать пиньинь в ответах</span>
+                          </label>
+                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4, paddingLeft: '1.5rem' }}>
+                            ИИ будет добавлять транскрипцию к иероглифам
+                          </p>
+                          <div style={{ height: 1, background: 'var(--sidebar-border)', opacity: 0.6 }} />
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={chineseToneFocus}
+                              onChange={(e) => setChineseToneFocus(e.target.checked)}
+                              style={{ accentColor: 'rgb(99, 102, 241)' }}
+                            />
+                            <span>Фокус на тонах</span>
+                          </label>
+                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4, paddingLeft: '1.5rem' }}>
+                            ИИ будет обращать внимание на правильность тонов
+                          </p>
+                        </div>
+
+                        {/* --- Коррекция ошибок --- */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'var(--sidebar-bg)',
+                            border: '1px solid var(--sidebar-border)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                            Исправление ошибок
+                          </span>
+                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                            <span style={{ opacity: 0.85 }}>Режим коррекции</span>
+                            <select
+                              className="roleplay-modern-select"
+                              value={chineseCorrectionMode}
+                              onChange={(e) => setChineseCorrectionMode(e.target.value as ChineseCorrectionMode)}
+                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
+                            >
+                              <option value="gentle">Мягкий — исправляю изредка</option>
+                              <option value="active">Активный — исправляю всё</option>
+                            </select>
+                          </label>
+                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4 }}>
+                            {chineseCorrectionMode === 'gentle'
+                              ? 'ИИ будет корректно продолжать диалог, мягко исправляя серьёзные ошибки'
+                              : 'ИИ будет указывать на все ошибки и предлагать правильные варианты'}
+                          </p>
                         </div>
                       </div>
                     </div>

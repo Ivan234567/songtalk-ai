@@ -492,7 +492,7 @@ export function RoleplayModeUI({
               className="agent-mode-tab"
             >
               <span style={{ opacity: mode === 'chat' ? 1 : 0.75, display: 'flex' }}>{MODE_ICONS.chat}</span>
-              <span>Freestyle Mode</span>
+              <span>{learningLanguage === 'zh' ? '自由对话' : 'Freestyle Mode'}</span>
             </button>
             <div style={{ position: 'relative', display: 'inline-block' }}>
               <button
