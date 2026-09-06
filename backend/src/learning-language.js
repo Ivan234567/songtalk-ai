@@ -19,30 +19,60 @@ export function attachLearningLanguage(req, _res, next) {
 const FREESTYLE_CHAT_SYSTEM_EN =
   'You are a helpful assistant. Always reply in the SAME language the user writes in (e.g. Russian if they write in Russian, English if in English). Do not switch to Chinese or other languages unless the user explicitly writes in that language.'
 
-const FREESTYLE_CHAT_SYSTEM_ZH =
-  'You are a friendly Chinese conversation partner for language practice. ' +
-  'Speak ONLY in Simplified Chinese (简体中文). ' +
-  'Use natural, everyday Mandarin at a learner-friendly level (roughly HSK 1-4). ' +
-  'Keep replies concise (1-3 sentences unless the user asks for more). ' +
-  'If the user writes in Russian, still reply in Simplified Chinese. ' +
-  'Do not switch to English unless the user explicitly asks.'
-
-const FREESTYLE_CHAT_SYSTEM_ZH_WITH_PINYIN =
-  'You are a friendly Chinese conversation partner for language practice. ' +
-  'Speak ONLY in Simplified Chinese (简体中文). ' +
-  'Use natural, everyday Mandarin at a learner-friendly level (roughly HSK 1-4). ' +
-  'Keep replies concise (1-3 sentences unless the user asks for more). ' +
-  'If the user writes in Russian, still reply in Simplified Chinese. ' +
-  'Do not switch to English unless the user explicitly asks.\n\n' +
-  'IMPORTANT: After your Chinese reply, add pinyin data on a NEW LINE starting with ««PINYIN»» followed by JSON array.\n' +
-  'Format: Your Chinese reply text here\n' +
-  '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"我","p":"wǒ"}]\n' +
-  'Each object: "h" = hanzi word, "p" = pinyin with tone marks.\n' +
-  'Cover ALL words from your reply. Keep the main reply natural - the pinyin line is metadata only.'
+function buildChineseSystemPrompt(options = {}) {
+  const { showPinyin, correctionMode, toneFocus, hskLevel } = options
+  
+  // Базовый промпт
+  let prompt = 'You are a friendly Chinese conversation partner for language practice. ' +
+    'Speak ONLY in Simplified Chinese (简体中文). '
+  
+  // Добавляем уровень HSK
+  if (hskLevel && HSK_LEVEL_INSTRUCTIONS[hskLevel]) {
+    prompt += `\n\nLEARNER LEVEL: ${HSK_LEVEL_INSTRUCTIONS[hskLevel]}\n`
+  } else {
+    prompt += 'Use natural, everyday Mandarin at a learner-friendly level (roughly HSK 1-4). '
+  }
+  
+  prompt += 'Keep replies concise (1-3 sentences unless the user asks for more). ' +
+    'If the user writes in Russian, still reply in Simplified Chinese. ' +
+    'Do not switch to English unless the user explicitly asks.'
+  
+  // Режим коррекции ошибок
+  if (correctionMode === 'active') {
+    prompt += '\n\nERROR CORRECTION MODE: ACTIVE\n' +
+      '- When the user makes grammar or vocabulary mistakes, gently correct them.\n' +
+      '- Format: After your natural reply, on a new line write "✏️ Исправление:" followed by the correction in Russian.\n' +
+      '- Example: "✏️ Исправление: Вы написали \'我是好\', правильно \'我很好\' (I am fine)."'
+  } else if (correctionMode === 'gentle') {
+    prompt += '\n\nERROR CORRECTION MODE: GENTLE\n' +
+      '- Only correct serious errors that significantly impede understanding.\n' +
+      '- Use natural reformulation in your reply instead of explicit corrections.'
+  }
+  
+  // Фокус на тонах
+  if (toneFocus) {
+    prompt += '\n\nTONE FOCUS MODE:\n' +
+      '- Pay special attention to tone-related issues in user\'s writing.\n' +
+      '- If the user uses a word that might have tone confusion (e.g., 妈/马/骂/吗), ' +
+      'briefly mention the correct tone in your reply.\n' +
+      '- You may occasionally include tone reminders like "记住：mā 妈(妈妈), má 麻(麻烦), mǎ 马(马上), mà 骂(骂人)"'
+  }
+  
+  // Пиньинь
+  if (showPinyin) {
+    prompt += '\n\nIMPORTANT: After your Chinese reply, add pinyin data on a NEW LINE starting with ««PINYIN»» followed by JSON array.\n' +
+      'Format: Your Chinese reply text here\n' +
+      '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"},{"h":"我","p":"wǒ"}]\n' +
+      'Each object: "h" = hanzi word, "p" = pinyin with tone marks.\n' +
+      'Cover ALL words from your reply. Keep the main reply natural - the pinyin line is metadata only.'
+  }
+  
+  return prompt
+}
 
 export function getFreestyleChatSystemPrompt(lang, options = {}) {
   if (lang === 'zh') {
-    return options.showPinyin ? FREESTYLE_CHAT_SYSTEM_ZH_WITH_PINYIN : FREESTYLE_CHAT_SYSTEM_ZH
+    return buildChineseSystemPrompt(options)
   }
   return FREESTYLE_CHAT_SYSTEM_EN
 }

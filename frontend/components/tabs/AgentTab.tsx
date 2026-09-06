@@ -90,7 +90,8 @@ type FreestyleHintMode = 'natural' | 'simpler' | 'more_native' | 'polite_rewrite
 
 // Китайские настройки для 自由对话
 type ChineseHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
-type ChineseSpeechSpeed = 'slow' | 'normal' | 'fast';
+type ChineseSpeechSpeed = 0.5 | 0.75 | 1 | 1.25 | 1.5 | 2;
+const SPEECH_SPEED_OPTIONS: ChineseSpeechSpeed[] = [0.5, 0.75, 1, 1.25, 1.5, 2];
 type ChineseCorrectionMode = 'gentle' | 'active';
 
 type Session = {
@@ -238,7 +239,7 @@ export function AgentTab() {
   /** Китайские настройки для 自由对话 */
   const [chineseSettingsOpen, setChineseSettingsOpen] = useState(false);
   const [chineseHskLevel, setChineseHskLevel] = useState<ChineseHskLevel>(3);
-  const [chineseSpeechSpeed, setChineseSpeechSpeed] = useState<ChineseSpeechSpeed>('normal');
+  const [chineseSpeechSpeed, setChineseSpeechSpeed] = useState<ChineseSpeechSpeed>(1);
   const [chineseShowPinyin, setChineseShowPinyin] = useState(true);
   const [chineseToneFocus, setChineseToneFocus] = useState(false);
   const [chineseCorrectionMode, setChineseCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
@@ -329,7 +330,7 @@ export function AgentTab() {
   );
   const chineseSettingsSummary = useMemo(() => {
     const hsk = `HSK ${chineseHskLevel}`;
-    const speed = chineseSpeechSpeed === 'slow' ? 'медленно' : chineseSpeechSpeed === 'fast' ? 'быстро' : 'норм.';
+    const speed = chineseSpeechSpeed !== 1 ? `${chineseSpeechSpeed}x` : '';
     const pinyin = chineseShowPinyin ? 'пиньинь' : '';
     return [hsk, speed, pinyin].filter(Boolean).join(' · ');
   }, [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin]);
@@ -661,7 +662,7 @@ export function AgentTab() {
       setError(null);
       const history: Message[] = [...messagesRef.current, { role: 'user', content: userText }];
       setMessages((prev) => [...prev, { role: 'user', content: userText }]);
-      setReplyHintText(null);
+      // Подсказка сохраняется до клика "Скрыть" или нового запроса подсказки
 
       let fullReply = '';
 
@@ -765,7 +766,6 @@ export function AgentTab() {
 
         const newMessages: Message[] = [...history, { role: 'assistant', content: fullReply }];
         setMessages((prev) => [...prev, { role: 'assistant', content: fullReply }]);
-        setReplyHintText(null);
 
         if (userId) {
           if (agentMode === 'debate' && debateTopic && debateUserPosition && debateAIPosition) {
@@ -908,6 +908,10 @@ export function AgentTab() {
           URL.revokeObjectURL(url);
           setState('idle');
         };
+        // Применяем скорость воспроизведения для китайского
+        if (learningLanguage === 'zh') {
+          audio.playbackRate = chineseSpeechSpeed;
+        }
         await audio.play();
 
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -966,6 +970,7 @@ export function AgentTab() {
       debateSettingsPayload,
       freestyleSettingsPayload,
       freestyleContextPayload,
+      chineseSpeechSpeed,
       handleInsufficientBalance,
     ]
   );
@@ -1143,6 +1148,10 @@ export function AgentTab() {
           setState('idle');
         };
 
+        // Применяем скорость воспроизведения для китайского
+        if (learningLanguage === 'zh') {
+          audio.playbackRate = chineseSpeechSpeed;
+        }
         await audio.play();
 
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -1174,7 +1183,7 @@ export function AgentTab() {
         setState('idle');
       }
     },
-    [token, userId, ttsVoice, learningLanguage, handleInsufficientBalance]
+    [token, userId, ttsVoice, learningLanguage, chineseSpeechSpeed, handleInsufficientBalance]
   );
 
   // Обработчик смены режима - сброс дебата при переходе в другой режим
@@ -1435,6 +1444,10 @@ export function AgentTab() {
           URL.revokeObjectURL(url);
           setState('idle');
         };
+        // Применяем скорость воспроизведения для китайского
+        if (learningLanguage === 'zh') {
+          audio.playbackRate = chineseSpeechSpeed;
+        }
         await audio.play();
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (TtsContextClass) {
@@ -1463,7 +1476,7 @@ export function AgentTab() {
       // Нет жёсткой первой реплики — пользователь начинает диалог первым
       setState('idle');
     },
-    [token, userId, ttsVoice, learningLanguage, handleInsufficientBalance]
+    [token, userId, ttsVoice, learningLanguage, chineseSpeechSpeed, handleInsufficientBalance]
   );
 
   // Обработчик начала дебата
@@ -3263,21 +3276,34 @@ export function AgentTab() {
                           }}
                         >
                           <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                            Темп диалога
+                            Скорость воспроизведения
                           </span>
-                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
-                            <span style={{ opacity: 0.85 }}>Скорость речи</span>
-                            <select
-                              className="roleplay-modern-select"
-                              value={chineseSpeechSpeed}
-                              onChange={(e) => setChineseSpeechSpeed(e.target.value as ChineseSpeechSpeed)}
-                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
-                            >
-                              <option value="slow">Медленная — для начинающих</option>
-                              <option value="normal">Обычная</option>
-                              <option value="fast">Быстрая — как носитель</option>
-                            </select>
-                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                            {SPEECH_SPEED_OPTIONS.map((speed) => (
+                              <button
+                                key={speed}
+                                type="button"
+                                onClick={() => setChineseSpeechSpeed(speed)}
+                                style={{
+                                  padding: '0.3rem 0.5rem',
+                                  borderRadius: 6,
+                                  border: chineseSpeechSpeed === speed ? '1px solid rgb(99, 102, 241)' : '1px solid var(--sidebar-border)',
+                                  background: chineseSpeechSpeed === speed ? 'rgba(99, 102, 241, 0.15)' : 'var(--sidebar-hover)',
+                                  color: chineseSpeechSpeed === speed ? 'rgb(99, 102, 241)' : 'var(--sidebar-text)',
+                                  fontSize: '0.75rem',
+                                  fontWeight: chineseSpeechSpeed === speed ? 600 : 400,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  minWidth: '2.5rem',
+                                }}
+                              >
+                                {speed}x
+                              </button>
+                            ))}
+                          </div>
+                          <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.5, lineHeight: 1.35 }}>
+                            Скорость озвучки ответов ИИ
+                          </p>
                         </div>
 
                         {/* --- Подсказка ответа (появляется когда диалог начался) --- */}
