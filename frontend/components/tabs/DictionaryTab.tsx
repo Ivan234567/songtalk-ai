@@ -3354,13 +3354,6 @@ export const DictionaryTab: React.FC = () => {
                     </div>
                   </div>
 
-                  {selectedWordTranslation && (
-                    <div className="zh-translation-block">
-                      <div className="zh-translation-label">Перевод</div>
-                      <div className="zh-translation-text">{selectedWordTranslation}</div>
-                    </div>
-                  )}
-
                   {selectedWord.contexts && selectedWord.contexts.length > 0 && (
                     <div>
                       <div
