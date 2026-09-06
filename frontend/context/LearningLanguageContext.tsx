@@ -108,7 +108,6 @@ export function LearningLanguageProvider({ children }: { children: React.ReactNo
 
     languageRef.current = next;
     setLearningLanguageState(next);
-    pushToast(next === 'zh' ? 'Режим: китайский' : 'Режим: английский');
 
     if (!userId) return;
 
