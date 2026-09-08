@@ -2,13 +2,14 @@
 
 import React, { useState } from 'react';
 import { canSaveZhScenario, type ZhFormality, type ZhHskLevel, type ZhScenario, type ZhScenarioStep, type ZhSlangMode, type ZhStarter } from '@/lib/zh-scenarios';
+import { LevelDropdown } from '@/components/ui/LevelDropdown';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '0.6rem 0.85rem',
   borderRadius: 10,
   border: '1px solid var(--sidebar-border)',
-  background: 'var(--sidebar-hover)',
+  background: 'var(--sidebar-bg)',
   color: 'var(--sidebar-text)',
   fontSize: '0.95rem',
   outline: 'none',
@@ -138,15 +139,14 @@ export function ZhScenarioConstructor({
         </label>
         <label>
           <span style={labelStyle}>HSK</span>
-          <select
-            value={draft.hsk_level ?? 3}
-            onChange={(e) => patch({ hsk_level: Number(e.target.value) as ZhHskLevel })}
+          <LevelDropdown
+            value={String(draft.hsk_level ?? 3)}
+            onChange={(v) => patch({ hsk_level: Number(v) as ZhHskLevel })}
+            options={[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `HSK ${n}` }))}
+            openUpward={false}
+            ariaLabel="Уровень HSK"
             style={inputStyle}
-          >
-            {[1, 2, 3, 4, 5, 6].map((n) => (
-              <option key={n} value={n}>HSK {n}</option>
-            ))}
-          </select>
+          />
         </label>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -211,7 +211,7 @@ export function ZhScenarioConstructor({
             ))}
           </div>
         </div>
-        <div style={{ border: '1px solid var(--sidebar-border)', borderRadius: 12, padding: '0.85rem', background: 'var(--sidebar-hover)' }}>
+        <div style={{ border: '1px solid var(--sidebar-border)', borderRadius: 12, padding: '0.85rem', background: 'var(--sidebar-bg)', position: 'relative', zIndex: 2, isolation: 'isolate' }}>
           {selected ? (
             <>
               <label>
@@ -235,7 +235,21 @@ export function ZhScenarioConstructor({
                 {advanced ? 'Скрыть точную настройку' : 'Точная настройка'}
               </button>
               {advanced && (
-                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div
+                  style={{
+                    marginTop: 10,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    padding: '0.75rem',
+                    borderRadius: 10,
+                    border: '1px solid var(--sidebar-border)',
+                    background: 'var(--sidebar-bg)',
+                    position: 'relative',
+                    zIndex: 3,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                  }}
+                >
                   <label>
                     <span style={labelStyle}>Контекст для ИИ</span>
                     <textarea
@@ -300,28 +314,49 @@ export function ZhScenarioConstructor({
         {vocabMessage && <p style={{ margin: '6px 0 0', fontSize: '0.85rem', opacity: 0.8 }}>{vocabMessage}</p>}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, position: 'relative', zIndex: 4, overflow: 'visible' }}>
         <label>
           <span style={labelStyle}>Кто начинает</span>
-          <select value={draft.starter} onChange={(e) => patch({ starter: e.target.value as ZhStarter })} style={inputStyle}>
-            <option value="ai">Собеседник</option>
-            <option value="user">Вы</option>
-          </select>
+          <LevelDropdown
+            value={draft.starter}
+            onChange={(v) => patch({ starter: v as ZhStarter })}
+            options={[
+              { value: 'ai', label: 'Собеседник' },
+              { value: 'user', label: 'Вы' },
+            ]}
+            openUpward
+            ariaLabel="Кто начинает"
+            style={inputStyle}
+          />
         </label>
         <label>
           <span style={labelStyle}>Формальность</span>
-          <select value={draft.formality} onChange={(e) => patch({ formality: e.target.value as ZhFormality })} style={inputStyle}>
-            <option value="nin">您</option>
-            <option value="ni">你</option>
-            <option value="mixed">Смесь</option>
-          </select>
+          <LevelDropdown
+            value={draft.formality}
+            onChange={(v) => patch({ formality: v as ZhFormality })}
+            options={[
+              { value: 'nin', label: '您' },
+              { value: 'ni', label: '你' },
+              { value: 'mixed', label: 'Смесь' },
+            ]}
+            openUpward
+            ariaLabel="Формальность"
+            style={inputStyle}
+          />
         </label>
         <label>
           <span style={labelStyle}>Сленг</span>
-          <select value={draft.slang_mode} onChange={(e) => patch({ slang_mode: e.target.value as ZhSlangMode })} style={inputStyle}>
-            <option value="off">Без сленга</option>
-            <option value="light">Лёгкий</option>
-          </select>
+          <LevelDropdown
+            value={draft.slang_mode}
+            onChange={(v) => patch({ slang_mode: v as ZhSlangMode })}
+            options={[
+              { value: 'off', label: 'Без сленга' },
+              { value: 'light', label: 'Лёгкий' },
+            ]}
+            openUpward
+            ariaLabel="Сленг"
+            style={inputStyle}
+          />
         </label>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>

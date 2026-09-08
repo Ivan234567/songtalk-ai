@@ -85,7 +85,8 @@ export function LevelDropdown<T extends string>({
             listStyle: 'none',
             maxHeight: 280,
             overflowY: 'auto',
-            zIndex: 1001,
+            zIndex: 40,
+            isolation: 'isolate',
           }}
         >
           {options.map((opt) => (

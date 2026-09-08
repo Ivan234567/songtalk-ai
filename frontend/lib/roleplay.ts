@@ -61,6 +61,8 @@ export interface RoleplayScenario {
   goalRu?: string;
   /** Шаги сценария для карты чекпоинтов (ИИ отмечает достигнутые в ходе диалога). */
   steps?: RoleplayStep[];
+  /** Словарь урока (китайские сценарии) — ИИ должен использовать эти слова в диалоге. */
+  scenarioVocabulary?: Array<{ hanzi: string; pinyin: string; translation_ru: string }>;
   /** Подсказка для ученика: как говорить, чтобы получить максимальные баллы (показывается в брифинге перед стартом). */
   maxScoreTipsRu?: string;
   /** Уровень (для личных сценариев: A1–C1 или easy/medium/hard); сохраняется в прогресс. */
@@ -252,7 +254,7 @@ function buildProfanityInstruction(scenario: RoleplayScenario): string {
  * Формирует итоговый system-промпт для сценария: инструкция по адаптации + (для тем «друг») сленг + базовый systemPrompt + цель и инструкция завершения.
  */
 const ZH_ADAPT_INSTRUCTION =
-  'Adapt your Chinese to how the learner actually speaks. If they use short HSK-1/2 phrases, reply with short simple sentences, recast gently, and offer choices. If they speak more fluently, you may use slightly richer but still natural Mandarin. Match their pace. Never switch the spoken dialogue to English or Russian.';
+  'Speak Simplified Chinese STRICTLY at the learner\'s selected HSK level — not above it and not below it. Do not use harder words, idioms, or grammar from a higher HSK. Do not simplify into baby-talk below the chosen level. Recast errors using the same HSK band. Never switch the spoken dialogue to English or Russian.';
 
 const ZH_NATURAL_INSTRUCTION =
   'Sound like a real person: brief backchannels (嗯, 好, 对), patience if they hesitate, no long monologues. Stay in character.';

@@ -9,6 +9,7 @@ import { getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
 import { PersonalScenariosUI } from '@/components/roleplay/PersonalScenariosUI';
 import { ZhScenariosUI } from '@/components/roleplay/ZhScenariosUI';
+import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import type { SpeakingAssessmentResult, CriteriaScores, GoalAttainmentItem } from '@/lib/speaking-assessment';
 import { getCriteriaLabel } from '@/lib/speaking-assessment';
 import { TranslatorPanel } from '@/components/TranslatorPanel';
@@ -790,6 +791,10 @@ export function AgentTab() {
                     : undefined,
             freestyle_context: agentMode === 'chat' ? freestyleContextPayload : undefined,
             chinese_settings: learningLanguage === 'zh' ? chineseSettingsPayload : undefined,
+            scenario_vocabulary:
+              agentMode === 'roleplay' && selectedScenario?.scenarioVocabulary?.length
+                ? selectedScenario.scenarioVocabulary
+                : undefined,
           }, learningLanguage)),
         });
 
@@ -1673,6 +1678,12 @@ export function AgentTab() {
       setRoleplayStyleNote(null);
       setRoleplayRewriteNeutral(null);
       setRoleplayFeedbackError(null);
+      setReplyHintText(null);
+      setAgentMode('roleplay');
+      const hskFromLevel = Number(String(scenario.level || '').replace(/[^\d]/g, ''));
+      if (hskFromLevel >= 1 && hskFromLevel <= 6) {
+        setChineseHskLevel(hskFromLevel as ChineseHskLevel);
+      }
       setSelectedScenario(scenario);
       requestScenarioFirstMessage(scenario);
     },
@@ -2139,9 +2150,9 @@ export function AgentTab() {
   }, [token, userId, messages, selectedScenario, currentSessionId, agentMode, debateTopic, debateUserPosition, debateCurrentSessionId, debateCompletionId, saveDebateCompletion, debateMicroGoals, debateDifficulty, debateStepsForCurrentDifficulty, roleplaySettingsPayload, debateSettingsPayload, learningLanguage]);
 
   const requestReplyHint = useCallback(async () => {
-    if (!token || messages.length === 0) return;
+    if (!token) return;
     const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
-    if (!lastAssistant?.content?.trim()) return;
+    if (agentMode !== 'roleplay' && !lastAssistant?.content?.trim()) return;
     const historyPayload = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role, content: m.content }))
@@ -2165,12 +2176,17 @@ export function AgentTab() {
           : {};
         bodyPayload = {
           mode: 'roleplay',
-          last_assistant_message: lastAssistant.content.trim(),
+          last_assistant_message: lastAssistant?.content?.trim() || '',
+          user_starts: !lastAssistant,
           history: historyPayload,
           goal: selectedScenario.goal ?? undefined,
           goal_ru: selectedScenario.goalRu ?? undefined,
           level: (selectedScenario as { level?: string }).level ?? 'B1',
           roleplay_settings: roleplaySettingsPayload,
+          chinese_settings: learningLanguage === 'zh' ? chineseSettingsPayload : undefined,
+          scenario_vocabulary: selectedScenario.scenarioVocabulary?.length
+            ? selectedScenario.scenarioVocabulary
+            : undefined,
           ...stepsPayload,
         };
       } else if (agentMode === 'debate') {
@@ -2584,6 +2600,12 @@ export function AgentTab() {
   }
 
   const isUserStartsDebateEmpty = agentMode === 'debate' && debateStarted && debateWhoStarts === 'user' && messages.length === 0 && state === 'idle';
+  const isUserStartsRoleplayEmpty =
+    agentMode === 'roleplay' &&
+    !!selectedScenario &&
+    !selectedScenario.characterOpening?.trim() &&
+    messages.length === 0 &&
+    state === 'idle';
   const statusText =
     state === 'listening'
       ? 'Говорите… Нажмите ещё раз — отправить'
@@ -2593,7 +2615,9 @@ export function AgentTab() {
           ? 'Говорю…'
           : isUserStartsDebateEmpty
             ? 'Ваша очередь — начните дебат!'
-            : 'Нажмите, чтобы начать запись';
+            : isUserStartsRoleplayEmpty
+              ? 'Ваша очередь — начните диалог!'
+              : 'Нажмите, чтобы начать запись';
 
   const speakingGlow = 0.22 + ttsLevel * 0.12;
   const speakingBlur = 18 + ttsLevel * 8;
@@ -2861,7 +2885,7 @@ export function AgentTab() {
           alignItems: 'center',
           justifyContent: selectedSession ? 'flex-start' : 'center',
           padding: '2.5rem 1.5rem',
-          overflowY: 'auto',
+          overflow: selectedSession ? 'auto' : 'hidden',
           background: 'radial-gradient(ellipse 100% 70% at 50% 30%, rgba(99, 102, 241, 0.08), transparent 55%), radial-gradient(ellipse 80% 40% at 50% 80%, rgba(139, 92, 246, 0.04), transparent 50%)',
           borderRadius: historyOpen || subtitlesVisible ? '0 28px 28px 0' : 28,
           border: '1px solid var(--sidebar-border)',
@@ -2941,6 +2965,10 @@ export function AgentTab() {
                 alignItems: 'flex-end',
                 gap: '0.75rem',
                 maxWidth: 'calc(100% - 2.5rem)',
+                maxHeight: 'calc(100% - 2.5rem)',
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                zIndex: 4,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -3266,7 +3294,7 @@ export function AgentTab() {
               )}
 
               {/* Настройки для китайского 自由对话 */}
-              {agentMode === 'chat' && learningLanguage === 'zh' && (
+              {learningLanguage === 'zh' && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario)) && (
                 <div
                   className="chinese-settings-panel"
                   style={{
@@ -3276,7 +3304,7 @@ export function AgentTab() {
                     alignSelf: 'flex-end',
                     borderRadius: 14,
                     border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-hover)',
+                    background: 'var(--sidebar-bg)',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     overflow: 'hidden',
                   }}
@@ -3363,23 +3391,27 @@ export function AgentTab() {
                             Уровень сложности
                           </span>
                           <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
-                            <span style={{ opacity: 0.85 }}>Уровень HSK</span>
-                            <select
-                              className="roleplay-modern-select"
-                              value={chineseHskLevel}
-                              onChange={(e) => setChineseHskLevel(Number(e.target.value) as ChineseHskLevel)}
-                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
-                            >
-                              <option value={1}>HSK 1 — начальный</option>
-                              <option value={2}>HSK 2 — базовый</option>
-                              <option value={3}>HSK 3 — средний</option>
-                              <option value={4}>HSK 4 — выше среднего</option>
-                              <option value={5}>HSK 5 — продвинутый</option>
-                              <option value={6}>HSK 6 — свободный</option>
-                            </select>
+                            <span style={{ opacity: 0.85, flexShrink: 0 }}>Уровень HSK</span>
+                            <div style={{ minWidth: 168, maxWidth: 210, flex: 1 }}>
+                              <LevelDropdown
+                                value={String(chineseHskLevel)}
+                                onChange={(v) => setChineseHskLevel(Number(v) as ChineseHskLevel)}
+                                options={[
+                                  { value: '1', label: 'HSK 1 — начальный' },
+                                  { value: '2', label: 'HSK 2 — базовый' },
+                                  { value: '3', label: 'HSK 3 — средний' },
+                                  { value: '4', label: 'HSK 4 — выше среднего' },
+                                  { value: '5', label: 'HSK 5 — продвинутый' },
+                                  { value: '6', label: 'HSK 6 — свободный' },
+                                ]}
+                                openUpward={false}
+                                ariaLabel="Уровень HSK"
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.8125rem', borderRadius: 8 }}
+                              />
+                            </div>
                           </label>
                           <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4 }}>
-                            ИИ будет использовать лексику и грамматику вашего уровня
+                            ИИ говорит строго на выбранном HSK — не выше и не ниже
                           </p>
                         </div>
 
@@ -3500,7 +3532,8 @@ export function AgentTab() {
                         </div>
 
                         {/* --- Подсказка ответа (появляется когда диалог начался) --- */}
-                        {messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && (
+                        {((messages.length > 0 && messages[messages.length - 1]?.role === 'assistant') ||
+                          (agentMode === 'roleplay' && !!selectedScenario && (messages.length === 0 || messages[messages.length - 1]?.role === 'assistant'))) ? (
                           <div
                             style={{
                               display: 'flex',
@@ -3638,7 +3671,7 @@ export function AgentTab() {
                               );
                             })()}
                           </div>
-                        )}
+                        ) : null}
 
                         {/* --- Коррекция ошибок --- */}
                         <div
@@ -3714,7 +3747,7 @@ export function AgentTab() {
                     flexShrink: 0,
                     borderRadius: 12,
                     border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-hover)',
+                    background: 'var(--sidebar-bg)',
                     overflow: 'hidden',
                   }}
                 >
@@ -3992,7 +4025,7 @@ export function AgentTab() {
                           )}
                         </section>
                       )}
-                      {messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && (
+                      {(messages.length === 0 || messages[messages.length - 1]?.role === 'assistant') && (
                         <section style={{ border: '1px solid rgba(251, 191, 36, 0.4)', borderRadius: 10, padding: '0.75rem', background: 'rgba(251, 191, 36, 0.06)' }}>
                           <button
                             type="button"
@@ -5231,6 +5264,27 @@ export function AgentTab() {
                 </span>
               )}
             </div>
+
+            {isUserStartsRoleplayEmpty && selectedScenario?.suggestedFirstLine && (
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth: 420,
+                  padding: '0.75rem 1rem',
+                  borderRadius: 12,
+                  background: 'var(--sidebar-hover)',
+                  border: '1px solid var(--sidebar-border)',
+                  textAlign: 'center',
+                }}
+              >
+                <div style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.65, marginBottom: 6 }}>
+                  Можно начать с
+                </div>
+                <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.45, color: 'var(--sidebar-text)' }}>
+                  «{selectedScenario.suggestedFirstLine}»
+                </p>
+              </div>
+            )}
 
             {(messages.length > 0 || selectedScenario || selectedSessionId) && (
               <button

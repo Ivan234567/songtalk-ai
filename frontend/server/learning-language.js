@@ -19,36 +19,6 @@ export function attachLearningLanguage(req, _res, next) {
 const FREESTYLE_CHAT_SYSTEM_EN =
   'You are a helpful assistant. Always reply in the SAME language the user writes in (e.g. Russian if they write in Russian, English if in English). Do not switch to Chinese or other languages unless the user explicitly writes in that language.'
 
-// Уровни HSK для промптов (1-6)
-export const HSK_LEVEL_INSTRUCTIONS = {
-  1: 'HSK 1 level: Use ONLY the most basic words (你好, 我, 你, 是, 不, 好, 谢谢, 再见, 对不起, 没关系, 吃, 喝, 什么, 这, 那). ' +
-     'Maximum 3-5 words per sentence. Very simple structure: Subject + Verb or Subject + 是 + Object. ' +
-     'Example replies: 好的, 我喜欢, 谢谢你, 我是学生.',
-  2: 'HSK 2 level: Use basic everyday words. Short sentences of 4-8 words. ' +
-     'Simple grammar: 了, 过, 在, 很, 都, 也. ' +
-     'Example: 我很高兴, 今天天气很好, 你想吃什么?',
-  3: 'HSK 3 level: Conversational vocabulary. Sentences up to 10-12 words. ' +
-     'Can use 因为…所以…, 虽然…但是…, 如果…就…. ' +
-     'Natural everyday dialogue level.',
-  4: 'HSK 4 level: Wider vocabulary including some abstract concepts. ' +
-     'Complex sentences with multiple clauses. Idiomatic expressions allowed.',
-  5: 'HSK 5 level: Advanced vocabulary. Sophisticated sentence structures. ' +
-     'Can discuss abstract topics, use literary expressions.',
-  6: 'HSK 6 level: Near-native fluency. Rich vocabulary, nuanced expressions, ' +
-     'cultural references, proverbs (成语) when appropriate.',
-}
-
-// Режимы подсказки для китайского
-export const CHINESE_HINT_MODE_INSTRUCTIONS = {
-  basic: 'Keep the reply simple and direct. Focus on correct grammar at the given HSK level.',
-  vocabulary: 'Include 1-2 useful vocabulary words relevant to the topic. ' +
-              'These should be natural, not forced.',
-  formal: 'Use polite/formal register (您 instead of 你, 请, formal phrases). ' +
-          'Appropriate for speaking with elders, teachers, or in professional settings.',
-  colloquial: 'Use casual, colloquial Mandarin as spoken in daily life. ' +
-              'Include common spoken contractions and casual expressions (but avoid slang that would confuse learners).',
-}
-
 function buildChineseSystemPrompt(options = {}) {
   const { showPinyin, showTranslation, correctionMode, toneFocus, hskLevel } = options
   
@@ -58,7 +28,8 @@ function buildChineseSystemPrompt(options = {}) {
   
   // Добавляем уровень HSK
   if (hskLevel && HSK_LEVEL_INSTRUCTIONS[hskLevel]) {
-    prompt += `\n\nLEARNER LEVEL: ${HSK_LEVEL_INSTRUCTIONS[hskLevel]}\n`
+    prompt += `\n\nHSK LEVEL LOCK (mandatory): ${HSK_LEVEL_INSTRUCTIONS[hskLevel]}\n`
+    prompt += 'Speak AT this HSK level only: not harder, not easier. Do not upgrade vocabulary if the learner sounds fluent. Do not baby-talk below it.\n'
   } else {
     prompt += 'Use natural, everyday Mandarin at a learner-friendly level (roughly HSK 1-4). '
   }
@@ -128,6 +99,24 @@ export function getFreestyleChatSystemPrompt(lang, options = {}) {
   return FREESTYLE_CHAT_SYSTEM_EN
 }
 
+export function buildChineseRoleplayLock({ hskLevel = 3, showPinyin = false, showTranslation = false, vocabulary = [] } = {}) {
+  const hsk = HSK_LEVEL_INSTRUCTIONS[hskLevel] || HSK_LEVEL_INSTRUCTIONS[3]
+  const vocabList = Array.isArray(vocabulary)
+    ? vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 20)
+    : []
+  let text =
+    'Stay in the roleplay character. Additional Mandarin constraints (override any looser level advice above):\n' +
+    `HSK LEVEL LOCK: ${hsk}\n` +
+    'Speak AT this HSK only — not harder, not easier. Do not switch spoken lines to English or Russian.'
+  if (vocabList.length) {
+    text +=
+      '\nSCENARIO VOCABULARY — you MUST use 1–2 of these words in every spoken reply when they fit: ' +
+      vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、')
+  }
+  text += buildChineseMetadataInstruction({ showPinyin, showTranslation })
+  return text
+}
+
 export function buildReplyHintChatSystemZh({
   levelText,
   slangMode,
@@ -143,21 +132,59 @@ export function buildReplyHintChatSystemZh({
   showPinyin = false,
   showTranslation = false,
   chineseHintMode = 'basic',
+  vocabulary = [],
 }) {
   const metadataInstruction = buildChineseMetadataInstruction({ showPinyin, showTranslation })
   
   const hintModeInstruction = CHINESE_HINT_MODE_INSTRUCTIONS[chineseHintMode] || CHINESE_HINT_MODE_INSTRUCTIONS.basic
+  const vocabList = Array.isArray(vocabulary)
+    ? vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 20)
+    : []
+  const vocabBlock = vocabList.length
+    ? '\n- You MUST weave 1-2 of these scenario words into the suggested reply when they fit: ' +
+      vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、') +
+      '.\n- Do not invent a hint that ignores this vocabulary list.'
+    : ''
   
   return (
-    'You are a speaking coach for Chinese conversation practice. The assistant just wrote a message in Simplified Chinese, and you suggest what the USER could reply next.\n\n' +
+    'You are a speaking coach for Chinese conversation practice. Suggest what the USER could say next in Simplified Chinese.\n\n' +
     'Rules:\n' +
     '- The main suggestion must be Simplified Chinese only. No explanations or quote wrappers in that part.\n' +
-    `- STRICTLY match learner level: ${levelText}\n` +
+    `- STRICT HSK lock: ${levelText}\n` +
+    '- Speak at that HSK level only: not harder, not easier.\n' +
     `- Hint style: ${hintModeInstruction}\n` +
-    '- Keep the suggestion directly relevant to the latest assistant message and recent context.\n' +
-    '- Keep it concise (usually 1-2 short sentences).' +
+    '- Keep the suggestion directly relevant to the latest assistant message and recent context. If the conversation has not started, suggest a natural opening line for the learner.' +
+    vocabBlock +
+    '\n- Keep it concise (usually 1-2 short sentences).' +
     metadataInstruction
   )
+}
+
+// Уровни HSK для промптов (1-6)
+export const HSK_LEVEL_INSTRUCTIONS = {
+  1: 'HSK 1 ONLY. Use ONLY the most basic words (你好, 我, 你, 是, 不, 好, 谢谢, 再见, 对不起, 没关系, 吃, 喝, 什么, 这, 那, 要, 有). ' +
+     'Maximum 3-5 characters per sentence besides particles. Structure: Subject + Verb or Subject + 是 + Object. ' +
+     'FORBIDDEN: 因为, 虽然, 如果, 已经, 觉得, 成语, any HSK 2+ word. Example: 好的, 我喜欢, 谢谢你, 我是学生.',
+  2: 'HSK 2 ONLY. Basic everyday words. Sentences of 4-8 words. Grammar allowed: 了, 过, 在, 很, 都, 也, 吧, 吗. ' +
+     'FORBIDDEN: 虽然…但是, 如果…就, abstract nouns, 成语, HSK 3+ words. Example: 我很高兴, 今天天气很好, 你想吃什么?',
+  3: 'HSK 3 ONLY. Everyday conversation. Sentences up to 10-12 words. Grammar allowed: 因为…所以…, 虽然…但是…, 如果…就…. ' +
+     'FORBIDDEN: HSK 4+ vocabulary, literary 成语, abstract academic words. Stay at textbook-dialogue difficulty.',
+  4: 'HSK 4 ONLY. Wider everyday/abstract vocabulary and multi-clause sentences. ' +
+     'FORBIDDEN: HSK 5–6 rare words, written 成语 the learner would not know at HSK 4. Do not sound like HSK 2 either.',
+  5: 'HSK 5 ONLY. Advanced but still spoken Mandarin. Complex sentences OK. ' +
+     'FORBIDDEN: obscure HSK 6 / classical 成语 unless the learner used them first. Do not simplify to HSK 3.',
+  6: 'HSK 6. Near-native spoken fluency: rich vocabulary, nuance, common 成语 when natural. Still spoken, not written essay style.',
+}
+
+// Режимы подсказки для китайского
+export const CHINESE_HINT_MODE_INSTRUCTIONS = {
+  basic: 'Keep the reply simple and direct. Focus on correct grammar at the given HSK level.',
+  vocabulary: 'Include 1-2 useful vocabulary words relevant to the topic. ' +
+              'These should be natural, not forced.',
+  formal: 'Use polite/formal register (您 instead of 你, 请, formal phrases). ' +
+          'Appropriate for speaking with elders, teachers, or in professional settings.',
+  colloquial: 'Use casual, colloquial Mandarin as spoken in daily life. ' +
+              'Include common spoken contractions and casual expressions (but avoid slang that would confuse learners).',
 }
 
 export const REPLY_HINT_LEVEL_ZH = {

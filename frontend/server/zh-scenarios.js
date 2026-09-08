@@ -330,8 +330,9 @@ Rules:
 - UI strings (title, description, goals, roles, setting, steps title_ru / expected_user_action / ai_context) in Russian.
 - 2–6 steps. Each step is one learner action.
 - keywords: 2–6 items, hanzi and/or pinyin; hints for scoring, not a rigid whitelist.
-- vocabulary: 4–12 words at or below the given HSK. Pinyin WITH tone marks.
+- vocabulary: 4–12 words at or below the given HSK. Pinyin WITH tone marks. These words WILL be used in the spoken dialogue and in learner hints — pick words the learner must say.
 - Always include BOTH character_opening and suggested_first_line so who-starts can be switched later.
+- suggested_first_line must use 1–2 vocabulary items and stay at the given HSK.
 - If textbook/lesson is given, prefer starter "ai" (the other person greets, like a textbook dialogue), unless the learner is clearly the initiator (phone call, asking for directions).
 - If the user did not specify a role, choose a natural learner role and a complementary AI role.
 - Playable in 2–4 minutes. No profanity. No English spoken lines.`

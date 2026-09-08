@@ -18,7 +18,7 @@ import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
 import { getCost } from './balance-rates.js'
-import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH } from './learning-language.js'
+import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -1254,7 +1254,7 @@ app.post('/api/agent/chat', async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
-  const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context, chinese_settings } = req.body || {}
+  const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context, chinese_settings, scenario_vocabulary } = req.body || {}
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'Expected { messages: [...] }' })
   }
@@ -1325,10 +1325,29 @@ app.post('/api/agent/chat', async (req, res) => {
         'Apply this softly: stay natural and conversational, do not mention these settings explicitly.',
     }
     : null
+  const chineseCoachSystem = req.learningLanguage === 'zh'
+    ? {
+      role: 'system',
+      content: steps.length > 0
+        ? buildChineseRoleplayLock({
+          hskLevel: chineseHskLevel,
+          showPinyin: chineseShowPinyin,
+          showTranslation: chineseShowTranslation,
+          vocabulary: scenario_vocabulary,
+        })
+        : getFreestyleChatSystemPrompt('zh', {
+          showPinyin: chineseShowPinyin,
+          showTranslation: chineseShowTranslation,
+          correctionMode: chineseCorrectionMode,
+          toneFocus: chineseToneFocus,
+          hskLevel: chineseHskLevel,
+        }),
+    }
+    : null
   const baseMessages = steps.length > 0
     ? messages
     : [
-      {
+      chineseCoachSystem || {
         role: 'system',
         content: getFreestyleChatSystemPrompt(req.learningLanguage || 'en', {
           showPinyin: chineseShowPinyin,
@@ -1344,6 +1363,7 @@ app.post('/api/agent/chat', async (req, res) => {
     ...(roleplaySafetySystem ? [roleplaySafetySystem] : []),
     ...(freestyleCoachSystem ? [freestyleCoachSystem] : []),
     ...baseMessages,
+    ...(steps.length > 0 && chineseCoachSystem ? [chineseCoachSystem] : []),
   ]
 
   try {
@@ -1901,12 +1921,13 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     freestyle_context,
     hint_mode,
     chinese_settings,
+    scenario_vocabulary,
   } = req.body || {}
   const agentMessage = typeof last_assistant_message === 'string' ? last_assistant_message.trim() : ''
-  if (!agentMessage) {
+  const hintMode = mode === 'debate' ? 'debate' : mode === 'chat' ? 'chat' : 'roleplay'
+  if (!agentMessage && hintMode !== 'roleplay') {
     return res.status(400).json({ error: 'Expected { last_assistant_message: "..." }' })
   }
-  const hintMode = mode === 'debate' ? 'debate' : mode === 'chat' ? 'chat' : 'roleplay'
   const settings = roleplay_settings && typeof roleplay_settings === 'object' ? roleplay_settings : {}
   // Китайские настройки обучения
   const chineseSettings = chinese_settings && typeof chinese_settings === 'object' ? chinese_settings : {}
@@ -1976,20 +1997,29 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     ? `\nRecent conversation context:\n${historyList.map((m) => `${m.role}: ${m.content.trim()}`).join('\n')}`
     : ''
 
-  const roleplaySystemContent = `You are a language coach. The user is in a roleplay dialogue. The OTHER person (the agent) just said something. Your job is to suggest a natural REPLY the user could say — one that fits the agent's message AND, if the scenario has steps, helps move the dialogue toward the next uncompleted step.
+  const vocabList = Array.isArray(scenario_vocabulary)
+    ? scenario_vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 20)
+    : []
+  const vocabHintBlock = vocabList.length
+    ? `\nScenario vocabulary the hint MUST use (1-2 words): ${vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、')}`
+    : ''
+
+  const roleplaySystemContent = `You are a language coach. The user is in a roleplay dialogue. Suggest a natural REPLY the user could say — one that fits the agent's last line AND, if the scenario has steps, helps move toward the next uncompleted step.
 
 Rules:
 - Output ONLY the suggested reply text, in the SAME language the agent used (usually English). No explanations, no "You could say:", no quotation marks around the whole thing.
 - Match the learner level: ${levelText}
+- If the agent has not spoken yet, suggest a natural opening line for the learner.
 - The reply must sound like a natural response to what the agent just said (answer their question, react to their line, stay in character).
-- If steps are provided, prefer a reply that both responds to the agent and moves the user toward the next step (e.g. if the next step is "give your address", the hint could include giving or leading to an address). If all steps are done, just suggest a natural reply to the agent.
+- If steps are provided, prefer a reply that both responds to the agent and moves the user toward the next step.
 - Keep it conversational. One short reply is enough; if two variants fit, you may give 1–2 options on separate lines.`
 
   const roleplayUserContent =
     (scenarioGoal ? `Scenario goal: ${scenarioGoal}` : '') +
     historyBlock +
     stepsBlock +
-    `\n\nWhat the other person (agent) just said:\n${agentMessage}\n\nSuggest a natural reply the user could say (same language as above, one or two short options).`
+    vocabHintBlock +
+    `\n\nWhat the other person (agent) just said:\n${agentMessage || '(the learner starts; no agent line yet)'}\n\nSuggest a natural reply the user could say (same language as above, one or two short options).`
 
   const debateTopic = typeof topic === 'string' ? topic.trim() : ''
   const userPosition = typeof user_position === 'string' ? user_position.trim() : ''
@@ -2068,28 +2098,30 @@ Rules:
     `\n\nAssistant's latest message:\n${agentMessage}\n\nSuggest the user's next reply.`
 
   try {
+    const zhHintSystem = req.learningLanguage === 'zh'
+      ? buildReplyHintChatSystemZh({
+        levelText,
+        slangMode,
+        allowProfanity,
+        aiMayUseProfanity,
+        profanityIntensity,
+        hintModeValue,
+        freestyleModeInstruction,
+        freestyleRoleHint,
+        freestyleToneFormality,
+        freestyleToneDirectness,
+        freestyleMicroGoals,
+        showPinyin: chineseShowPinyin,
+        showTranslation: chineseShowTranslation,
+        chineseHintMode,
+        vocabulary: vocabList,
+      })
+      : null
     const systemContent = hintMode === 'debate'
       ? debateSystemContent
       : hintMode === 'chat'
-        ? (req.learningLanguage === 'zh'
-          ? buildReplyHintChatSystemZh({
-            levelText,
-            slangMode,
-            allowProfanity,
-            aiMayUseProfanity,
-            profanityIntensity,
-            hintModeValue,
-            freestyleModeInstruction,
-            freestyleRoleHint,
-            freestyleToneFormality,
-            freestyleToneDirectness,
-            freestyleMicroGoals,
-            showPinyin: chineseShowPinyin,
-            showTranslation: chineseShowTranslation,
-            chineseHintMode,
-          })
-          : chatSystemContent)
-        : roleplaySystemContent
+        ? (zhHintSystem || chatSystemContent)
+        : (zhHintSystem || roleplaySystemContent)
     const userContent = hintMode === 'debate'
       ? debateUserContent
       : hintMode === 'chat'

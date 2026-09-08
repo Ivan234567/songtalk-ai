@@ -354,8 +354,12 @@ export function zhScenarioToRoleplay(
     : '';
 
   const vocabBlock = vocab.length
-    ? 'Scenario vocabulary (use naturally, do not dump the list):\n' +
-      vocab.map((v) => `- ${v.hanzi} (${v.pinyin}) — ${v.translation_ru}`).join('\n')
+    ? [
+        'SCENARIO VOCABULARY — you MUST use these words in the spoken dialogue.',
+        'In every reply include 1–2 of them when they fit the situation. Do not dump the list. Do not ignore this list.',
+        'Prefer these words over synonyms the learner has not studied.',
+        vocab.map((v) => `- ${v.hanzi} (${v.pinyin}) — ${v.translation_ru}`).join('\n'),
+      ].join('\n')
     : '';
 
   const systemPrompt = [
@@ -364,16 +368,18 @@ export function zhScenarioToRoleplay(
     scenario.user_role ? `The learner's role: ${scenario.user_role}` : '',
     goals.length ? `Goals of this scene: ${goals.join('; ')}` : '',
     textbookLine ? `Textbook context: ${textbookLine}` : '',
-    scenario.hsk_level ? `Learner HSK level: ${scenario.hsk_level}. Keep your Chinese at or below this level unless the learner uses harder words first.` : '',
+    scenario.hsk_level
+      ? `HSK LEVEL LOCK: Speak at HSK ${scenario.hsk_level} only. Same difficulty, not harder, not easier. No words or grammar from a higher HSK.`
+      : '',
     formalityInstruction(scenario.formality ?? 'nin'),
     slangInstruction(scenario.slang_mode ?? 'off'),
     stepsBlock,
     vocabBlock,
     'Speak ONLY Simplified Chinese in character lines. Do not switch to English or Russian in the dialogue.',
-    'If the learner hesitates, recast naturally in Chinese and offer a simple choice. Do not lecture or give meta-commentary.',
+    'If the learner hesitates, recast naturally in Chinese at the same HSK level and offer a simple choice. Do not lecture or give meta-commentary.',
     starter === 'ai' && scenario.character_opening
       ? `If you are starting the conversation, your first line is: "${scenario.character_opening}"`
-      : 'The learner starts. Wait for their first line; then reply in character.',
+      : 'The learner starts. Wait for their first line; then reply in character. Do not speak first.',
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -411,5 +417,12 @@ export function zhScenarioToRoleplay(
     aiMayUseProfanity: false,
     difficulty: hskToDifficulty(scenario.hsk_level),
     level: scenario.hsk_level ? `HSK ${scenario.hsk_level}` : undefined,
+    scenarioVocabulary: vocab
+      .filter((v) => v.hanzi?.trim())
+      .map((v) => ({
+        hanzi: v.hanzi,
+        pinyin: v.pinyin || '',
+        translation_ru: v.translation_ru || '',
+      })),
   };
 }

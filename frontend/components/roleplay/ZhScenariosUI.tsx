@@ -240,31 +240,37 @@ function ZhIntentForm({
           Нажмите «Доверить ИИ» или введите роль сами.
         </p>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', overflow: 'visible', position: 'relative', zIndex: 3 }}>
         <label>
           <span style={labelStyle}>Кто начинает</span>
-          <select
+          <LevelDropdown
             value={starter}
-            onChange={(e) => setStarter(e.target.value as 'auto' | ZhStarter)}
+            onChange={(v) => setStarter(v as 'auto' | ZhStarter)}
+            options={[
+              { value: 'auto', label: 'Авто (для учебника — собеседник)' },
+              { value: 'ai', label: 'Собеседник' },
+              { value: 'user', label: 'Вы' },
+            ]}
+            openUpward={false}
+            ariaLabel="Кто начинает"
             style={inputStyle}
-          >
-            <option value="auto">Авто (для учебника — собеседник)</option>
-            <option value="ai">Собеседник</option>
-            <option value="user">Вы</option>
-          </select>
+          />
         </label>
         <label>
           <span style={labelStyle}>Формальность</span>
-          <select
+          <LevelDropdown
             value={formality}
-            onChange={(e) => setFormality(e.target.value as 'auto' | ZhFormality)}
+            onChange={(v) => setFormality(v as 'auto' | ZhFormality)}
+            options={[
+              { value: 'auto', label: 'Авто' },
+              { value: 'nin', label: '您' },
+              { value: 'ni', label: '你' },
+              { value: 'mixed', label: 'Смесь' },
+            ]}
+            openUpward={false}
+            ariaLabel="Формальность"
             style={inputStyle}
-          >
-            <option value="auto">Авто</option>
-            <option value="nin">您</option>
-            <option value="ni">你</option>
-            <option value="mixed">Смесь</option>
-          </select>
+          />
         </label>
       </div>
       {error && (
@@ -704,7 +710,7 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Китайские сценарии" style={overlayStyle} onClick={briefing || draft ? undefined : onClose}>
-      <div style={{ ...panelStyle, maxWidth: draft ? 980 : 720 }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ ...panelStyle, maxWidth: draft ? 980 : 720, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
             style={{
