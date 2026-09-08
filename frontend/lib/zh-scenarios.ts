@@ -342,15 +342,19 @@ export function zhScenarioToRoleplay(
   const textbookLine = [scenario.textbook?.title, scenario.textbook?.lesson_no].filter(Boolean).join(' · ');
 
   const stepsBlock = steps.length
-    ? 'Dialogue checkpoints (mark progress when the learner clearly does the action; synonyms and pinyin count):\n' +
-      steps
-        .map((s, i) => {
-          const keys = (s.keywords || []).join(', ');
-          const ctx = s.ai_context ? ` AI cue: ${s.ai_context}` : '';
-          const example = s.example_zh ? ` Example: ${s.example_zh}` : '';
-          return `${i + 1}. ${s.title_ru}. Learner should: ${s.expected_user_action}.${keys ? ` Keywords: ${keys}.` : ''}${ctx}${example}`;
-        })
-        .join('\n')
+    ? [
+        'Dialogue checkpoints: these are LEARNER actions, not your script.',
+        'Do not act out the learner\'s tasks. Do not ask them to repeat a checkpoint they already did.',
+        'Mark progress when the learner clearly does the action; synonyms and pinyin count:',
+        steps
+          .map((s, i) => {
+            const keys = (s.keywords || []).join(', ');
+            const ctx = s.ai_context ? ` AI cue (how YOU react, not a line to force): ${s.ai_context}` : '';
+            const example = s.example_zh ? ` Example learner phrase: ${s.example_zh}` : '';
+            return `${i + 1}. ${s.title_ru}. Learner should: ${s.expected_user_action}.${keys ? ` Keywords: ${keys}.` : ''}${ctx}${example}`;
+          })
+          .join('\n'),
+      ].join('\n')
     : '';
 
   const vocabBlock = vocab.length
@@ -378,8 +382,8 @@ export function zhScenarioToRoleplay(
     'Spoken character lines must be Simplified Chinese only. After each spoken line add ««PINYIN»» JSON and ««TRANSLATION»» Russian — metadata is not spoken.',
     'If the learner hesitates, recast naturally in Chinese at the same HSK level and offer a simple choice. Do not lecture or give meta-commentary.',
     starter === 'ai' && scenario.character_opening
-      ? `If you are starting the conversation, your first line is: "${scenario.character_opening}"`
-      : 'The learner starts. Wait for their first line; then reply in character. Do not speak first.',
+      ? `If YOU are starting AND the learner has not spoken yet, your first line is: "${scenario.character_opening}". Once the learner has spoken, never reuse this line.`
+      : 'The learner starts. Wait for their first line; then reply in character to what they said. Do not speak first. Do not use any stored AI opening line in this session.',
   ]
     .filter(Boolean)
     .join('\n\n');

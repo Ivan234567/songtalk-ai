@@ -791,7 +791,11 @@ export function AgentTab() {
                     },
                     ...history,
                   ]
-                : buildMessagesForAgentChat(history, agentMode === 'roleplay' ? selectedScenario : null),
+                : buildMessagesForAgentChat(
+                    history,
+                    agentMode === 'roleplay' ? selectedScenario : null,
+                    agentMode === 'roleplay' ? { completedStepIds: roleplayCompletedStepIds } : undefined
+                  ),
             max_tokens: 1500,
             scenario_steps:
               agentMode === 'roleplay' && selectedScenario?.steps?.length
@@ -1084,6 +1088,7 @@ export function AgentTab() {
       freestyleContextPayload,
       chineseSpeechSpeed,
       handleInsufficientBalance,
+      roleplayCompletedStepIds,
     ]
   );
 
@@ -3046,14 +3051,14 @@ export function AgentTab() {
                 flexDirection: 'column',
                 alignItems: 'flex-end',
                 gap: '0.75rem',
-                maxWidth: 'calc(100% - 2.5rem)',
-                maxHeight: 'calc(100% - 2.5rem)',
-                overflowY: 'auto',
-                overflowX: 'hidden',
+                width: 'max-content',
+                maxWidth: 'min(360px, calc(100% - 3rem))',
+                overflow: 'visible',
                 zIndex: 4,
+                pointerEvents: 'none',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end', pointerEvents: 'auto' }}>
                 <button
                   type="button"
                   onClick={() => setTranslatorOpen(true)}
@@ -3148,6 +3153,7 @@ export function AgentTab() {
                     background: 'var(--sidebar-hover)',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     overflow: 'hidden',
+                    pointerEvents: 'auto',
                   }}
                 >
                   <button
@@ -3390,6 +3396,7 @@ export function AgentTab() {
                     background: 'var(--sidebar-bg)',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     overflow: 'hidden',
+                    pointerEvents: 'auto',
                   }}
                 >
                   <button
@@ -4053,6 +4060,7 @@ export function AgentTab() {
                     border: '1px solid var(--sidebar-border)',
                     background: 'var(--sidebar-bg)',
                     overflow: 'hidden',
+                    pointerEvents: 'auto',
                   }}
                 >
                   <button
@@ -4423,6 +4431,7 @@ export function AgentTab() {
                     border: '1px solid var(--sidebar-border)',
                     background: 'var(--sidebar-hover)',
                     overflow: 'hidden',
+                    pointerEvents: 'auto',
                   }}
                 >
                   <button
@@ -4817,6 +4826,7 @@ export function AgentTab() {
                     border: '1px solid rgba(251, 191, 36, 0.35)',
                     background: 'rgba(251, 191, 36, 0.08)',
                     alignSelf: 'flex-end',
+                    pointerEvents: 'auto',
                   }}
                 >
                   {replyHintLoading ? (

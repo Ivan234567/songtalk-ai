@@ -543,6 +543,8 @@ export function RoleplayModeUI({
                       border: '1px solid var(--sidebar-border)',
                       boxShadow: '0 4px 6px -1px rgba(0,0,0,0.08), 0 10px 20px -4px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.02)',
                       zIndex: 1000,
+                      overflow: 'visible',
+                      maxHeight: 'none',
                     }}
                   >
                     <div className="roleplay-dropdown-header" style={{ padding: '6px 10px 8px', marginBottom: 2, borderBottom: '1px solid var(--sidebar-border)' }}>
@@ -627,6 +629,8 @@ export function RoleplayModeUI({
                       border: '1px solid var(--sidebar-border)',
                       boxShadow: '0 4px 6px -1px rgba(0,0,0,0.08), 0 10px 20px -4px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.02)',
                       zIndex: 1000,
+                      overflow: 'visible',
+                      maxHeight: 'none',
                     }}
                   >
                     <div className="roleplay-dropdown-header" style={{ padding: '6px 10px 8px', marginBottom: 2, borderBottom: '1px solid var(--sidebar-border)' }}>

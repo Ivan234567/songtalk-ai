@@ -265,19 +265,46 @@ const ZH_METADATA_INSTRUCTION =
   '««TRANSLATION»»Russian translation of the spoken line only.\n' +
   'You MUST include both PINYIN and TRANSLATION after every reply. Do not skip them.';
 
+const ZH_LIVE_REPLY_INSTRUCTION =
+  'Checkpoints are LEARNER actions, not a script of YOUR lines. Do not perform the learner\'s tasks for them. ' +
+  'Once the learner has spoken, reply to THAT utterance: acknowledge facts they already gave (name, origin, job, greeting) and do not ask for them again. ' +
+  'Never deliver a canned opening or a pre-written first line after the learner has already started. ' +
+  'Ignore any stored AI first line / character_opening for this turn.';
+
 const ZH_GOAL_COMPLETION =
   ' When the goal is reached, say one short natural closing phrase in Chinese (e.g. 好的，再见！ or 那我先走了) and end. Stay in character; do not say that the scenario is complete.';
 
-function buildZhScenarioSystemContent(scenario: RoleplayScenario): string {
+type ScenarioPromptContext = {
+  hasUserMessage?: boolean;
+  completedStepIds?: string[];
+};
+
+function buildZhScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioPromptContext = {}): string {
   let content = ZH_ADAPT_INSTRUCTION + '\n\n' + ZH_NATURAL_INSTRUCTION;
   content += '\n\n' + HARD_SAFETY_BLOCKS_INSTRUCTION;
   content += '\n\n' + RESPOND_TO_USER_INSTRUCTION;
+  content += '\n\n' + ZH_LIVE_REPLY_INSTRUCTION;
   content += '\n\n' + ZH_METADATA_INSTRUCTION + '\n\n' + scenario.systemPrompt;
-  if (scenario.openingInstruction?.trim()) {
+  const conversationLive = Boolean(ctx.hasUserMessage);
+  if (!conversationLive && scenario.openingInstruction?.trim()) {
     content += '\n\nFirst line instruction: ' + scenario.openingInstruction.trim();
   }
-  if (scenario.characterOpening?.trim()) {
+  if (!conversationLive && scenario.characterOpening?.trim()) {
     content += '\n\nIf the conversation is just starting, your first line should be: "' + scenario.characterOpening.trim() + '"';
+  }
+  if (conversationLive) {
+    content +=
+      '\n\nThe learner already spoke. Do not use a pre-written opening. Reply to their last line. ' +
+      'Do not ask 你叫什么名字 / 您叫什么名字 if they already said their name.';
+    const done = (ctx.completedStepIds || []).filter(Boolean);
+    if (done.length && scenario.steps?.length) {
+      const labels = scenario.steps
+        .filter((s) => done.includes(s.id))
+        .map((s) => s.titleRu || s.titleEn || s.id);
+      if (labels.length) {
+        content += `\nLearner already completed: ${labels.join('; ')}. Do not redo or re-ask those. Continue naturally.`;
+      }
+    }
   }
   if (scenario.goal?.trim()) {
     content += '\n\nGoal: ' + scenario.goal.trim() + '.' + ZH_GOAL_COMPLETION;
@@ -285,9 +312,9 @@ function buildZhScenarioSystemContent(scenario: RoleplayScenario): string {
   return content;
 }
 
-function buildScenarioSystemContent(scenario: RoleplayScenario): string {
+function buildScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioPromptContext = {}): string {
   if (scenario.language === 'zh') {
-    return buildZhScenarioSystemContent(scenario);
+    return buildZhScenarioSystemContent(scenario, ctx);
   }
   let content = ADAPT_TO_LEVEL_INSTRUCTION + '\n\n' + NATURAL_DIALOGUE_INSTRUCTION;
   const slangInstruction = buildSlangInstruction(scenario);
@@ -308,11 +335,16 @@ function buildScenarioSystemContent(scenario: RoleplayScenario): string {
     }
   }
   content += '\n\n' + RESPOND_TO_USER_INSTRUCTION + '\n\n' + scenario.systemPrompt;
-  if (scenario.openingInstruction?.trim()) {
+  const conversationLive = Boolean(ctx.hasUserMessage);
+  if (!conversationLive && scenario.openingInstruction?.trim()) {
     content += '\n\n' + 'First line instruction: ' + scenario.openingInstruction.trim();
   }
-  if (scenario.characterOpening?.trim()) {
+  if (!conversationLive && scenario.characterOpening?.trim()) {
     content += '\n\n' + 'If the conversation is just starting, your first line should be: "' + scenario.characterOpening.trim() + '"';
+  }
+  if (conversationLive) {
+    content +=
+      '\n\nThe learner already spoke. Do not use a pre-written opening. Reply to their last line and do not re-ask facts they already gave.';
   }
   if (scenario.optionalTwist?.trim()) {
     content += '\n\n' + 'Optional twist (use only if it fits naturally): ' + scenario.optionalTwist.trim();
@@ -325,10 +357,14 @@ function buildScenarioSystemContent(scenario: RoleplayScenario): string {
 
 export function buildMessagesForAgentChat(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  scenario: RoleplayScenario | null
+  scenario: RoleplayScenario | null,
+  extras?: { completedStepIds?: string[] }
 ): AgentChatMessage[] {
   const base = history.map((m) => ({ role: m.role, content: m.content }));
   if (!scenario?.systemPrompt) return base;
-  const systemContent = buildScenarioSystemContent(scenario);
+  const systemContent = buildScenarioSystemContent(scenario, {
+    hasUserMessage: history.some((m) => m.role === 'user'),
+    completedStepIds: extras?.completedStepIds,
+  });
   return [{ role: 'system', content: systemContent }, ...base];
 }

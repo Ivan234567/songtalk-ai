@@ -173,6 +173,8 @@ button {
 .roleplay-dropdown-panel {
   animation: roleplay-dropdown-scale-in 0.2s ease-out;
   transform-origin: top right;
+  overflow: visible !important;
+  max-height: none !important;
 }
 
 @keyframes roleplay-dropdown-fade-in {
