@@ -77,6 +77,33 @@ function getApiUrl(): string {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
+async function readNdjsonChatReply(resp: Response): Promise<string> {
+  if (!resp.ok || !resp.body) return '';
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullReply = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line) as { type?: string; delta?: string };
+        if (data.type === 'chunk' && typeof data.delta === 'string') {
+          fullReply += data.delta;
+        }
+      } catch {
+        /* skip malformed chunk */
+      }
+    }
+  }
+  return fullReply.trim();
+}
+
 function getBackendToken(): string | null {
   return getStoredBackendToken();
 }
@@ -242,7 +269,7 @@ export function AgentTab() {
   const [freestyleToneFormality, setFreestyleToneFormality] = useState(50);
   const [freestyleToneDirectness, setFreestyleToneDirectness] = useState(50);
   /** Китайские настройки для 自由对话 */
-  const [chineseSettingsOpen, setChineseSettingsOpen] = useState(false);
+  const [chineseSettingsOpen, setChineseSettingsOpen] = useState(true);
   const [chineseHskLevel, setChineseHskLevel] = useState<ChineseHskLevel>(3);
   const [chineseSpeechSpeed, setChineseSpeechSpeed] = useState<ChineseSpeechSpeed>(1);
   const [chineseShowPinyin, setChineseShowPinyin] = useState(true);
@@ -1466,6 +1493,7 @@ export function AgentTab() {
       if (openingLine) {
         const assistantMessage: Message = { role: 'assistant', content: openingLine };
         setMessages([assistantMessage]);
+        let createdSessionId: string | null = null;
         if (userId) {
           const title = scenario.title;
           const scenarioPayload = { scenario_id: scenario.id, scenario_title: scenario.title };
@@ -1480,6 +1508,7 @@ export function AgentTab() {
             .select('id, title, messages, created_at, scenario_id, scenario_title')
             .single();
           if (!error && data) {
+            createdSessionId = data.id;
             const newSession: Session = {
               id: data.id,
               title: data.title,
@@ -1491,6 +1520,56 @@ export function AgentTab() {
             setCurrentSessionId(data.id);
             setSessions((prev) => [newSession, ...prev.slice(0, MAX_SESSIONS - 1)]);
           }
+        }
+        if (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation)) {
+          void (async () => {
+            try {
+              const resp = await fetch(`${getApiUrl()}/api/agent/chat`, {
+                method: 'POST',
+                headers: buildAgentJsonHeaders(token, learningLanguage),
+                body: JSON.stringify(withLearningLanguageBody({
+                  annotate_chinese: true,
+                  text: openingLine,
+                  messages: [{ role: 'user', content: openingLine }],
+                  chinese_settings: chineseSettingsPayload,
+                  max_tokens: 800,
+                }, learningLanguage)),
+              });
+              const annotated = await readNdjsonChatReply(resp);
+              if (!annotated) return;
+              const hasMeta = annotated.includes('««PINYIN»»') || annotated.includes('««TRANSLATION»»');
+              if (!hasMeta) return;
+              const annotatedMessage: Message = { role: 'assistant', content: annotated };
+              setMessages((prev) => {
+                if (prev[0]?.role !== 'assistant') return prev;
+                return [annotatedMessage, ...prev.slice(1)];
+              });
+              if (createdSessionId) {
+                setSessions((prev) =>
+                  prev.map((s) => {
+                    if (s.id !== createdSessionId) return s;
+                    if (s.messages[0]?.role !== 'assistant') return s;
+                    return { ...s, messages: [annotatedMessage, ...s.messages.slice(1)] };
+                  })
+                );
+                void supabase
+                  .from('agent_sessions')
+                  .select('messages')
+                  .eq('id', createdSessionId)
+                  .single()
+                  .then(({ data }) => {
+                    const existing = Array.isArray(data?.messages) ? (data.messages as Message[]) : [annotatedMessage];
+                    const next =
+                      existing[0]?.role === 'assistant'
+                        ? [annotatedMessage, ...existing.slice(1)]
+                        : existing;
+                    return supabase.from('agent_sessions').update({ messages: next }).eq('id', createdSessionId);
+                  });
+              }
+            } catch {
+              /* opening stays without metadata */
+            }
+          })();
         }
         setState('speaking');
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
@@ -1560,7 +1639,7 @@ export function AgentTab() {
       // Нет жёсткой первой реплики — пользователь начинает диалог первым
       setState('idle');
     },
-    [token, userId, ttsVoice, learningLanguage, chineseSpeechSpeed, handleInsufficientBalance]
+    [token, userId, ttsVoice, learningLanguage, chineseSpeechSpeed, chineseShowPinyin, chineseShowTranslation, chineseSettingsPayload, handleInsufficientBalance]
   );
 
   // Обработчик начала дебата
@@ -3304,6 +3383,7 @@ export function AgentTab() {
                     display: 'flex',
                     flexDirection: 'column',
                     width: 'min(340px, 100%)',
+                    maxHeight: 'min(72vh, 720px)',
                     alignSelf: 'flex-end',
                     borderRadius: 14,
                     border: '1px solid var(--sidebar-border)',
@@ -3365,27 +3445,19 @@ export function AgentTab() {
                   </button>
                   <div
                     style={{
-                      display: 'grid',
-                      gridTemplateRows: chineseSettingsOpen ? '1fr' : '0fr',
-                      transition: 'grid-template-rows 0.24s ease',
+                      display: chineseSettingsOpen ? 'block' : 'none',
+                      overflowY: 'auto',
+                      flex: 1,
                       minHeight: 0,
+                      overscrollBehavior: 'contain',
+                      scrollbarGutter: 'stable',
                     }}
                   >
-                    <div
-                      style={{
-                        overflow: chineseSettingsOpen ? 'auto' : 'hidden',
-                        maxHeight: chineseSettingsOpen
-                          ? (agentMode === 'roleplay' && selectedScenario ? 'min(72vh, 680px)' : 'min(52vh, 440px)')
-                          : 0,
-                        overscrollBehavior: 'contain',
-                        scrollbarGutter: 'stable',
-                      }}
-                    >
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 0.875rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 0.875rem' }}>
                         {agentMode === 'roleplay' && selectedScenario && (
                           <>
                             {selectedScenario.steps && selectedScenario.steps.length > 0 && (
-                              <section style={{ border: '1px solid var(--sidebar-border)', borderRadius: 10, padding: '0.75rem', background: 'var(--sidebar-hover)' }}>
+                              <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                                 <button
                                   type="button"
                                   onClick={() => setRoleplaySidebarStepsOpen((v) => !v)}
@@ -3520,7 +3592,7 @@ export function AgentTab() {
                               </section>
                             )}
                             {(!selectedScenario.steps || selectedScenario.steps.length === 0) && !selectedSessionId && (
-                              <section style={{ border: '1px solid var(--sidebar-border)', borderRadius: 10, padding: '0.75rem', background: 'var(--sidebar-hover)' }}>
+                              <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                   Задание
                                 </span>
@@ -3574,7 +3646,7 @@ export function AgentTab() {
                               </section>
                             )}
                             {(selectedScenario.goalRu || selectedScenario.goal) && (
-                              <section style={{ border: '1px solid rgba(34, 197, 94, 0.5)', borderRadius: 10, padding: '0.75rem', background: 'rgba(34, 197, 94, 0.06)' }}>
+                              <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
                                 <button
                                   type="button"
                                   onClick={() => setRoleplaySidebarGoalOpen((v) => !v)}
@@ -3970,10 +4042,9 @@ export function AgentTab() {
                         </div>
                       </div>
                     </div>
-                  </div>
                 </div>
               )}
-              {learningLanguage !== 'zh' && agentMode === 'roleplay' && selectedScenario && (
+              {learningLanguage === 'en' && agentMode === 'roleplay' && selectedScenario && (
                 <div
                   style={{
                     width: 280,

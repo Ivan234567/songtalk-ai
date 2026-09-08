@@ -375,7 +375,7 @@ export function zhScenarioToRoleplay(
     slangInstruction(scenario.slang_mode ?? 'off'),
     stepsBlock,
     vocabBlock,
-    'Speak ONLY Simplified Chinese in character lines. Do not switch to English or Russian in the dialogue.',
+    'Spoken character lines must be Simplified Chinese only. After each spoken line add ««PINYIN»» JSON and ««TRANSLATION»» Russian — metadata is not spoken.',
     'If the learner hesitates, recast naturally in Chinese at the same HSK level and offer a simple choice. Do not lecture or give meta-commentary.',
     starter === 'ai' && scenario.character_opening
       ? `If you are starting the conversation, your first line is: "${scenario.character_opening}"`

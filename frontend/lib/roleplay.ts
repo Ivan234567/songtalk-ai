@@ -259,6 +259,12 @@ const ZH_ADAPT_INSTRUCTION =
 const ZH_NATURAL_INSTRUCTION =
   'Sound like a real person: brief backchannels (嗯, 好, 对), patience if they hesitate, no long monologues. Stay in character.';
 
+const ZH_METADATA_INSTRUCTION =
+  'Spoken character lines must be Simplified Chinese only. After the spoken line, ALWAYS add learning metadata on new lines (not spoken, not in character):\n' +
+  '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"}]\n' +
+  '««TRANSLATION»»Russian translation of the spoken line only.\n' +
+  'You MUST include both PINYIN and TRANSLATION after every reply. Do not skip them.';
+
 const ZH_GOAL_COMPLETION =
   ' When the goal is reached, say one short natural closing phrase in Chinese (e.g. 好的，再见！ or 那我先走了) and end. Stay in character; do not say that the scenario is complete.';
 
@@ -266,7 +272,7 @@ function buildZhScenarioSystemContent(scenario: RoleplayScenario): string {
   let content = ZH_ADAPT_INSTRUCTION + '\n\n' + ZH_NATURAL_INSTRUCTION;
   content += '\n\n' + HARD_SAFETY_BLOCKS_INSTRUCTION;
   content += '\n\n' + RESPOND_TO_USER_INSTRUCTION;
-  content += '\n\nSpeak ONLY in Simplified Chinese in your character lines.\n\n' + scenario.systemPrompt;
+  content += '\n\n' + ZH_METADATA_INSTRUCTION + '\n\n' + scenario.systemPrompt;
   if (scenario.openingInstruction?.trim()) {
     content += '\n\nFirst line instruction: ' + scenario.openingInstruction.trim();
   }

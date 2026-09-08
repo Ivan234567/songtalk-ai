@@ -63,7 +63,7 @@ function buildChineseSystemPrompt(options = {}) {
   return prompt
 }
 
-function buildChineseMetadataInstruction({ showPinyin = false, showTranslation = false } = {}) {
+export function buildChineseMetadataInstruction({ showPinyin = false, showTranslation = false } = {}) {
   if (!showPinyin && !showTranslation) return ''
 
   let instruction = '\n\nIMPORTANT: After the Chinese text, add metadata on separate new lines. ' +
