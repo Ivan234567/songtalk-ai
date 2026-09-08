@@ -821,7 +821,12 @@ export function AgentTab() {
                     ? freestyleSettingsPayload
                     : undefined,
             freestyle_context: agentMode === 'chat' ? freestyleContextPayload : undefined,
-            chinese_settings: learningLanguage === 'zh' ? chineseSettingsPayload : undefined,
+            chinese_settings: learningLanguage === 'zh'
+              ? {
+                  ...chineseSettingsPayload,
+                  grammar_focus: agentMode === 'roleplay' ? selectedScenario?.grammarFocus : undefined,
+                }
+              : undefined,
             scenario_vocabulary:
               agentMode === 'roleplay' && selectedScenario?.scenarioVocabulary?.length
                 ? selectedScenario.scenarioVocabulary
@@ -2270,7 +2275,12 @@ export function AgentTab() {
           goal_ru: selectedScenario.goalRu ?? undefined,
           level: (selectedScenario as { level?: string }).level ?? 'B1',
           roleplay_settings: roleplaySettingsPayload,
-          chinese_settings: learningLanguage === 'zh' ? chineseSettingsPayload : undefined,
+          chinese_settings: learningLanguage === 'zh'
+            ? {
+                ...chineseSettingsPayload,
+                grammar_focus: selectedScenario?.grammarFocus,
+              }
+            : undefined,
           scenario_vocabulary: selectedScenario.scenarioVocabulary?.length
             ? selectedScenario.scenarioVocabulary
             : undefined,

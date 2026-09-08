@@ -1,6 +1,5 @@
 /**
  * API-клиент китайских сценариев (zh_scenarios).
- * Генерация ИИ и UI конструктора — следующие этапы.
  */
 
 import { getStoredBackendToken } from '@/lib/backend-jwt';
@@ -12,6 +11,30 @@ export type ZhSlangMode = 'off' | 'light';
 export type ZhSource = 'user' | 'system';
 export type ZhStatus = 'draft' | 'ready';
 export type ZhHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
+export type ZhVocabUsage = 'must_say' | 'model';
+export type ZhAiPersonality = 'warm' | 'patient' | 'hurried' | 'chatty' | 'strict' | 'professional';
+export type ZhGeneratePart = 'vocabulary' | 'steps' | 'openings';
+
+export const ZH_AI_PERSONALITIES: { value: ZhAiPersonality; label: string; hint: string }[] = [
+  { value: 'warm', label: 'Тёплый', hint: 'доброжелательный, слегка поддерживает' },
+  { value: 'patient', label: 'Терпеливый', hint: 'ждёт, повторяет, не торопит' },
+  { value: 'hurried', label: 'Торопится', hint: 'короткие реплики, лёгкая спешка' },
+  { value: 'chatty', label: 'Болтливый', hint: 'живые уточнения, не лекция' },
+  { value: 'strict', label: 'Строгий', hint: 'держит роль, мало подсказок' },
+  { value: 'professional', label: 'Деловой', hint: 'спокойный специалист / сотрудник' },
+];
+
+export const ZH_GRAMMAR_CHIPS = [
+  '了',
+  '吗 / 呢',
+  '的',
+  '想 / 要',
+  'счётные слова',
+  '因为…所以',
+  '虽然…但是',
+  '过',
+  '在 + место',
+];
 
 export interface ZhScenarioStep {
   id: string;
@@ -28,6 +51,7 @@ export interface ZhScenarioVocabItem {
   pinyin: string;
   translation_ru: string;
   hsk_level?: ZhHskLevel;
+  usage?: ZhVocabUsage;
 }
 
 export interface ZhScenarioTextbook {
@@ -51,6 +75,9 @@ export interface ZhScenario {
   slang_mode: ZhSlangMode;
   user_role?: string;
   ai_role?: string;
+  ai_personality?: ZhAiPersonality;
+  ai_personality_note?: string;
+  grammar_focus?: string;
   setting_ru?: string;
   scenario_text_ru?: string;
   character_opening?: string;
@@ -78,6 +105,9 @@ export type ZhScenarioWritePayload = Partial<
     | 'slang_mode'
     | 'user_role'
     | 'ai_role'
+    | 'ai_personality'
+    | 'ai_personality_note'
+    | 'grammar_focus'
     | 'setting_ru'
     | 'scenario_text_ru'
     | 'character_opening'
@@ -164,7 +194,7 @@ export type GenerateZhScenarioParams = {
   lesson_no?: string;
   hsk_level?: ZhHskLevel;
   goal?: string;
-  role_mode: 'ai' | 'user';
+  role_mode?: 'ai' | 'user';
   user_role?: string;
   starter?: 'auto' | ZhStarter;
   formality?: 'auto' | ZhFormality;
@@ -183,9 +213,48 @@ export async function generateZhScenario(params: GenerateZhScenarioParams): Prom
   });
 }
 
+export type GenerateZhScenarioPartParams = {
+  part: ZhGeneratePart;
+  scenario: ZhScenarioWritePayload & { title?: string; hsk_level?: ZhHskLevel | null };
+  note?: string;
+};
+
+export type GenerateZhScenarioPartResult = {
+  part: ZhGeneratePart;
+  patch: Record<string, unknown>;
+};
+
+export async function generateZhScenarioPart(
+  params: GenerateZhScenarioPartParams
+): Promise<GenerateZhScenarioPartResult> {
+  return fetchApi<GenerateZhScenarioPartResult>('/api/zh-scenarios/generate-part', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+function asPersonality(value: unknown): ZhAiPersonality {
+  const v = String(value || '');
+  return ZH_AI_PERSONALITIES.some((p) => p.value === v) ? (v as ZhAiPersonality) : 'warm';
+}
+
+function asUsage(value: unknown): ZhVocabUsage {
+  return value === 'must_say' ? 'must_say' : 'model';
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
 export function draftFromGenerateResult(result: GenerateZhScenarioResult): ZhScenario {
   const p = result.payload || {};
   const textbook = p.textbook && typeof p.textbook === 'object' ? (p.textbook as ZhScenarioTextbook) : {};
+  const vocabulary = Array.isArray(p.vocabulary)
+    ? (p.vocabulary as ZhScenarioVocabItem[]).map((v) => ({
+        ...v,
+        usage: asUsage(v.usage),
+      }))
+    : [];
   return {
     id: '',
     source: 'user',
@@ -200,18 +269,59 @@ export function draftFromGenerateResult(result: GenerateZhScenarioResult): ZhSce
     starter: p.starter === 'user' ? 'user' : 'ai',
     formality: p.formality === 'ni' || p.formality === 'mixed' ? p.formality : 'nin',
     slang_mode: p.slang_mode === 'light' ? 'light' : 'off',
-    user_role: typeof p.user_role === 'string' ? p.user_role : undefined,
-    ai_role: typeof p.ai_role === 'string' ? p.ai_role : undefined,
-    setting_ru: typeof p.setting_ru === 'string' ? p.setting_ru : undefined,
-    scenario_text_ru: typeof p.scenario_text_ru === 'string' ? p.scenario_text_ru : undefined,
-    character_opening: typeof p.character_opening === 'string' ? p.character_opening : undefined,
-    suggested_first_line: typeof p.suggested_first_line === 'string' ? p.suggested_first_line : undefined,
-    suggested_first_line_pinyin:
-      typeof p.suggested_first_line_pinyin === 'string' ? p.suggested_first_line_pinyin : undefined,
-    max_score_tips_ru: typeof p.max_score_tips_ru === 'string' ? p.max_score_tips_ru : undefined,
+    user_role: asString(p.user_role),
+    ai_role: asString(p.ai_role),
+    ai_personality: asPersonality(p.ai_personality),
+    ai_personality_note: asString(p.ai_personality_note),
+    grammar_focus: asString(p.grammar_focus) || '',
+    setting_ru: asString(p.setting_ru),
+    scenario_text_ru: asString(p.scenario_text_ru),
+    character_opening: asString(p.character_opening),
+    suggested_first_line: asString(p.suggested_first_line),
+    suggested_first_line_pinyin: asString(p.suggested_first_line_pinyin),
+    max_score_tips_ru: asString(p.max_score_tips_ru),
     steps: Array.isArray(p.steps) ? (p.steps as ZhScenario['steps']) : [],
-    vocabulary: Array.isArray(p.vocabulary) ? (p.vocabulary as ZhScenario['vocabulary']) : [],
+    vocabulary,
   };
+}
+
+export function applyGeneratePartPatch(draft: ZhScenario, part: ZhGeneratePart, patch: Record<string, unknown>): ZhScenario {
+  if (part === 'vocabulary' && Array.isArray(patch.vocabulary)) {
+    return {
+      ...draft,
+      vocabulary: (patch.vocabulary as ZhScenarioVocabItem[]).map((v) => ({
+        hanzi: v.hanzi || '',
+        pinyin: v.pinyin || '',
+        translation_ru: v.translation_ru || '',
+        hsk_level: v.hsk_level,
+        usage: asUsage(v.usage),
+      })),
+    };
+  }
+  if (part === 'steps' && Array.isArray(patch.steps)) {
+    return {
+      ...draft,
+      steps: (patch.steps as ZhScenarioStep[]).map((s, i) => ({
+        id: s.id || `step-${i + 1}`,
+        order: s.order || i + 1,
+        title_ru: s.title_ru || '',
+        expected_user_action: s.expected_user_action || '',
+        ai_context: s.ai_context,
+        keywords: Array.isArray(s.keywords) ? s.keywords : [],
+        example_zh: s.example_zh,
+      })),
+    };
+  }
+  if (part === 'openings') {
+    return {
+      ...draft,
+      character_opening: asString(patch.character_opening) || draft.character_opening,
+      suggested_first_line: asString(patch.suggested_first_line) || draft.suggested_first_line,
+      suggested_first_line_pinyin:
+        asString(patch.suggested_first_line_pinyin) || draft.suggested_first_line_pinyin,
+    };
+  }
+  return draft;
 }
 
 export async function updateZhScenario(id: string, updates: ZhScenarioWritePayload): Promise<ZhScenario> {
@@ -261,6 +371,8 @@ export function emptyManualZhScenario(hsk: ZhHskLevel = 3): ZhScenario {
     starter: 'ai',
     formality: 'nin',
     slang_mode: 'off',
+    ai_personality: 'warm',
+    grammar_focus: '',
     steps: [
       {
         id: 'step-1',
@@ -293,6 +405,9 @@ export function toZhWritePayload(s: ZhScenario): ZhScenarioWritePayload & { titl
     slang_mode: s.slang_mode,
     user_role: s.user_role,
     ai_role: s.ai_role,
+    ai_personality: s.ai_personality,
+    ai_personality_note: s.ai_personality_note,
+    grammar_focus: s.grammar_focus,
     setting_ru: s.setting_ru,
     scenario_text_ru: s.scenario_text_ru,
     character_opening: s.character_opening,
@@ -308,6 +423,10 @@ export function toZhWritePayload(s: ZhScenario): ZhScenarioWritePayload & { titl
 export function isZhScenarioId(id: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(id);
+}
+
+export function personalityLabel(value?: ZhAiPersonality | null): string {
+  return ZH_AI_PERSONALITIES.find((p) => p.value === value)?.label || 'Тёплый';
 }
 
 function hskToDifficulty(hsk?: ZhHskLevel | null): RoleplayScenario['difficulty'] {
@@ -330,6 +449,20 @@ function slangInstruction(mode: ZhSlangMode): string {
   return 'Use standard spoken Mandarin. Avoid slang.';
 }
 
+function personalityInstruction(personality?: ZhAiPersonality, note?: string): string {
+  const map: Record<ZhAiPersonality, string> = {
+    warm: 'Personality: warm and encouraging, still fully in character. Do not break role to teach.',
+    patient: 'Personality: patient. Wait, recast slowly, offer a simple choice if they hesitate. Do not rush.',
+    hurried: 'Personality: you are in a hurry. Short replies, mild impatience, still polite at the given formality.',
+    chatty: 'Personality: chatty. One extra comment or follow-up is fine. Still 1–3 sentences, no lecture.',
+    strict: 'Personality: strict and businesslike. Stay in role. Do not over-help or simplify below the HSK lock.',
+    professional: 'Personality: professional and composed, like a competent staff member or specialist.',
+  };
+  const base = map[personality || 'warm'] || map.warm;
+  const extra = note?.trim() ? ` Extra note about this character: ${note.trim()}` : '';
+  return base + extra;
+}
+
 /** Собирает systemPrompt и поля RoleplayScenario для существующего игрового контура. */
 export function zhScenarioToRoleplay(
   scenario: ZhScenario,
@@ -340,6 +473,8 @@ export function zhScenarioToRoleplay(
   const steps = Array.isArray(scenario.steps) ? [...scenario.steps].sort((a, b) => a.order - b.order) : [];
   const vocab = Array.isArray(scenario.vocabulary) ? scenario.vocabulary : [];
   const textbookLine = [scenario.textbook?.title, scenario.textbook?.lesson_no].filter(Boolean).join(' · ');
+  const mustSay = vocab.filter((v) => v.usage === 'must_say' && v.hanzi?.trim());
+  const modelVocab = vocab.filter((v) => v.usage !== 'must_say' && v.hanzi?.trim());
 
   const stepsBlock = steps.length
     ? [
@@ -357,24 +492,41 @@ export function zhScenarioToRoleplay(
       ].join('\n')
     : '';
 
-  const vocabBlock = vocab.length
-    ? [
-        'SCENARIO VOCABULARY — you MUST use these words in the spoken dialogue.',
-        'In every reply include 1–2 of them when they fit the situation. Do not dump the list. Do not ignore this list.',
-        'Prefer these words over synonyms the learner has not studied.',
-        vocab.map((v) => `- ${v.hanzi} (${v.pinyin}) — ${v.translation_ru}`).join('\n'),
-      ].join('\n')
+  const vocabBlock = [
+    mustSay.length
+      ? [
+          'MUST-SAY VOCABULARY — the LEARNER should produce these. Elicit them with a choice or a recast.',
+          'Do not say these words FOR the learner. Do not dump the list.',
+          mustSay.map((v) => `- ${v.hanzi} (${v.pinyin}) — ${v.translation_ru}`).join('\n'),
+        ].join('\n')
+      : '',
+    modelVocab.length
+      ? [
+          'MODEL VOCABULARY — YOU should use these in spoken dialogue when they fit.',
+          'In every reply include 1 of them if natural. Prefer these over unstudied synonyms.',
+          modelVocab.map((v) => `- ${v.hanzi} (${v.pinyin}) — ${v.translation_ru}`).join('\n'),
+        ].join('\n')
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const grammarBlock = scenario.grammar_focus?.trim()
+    ? `GRAMMAR FOCUS of this lesson: ${scenario.grammar_focus.trim()}. Recast errors using this grammar. Do not lecture about the rule.`
     : '';
 
   const systemPrompt = [
     `Character: You are ${scenario.ai_role || 'the other person in this Chinese roleplay'}. Stay in character.`,
+    personalityInstruction(scenario.ai_personality, scenario.ai_personality_note),
     `Situation: ${scenario.scenario_text_ru || scenario.description || scenario.title}`,
+    scenario.setting_ru ? `Place: ${scenario.setting_ru}` : '',
     scenario.user_role ? `The learner's role: ${scenario.user_role}` : '',
     goals.length ? `Goals of this scene: ${goals.join('; ')}` : '',
     textbookLine ? `Textbook context: ${textbookLine}` : '',
     scenario.hsk_level
       ? `HSK LEVEL LOCK: Speak at HSK ${scenario.hsk_level} only. Same difficulty, not harder, not easier. No words or grammar from a higher HSK.`
       : '',
+    grammarBlock,
     formalityInstruction(scenario.formality ?? 'nin'),
     slangInstruction(scenario.slang_mode ?? 'off'),
     stepsBlock,
@@ -421,12 +573,15 @@ export function zhScenarioToRoleplay(
     aiMayUseProfanity: false,
     difficulty: hskToDifficulty(scenario.hsk_level),
     level: scenario.hsk_level ? `HSK ${scenario.hsk_level}` : undefined,
+    grammarFocus: scenario.grammar_focus?.trim() || undefined,
+    aiPersonality: scenario.ai_personality,
     scenarioVocabulary: vocab
       .filter((v) => v.hanzi?.trim())
       .map((v) => ({
         hanzi: v.hanzi,
         pinyin: v.pinyin || '',
         translation_ru: v.translation_ru || '',
+        usage: asUsage(v.usage),
       })),
   };
 }

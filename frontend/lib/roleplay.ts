@@ -62,7 +62,16 @@ export interface RoleplayScenario {
   /** Шаги сценария для карты чекпоинтов (ИИ отмечает достигнутые в ходе диалога). */
   steps?: RoleplayStep[];
   /** Словарь урока (китайские сценарии) — ИИ должен использовать эти слова в диалоге. */
-  scenarioVocabulary?: Array<{ hanzi: string; pinyin: string; translation_ru: string }>;
+  scenarioVocabulary?: Array<{
+    hanzi: string;
+    pinyin: string;
+    translation_ru: string;
+    usage?: 'must_say' | 'model';
+  }>;
+  /** Грамматический фокус китайского сценария (для подсказки и лок-промпта). */
+  grammarFocus?: string;
+  /** Характер ИИ-собеседника в китайском сценарии. */
+  aiPersonality?: string;
   /** Подсказка для ученика: как говорить, чтобы получить максимальные баллы (показывается в брифинге перед стартом). */
   maxScoreTipsRu?: string;
   /** Уровень (для личных сценариев: A1–C1 или easy/medium/hard); сохраняется в прогресс. */

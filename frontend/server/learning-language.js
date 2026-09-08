@@ -99,19 +99,50 @@ export function getFreestyleChatSystemPrompt(lang, options = {}) {
   return FREESTYLE_CHAT_SYSTEM_EN
 }
 
-export function buildChineseRoleplayLock({ hskLevel = 3, showPinyin = false, showTranslation = false, vocabulary = [] } = {}) {
-  const hsk = HSK_LEVEL_INSTRUCTIONS[hskLevel] || HSK_LEVEL_INSTRUCTIONS[3]
-  const vocabList = Array.isArray(vocabulary)
-    ? vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 20)
+function splitZhScenarioVocab(vocabulary = []) {
+  const list = Array.isArray(vocabulary)
+    ? vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 24)
     : []
+  const label = (v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`
+  const mustSay = list.filter((v) => v.usage === 'must_say')
+  const model = list.filter((v) => v.usage === 'model')
+  const unspecified = list.filter((v) => v.usage !== 'must_say' && v.usage !== 'model')
+  const hasUsage = mustSay.length > 0 || model.length > 0
+  if (!hasUsage) {
+    return {
+      mustSay: list,
+      model: list,
+      all: list,
+      label,
+    }
+  }
+  return {
+    mustSay,
+    model: [...model, ...unspecified],
+    all: list,
+    label,
+  }
+}
+
+export function buildChineseRoleplayLock({ hskLevel = 3, showPinyin = false, showTranslation = false, vocabulary = [], grammarFocus = '' } = {}) {
+  const hsk = HSK_LEVEL_INSTRUCTIONS[hskLevel] || HSK_LEVEL_INSTRUCTIONS[3]
+  const { mustSay, model, label } = splitZhScenarioVocab(vocabulary)
   let text =
     'Stay in the roleplay character. Additional Mandarin constraints (override any looser level advice above):\n' +
     `HSK LEVEL LOCK: ${hsk}\n` +
     'Speak AT this HSK only — not harder, not easier. Do not switch spoken lines to English or Russian.'
-  if (vocabList.length) {
+  if (mustSay.length) {
     text +=
-      '\nSCENARIO VOCABULARY — you MUST use 1–2 of these words in every spoken reply when they fit: ' +
-      vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、')
+      '\nMUST-SAY vocabulary — LEARNER words. Elicit them with a choice or recast. Do not say them FOR the learner: ' +
+      mustSay.map(label).join('、')
+  }
+  if (model.length) {
+    text +=
+      '\nMODEL vocabulary — YOU should use 1 of these in spoken replies when they fit: ' +
+      model.map(label).join('、')
+  }
+  if (grammarFocus && String(grammarFocus).trim()) {
+    text += `\nGRAMMAR FOCUS: ${String(grammarFocus).trim()}. Recast using this grammar. Do not lecture about the rule.`
   }
   text += buildChineseMetadataInstruction({ showPinyin, showTranslation })
   return text
@@ -133,17 +164,20 @@ export function buildReplyHintChatSystemZh({
   showTranslation = false,
   chineseHintMode = 'basic',
   vocabulary = [],
+  grammarFocus = '',
 }) {
   const metadataInstruction = buildChineseMetadataInstruction({ showPinyin, showTranslation })
   
   const hintModeInstruction = CHINESE_HINT_MODE_INSTRUCTIONS[chineseHintMode] || CHINESE_HINT_MODE_INSTRUCTIONS.basic
-  const vocabList = Array.isArray(vocabulary)
-    ? vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 20)
-    : []
-  const vocabBlock = vocabList.length
-    ? '\n- You MUST weave 1-2 of these scenario words into the suggested reply when they fit: ' +
-      vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、') +
+  const { mustSay, all, label } = splitZhScenarioVocab(vocabulary)
+  const hintWords = mustSay.length ? mustSay : all
+  const vocabBlock = hintWords.length
+    ? '\n- Prefer 1-2 of these MUST-SAY / lesson words in the suggested USER reply: ' +
+      hintWords.map(label).join('、') +
       '.\n- Do not invent a hint that ignores this vocabulary list.'
+    : ''
+  const grammarBlock = grammarFocus && String(grammarFocus).trim()
+    ? `\n- Grammar focus of this lesson: ${String(grammarFocus).trim()}. Use it naturally in the suggested reply.`
     : ''
   
   return (
@@ -155,6 +189,7 @@ export function buildReplyHintChatSystemZh({
     `- Hint style: ${hintModeInstruction}\n` +
     '- Keep the suggestion directly relevant to the latest assistant message and recent context. If the conversation has not started, suggest a natural opening line for the learner.' +
     vocabBlock +
+    grammarBlock +
     '\n- Keep it concise (usually 1-2 short sentences).' +
     metadataInstruction
   )

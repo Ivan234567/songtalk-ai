@@ -15,15 +15,13 @@ import {
   listZhScenarios,
   toZhWritePayload,
   updateZhScenario,
-  zhScenarioToRoleplay,
-  type ZhFormality,
   type ZhHskLevel,
   type ZhScenario,
   type ZhSource,
-  type ZhStarter,
 } from '@/lib/zh-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { ZhScenarioConstructor } from '@/components/roleplay/ZhScenarioConstructor';
+import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
 
 type ZhScenariosUIProps = {
   onSelectScenario: (scenario: RoleplayScenario) => void;
@@ -134,10 +132,6 @@ function ZhIntentForm({
   const [lesson, setLesson] = useState('');
   const [goal, setGoal] = useState('');
   const [hsk, setHsk] = useState<ZhHskLevel>(defaultHsk);
-  const [trustAiRole, setTrustAiRole] = useState(true);
-  const [userRole, setUserRole] = useState('');
-  const [starter, setStarter] = useState<'auto' | ZhStarter>('auto');
-  const [formality, setFormality] = useState<'auto' | ZhFormality>('auto');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,10 +140,6 @@ function ZhIntentForm({
   const handleGenerate = async () => {
     if (!canSubmit) {
       setError('Опишите ситуацию или укажите учебник и что отрабатывать.');
-      return;
-    }
-    if (!trustAiRole && !userRole.trim()) {
-      setError('Введите роль или нажмите «Доверить ИИ».');
       return;
     }
     setLoading(true);
@@ -161,10 +151,9 @@ function ZhIntentForm({
         lesson_no: lesson.trim() || undefined,
         goal: goal.trim() || undefined,
         hsk_level: hsk,
-        role_mode: trustAiRole ? 'ai' : 'user',
-        user_role: trustAiRole ? undefined : userRole.trim(),
-        starter,
-        formality,
+        role_mode: 'ai',
+        starter: 'auto',
+        formality: 'auto',
       });
       onGenerated(draftFromGenerateResult(result));
     } catch (err) {
@@ -177,7 +166,7 @@ function ZhIntentForm({
   return (
     <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <p style={{ margin: 0, fontSize: '0.975rem', lineHeight: 1.45, opacity: 0.85 }}>
-        Опишите урок своими словами. ИИ соберёт диалог, шаги и словарь.
+        Опишите урок своими словами. ИИ соберёт диалог, шаги и словарь. Роли, кто начинает и тон можно будет поправить в конструкторе.
       </p>
       <label>
         <span style={labelStyle}>Что хотите отработать</span>
@@ -213,66 +202,6 @@ function ZhIntentForm({
           ariaLabel="Уровень HSK"
         />
       </label>
-      <div>
-        <span style={labelStyle}>Ваша роль</span>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-          <button
-            type="button"
-            onClick={() => {
-              setTrustAiRole(true);
-              setUserRole('');
-            }}
-            style={{ ...btnSecondary, background: trustAiRole ? 'var(--sidebar-active)' : 'transparent' }}
-          >
-            Доверить ИИ
-          </button>
-        </div>
-        <input
-          value={userRole}
-          onChange={(e) => {
-            setUserRole(e.target.value);
-            setTrustAiRole(!e.target.value.trim());
-          }}
-          placeholder={trustAiRole ? 'ИИ подберёт роль сам' : 'Например: покупатель, пациент'}
-          style={inputStyle}
-        />
-        <p style={{ margin: '0.45rem 0 0', fontSize: '0.8125rem', opacity: 0.65 }}>
-          Нажмите «Доверить ИИ» или введите роль сами.
-        </p>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', overflow: 'visible', position: 'relative', zIndex: 3 }}>
-        <label>
-          <span style={labelStyle}>Кто начинает</span>
-          <LevelDropdown
-            value={starter}
-            onChange={(v) => setStarter(v as 'auto' | ZhStarter)}
-            options={[
-              { value: 'auto', label: 'Авто (для учебника — собеседник)' },
-              { value: 'ai', label: 'Собеседник' },
-              { value: 'user', label: 'Вы' },
-            ]}
-            openUpward={false}
-            ariaLabel="Кто начинает"
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          <span style={labelStyle}>Формальность</span>
-          <LevelDropdown
-            value={formality}
-            onChange={(v) => setFormality(v as 'auto' | ZhFormality)}
-            options={[
-              { value: 'auto', label: 'Авто' },
-              { value: 'nin', label: '您' },
-              { value: 'ni', label: '你' },
-              { value: 'mixed', label: 'Смесь' },
-            ]}
-            openUpward={false}
-            ariaLabel="Формальность"
-            style={inputStyle}
-          />
-        </label>
-      </div>
       {error && (
         <p style={{ margin: 0, padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
           {error}
@@ -286,144 +215,6 @@ function ZhIntentForm({
           Создать вручную
         </button>
       </div>
-    </div>
-  );
-}
-
-function ZhBriefing({
-  scenario,
-  onBack,
-  onStart,
-  onAddToDictionary,
-  vocabBusy,
-  vocabMessage,
-}: {
-  scenario: ZhScenario;
-  onBack: () => void;
-  onStart: (playable: RoleplayScenario) => void;
-  onAddToDictionary?: () => void;
-  vocabBusy?: boolean;
-  vocabMessage?: string | null;
-}) {
-  const [starter, setStarter] = useState<ZhStarter>(scenario.starter || 'ai');
-  const vocabPreview = (scenario.vocabulary || []).slice(0, 8);
-  const userLine = [scenario.suggested_first_line, scenario.suggested_first_line_pinyin]
-    .filter(Boolean)
-    .join('  ·  ');
-
-  return (
-    <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-        <button type="button" onClick={onBack} style={btnSecondary}>
-          Назад
-        </button>
-        <span style={{ fontSize: '0.8125rem', fontWeight: 600, opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          Перед началом диалога
-        </span>
-      </div>
-
-      <div>
-        <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700, color: 'var(--sidebar-text)' }}>{scenario.title}</h2>
-        <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {scenario.hsk_level && (
-            <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: 6, background: 'var(--sidebar-active)' }}>
-              HSK {scenario.hsk_level}
-            </span>
-          )}
-          {textbookLine(scenario) && (
-            <span style={{ fontSize: '0.8125rem', opacity: 0.75 }}>{textbookLine(scenario)}</span>
-          )}
-        </div>
-      </div>
-
-      {scenario.user_role && (
-        <div style={{ padding: '0.85rem 1rem', borderRadius: 12, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Ваша роль</div>
-          <div>{scenario.user_role}</div>
-        </div>
-      )}
-
-      {scenario.goals?.length > 0 && (
-        <div style={{ padding: '0.85rem 1rem', borderRadius: 12, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Цели</div>
-          <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-            {scenario.goals.map((g) => (
-              <li key={g} style={{ marginBottom: 4 }}>{g}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {vocabPreview.length > 0 && (
-        <div style={{ padding: '0.85rem 1rem', borderRadius: 12, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Слова урока</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {vocabPreview.map((v) => (
-              <div key={v.hanzi} style={{ fontSize: '0.9375rem' }}>
-                <strong>{v.hanzi}</strong>
-                <span style={{ opacity: 0.7 }}> {v.pinyin}</span>
-                <span style={{ opacity: 0.85 }}> — {v.translation_ru}</span>
-              </div>
-            ))}
-          </div>
-          {onAddToDictionary && (
-            <button
-              type="button"
-              onClick={onAddToDictionary}
-              disabled={vocabBusy}
-              style={{ ...btnSecondary, marginTop: 10, padding: '0.45rem 0.75rem', fontSize: '0.8125rem' }}
-            >
-              {vocabBusy ? 'Добавляем…' : 'В мой словарь'}
-            </button>
-          )}
-          {vocabMessage && <p style={{ margin: '8px 0 0', fontSize: '0.8125rem', opacity: 0.75 }}>{vocabMessage}</p>}
-        </div>
-      )}
-
-      <div style={{ padding: '0.85rem 1rem', borderRadius: 12, border: '1px solid var(--sidebar-border)' }}>
-        <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-          Кто начинает
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => setStarter('ai')}
-            style={{ ...btnSecondary, background: starter === 'ai' ? 'var(--sidebar-active)' : 'transparent' }}
-          >
-            Собеседник начинает
-          </button>
-          <button
-            type="button"
-            onClick={() => setStarter('user')}
-            style={{ ...btnSecondary, background: starter === 'user' ? 'var(--sidebar-active)' : 'transparent' }}
-          >
-            Вы начинаете
-          </button>
-        </div>
-        <p style={{ margin: '0.65rem 0 0', fontSize: '0.8125rem', opacity: 0.7 }}>
-          {starter === 'ai'
-            ? 'Как в диалоге учебника: вам говорят первую фразу. Только для этой попытки.'
-            : 'Вы подходите и говорите первым. Только для этой попытки.'}
-        </p>
-        {starter === 'ai' && scenario.character_opening && (
-          <p style={{ margin: '0.75rem 0 0', fontSize: '1rem', fontStyle: 'italic' }}>
-            «{scenario.character_opening}»
-          </p>
-        )}
-        {starter === 'user' && userLine && (
-          <p style={{ margin: '0.75rem 0 0', fontSize: '1rem', fontStyle: 'italic' }}>
-            Начните с: «{userLine}»
-          </p>
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => onStart(zhScenarioToRoleplay(scenario, starter))}
-        style={btnPrimary}
-      >
-        Начать диалог
-      </button>
     </div>
   );
 }
@@ -511,8 +302,9 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
         : await createZhScenario(payload);
       setDraft(null);
       if (andPlay) {
-        onSelectScenario(zhScenarioToRoleplay(saved));
-        onClose();
+        setView('my');
+        await loadList();
+        setBriefing(saved);
         return;
       }
       setView('my');
@@ -710,7 +502,7 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Китайские сценарии" style={overlayStyle} onClick={briefing || draft ? undefined : onClose}>
-      <div style={{ ...panelStyle, maxWidth: draft ? 980 : 720, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ ...panelStyle, maxWidth: draft || briefing ? 980 : 720, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
             style={{
@@ -767,7 +559,7 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
         </div>
 
         {briefing ? (
-          <ZhBriefing
+          <ZhScenarioBriefing
             scenario={briefing}
             onBack={() => setBriefing(null)}
             onStart={(playable) => {

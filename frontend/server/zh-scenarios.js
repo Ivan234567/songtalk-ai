@@ -69,6 +69,17 @@ function normalizeSteps(raw) {
   })
 }
 
+const PERSONALITIES = ['warm', 'patient', 'hurried', 'chatty', 'strict', 'professional']
+const VOCAB_USAGES = ['must_say', 'model']
+
+function asPersonality(value, fallback = 'warm') {
+  return PERSONALITIES.includes(value) ? value : fallback
+}
+
+function asVocabUsage(value, fallback = 'model') {
+  return VOCAB_USAGES.includes(value) ? value : fallback
+}
+
 function normalizeVocab(raw) {
   if (!Array.isArray(raw)) return []
   return raw
@@ -82,6 +93,7 @@ function normalizeVocab(raw) {
         pinyin: asTrimmed(v.pinyin, 80),
         translation_ru: asTrimmed(v.translation_ru || v.translationRu, 120),
         hsk_level: asHsk(v.hsk_level ?? v.hskLevel) ?? undefined,
+        usage: asVocabUsage(v.usage),
         sort_order: Number.isInteger(v.sort_order) ? v.sort_order : index,
       }
     })
@@ -116,6 +128,9 @@ function buildPayload(input = {}, columns = {}) {
     slang_mode: slangMode,
     user_role: asTrimmed(src.user_role || src.userRole || src.your_role, 120) || undefined,
     ai_role: asTrimmed(src.ai_role || src.aiRole, 120) || undefined,
+    ai_personality: asPersonality(src.ai_personality || src.aiPersonality),
+    ai_personality_note: asTrimmed(src.ai_personality_note || src.aiPersonalityNote, 240) || undefined,
+    grammar_focus: asTrimmed(src.grammar_focus || src.grammarFocus, 200) || undefined,
     setting_ru: asTrimmed(src.setting_ru || src.settingRu, 300) || undefined,
     scenario_text_ru: asTrimmed(src.scenario_text_ru || src.scenarioTextRu, 500) || undefined,
     character_opening: asTrimmed(src.character_opening || src.characterOpening, 300) || undefined,
@@ -160,6 +175,9 @@ function toApiScenario(row, extras = {}) {
     slang_mode: row.slang_mode,
     user_role: payload.user_role,
     ai_role: payload.ai_role,
+    ai_personality: asPersonality(payload.ai_personality),
+    ai_personality_note: payload.ai_personality_note,
+    grammar_focus: payload.grammar_focus || '',
     setting_ru: payload.setting_ru,
     scenario_text_ru: payload.scenario_text_ru,
     character_opening: payload.character_opening,
@@ -192,6 +210,7 @@ function vocabFromPayload(payload) {
     pinyin: v.pinyin || '',
     translation_ru: v.translation_ru || '',
     hsk_level: v.hsk_level ?? null,
+    usage: asVocabUsage(v.usage),
     sort_order: i,
   }))
 }
@@ -303,12 +322,15 @@ Output ONLY valid JSON, no markdown, no code fence. Schema:
   "slang_mode": "off" | "light",
   "user_role": "learner's role in Russian",
   "ai_role": "AI character role in Russian",
+  "ai_personality": "warm" | "patient" | "hurried" | "chatty" | "strict" | "professional",
+  "ai_personality_note": "optional extra trait in Russian, short",
+  "grammar_focus": "one grammar point, Russian + Chinese, e.g. 了 для завершённого действия",
   "setting_ru": "place in Russian",
   "scenario_text_ru": "situation in Russian",
   "character_opening": "AI first line in Simplified Chinese",
   "suggested_first_line": "learner first-line example in Simplified Chinese",
   "suggested_first_line_pinyin": "pinyin with tone marks",
-  "max_score_tips_ru": "short tips in Russian",
+  "max_score_tips_ru": "short tips in Russian: how to score well in this scene",
   "steps": [
     {
       "id": "step1",
@@ -321,21 +343,30 @@ Output ONLY valid JSON, no markdown, no code fence. Schema:
     }
   ],
   "vocabulary": [
-    { "hanzi": "衣服", "pinyin": "yīfu", "translation_ru": "одежда", "hsk_level": 1 }
+    { "hanzi": "衣服", "pinyin": "yīfu", "translation_ru": "одежда", "hsk_level": 1, "usage": "must_say" }
   ]
 }
 
 Rules:
 - Dialogue content (character_opening, suggested_first_line, example_zh, hanzi) MUST be Simplified Chinese. No English in those fields.
-- UI strings (title, description, goals, roles, setting, steps title_ru / expected_user_action / ai_context) in Russian.
+- UI strings (title, description, goals, roles, setting, steps title_ru / expected_user_action / ai_context, grammar_focus, max_score_tips_ru) in Russian.
 - 2–6 steps. Each step is one learner action.
 - keywords: 2–6 items, hanzi and/or pinyin; hints for scoring, not a rigid whitelist.
-- vocabulary: 4–12 words at or below the given HSK. Pinyin WITH tone marks. These words WILL be used in the spoken dialogue and in learner hints — pick words the learner must say.
+- vocabulary: 4–12 words at or below the given HSK. Pinyin WITH tone marks.
+- usage "must_say": 3–6 core lesson words the LEARNER must produce. usage "model": words YOU (the AI character) should say. Mark both; do not mark everything must_say.
 - Always include BOTH character_opening and suggested_first_line so who-starts can be switched later.
-- suggested_first_line must use 1–2 vocabulary items and stay at the given HSK.
+- suggested_first_line must use 1–2 must_say vocabulary items and stay at the given HSK.
+- Pick ai_personality that fits the AI role (shop assistant hurried, doctor patient, classmate chatty, official professional).
+- If textbook/goal implies a grammar point, set grammar_focus. Otherwise infer one clear focus or leave a short empty-safe phrase.
 - If textbook/lesson is given, prefer starter "ai" (the other person greets, like a textbook dialogue), unless the learner is clearly the initiator (phone call, asking for directions).
 - If the user did not specify a role, choose a natural learner role and a complementary AI role.
 - Playable in 2–4 minutes. No profanity. No English spoken lines.`
+
+const ZH_GENERATE_PART_SYSTEM = `You update ONE part of an existing Simplified Chinese roleplay scenario for Russian-speaking learners (HSK 1–6).
+Output ONLY valid JSON, no markdown, no code fence.
+Keep the same HSK, situation, and roles. Do not rewrite parts you were not asked to change.
+Dialogue Chinese fields: Simplified Chinese only. UI strings: Russian.
+Pinyin must include tone marks.`
 
 export function registerZhScenarioRoutes(app, {
   supabase,
@@ -509,6 +540,138 @@ export function registerZhScenarioRoutes(app, {
     }
   })
 
+  app.post('/api/zh-scenarios/generate-part', async (req, res) => {
+    const userId = requireAuth(req, res)
+    if (!userId) return
+    if (!llm || !model) {
+      return res.status(500).json({ error: 'Generation is not configured' })
+    }
+
+    if (typeof getBalance === 'function' && BALANCE_THRESHOLD_RUB != null) {
+      const balance = await getBalance(supabase, userId)
+      if (balance < BALANCE_THRESHOLD_RUB) {
+        return res.status(402).json({ error: 'Пополните баланс' })
+      }
+    }
+
+    const body = req.body || {}
+    const part = body.part
+    if (!['vocabulary', 'steps', 'openings'].includes(part)) {
+      return res.status(400).json({ error: 'part должен быть vocabulary, steps или openings' })
+    }
+    const src = body.scenario && typeof body.scenario === 'object' ? body.scenario : {}
+    const payload = buildPayload(src, src)
+    const title = asTrimmed(src.title, 200) || 'Сценарий'
+    const hsk = asHsk(src.hsk_level ?? src.hskLevel ?? payload.hsk_level) || 3
+    const note = asTrimmed(body.note, 400)
+
+    const snapshot = {
+      title,
+      description: payload.description,
+      goals: payload.goals,
+      hsk_level: hsk,
+      textbook: payload.textbook,
+      starter: payload.starter,
+      formality: payload.formality,
+      user_role: payload.user_role,
+      ai_role: payload.ai_role,
+      ai_personality: payload.ai_personality,
+      grammar_focus: payload.grammar_focus,
+      setting_ru: payload.setting_ru,
+      scenario_text_ru: payload.scenario_text_ru,
+      character_opening: payload.character_opening,
+      suggested_first_line: payload.suggested_first_line,
+      suggested_first_line_pinyin: payload.suggested_first_line_pinyin,
+      steps: payload.steps,
+      vocabulary: payload.vocabulary,
+    }
+
+    let want = ''
+    if (part === 'vocabulary') {
+      want =
+        'Regenerate ONLY vocabulary (4–12 items). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1,"usage":"must_say"}]}. ' +
+        'Mark 3–6 core lesson words usage=must_say; the rest usage=model. Stay at or below the HSK.'
+    } else if (part === 'steps') {
+      want =
+        'Regenerate ONLY steps (2–6). JSON: {"steps":[{"id":"step1","order":1,"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}]}. ' +
+        'Each step is one learner action. Keep the same scene.'
+    } else {
+      want =
+        'Regenerate ONLY opening lines. JSON: {"character_opening":"","suggested_first_line":"","suggested_first_line_pinyin":""}. ' +
+        'Both lines Simplified Chinese. suggested_first_line must use 1–2 must_say words if vocabulary exists. Pinyin with tone marks.'
+    }
+
+    const userPrompt = [
+      `Current scenario JSON:\n${JSON.stringify(snapshot)}`,
+      want,
+      note ? `Extra instruction from the author: ${note}` : '',
+      'Generate the JSON now.',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+
+    async function runOnce() {
+      return llm.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: ZH_GENERATE_PART_SYSTEM },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 1800,
+        temperature: 0.45,
+      })
+    }
+
+    try {
+      let completion = await runOnce()
+      let raw = completion.choices?.[0]?.message?.content?.trim() || ''
+      let parsed
+      try {
+        parsed = parseLlmJson(raw)
+      } catch {
+        completion = await runOnce()
+        raw = completion.choices?.[0]?.message?.content?.trim() || ''
+        parsed = parseLlmJson(raw)
+      }
+
+      let patch = {}
+      if (part === 'vocabulary') {
+        const vocabulary = normalizeVocab(parsed.vocabulary)
+        if (!vocabulary.length) {
+          return res.status(422).json({ error: 'ИИ не вернул словарь, попробуйте ещё раз' })
+        }
+        patch = { vocabulary }
+      } else if (part === 'steps') {
+        const steps = normalizeSteps(parsed.steps)
+        if (!steps.length) {
+          return res.status(422).json({ error: 'ИИ не вернул шаги, попробуйте ещё раз' })
+        }
+        patch = { steps }
+      } else {
+        const character_opening = asTrimmed(parsed.character_opening, 300)
+        const suggested_first_line = asTrimmed(parsed.suggested_first_line, 300)
+        const suggested_first_line_pinyin = asTrimmed(parsed.suggested_first_line_pinyin, 300)
+        if (!character_opening && !suggested_first_line) {
+          return res.status(422).json({ error: 'ИИ не вернул первые фразы, попробуйте ещё раз' })
+        }
+        patch = { character_opening, suggested_first_line, suggested_first_line_pinyin }
+      }
+
+      const usage = completion?.usage
+      if (usage && typeof deductBalance === 'function' && typeof getCost === 'function') {
+        const costRub = getCost(model, usage)
+        if (costRub > 0) {
+          await deductBalance(supabase, userId, costRub, model, { zh_scenario_generate_part: true, part })
+        }
+      }
+
+      res.json({ part, patch })
+    } catch (err) {
+      console.error('[api/zh-scenarios/generate-part] error:', err?.message)
+      res.status(500).json({ error: err?.message || 'Part generation failed' })
+    }
+  })
+
   app.get('/api/zh-scenarios', async (req, res) => {
     const userId = requireAuth(req, res)
     if (!userId) return
@@ -602,6 +765,7 @@ export function registerZhScenarioRoutes(app, {
         pinyin: v.pinyin,
         translation_ru: v.translation_ru,
         hsk_level: v.hsk_level ?? undefined,
+        usage: asVocabUsage(v.usage),
       }))
 
       const scenario = toApiScenario(data, { steps: mappedSteps, vocabulary: mappedVocab })
@@ -829,6 +993,7 @@ export function registerZhScenarioRoutes(app, {
         pinyin: v.pinyin,
         translation_ru: v.translation_ru,
         hsk_level: v.hsk_level ?? undefined,
+        usage: asVocabUsage(v.usage),
       }))
       const copyPayload = buildPayload({
         ...payload,

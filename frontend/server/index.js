@@ -1266,6 +1266,7 @@ app.post('/api/agent/chat', async (req, res) => {
   const chineseCorrectionMode = ['gentle', 'active'].includes(chineseSettings?.correction_mode) ? chineseSettings.correction_mode : 'gentle'
   const chineseToneFocus = Boolean(chineseSettings?.tone_focus)
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings?.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
+  const chineseGrammarFocus = typeof chineseSettings?.grammar_focus === 'string' ? chineseSettings.grammar_focus.trim() : ''
   const annotateSource = typeof annotateSourceText === 'string' ? annotateSourceText.trim() : ''
   if (annotateChinese && !annotateSource) {
     return res.status(400).json({ error: 'Expected { text: "..." }' })
@@ -1339,6 +1340,7 @@ app.post('/api/agent/chat', async (req, res) => {
           showPinyin: chineseShowPinyin,
           showTranslation: chineseShowTranslation,
           vocabulary: scenario_vocabulary,
+          grammarFocus: chineseGrammarFocus,
         })
         : getFreestyleChatSystemPrompt('zh', {
           showPinyin: chineseShowPinyin,
@@ -1960,6 +1962,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   const chineseShowTranslation = Boolean(chineseSettings.show_translation)
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
   const chineseHintMode = ['basic', 'vocabulary', 'formal', 'colloquial'].includes(chineseSettings.hint_mode) ? chineseSettings.hint_mode : 'basic'
+  const chineseGrammarFocus = typeof chineseSettings.grammar_focus === 'string' ? chineseSettings.grammar_focus.trim() : ''
   const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
   const allowProfanity = Boolean(settings.allow_profanity)
   const aiMayUseProfanity = allowProfanity && Boolean(settings.ai_may_use_profanity)
@@ -2140,6 +2143,7 @@ Rules:
         showTranslation: chineseShowTranslation,
         chineseHintMode,
         vocabulary: vocabList,
+        grammarFocus: chineseGrammarFocus,
       })
       : null
     const systemContent = hintMode === 'debate'
