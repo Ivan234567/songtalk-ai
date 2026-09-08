@@ -8,6 +8,7 @@ import { buildMessagesForAgentChat, type RoleplayScenario } from '@/lib/roleplay
 import { getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
 import { PersonalScenariosUI } from '@/components/roleplay/PersonalScenariosUI';
+import { ZhScenariosUI } from '@/components/roleplay/ZhScenariosUI';
 import type { SpeakingAssessmentResult, CriteriaScores, GoalAttainmentItem } from '@/lib/speaking-assessment';
 import { getCriteriaLabel } from '@/lib/speaking-assessment';
 import { TranslatorPanel } from '@/components/TranslatorPanel';
@@ -1342,7 +1343,6 @@ export function AgentTab() {
 
   useEffect(() => {
     if (showSystemCatalog) return;
-    setScenarioModalOpen(false);
     setScenarioView((v) => guardCatalogView(v));
     setDebateView((v) => guardCatalogView(v));
     if (debateSetupOpen && debateView === 'catalog') {
@@ -2997,7 +2997,18 @@ export function AgentTab() {
                   debateView={debateView}
                   onDebateViewChange={handleDebateViewChange}
                 />
-                {scenarioModalOpen && (scenarioView === 'create' || scenarioView === 'my') && (
+                {learningLanguage === 'zh' && scenarioModalOpen && (scenarioView === 'create' || scenarioView === 'my') && (
+                  <ZhScenariosUI
+                    initialView={scenarioView === 'create' ? 'create' : 'my'}
+                    defaultHsk={chineseHskLevel}
+                    onSelectScenario={(s) => {
+                      handleSelectScenario(s);
+                      setScenarioModalOpen(false);
+                    }}
+                    onClose={() => setScenarioModalOpen(false)}
+                  />
+                )}
+                {learningLanguage !== 'zh' && scenarioModalOpen && (scenarioView === 'create' || scenarioView === 'my') && (
                   <PersonalScenariosUI
                     initialView={scenarioView}
                     highlightedScenarioId={highlightedUserScenarioId}
@@ -3836,11 +3847,12 @@ export function AgentTab() {
                                 onClick={() => {
                                   setGoalReached(true);
                                   if (userId && selectedScenario) {
-                                    const payload: { user_id: string; scenario_id: string; scenario_title: string | null; scenario_level?: string | null; completed_step_ids?: string[] } = {
+                                    const payload: { user_id: string; scenario_id: string; scenario_title: string | null; scenario_level?: string | null; completed_step_ids?: string[]; language?: string } = {
                                       user_id: userId,
                                       scenario_id: selectedScenario.id,
                                       scenario_title: selectedScenario.title ?? null,
                                       scenario_level: (selectedScenario as { level?: string }).level ?? null,
+                                      language: learningLanguage,
                                     };
                                     if (selectedScenario.steps?.length) {
                                       payload.completed_step_ids = roleplayCompletedStepIds;
@@ -3906,6 +3918,7 @@ export function AgentTab() {
                                     scenario_id: selectedScenario.id,
                                     scenario_title: selectedScenario.title ?? null,
                                     scenario_level: (selectedScenario as { level?: string }).level ?? null,
+                                    language: learningLanguage,
                                   })
                                   .then(({ error }) => {
                                     if (error) {

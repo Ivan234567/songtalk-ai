@@ -19,6 +19,7 @@ import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
 import { getCost } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH } from './learning-language.js'
+import { registerZhScenarioRoutes } from './zh-scenarios.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -257,6 +258,24 @@ async function resolveUserId(req) {
   if (decoded?.sub) return decoded.sub
   const result = await Promise.resolve(supabase.auth.getUser(rawToken)).catch(() => ({ data: { user: null } }))
   return result?.data?.user?.id ?? null
+}
+
+function normalizeLearningLanguage(value) {
+  return value === 'zh' ? 'zh' : 'en'
+}
+
+async function resolveVocabularyLanguage(req, userId) {
+  const requested = req.query?.language || req.body?.language
+  if (requested === 'zh' || requested === 'en') return requested
+  const { data: profile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userId)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  return normalizeLearningLanguage(profile?.learning_language)
 }
 
 // Helper function to safely call Supabase with timeout and retry
@@ -1438,12 +1457,15 @@ Rules:
           }
         }
         const raw = stepCompletion.choices?.[0]?.message?.content?.trim() || ''
+        console.log('[step-checker] LLM raw response:', raw)
         const jsonMatch = raw.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0])
           const rawIds = Array.isArray(parsed.completedStepIds)
             ? parsed.completedStepIds.filter((id) => typeof id === 'string').map((id) => String(id).trim())
             : []
+          console.log('[step-checker] Raw IDs from LLM:', rawIds)
+          console.log('[step-checker] Expected step IDs:', steps.map(s => s.id))
           const normalized = (id) => id.toLowerCase().replace(/\s+/g, '')
           const completed = []
           for (const id of rawIds) {
@@ -1458,7 +1480,10 @@ Rules:
               completed.push(steps[idx].id)
             }
           }
+          console.log('[step-checker] Final completed IDs sent to client:', completed)
           send({ type: 'steps', completedStepIds: completed })
+        } else {
+          console.log('[step-checker] No JSON found in LLM response')
         }
       } catch (stepErr) {
         console.error('[api/agent/chat] step-check error:', stepErr?.message)
@@ -2478,6 +2503,19 @@ app.delete('/api/user-scenarios/:id', async (req, res) => {
 })
 
 // ---------- End user roleplay scenarios ----------
+
+registerZhScenarioRoutes(app, {
+  supabase,
+  safeSupabaseCall,
+  getBearerToken,
+  verifyBackendJwt,
+  llm,
+  model: AITUNNEL_MODEL,
+  getBalance,
+  deductBalance,
+  getCost,
+  BALANCE_THRESHOLD_RUB,
+})
 
 // Speaking assessment — AI evaluates user speech by rubric (fluency, vocabulary, grammar, pronunciation, completeness, dialogue)
 app.post('/api/agent/assess-speaking', async (req, res) => {
@@ -4961,7 +4999,7 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
         .from('user_vocabulary_categories')
         .select(`
           vocabulary_id,
-          category:vocabulary_categories(id, name, description, color, icon)
+          category:vocabulary_categories(id, name, description, color, icon, language)
         `)
         .eq('user_id', userData.user.id)
         .in('vocabulary_id', vocabularyIds),
@@ -4973,7 +5011,7 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
         if (!acc[item.vocabulary_id]) {
           acc[item.vocabulary_id] = []
         }
-        if (item.category) {
+        if (item.category && normalizeLearningLanguage(item.category.language) === language) {
           acc[item.vocabulary_id].push(item.category)
         }
         return acc
@@ -6676,7 +6714,7 @@ app.get('/api/vocabulary/idioms/list', asyncHandler(async (req, res) => {
         .from('user_idioms_categories')
         .select(`
           idiom_id,
-          category:vocabulary_categories(id, name, description, color, icon)
+          category:vocabulary_categories(id, name, description, color, icon, language)
         `)
         .eq('user_id', userData.user.id)
         .in('idiom_id', idiomIds),
@@ -6688,7 +6726,7 @@ app.get('/api/vocabulary/idioms/list', asyncHandler(async (req, res) => {
         if (!acc[item.idiom_id]) {
           acc[item.idiom_id] = []
         }
-        if (item.category) {
+        if (item.category && normalizeLearningLanguage(item.category.language) === language) {
           acc[item.idiom_id].push(item.category)
         }
         return acc
@@ -6981,7 +7019,7 @@ app.post('/api/vocabulary/idioms/:id/categories', asyncHandler(async (req, res) 
   const { data: idiom, error: idiomError } = await safeSupabaseCall(
     () => supabase
       .from('user_idioms')
-      .select('id')
+      .select('id, language')
       .eq('id', idiomId)
       .eq('user_id', userData.user.id)
       .single(),
@@ -6992,13 +7030,14 @@ app.post('/api/vocabulary/idioms/:id/categories', asyncHandler(async (req, res) 
     return res.status(404).json({ error: 'Idiom not found' })
   }
 
-  // Verify all categories belong to user
+  // Verify all categories belong to user and match idiom language
   if (category_ids.length > 0) {
     const { data: categories, error: categoriesError } = await safeSupabaseCall(
       () => supabase
         .from('vocabulary_categories')
         .select('id')
         .eq('user_id', userData.user.id)
+        .eq('language', normalizeLearningLanguage(idiom.language))
         .in('id', category_ids),
       { timeoutMs: 10000, maxRetries: 2 }
     )
@@ -7215,7 +7254,7 @@ app.get('/api/vocabulary/phrasal-verbs/list', asyncHandler(async (req, res) => {
         .from('user_phrasal_verbs_categories')
         .select(`
           phrasal_verb_id,
-          category:vocabulary_categories(id, name, description, color, icon)
+          category:vocabulary_categories(id, name, description, color, icon, language)
         `)
         .eq('user_id', userData.user.id)
         .in('phrasal_verb_id', phrasalVerbIds),
@@ -7227,7 +7266,7 @@ app.get('/api/vocabulary/phrasal-verbs/list', asyncHandler(async (req, res) => {
         if (!acc[item.phrasal_verb_id]) {
           acc[item.phrasal_verb_id] = []
         }
-        if (item.category) {
+        if (item.category && normalizeLearningLanguage(item.category.language) === 'en') {
           acc[item.phrasal_verb_id].push(item.category)
         }
         return acc
@@ -7538,6 +7577,7 @@ app.post('/api/vocabulary/phrasal-verbs/:id/categories', asyncHandler(async (req
         .from('vocabulary_categories')
         .select('id')
         .eq('user_id', userData.user.id)
+        .eq('language', 'en')
         .in('id', category_ids),
       { timeoutMs: 10000, maxRetries: 2 }
     )
@@ -7775,11 +7815,14 @@ app.get('/api/vocabulary/categories', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
 
+  const language = await resolveVocabularyLanguage(req, userData.user.id)
+
   const { data: categories, error: categoriesError } = await safeSupabaseCall(
     () => supabase
       .from('vocabulary_categories_with_counts')
       .select('*')
       .eq('user_id', userData.user.id)
+      .eq('language', language)
       .order('name', { ascending: true }),
     { timeoutMs: 15000, maxRetries: 2 }
   )
@@ -7828,6 +7871,7 @@ app.post('/api/vocabulary/categories', asyncHandler(async (req, res) => {
   }
 
   const { name, description, color, icon } = req.body || {}
+  const language = await resolveVocabularyLanguage(req, userData.user.id)
 
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     return res.status(400).json({ error: 'Category name is required' })
@@ -7841,7 +7885,8 @@ app.post('/api/vocabulary/categories', asyncHandler(async (req, res) => {
         name: name.trim(),
         description: description || null,
         color: color || '#3b82f6',
-        icon: icon || null
+        icon: icon || null,
+        language
       })
       .select()
       .single(),
@@ -8040,7 +8085,7 @@ app.post('/api/vocabulary/words/:id/categories', asyncHandler(async (req, res) =
   const { data: vocabulary, error: vocabError } = await safeSupabaseCall(
     () => supabase
       .from('user_vocabulary')
-      .select('id')
+      .select('id, language')
       .eq('id', vocabularyId)
       .eq('user_id', userData.user.id)
       .single(),
@@ -8051,13 +8096,14 @@ app.post('/api/vocabulary/words/:id/categories', asyncHandler(async (req, res) =
     return res.status(404).json({ error: 'Word not found' })
   }
 
-  // Verify all categories belong to user
+  // Verify all categories belong to user and match word language
   if (category_ids.length > 0) {
     const { data: categories, error: categoriesError } = await safeSupabaseCall(
       () => supabase
         .from('vocabulary_categories')
         .select('id')
         .eq('user_id', userData.user.id)
+        .eq('language', normalizeLearningLanguage(vocabulary.language))
         .in('id', category_ids),
       { timeoutMs: 10000, maxRetries: 2 }
     )

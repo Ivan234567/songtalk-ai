@@ -251,7 +251,36 @@ function buildProfanityInstruction(scenario: RoleplayScenario): string {
 /**
  * Формирует итоговый system-промпт для сценария: инструкция по адаптации + (для тем «друг») сленг + базовый systemPrompt + цель и инструкция завершения.
  */
+const ZH_ADAPT_INSTRUCTION =
+  'Adapt your Chinese to how the learner actually speaks. If they use short HSK-1/2 phrases, reply with short simple sentences, recast gently, and offer choices. If they speak more fluently, you may use slightly richer but still natural Mandarin. Match their pace. Never switch the spoken dialogue to English or Russian.';
+
+const ZH_NATURAL_INSTRUCTION =
+  'Sound like a real person: brief backchannels (嗯, 好, 对), patience if they hesitate, no long monologues. Stay in character.';
+
+const ZH_GOAL_COMPLETION =
+  ' When the goal is reached, say one short natural closing phrase in Chinese (e.g. 好的，再见！ or 那我先走了) and end. Stay in character; do not say that the scenario is complete.';
+
+function buildZhScenarioSystemContent(scenario: RoleplayScenario): string {
+  let content = ZH_ADAPT_INSTRUCTION + '\n\n' + ZH_NATURAL_INSTRUCTION;
+  content += '\n\n' + HARD_SAFETY_BLOCKS_INSTRUCTION;
+  content += '\n\n' + RESPOND_TO_USER_INSTRUCTION;
+  content += '\n\nSpeak ONLY in Simplified Chinese in your character lines.\n\n' + scenario.systemPrompt;
+  if (scenario.openingInstruction?.trim()) {
+    content += '\n\nFirst line instruction: ' + scenario.openingInstruction.trim();
+  }
+  if (scenario.characterOpening?.trim()) {
+    content += '\n\nIf the conversation is just starting, your first line should be: "' + scenario.characterOpening.trim() + '"';
+  }
+  if (scenario.goal?.trim()) {
+    content += '\n\nGoal: ' + scenario.goal.trim() + '.' + ZH_GOAL_COMPLETION;
+  }
+  return content;
+}
+
 function buildScenarioSystemContent(scenario: RoleplayScenario): string {
+  if (scenario.language === 'zh') {
+    return buildZhScenarioSystemContent(scenario);
+  }
   let content = ADAPT_TO_LEVEL_INSTRUCTION + '\n\n' + NATURAL_DIALOGUE_INSTRUCTION;
   const slangInstruction = buildSlangInstruction(scenario);
   if (slangInstruction) {

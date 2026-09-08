@@ -19,6 +19,7 @@ import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
 import { getCost } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH } from './learning-language.js'
+import { registerZhScenarioRoutes } from './zh-scenarios.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -2502,6 +2503,19 @@ app.delete('/api/user-scenarios/:id', async (req, res) => {
 })
 
 // ---------- End user roleplay scenarios ----------
+
+registerZhScenarioRoutes(app, {
+  supabase,
+  safeSupabaseCall,
+  getBearerToken,
+  verifyBackendJwt,
+  llm,
+  model: AITUNNEL_MODEL,
+  getBalance,
+  deductBalance,
+  getCost,
+  BALANCE_THRESHOLD_RUB,
+})
 
 // Speaking assessment — AI evaluates user speech by rubric (fluency, vocabulary, grammar, pronunciation, completeness, dialogue)
 app.post('/api/agent/assess-speaking', async (req, res) => {
