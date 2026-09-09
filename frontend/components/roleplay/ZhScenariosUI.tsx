@@ -164,9 +164,9 @@ function ZhIntentForm({
   };
 
   return (
-    <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <p style={{ margin: 0, fontSize: '0.975rem', lineHeight: 1.45, opacity: 0.85 }}>
-        Опишите урок своими словами. ИИ соберёт диалог, шаги и словарь. Роли, кто начинает и тон можно будет поправить в конструкторе.
+    <div style={{ padding: '1rem 1.25rem 1.1rem', overflow: 'visible', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.4, opacity: 0.85 }}>
+        Опишите урок своими словами — ИИ соберёт диалог, шаги и словарь.
       </p>
       <label>
         <span style={labelStyle}>Что хотите отработать</span>
@@ -175,7 +175,7 @@ function ZhIntentForm({
           onChange={(e) => setPrompt(e.target.value)}
           rows={3}
           placeholder="Например: HSK 2 урок 8, в магазине одежды — размер, цвет, цена, купить"
-          style={{ ...inputStyle, resize: 'vertical', minHeight: 88 }}
+          style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
         />
       </label>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
