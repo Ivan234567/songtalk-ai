@@ -9,7 +9,14 @@ import { getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
 import { PersonalScenariosUI } from '@/components/roleplay/PersonalScenariosUI';
 import { ZhScenariosUI } from '@/components/roleplay/ZhScenariosUI';
+import { RoleplayScenarioProgress } from '@/components/roleplay/RoleplayScenarioProgress';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
+import {
+  applyUserUtteranceToSaid,
+  getLessonTrackerState,
+  getMustSayVocab,
+  mergeForwardIds,
+} from '@/lib/zh-lesson-tracker';
 import type { SpeakingAssessmentResult, CriteriaScores, GoalAttainmentItem } from '@/lib/speaking-assessment';
 import { getCriteriaLabel } from '@/lib/speaking-assessment';
 import { TranslatorPanel } from '@/components/TranslatorPanel';
@@ -247,6 +254,8 @@ export function AgentTab() {
   const [roleplayFeedbackError, setRoleplayFeedbackError] = useState<string | null>(null);
   /** Выполненные шаги сценария (отмечает ИИ после каждого ответа). */
   const [roleplayCompletedStepIds, setRoleplayCompletedStepIds] = useState<string[]>([]);
+  /** Ханьцзы must_say, которые ученик уже произнёс в этой сессии. */
+  const [zhSaidMustSay, setZhSaidMustSay] = useState<string[]>([]);
   /** Сайдбар Roleplays справа: развёрнут/свёрнут */
   const [roleplaySidebarOpen, setRoleplaySidebarOpen] = useState(true);
   /** Секции внутри сайдбара: Задание, Цель */
@@ -559,7 +568,8 @@ export function AgentTab() {
   }, []);
 
   useEffect(() => {
-    if (!selectedScenario) setRoleplayCompletedStepIds([]);
+    setRoleplayCompletedStepIds([]);
+    setZhSaidMustSay([]);
   }, [selectedScenario?.id]);
 
   useEffect(() => {
@@ -765,6 +775,10 @@ export function AgentTab() {
       setError(null);
       const history: Message[] = [...messagesRef.current, { role: 'user', content: userText }];
       setMessages((prev) => [...prev, { role: 'user', content: userText }]);
+      if (agentMode === 'roleplay' && learningLanguage === 'zh' && selectedScenario?.scenarioVocabulary?.length) {
+        const mustSay = getMustSayVocab(selectedScenario.scenarioVocabulary);
+        setZhSaidMustSay((prev) => applyUserUtteranceToSaid(userText, mustSay, prev));
+      }
       // Подсказка сохраняется до клика "Скрыть" или нового запроса подсказки
 
       let fullReply = '';
@@ -803,6 +817,9 @@ export function AgentTab() {
                     id: s.id,
                     titleRu: s.titleRu ?? (s as Record<string, unknown>).title_ru as string | undefined,
                     titleEn: s.titleEn ?? (s as Record<string, unknown>).title_en as string | undefined,
+                    expectedUserAction: s.expectedUserAction,
+                    keywords: s.keywords,
+                    exampleZh: s.exampleZh,
                   }))
                 : agentMode === 'debate'
                   ? debateStepsForCurrentDifficulty.map((s) => ({
@@ -860,10 +877,14 @@ export function AgentTab() {
                 fullReply += data.delta;
               } else if (data.type === 'steps' && Array.isArray(data.completedStepIds)) {
                 console.log('[Step Checker] Received completed steps from server:', data.completedStepIds);
-                lastCompletedStepIds = data.completedStepIds;
                 if (agentMode === 'roleplay') {
-                  setRoleplayCompletedStepIds(data.completedStepIds);
+                  setRoleplayCompletedStepIds((prev) => {
+                    const merged = mergeForwardIds(prev, data.completedStepIds);
+                    lastCompletedStepIds = merged;
+                    return merged;
+                  });
                 } else if (agentMode === 'debate') {
+                  lastCompletedStepIds = data.completedStepIds;
                   setDebateCompletedStepIds(data.completedStepIds);
                 }
               } else if (data.type === 'done') {
@@ -1795,6 +1816,8 @@ export function AgentTab() {
     setRoleplayFeedbackError(null);
     setMessages([]);
     setCurrentSessionId(null);
+    setRoleplayCompletedStepIds([]);
+    setZhSaidMustSay([]);
     requestScenarioFirstMessage(selectedScenario);
   }, [selectedScenario, requestScenarioFirstMessage]);
 
@@ -1829,6 +1852,7 @@ export function AgentTab() {
     setAssessmentResult(null);
     setAssessmentError(null);
     setRoleplayCompletedStepIds([]);
+    setZhSaidMustSay([]);
     setSelectedScenario(null);
     setReplyHintText(null);
     // Сброс состояний дебата
@@ -2262,10 +2286,15 @@ export function AgentTab() {
                 id: s.id,
                 titleRu: s.titleRu ?? (s as Record<string, unknown>).title_ru,
                 titleEn: s.titleEn ?? (s as Record<string, unknown>).title_en,
+                expectedUserAction: s.expectedUserAction,
+                keywords: s.keywords,
+                exampleZh: s.exampleZh,
               })),
               completed_step_ids: roleplayCompletedStepIds,
             }
           : {};
+        const mustSay = getMustSayVocab(selectedScenario.scenarioVocabulary);
+        const missingMustSay = mustSay.filter((v) => !zhSaidMustSay.includes(v.hanzi));
         bodyPayload = {
           mode: 'roleplay',
           last_assistant_message: lastAssistant?.content?.trim() || '',
@@ -2281,8 +2310,8 @@ export function AgentTab() {
                 grammar_focus: selectedScenario?.grammarFocus,
               }
             : undefined,
-          scenario_vocabulary: selectedScenario.scenarioVocabulary?.length
-            ? selectedScenario.scenarioVocabulary
+          scenario_vocabulary: missingMustSay.length
+            ? missingMustSay
             : undefined,
           ...stepsPayload,
         };
@@ -2355,6 +2384,7 @@ export function AgentTab() {
     debateSettingsPayload,
     learningLanguage,
     chineseSettingsPayload,
+    zhSaidMustSay,
   ]);
 
   const applyFreestylePreset = useCallback(async (preset: 'neutral' | 'light_slang' | 'heavy_slang' | 'adult_user' | 'adult_dual') => {
@@ -2616,6 +2646,41 @@ export function AgentTab() {
     [userId, selectedSessionId, currentSessionId]
   );
 
+  const saveRoleplayProgress = useCallback(() => {
+    if (!selectedScenario) return;
+    setGoalReached(true);
+    if (!userId) return;
+    const payload: {
+      user_id: string;
+      scenario_id: string;
+      scenario_title: string | null;
+      scenario_level?: string | null;
+      completed_step_ids?: string[];
+      language?: string;
+    } = {
+      user_id: userId,
+      scenario_id: selectedScenario.id,
+      scenario_title: selectedScenario.title ?? null,
+      scenario_level: selectedScenario.level ?? null,
+      language: learningLanguage,
+    };
+    if (selectedScenario.steps?.length) {
+      payload.completed_step_ids = roleplayCompletedStepIds;
+    }
+    supabase
+      .from('roleplay_completions')
+      .insert(payload)
+      .then(({ error }) => {
+        if (error) {
+          console.error('[roleplay_completions] INSERT error:', error);
+          alert('Ошибка сохранения прогресса: ' + (error.message || 'неизвестная ошибка'));
+        }
+      })
+      .catch(() => {
+        alert('Ошибка сохранения прогресса');
+      });
+  }, [userId, selectedScenario, learningLanguage, roleplayCompletedStepIds]);
+
   const selectedSession = selectedSessionId ? sessions.find((s) => s.id === selectedSessionId) : null;
   const conversationMessages = selectedSession ? selectedSession.messages : messages;
   /** Для карты шагов: при просмотре сессии из истории берём сохранённые completed_step_ids, иначе — текущий state */
@@ -2623,6 +2688,20 @@ export function AgentTab() {
     selectedSession && selectedSession.scenario_id === selectedScenario?.id && Array.isArray(selectedSession.completed_step_ids)
       ? selectedSession.completed_step_ids
       : roleplayCompletedStepIds;
+  const zhTrackerSummary = (() => {
+    if (learningLanguage !== 'zh' || !selectedScenario) return '';
+    const mustSay = getMustSayVocab(selectedScenario.scenarioVocabulary);
+    const tracker = getLessonTrackerState({
+      steps: selectedScenario.steps,
+      completedStepIds: roleplayStepsCompletedIds,
+      mustSay,
+      saidHanzi: zhSaidMustSay,
+    });
+    const parts: string[] = [];
+    if (tracker.stepsTotal) parts.push(`сцена ${tracker.stepsDone}/${tracker.stepsTotal}`);
+    if (tracker.vocabTotal) parts.push(`слова ${tracker.vocabDone}/${tracker.vocabTotal}`);
+    return parts.join(' · ');
+  })();
 
   if (tokenLoading) {
     return (
@@ -3439,7 +3518,7 @@ export function AgentTab() {
                         {!chineseSettingsOpen && (
                           <span style={{ fontSize: '0.6875rem', opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {agentMode === 'roleplay' && selectedScenario
-                              ? `${chineseSettingsSummary} · задание`
+                              ? `${chineseSettingsSummary}${zhTrackerSummary ? ` · ${zhTrackerSummary}` : ' · задание'}`
                               : chineseSettingsSummary}
                           </span>
                         )}
@@ -3473,195 +3552,16 @@ export function AgentTab() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 0.875rem' }}>
                         {agentMode === 'roleplay' && selectedScenario && (
                           <>
-                            {selectedScenario.steps && selectedScenario.steps.length > 0 && (
-                              <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setRoleplaySidebarStepsOpen((v) => !v)}
-                                  aria-expanded={roleplaySidebarStepsOpen}
-                                  style={{
-                                    width: '100%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    border: 'none',
-                                    background: 'transparent',
-                                    color: 'var(--sidebar-text)',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.04em',
-                                    cursor: 'pointer',
-                                    padding: 0,
-                                    marginBottom: roleplaySidebarStepsOpen ? '0.5rem' : 0,
-                                  }}
-                                >
-                                  Задание
-                                  <span style={{ opacity: 0.7 }}>{roleplaySidebarStepsOpen ? '▼' : '▶'}</span>
-                                </button>
-                                {roleplaySidebarStepsOpen &&
-                                  (selectedScenario.steps as { id: string; order: number; titleRu: string }[])
-                                    .slice()
-                                    .sort((a, b) => a.order - b.order)
-                                    .map((step) => {
-                                      const done = roleplayStepsCompletedIds.includes(step.id);
-                                      return (
-                                        <div
-                                          key={step.id}
-                                          style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '0.5rem',
-                                            fontSize: '0.875rem',
-                                            lineHeight: 1.4,
-                                            color: 'var(--sidebar-text)',
-                                            opacity: done ? 0.85 : 1,
-                                            marginTop: '0.35rem',
-                                          }}
-                                        >
-                                          {done ? (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" style={{ flexShrink: 0 }} aria-hidden>
-                                              <polyline points="20 6 9 17 4 12" />
-                                            </svg>
-                                          ) : (
-                                            <span style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid var(--sidebar-border)', flexShrink: 0 }} aria-hidden />
-                                          )}
-                                          <span>{step.titleRu}</span>
-                                        </div>
-                                      );
-                                    })}
-                                {(() => {
-                                  const steps = selectedScenario.steps as { id: string }[] | undefined;
-                                  const allStepsDone = !steps || steps.length === 0 || steps.every((s) => roleplayStepsCompletedIds.includes(s.id));
-                                  const canMarkGoal = !selectedSessionId && allStepsDone;
-                                  if (!canMarkGoal) {
-                                    if (selectedSessionId) {
-                                      return (
-                                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
-                                          Просмотр истории — кнопка недоступна
-                                        </div>
-                                      );
-                                    }
-                                    if (steps && steps.length > 0 && !allStepsDone) {
-                                      const remaining = steps.filter((s) => !roleplayStepsCompletedIds.includes(s.id));
-                                      return (
-                                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
-                                          Осталось выполнить: {remaining.length} из {steps.length} шаг(ов)
-                                        </div>
-                                      );
-                                    }
-                                    return null;
-                                  }
-                                  return (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setGoalReached(true);
-                                        if (userId && selectedScenario) {
-                                          const payload: { user_id: string; scenario_id: string; scenario_title: string | null; scenario_level?: string | null; completed_step_ids?: string[]; language?: string } = {
-                                            user_id: userId,
-                                            scenario_id: selectedScenario.id,
-                                            scenario_title: selectedScenario.title ?? null,
-                                            scenario_level: (selectedScenario as { level?: string }).level ?? null,
-                                            language: learningLanguage,
-                                          };
-                                          if (selectedScenario.steps?.length) {
-                                            payload.completed_step_ids = roleplayCompletedStepIds;
-                                          }
-                                          supabase
-                                            .from('roleplay_completions')
-                                            .insert(payload)
-                                            .then(({ error }) => {
-                                              if (error) {
-                                                console.error('[roleplay_completions] INSERT error:', error);
-                                                alert('Ошибка сохранения прогресса: ' + (error.message || 'неизвестная ошибка'));
-                                              }
-                                            })
-                                            .catch(() => {
-                                              alert('Ошибка сохранения прогресса');
-                                            });
-                                        }
-                                      }}
-                                      style={{
-                                        marginTop: '0.75rem',
-                                        width: '100%',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '0.5rem',
-                                        padding: '0.5rem 0.75rem',
-                                        borderRadius: 8,
-                                        border: '1px solid rgba(34, 197, 94, 0.4)',
-                                        background: 'rgba(34, 197, 94, 0.12)',
-                                        color: 'rgba(34, 197, 94, 0.95)',
-                                        fontSize: '0.8125rem',
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                      }}
-                                    >
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <polyline points="20 6 9 17 4 12" />
-                                      </svg>
-                                      Сохранить прогресс
-                                    </button>
-                                  );
-                                })()}
-                              </section>
-                            )}
-                            {(!selectedScenario.steps || selectedScenario.steps.length === 0) && !selectedSessionId && (
-                              <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                  Задание
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setGoalReached(true);
-                                    if (userId && selectedScenario) {
-                                      supabase
-                                        .from('roleplay_completions')
-                                        .insert({
-                                          user_id: userId,
-                                          scenario_id: selectedScenario.id,
-                                          scenario_title: selectedScenario.title ?? null,
-                                          scenario_level: (selectedScenario as { level?: string }).level ?? null,
-                                          language: learningLanguage,
-                                        })
-                                        .then(({ error }) => {
-                                          if (error) {
-                                            console.error('[roleplay_completions] INSERT error (no steps):', error);
-                                            alert('Ошибка сохранения прогресса: ' + (error.message || 'неизвестная ошибка'));
-                                          }
-                                        })
-                                        .catch(() => {
-                                          alert('Ошибка сохранения прогресса');
-                                        });
-                                    }
-                                  }}
-                                  style={{
-                                    marginTop: '0.5rem',
-                                    width: '100%',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '0.5rem',
-                                    padding: '0.5rem 0.75rem',
-                                    borderRadius: 8,
-                                    border: '1px solid rgba(34, 197, 94, 0.4)',
-                                    background: 'rgba(34, 197, 94, 0.12)',
-                                    color: 'rgba(34, 197, 94, 0.95)',
-                                    fontSize: '0.8125rem',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="20 6 9 17 4 12" />
-                                  </svg>
-                                  Сохранить прогресс
-                                </button>
-                              </section>
-                            )}
+                            <RoleplayScenarioProgress
+                              scenario={selectedScenario}
+                              completedStepIds={roleplayStepsCompletedIds}
+                              saidMustSayHanzi={zhSaidMustSay}
+                              selectedSessionId={selectedSessionId}
+                              learningLanguage={learningLanguage}
+                              stepsOpen={roleplaySidebarStepsOpen}
+                              onToggleSteps={() => setRoleplaySidebarStepsOpen((v) => !v)}
+                              onSaveProgress={saveRoleplayProgress}
+                            />
                             {(selectedScenario.goalRu || selectedScenario.goal) && (
                               <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
                                 <button
@@ -4108,212 +4008,17 @@ export function AgentTab() {
                   </button>
                   {roleplaySidebarOpen && (
                     <div style={{ padding: '0 0.875rem 0.875rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '60vh', overflowY: 'auto' }}>
-                      {selectedScenario.steps && selectedScenario.steps.length > 0 && (
-                        <section style={{ border: '1px solid var(--sidebar-border)', borderRadius: 10, padding: '0.75rem', background: 'var(--sidebar-bg)' }}>
-                          <button
-                            type="button"
-                            onClick={() => setRoleplaySidebarStepsOpen((v) => !v)}
-                            aria-expanded={roleplaySidebarStepsOpen}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              border: 'none',
-                              background: 'transparent',
-                              color: 'var(--sidebar-text)',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.04em',
-                              cursor: 'pointer',
-                              padding: 0,
-                              marginBottom: roleplaySidebarStepsOpen ? '0.5rem' : 0,
-                            }}
-                          >
-                            Задание
-                            <span style={{ opacity: 0.7 }}>{roleplaySidebarStepsOpen ? '▼' : '▶'}</span>
-                          </button>
-                          {roleplaySidebarStepsOpen &&
-                            (selectedScenario.steps as { id: string; order: number; titleRu: string }[])
-                              .slice()
-                              .sort((a, b) => a.order - b.order)
-                              .map((step) => {
-                                const done = roleplayStepsCompletedIds.includes(step.id);
-                                return (
-                                  <div
-                                    key={step.id}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.5rem',
-                                      fontSize: '0.875rem',
-                                      lineHeight: 1.4,
-                                      color: 'var(--sidebar-text)',
-                                      opacity: done ? 0.85 : 1,
-                                      marginTop: '0.35rem',
-                                    }}
-                                  >
-                                    {done ? (
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" style={{ flexShrink: 0 }} aria-hidden>
-                                        <polyline points="20 6 9 17 4 12" />
-                                      </svg>
-                                    ) : (
-                                      <span style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid var(--sidebar-border)', flexShrink: 0 }} aria-hidden />
-                                    )}
-                                    <span>{step.titleRu}</span>
-                                  </div>
-                                );
-                              })}
-                          {(() => {
-                            const steps = selectedScenario.steps as { id: string }[] | undefined;
-                            const allStepsDone = !steps || steps.length === 0 || steps.every((s) => roleplayStepsCompletedIds.includes(s.id));
-                            const canMarkGoal = !selectedSessionId && allStepsDone;
-                            // Debug logging
-                            console.log('[Progress Debug]', {
-                              steps: steps?.map(s => s.id),
-                              completedIds: roleplayStepsCompletedIds,
-                              allStepsDone,
-                              selectedSessionId,
-                              canMarkGoal,
-                            });
-                            if (!canMarkGoal) {
-                              // Show hint why button is not available
-                              if (selectedSessionId) {
-                                return (
-                                  <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
-                                    Просмотр истории — кнопка недоступна
-                                  </div>
-                                );
-                              }
-                              if (steps && steps.length > 0 && !allStepsDone) {
-                                const remaining = steps.filter(s => !roleplayStepsCompletedIds.includes(s.id));
-                                return (
-                                  <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
-                                    Осталось выполнить: {remaining.length} из {steps.length} шаг(ов)
-                                  </div>
-                                );
-                              }
-                              return null;
-                            }
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setGoalReached(true);
-                                  if (userId && selectedScenario) {
-                                    const payload: { user_id: string; scenario_id: string; scenario_title: string | null; scenario_level?: string | null; completed_step_ids?: string[]; language?: string } = {
-                                      user_id: userId,
-                                      scenario_id: selectedScenario.id,
-                                      scenario_title: selectedScenario.title ?? null,
-                                      scenario_level: (selectedScenario as { level?: string }).level ?? null,
-                                      language: learningLanguage,
-                                    };
-                                    if (selectedScenario.steps?.length) {
-                                      payload.completed_step_ids = roleplayCompletedStepIds;
-                                    }
-                                    supabase
-                                      .from('roleplay_completions')
-                                      .insert(payload)
-                                      .then(({ error }) => {
-                                        if (error) {
-                                          console.error('[roleplay_completions] INSERT error:', error);
-                                          alert('Ошибка сохранения прогресса: ' + (error.message || 'неизвестная ошибка'));
-                                        } else {
-                                          console.log('[roleplay_completions] saved successfully:', payload);
-                                        }
-                                      })
-                                      .catch((err) => {
-                                        console.error('[roleplay_completions] unexpected error:', err);
-                                        alert('Ошибка сохранения прогресса');
-                                      });
-                                  }
-                                }}
-                                style={{
-                                  marginTop: '0.75rem',
-                                  width: '100%',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '0.5rem',
-                                  padding: '0.5rem 0.75rem',
-                                  borderRadius: 8,
-                                  border: '1px solid rgba(34, 197, 94, 0.4)',
-                                  background: 'rgba(34, 197, 94, 0.12)',
-                                  color: 'rgba(34, 197, 94, 0.95)',
-                                  fontSize: '0.8125rem',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  transition: 'all 0.2s ease',
-                                }}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="20 6 9 17 4 12" />
-                                </svg>
-                                Сохранить прогресс
-                              </button>
-                            );
-                          })()}
-                        </section>
-                      )}
-                      {(!selectedScenario.steps || selectedScenario.steps.length === 0) && !selectedSessionId && (
-                        <section style={{ border: '1px solid var(--sidebar-border)', borderRadius: 10, padding: '0.75rem', background: 'var(--sidebar-bg)' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            Задание
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setGoalReached(true);
-                              if (userId && selectedScenario) {
-                                supabase
-                                  .from('roleplay_completions')
-                                  .insert({
-                                    user_id: userId,
-                                    scenario_id: selectedScenario.id,
-                                    scenario_title: selectedScenario.title ?? null,
-                                    scenario_level: (selectedScenario as { level?: string }).level ?? null,
-                                    language: learningLanguage,
-                                  })
-                                  .then(({ error }) => {
-                                    if (error) {
-                                      console.error('[roleplay_completions] INSERT error (no steps):', error);
-                                      alert('Ошибка сохранения прогресса: ' + (error.message || 'неизвестная ошибка'));
-                                    } else {
-                                      console.log('[roleplay_completions] saved successfully (no steps)');
-                                    }
-                                  })
-                                  .catch((err) => {
-                                    console.error('[roleplay_completions] unexpected error:', err);
-                                    alert('Ошибка сохранения прогресса');
-                                  });
-                              }
-                            }}
-                            style={{
-                              marginTop: '0.5rem',
-                              width: '100%',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '0.5rem',
-                              padding: '0.5rem 0.75rem',
-                              borderRadius: 8,
-                              border: '1px solid rgba(34, 197, 94, 0.4)',
-                              background: 'rgba(34, 197, 94, 0.12)',
-                              color: 'rgba(34, 197, 94, 0.95)',
-                              fontSize: '0.8125rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s ease',
-                            }}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                            Сохранить прогресс
-                          </button>
-                        </section>
-                      )}
+                      <RoleplayScenarioProgress
+                        scenario={selectedScenario}
+                        completedStepIds={roleplayStepsCompletedIds}
+                        saidMustSayHanzi={zhSaidMustSay}
+                        selectedSessionId={selectedSessionId}
+                        learningLanguage={learningLanguage}
+                        stepsOpen={roleplaySidebarStepsOpen}
+                        onToggleSteps={() => setRoleplaySidebarStepsOpen((v) => !v)}
+                        onSaveProgress={saveRoleplayProgress}
+                        boxed
+                      />
                       {(selectedScenario.goalRu || selectedScenario.goal) && (
                         <section style={{ border: '1px solid rgba(34, 197, 94, 0.5)', borderRadius: 10, padding: '0.75rem', background: 'rgba(34, 197, 94, 0.06)' }}>
                           <button
@@ -5011,6 +4716,28 @@ export function AgentTab() {
             <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--sidebar-text)' }}>
               Прогресс сохранён!
             </h2>
+            {learningLanguage === 'zh' && selectedScenario.scenarioVocabulary?.some((v) => v.usage === 'must_say') ? (() => {
+              const mustSay = getMustSayVocab(selectedScenario.scenarioVocabulary);
+              const tracker = getLessonTrackerState({
+                steps: selectedScenario.steps,
+                completedStepIds: roleplayCompletedStepIds,
+                mustSay,
+                saidHanzi: zhSaidMustSay,
+              });
+              if (tracker.vocabTotal === 0) return null;
+              if (tracker.lessonReady) {
+                return (
+                  <p style={{ margin: 0, fontSize: '0.9375rem', color: 'rgba(34, 197, 94, 0.95)', fontWeight: 600 }}>
+                    Урок сказан: все слова урока прозвучали.
+                  </p>
+                );
+              }
+              return (
+                <p style={{ margin: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.8, maxWidth: 420 }}>
+                  Слов урока {tracker.vocabDone}/{tracker.vocabTotal}. Ещё можно отработать: {tracker.missingMustSay.map((v) => v.hanzi).join('、')}.
+                </p>
+              );
+            })() : null}
             {selectedScenario.goalRu && (
               <p style={{ margin: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.8, maxWidth: 360 }}>
                 {selectedScenario.goalRu}

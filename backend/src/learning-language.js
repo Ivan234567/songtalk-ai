@@ -172,7 +172,7 @@ export function buildReplyHintChatSystemZh({
   const { mustSay, all, label } = splitZhScenarioVocab(vocabulary)
   const hintWords = mustSay.length ? mustSay : all
   const vocabBlock = hintWords.length
-    ? '\n- Prefer 1-2 of these MUST-SAY / lesson words in the suggested USER reply: ' +
+    ? '\n- The learner has NOT said these lesson words yet. Include 1 of them naturally in the suggested USER reply: ' +
       hintWords.map(label).join('、') +
       '.\n- Do not invent a hint that ignores this vocabulary list.'
     : ''

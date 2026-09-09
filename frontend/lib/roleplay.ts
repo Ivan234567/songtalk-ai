@@ -21,6 +21,9 @@ export interface RoleplayStep {
   order: number;
   titleRu: string;
   titleEn?: string;
+  expectedUserAction?: string;
+  keywords?: string[];
+  exampleZh?: string;
 }
 
 /** Один сценарий ролевой игры */

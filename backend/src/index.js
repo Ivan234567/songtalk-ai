@@ -1451,7 +1451,17 @@ app.post('/api/agent/chat', async (req, res) => {
 
     if (steps.length > 0 && fullReply.trim()) {
       try {
-        const stepDesc = (s) => s.titleRu || s.title_ru || s.titleEn || s.title_en || s.id
+        const stepDesc = (s) => {
+          const title = s.titleRu || s.title_ru || s.titleEn || s.title_en || s.id
+          const action = s.expectedUserAction || s.expected_user_action || ''
+          const keywords = Array.isArray(s.keywords) ? s.keywords.filter(Boolean).join(', ') : ''
+          const example = s.exampleZh || s.example_zh || ''
+          const parts = [title]
+          if (action && action !== title) parts.push(`learner should: ${action}`)
+          if (keywords) parts.push(`keywords (hints, not a whitelist): ${keywords}`)
+          if (example) parts.push(`example learner phrase (not required verbatim): ${example}`)
+          return parts.join(' | ')
+        }
         const stepCriteria = (s) => {
           const c = s && typeof s.completionCriteria === 'object' ? s.completionCriteria : null
           if (!c) return ''
@@ -1470,20 +1480,27 @@ app.post('/api/agent/chat', async (req, res) => {
         const stepList = steps
           .map((s, i) => `Step ${i + 1} (id: ${s.id}): ${stepDesc(s)}${stepCriteria(s)}`)
           .join('\n')
-        const conversationText = [...messages, { role: 'assistant', content: fullReply }]
+        const historyForCheck = [...messages, { role: 'assistant', content: fullReply }]
+        const userOnlyText = historyForCheck
+          .filter((m) => m.role === 'user')
+          .map((m) => m.content)
+          .join('\n\n')
+        const conversationText = historyForCheck
           .map((m) => `${m.role}: ${m.content}`)
           .join('\n\n')
         const stepCheckSystem = `You are a step checker for a roleplay scenario. Your job is to output a JSON object with one key: "completedStepIds" (array of step identifiers that the user has completed in the conversation).
 
 Rules:
-- For steps that require CONCRETE information (e.g. pickup address, destination, time, confirmation of booking): the user must have actually stated that information. Mere "hello" or "I need a taxi" without address/destination does NOT count.
-- For steps that mean "start a conversation about X" / "begin discussing X" / "bring up topic X" / "начать разговор о X": the step IS completed when the user has clearly introduced or raised the topic X in their message(s), even if they started with a greeting. Example: "Hello, you have such a nice costume, what is it?" or "Hi! I love your witch costume" — the user started a conversation about costumes, so a step like "Start a conversation about costumes" MUST be marked completed. The assistant replying on the same topic (e.g. about the costume) confirms the step.
+- Mark a step complete ONLY from USER messages. Assistant/character lines never complete a step, even if the assistant talked about the same topic.
+- For steps that require CONCRETE information (e.g. pickup address, destination, time, confirmation of booking, a price, a size): the user must have actually stated that information. Mere "hello" or "I need a taxi" without address/destination does NOT count.
+- For steps that mean "start a conversation about X" / "begin discussing X" / "bring up topic X" / "начать разговор о X": the step IS completed when the user has clearly introduced or raised the topic X in their message(s), even if they started with a greeting.
+- Keywords and example phrases are HINTS for Chinese/pinyin/synonyms. Do not require the exact example. Pinyin counts. Same meaning at the lesson level counts.
 - If a step has criteria, treat those criteria as mandatory. Do not mark the step unless criteria are satisfied.
 - For other step types: include the step if the user's messages clearly satisfy what the step requires.
 - If the evidence is ambiguous or weak, do NOT mark the step completed.
 - For "completedStepIds" use EITHER the exact "id" from the step list OR the position: "step1", "step2", "step3" for 1st/2nd/3rd step, or "1", "2", "3".
 - Output ONLY the JSON object, nothing else. Example: {"completedStepIds":["step1","step2"]} or {"completedStepIds":["pickup","destination"]}`
-        const stepCheckUser = `Steps (what each step means):\n${stepList}\n\nConversation:\n${conversationText}`
+        const stepCheckUser = `Steps (what each step means):\n${stepList}\n\nUSER messages only (this is the evidence):\n${userOnlyText || '(none)'}\n\nFull conversation (context only):\n${conversationText}`
         const stepCompletion = await llm.chat.completions.create({
           model: AITUNNEL_MODEL,
           messages: [
@@ -2029,7 +2046,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     ? scenario_vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 20)
     : []
   const vocabHintBlock = vocabList.length
-    ? `\nScenario vocabulary the hint MUST use (1-2 words): ${vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、')}`
+    ? `\nLesson words the user has not said yet — the hint MUST use 1 of them: ${vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、')}`
     : ''
 
   const roleplaySystemContent = `You are a language coach. The user is in a roleplay dialogue. Suggest a natural REPLY the user could say — one that fits the agent's last line AND, if the scenario has steps, helps move toward the next uncompleted step.
