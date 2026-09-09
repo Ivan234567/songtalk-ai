@@ -164,64 +164,46 @@ function ZhIntentForm({
   };
 
   return (
-    <div
-      style={{
-        padding: '1rem 1.25rem 1.1rem',
-        overflow: 'visible',
-        flex: '0 0 auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-      }}
-    >
-      <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.4, opacity: 0.85 }}>
-        Опишите урок своими словами. ИИ соберёт диалог, шаги и словарь. Роли и тон можно поправить в конструкторе.
+    <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <p style={{ margin: 0, fontSize: '0.975rem', lineHeight: 1.45, opacity: 0.85 }}>
+        Опишите урок своими словами. ИИ соберёт диалог, шаги и словарь. Роли, кто начинает и тон можно будет поправить в конструкторе.
       </p>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.4fr) minmax(220px, 0.9fr)',
-          gap: '0.75rem 1.1rem',
-          alignItems: 'stretch',
-        }}
-      >
-        <label style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <span style={labelStyle}>Что хотите отработать</span>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={7}
-            placeholder="Например: HSK 2 урок 8, в магазине одежды — размер, цвет, цена, купить"
-            style={{ ...inputStyle, resize: 'none', flex: 1, minHeight: 0 }}
-          />
+      <label>
+        <span style={labelStyle}>Что хотите отработать</span>
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={3}
+          placeholder="Например: HSK 2 урок 8, в магазине одежды — размер, цвет, цена, купить"
+          style={{ ...inputStyle, resize: 'vertical', minHeight: 88 }}
+        />
+      </label>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+        <label>
+          <span style={labelStyle}>Учебник</span>
+          <input value={textbook} onChange={(e) => setTextbook(e.target.value)} placeholder="необязательно" style={inputStyle} />
         </label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-          <label>
-            <span style={labelStyle}>Учебник</span>
-            <input value={textbook} onChange={(e) => setTextbook(e.target.value)} placeholder="необязательно" style={inputStyle} />
-          </label>
-          <label>
-            <span style={labelStyle}>Урок</span>
-            <input value={lesson} onChange={(e) => setLesson(e.target.value)} placeholder="Урок 8" style={inputStyle} />
-          </label>
-          <label>
-            <span style={labelStyle}>Цель своими словами</span>
-            <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="необязательно" style={inputStyle} />
-          </label>
-          <label>
-            <span style={labelStyle}>HSK</span>
-            <LevelDropdown
-              value={String(hsk)}
-              onChange={(v) => setHsk(Number(v) as ZhHskLevel)}
-              options={HSK_CREATE.map((o) => ({ value: String(o.value), label: o.label }))}
-              openUpward
-              ariaLabel="Уровень HSK"
-            />
-          </label>
-        </div>
+        <label>
+          <span style={labelStyle}>Урок</span>
+          <input value={lesson} onChange={(e) => setLesson(e.target.value)} placeholder="Урок 8" style={inputStyle} />
+        </label>
       </div>
+      <label>
+        <span style={labelStyle}>Цель своими словами</span>
+        <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="необязательно" style={inputStyle} />
+      </label>
+      <label>
+        <span style={labelStyle}>HSK</span>
+        <LevelDropdown
+          value={String(hsk)}
+          onChange={(v) => setHsk(Number(v) as ZhHskLevel)}
+          options={HSK_CREATE.map((o) => ({ value: String(o.value), label: o.label }))}
+          openUpward={false}
+          ariaLabel="Уровень HSK"
+        />
+      </label>
       {error && (
-        <p style={{ margin: 0, padding: '0.65rem 0.85rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+        <p style={{ margin: 0, padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
           {error}
         </p>
       )}
@@ -520,7 +502,7 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Китайские сценарии" style={overlayStyle} onClick={briefing || draft ? undefined : onClose}>
-      <div style={{ ...panelStyle, maxWidth: draft || briefing ? 980 : 880, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ ...panelStyle, maxWidth: draft || briefing ? 980 : 720, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
             style={{
