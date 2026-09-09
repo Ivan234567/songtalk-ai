@@ -20,6 +20,7 @@ import {
   type ZhSource,
 } from '@/lib/zh-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
+import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
 import { ZhScenarioConstructor } from '@/components/roleplay/ZhScenarioConstructor';
 import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
 
@@ -100,15 +101,6 @@ const HSK_FILTERS: { value: string; label: string }[] = [
 function textbookLine(s: ZhScenario): string {
   return [s.textbook?.title, s.textbook?.lesson_no].filter(Boolean).join(' · ');
 }
-
-const HSK_CREATE: { value: ZhHskLevel; label: string }[] = [
-  { value: 1, label: 'HSK 1' },
-  { value: 2, label: 'HSK 2' },
-  { value: 3, label: 'HSK 3' },
-  { value: 4, label: 'HSK 4' },
-  { value: 5, label: 'HSK 5' },
-  { value: 6, label: 'HSK 6' },
-];
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
@@ -192,16 +184,10 @@ function ZhIntentForm({
         <span style={labelStyle}>Цель своими словами</span>
         <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="необязательно" style={inputStyle} />
       </label>
-      <label>
+      <div>
         <span style={labelStyle}>HSK</span>
-        <LevelDropdown
-          value={String(hsk)}
-          onChange={(v) => setHsk(Number(v) as ZhHskLevel)}
-          options={HSK_CREATE.map((o) => ({ value: String(o.value), label: o.label }))}
-          openUpward={false}
-          ariaLabel="Уровень HSK"
-        />
-      </label>
+        <HskLevelPicker value={hsk} onChange={setHsk} />
+      </div>
       {error && (
         <p style={{ margin: 0, padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
           {error}

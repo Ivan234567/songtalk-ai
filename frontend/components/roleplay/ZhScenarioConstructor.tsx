@@ -18,6 +18,7 @@ import {
   type ZhVocabUsage,
 } from '@/lib/zh-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
+import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
 import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
 
 const inputStyle: React.CSSProperties = {
@@ -212,7 +213,7 @@ export function ZhScenarioConstructor({
   return (
     <div style={{ padding: '1rem 1.25rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
       <Section title="Сцена">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
             <span style={labelStyle}>Название</span>
             <input value={draft.title} onChange={(e) => patch({ title: e.target.value })} style={inputStyle} placeholder="Название сценария" />
@@ -226,17 +227,13 @@ export function ZhScenarioConstructor({
               placeholder="необязательно"
             />
           </label>
-          <label>
-            <span style={labelStyle}>HSK</span>
-            <LevelDropdown
-              value={String(draft.hsk_level ?? 3)}
-              onChange={(v) => patch({ hsk_level: Number(v) as ZhHskLevel })}
-              options={[1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: `HSK ${n}` }))}
-              openUpward={false}
-              ariaLabel="Уровень HSK"
-              style={inputStyle}
-            />
-          </label>
+        </div>
+        <div>
+          <span style={labelStyle}>HSK</span>
+          <HskLevelPicker
+            value={(draft.hsk_level ?? 3) as ZhHskLevel}
+            onChange={(v) => patch({ hsk_level: v })}
+          />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
