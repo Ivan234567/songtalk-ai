@@ -22,40 +22,40 @@ import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  padding: '0.4rem 0.65rem',
-  borderRadius: 8,
+  padding: '0.6rem 0.85rem',
+  borderRadius: 10,
   border: '1px solid var(--sidebar-border)',
   background: 'var(--sidebar-bg)',
   color: 'var(--sidebar-text)',
-  fontSize: '0.875rem',
+  fontSize: '0.95rem',
   outline: 'none',
 };
 
 const btnPrimary: React.CSSProperties = {
-  padding: '0.5rem 1rem',
-  borderRadius: 10,
+  padding: '0.7rem 1.25rem',
+  borderRadius: 12,
   border: 'none',
   background: 'rgba(79, 168, 134, 0.9)',
   color: '#fff',
-  fontSize: '0.9rem',
+  fontSize: '1rem',
   fontWeight: 600,
   cursor: 'pointer',
 };
 
 const btnSecondary: React.CSSProperties = {
-  padding: '0.35rem 0.7rem',
-  borderRadius: 8,
+  padding: '0.55rem 0.9rem',
+  borderRadius: 10,
   border: '1px solid var(--sidebar-border)',
   background: 'transparent',
   color: 'var(--sidebar-text)',
-  fontSize: '0.8rem',
+  fontSize: '0.875rem',
   cursor: 'pointer',
 };
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
-  marginBottom: 4,
-  fontSize: '0.68rem',
+  marginBottom: 6,
+  fontSize: '0.75rem',
   fontWeight: 700,
   letterSpacing: '0.04em',
   textTransform: 'uppercase',
@@ -78,31 +78,25 @@ function Section({
   title,
   action,
   children,
-  style,
 }: {
   title: string;
   action?: React.ReactNode;
   children: React.ReactNode;
-  style?: React.CSSProperties;
 }) {
   return (
     <section
       style={{
         border: '1px solid var(--sidebar-border)',
-        borderRadius: 12,
-        padding: '0.6rem 0.75rem',
+        borderRadius: 14,
+        padding: '0.9rem 1rem',
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
+        gap: 10,
         background: 'var(--sidebar-hover)',
-        minHeight: 0,
-        overflow: 'visible',
-        position: 'relative',
-        ...style,
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <h3 style={{ margin: 0, fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', opacity: 0.75 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: '0.8125rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', opacity: 0.75 }}>
           {title}
         </h3>
         {action}
@@ -125,7 +119,7 @@ export function ZhScenarioConstructor({
 }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [advanced, setAdvanced] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
   const [regenPart, setRegenPart] = useState<ZhGeneratePart | null>(null);
   const [regenError, setRegenError] = useState<string | null>(null);
   const steps = draft.steps?.length ? draft.steps : [];
@@ -214,23 +208,11 @@ export function ZhScenarioConstructor({
 
   const goals = draft.goals?.length ? draft.goals : [''];
   const regenBusy = Boolean(regenPart);
-  const vocab = draft.vocabulary || [];
 
   return (
-    <div
-      style={{
-        padding: '0.7rem 0.9rem 0.8rem',
-        overflow: 'hidden',
-        flex: 1,
-        minHeight: 0,
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-        gridTemplateRows: 'auto minmax(0, 1fr) auto',
-        gap: '0.6rem',
-      }}
-    >
-      <Section title="Сцена" style={{ zIndex: 5 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 92px', gap: 6 }}>
+    <div style={{ padding: '1rem 1.25rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+      <Section title="Сцена">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: 8 }}>
           <label>
             <span style={labelStyle}>Название</span>
             <input value={draft.title} onChange={(e) => patch({ title: e.target.value })} style={inputStyle} placeholder="Название сценария" />
@@ -256,7 +238,7 @@ export function ZhScenarioConstructor({
             />
           </label>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '0.7fr 1fr 1fr', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
             <span style={labelStyle}>Урок</span>
             <input
@@ -269,32 +251,25 @@ export function ZhScenarioConstructor({
             <span style={labelStyle}>Описание</span>
             <input value={draft.description || ''} onChange={(e) => patch({ description: e.target.value })} style={inputStyle} />
           </label>
-          <label>
-            <span style={labelStyle}>Место</span>
-            <input value={draft.setting_ru || ''} onChange={(e) => patch({ setting_ru: e.target.value })} style={inputStyle} placeholder="магазин, клиника…" />
-          </label>
         </div>
         <label>
+          <span style={labelStyle}>Место</span>
+          <input value={draft.setting_ru || ''} onChange={(e) => patch({ setting_ru: e.target.value })} style={inputStyle} placeholder="магазин одежды, клиника…" />
+        </label>
+        <label>
           <span style={labelStyle}>Ситуация</span>
-          <input
+          <textarea
             value={draft.scenario_text_ru || ''}
             onChange={(e) => patch({ scenario_text_ru: e.target.value })}
-            style={inputStyle}
+            rows={2}
+            style={{ ...inputStyle, resize: 'vertical' }}
             placeholder="Что происходит в сцене"
           />
         </label>
       </Section>
 
-      <Section
-        title="Роли и тон"
-        style={{ overflow: 'visible', zIndex: 4 }}
-        action={
-          <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('openings')} style={btnSecondary}>
-            {regenPart === 'openings' ? 'Фразы…' : 'Перегенерировать фразы'}
-          </button>
-        }
-      >
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+      <Section title="Роли и тон">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
             <span style={labelStyle}>Ваша роль</span>
             <input value={draft.user_role || ''} onChange={(e) => patch({ user_role: e.target.value })} style={inputStyle} />
@@ -306,7 +281,7 @@ export function ZhScenarioConstructor({
         </div>
         <div>
           <span style={labelStyle}>Характер собеседника</span>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {ZH_AI_PERSONALITIES.map((p) => (
               <button
                 key={p.value}
@@ -315,7 +290,6 @@ export function ZhScenarioConstructor({
                 onClick={() => patch({ ai_personality: p.value })}
                 style={{
                   ...btnSecondary,
-                  padding: '0.28rem 0.55rem',
                   background: (draft.ai_personality || 'warm') === p.value ? 'var(--sidebar-active)' : 'transparent',
                 }}
               >
@@ -323,17 +297,20 @@ export function ZhScenarioConstructor({
               </button>
             ))}
           </div>
+          <p style={{ margin: '6px 0 0', fontSize: '0.8rem', opacity: 0.65 }}>
+            {ZH_AI_PERSONALITIES.find((p) => p.value === (draft.ai_personality || 'warm'))?.hint}
+          </p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.9fr 0.7fr 0.7fr', gap: 6, position: 'relative', zIndex: 4 }}>
-          <label>
-            <span style={labelStyle}>Уточнение характера</span>
-            <input
-              value={draft.ai_personality_note || ''}
-              onChange={(e) => patch({ ai_personality_note: e.target.value })}
-              style={inputStyle}
-              placeholder="ворчливый, вежливый…"
-            />
-          </label>
+        <label>
+          <span style={labelStyle}>Уточнение характера</span>
+          <input
+            value={draft.ai_personality_note || ''}
+            onChange={(e) => patch({ ai_personality_note: e.target.value })}
+            style={inputStyle}
+            placeholder="необязательно: слегка ворчливый, очень вежливый…"
+          />
+        </label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, position: 'relative', zIndex: 4, overflow: 'visible' }}>
           <label>
             <span style={labelStyle}>Кто начинает</span>
             <LevelDropdown
@@ -378,17 +355,17 @@ export function ZhScenarioConstructor({
             />
           </label>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+        <label>
+          <span style={labelStyle}>Первая реплика собеседника</span>
+          <input value={draft.character_opening || ''} onChange={(e) => patch({ character_opening: e.target.value })} style={inputStyle} />
+        </label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
-            <span style={labelStyle}>Первая реплика собеседника</span>
-            <input value={draft.character_opening || ''} onChange={(e) => patch({ character_opening: e.target.value })} style={inputStyle} />
-          </label>
-          <label>
-            <span style={labelStyle}>Подсказка ученику</span>
+            <span style={labelStyle}>Подсказка первой фразы ученику</span>
             <input value={draft.suggested_first_line || ''} onChange={(e) => patch({ suggested_first_line: e.target.value })} style={inputStyle} />
           </label>
           <label>
-            <span style={labelStyle}>Пиньинь</span>
+            <span style={labelStyle}>Пиньинь первой фразы</span>
             <input
               value={draft.suggested_first_line_pinyin || ''}
               onChange={(e) => patch({ suggested_first_line_pinyin: e.target.value })}
@@ -396,285 +373,259 @@ export function ZhScenarioConstructor({
             />
           </label>
         </div>
+        <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('openings')} style={btnSecondary}>
+          {regenPart === 'openings' ? 'Пересобираем фразы…' : 'Перегенерировать первые фразы'}
+        </button>
       </Section>
 
-      {showPreview ? (
+      <Section
+        title="Урок"
+        action={
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('steps')} style={btnSecondary}>
+              {regenPart === 'steps' ? 'Шаги…' : 'Пересобрать шаги'}
+            </button>
+            <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('vocabulary')} style={btnSecondary}>
+              {regenPart === 'vocabulary' ? 'Словарь…' : 'Пересобрать словарь'}
+            </button>
+          </div>
+        }
+      >
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={labelStyle}>Цели</span>
+            <button type="button" onClick={() => patch({ goals: [...goals, ''] })} style={btnSecondary}>Добавить цель</button>
+          </div>
+          {goals.map((g, i) => (
+            <div key={`goal-${i}`} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <input
+                value={g}
+                onChange={(e) => {
+                  const next = [...goals];
+                  next[i] = e.target.value;
+                  patch({ goals: next });
+                }}
+                style={inputStyle}
+                placeholder="Цель на русском"
+              />
+              {goals.length > 1 && (
+                <button type="button" onClick={() => patch({ goals: goals.filter((_, j) => j !== i) })} style={btnSecondary}>×</button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <span style={labelStyle}>Грамматический фокус</span>
+          <input
+            value={draft.grammar_focus || ''}
+            onChange={(e) => patch({ grammar_focus: e.target.value })}
+            style={inputStyle}
+            placeholder="например: 了 для завершённого действия"
+          />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+            {ZH_GRAMMAR_CHIPS.map((chip) => {
+              const on = (draft.grammar_focus || '').includes(chip);
+              return (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => toggleGrammarChip(chip)}
+                  style={{
+                    ...btnSecondary,
+                    padding: '0.35rem 0.65rem',
+                    fontSize: '0.8rem',
+                    background: on ? 'var(--sidebar-active)' : 'transparent',
+                  }}
+                >
+                  {chip}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 280px) 1fr', gap: 12, minHeight: 280 }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={labelStyle}>Шаги</span>
+              <button type="button" onClick={addStep} style={btnSecondary}>+ шаг</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {steps.map((s, i) => (
+                <button
+                  key={s.id || i}
+                  type="button"
+                  onClick={() => setStepIndex(i)}
+                  style={{
+                    ...btnSecondary,
+                    textAlign: 'left',
+                    background: i === stepIndex ? 'var(--sidebar-active)' : 'transparent',
+                  }}
+                >
+                  {i + 1}. {s.title_ru || 'Без названия'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ border: '1px solid var(--sidebar-border)', borderRadius: 12, padding: '0.85rem', background: 'var(--sidebar-bg)', position: 'relative', zIndex: 2, isolation: 'isolate' }}>
+            {selected ? (
+              <>
+                <label>
+                  <span style={labelStyle}>Название шага</span>
+                  <input
+                    value={selected.title_ru}
+                    onChange={(e) => updateStep(safeIndex, { title_ru: e.target.value })}
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={{ display: 'block', marginTop: 10 }}>
+                  <span style={labelStyle}>Ожидаемое действие ученика</span>
+                  <textarea
+                    value={selected.expected_user_action}
+                    onChange={(e) => updateStep(safeIndex, { expected_user_action: e.target.value })}
+                    rows={2}
+                    style={{ ...inputStyle, resize: 'vertical' }}
+                  />
+                </label>
+                <button type="button" onClick={() => setAdvanced((v) => !v)} style={{ ...btnSecondary, marginTop: 10 }}>
+                  {advanced ? 'Скрыть точную настройку' : 'Точная настройка'}
+                </button>
+                {advanced && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                      padding: '0.75rem',
+                      borderRadius: 10,
+                      border: '1px solid var(--sidebar-border)',
+                      background: 'var(--sidebar-bg)',
+                    }}
+                  >
+                    <label>
+                      <span style={labelStyle}>Контекст для ИИ</span>
+                      <textarea
+                        value={selected.ai_context || ''}
+                        onChange={(e) => updateStep(safeIndex, { ai_context: e.target.value })}
+                        rows={2}
+                        style={{ ...inputStyle, resize: 'vertical' }}
+                      />
+                    </label>
+                    <label>
+                      <span style={labelStyle}>Ключевые слова (через запятую)</span>
+                      <input
+                        value={(selected.keywords || []).join(', ')}
+                        onChange={(e) =>
+                          updateStep(safeIndex, {
+                            keywords: e.target.value.split(',').map((k) => k.trim()).filter(Boolean),
+                          })
+                        }
+                        style={inputStyle}
+                      />
+                    </label>
+                    <label>
+                      <span style={labelStyle}>Пример фразы (ZH)</span>
+                      <input
+                        value={selected.example_zh || ''}
+                        onChange={(e) => updateStep(safeIndex, { example_zh: e.target.value })}
+                        style={inputStyle}
+                      />
+                    </label>
+                  </div>
+                )}
+                {steps.length > 1 && (
+                  <button type="button" onClick={() => removeStep(safeIndex)} style={{ ...btnSecondary, marginTop: 10 }}>
+                    Удалить шаг
+                  </button>
+                )}
+              </>
+            ) : (
+              <p style={{ opacity: 0.7 }}>Добавьте шаг</p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={labelStyle}>Словарь</span>
+            <button type="button" onClick={addVocab} style={btnSecondary}>+ слово</button>
+          </div>
+          <p style={{ margin: '0 0 8px', fontSize: '0.8rem', opacity: 0.7 }}>
+            «Сказать» — ученик должен произнести сам. «Показать» — ИИ использует в своих репликах.
+          </p>
+          {(draft.vocabulary || []).map((v, i) => (
+            <div key={`v-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 132px auto', gap: 6, marginBottom: 6 }}>
+              <input value={v.hanzi} onChange={(e) => updateVocab(i, 'hanzi', e.target.value)} placeholder="汉字" style={inputStyle} />
+              <input value={v.pinyin} onChange={(e) => updateVocab(i, 'pinyin', e.target.value)} placeholder="pinyin" style={inputStyle} />
+              <input value={v.translation_ru} onChange={(e) => updateVocab(i, 'translation_ru', e.target.value)} placeholder="перевод" style={inputStyle} />
+              <select
+                className="roleplay-modern-select"
+                value={v.usage === 'must_say' ? 'must_say' : 'model'}
+                onChange={(e) => updateVocab(i, 'usage', e.target.value as ZhVocabUsage)}
+                style={{ ...inputStyle, paddingRight: 8 }}
+              >
+                <option value="must_say">Сказать</option>
+                <option value="model">Показать</option>
+              </select>
+              <button type="button" onClick={() => removeVocab(i)} style={btnSecondary}>×</button>
+            </div>
+          ))}
+          {onAddToDictionary && draft.id && (draft.vocabulary || []).length > 0 && (
+            <button type="button" onClick={onAddToDictionary} disabled={vocabBusy} style={{ ...btnSecondary, marginTop: 4 }}>
+              {vocabBusy ? 'Добавляем…' : 'В мой словарь'}
+            </button>
+          )}
+          {vocabMessage && <p style={{ margin: '6px 0 0', fontSize: '0.85rem', opacity: 0.8 }}>{vocabMessage}</p>}
+        </div>
+      </Section>
+
+      <Section title="Как играть">
+        <label>
+          <span style={labelStyle}>Как набрать максимум</span>
+          <textarea
+            value={draft.max_score_tips_ru || ''}
+            onChange={(e) => patch({ max_score_tips_ru: e.target.value })}
+            rows={3}
+            style={{ ...inputStyle, resize: 'vertical' }}
+            placeholder="Короткие советы ученику перед стартом"
+          />
+        </label>
+      </Section>
+
+      {regenError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{regenError}</p>}
+      {saveError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{saveError}</p>}
+      {!canSave && (
+        <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.7 }}>
+          Чтобы сохранить, заполните название, хотя бы одну цель и ожидаемое действие в шаге.
+        </p>
+      )}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => onSave(false)} disabled={saving || !canSave} style={{ ...btnPrimary, opacity: saving || !canSave ? 0.7 : 1 }}>
+          {saving ? 'Сохранение…' : 'Сохранить'}
+        </button>
+        <button type="button" onClick={() => onSave(true)} disabled={saving || !canSave} style={btnSecondary}>
+          Сохранить и пройти
+        </button>
+        <button type="button" onClick={() => setShowPreview((v) => !v)} style={btnSecondary}>
+          {showPreview ? 'Скрыть превью брифинга' : 'Превью брифинга'}
+        </button>
+        <button type="button" onClick={onBack} style={btnSecondary}>Назад</button>
+      </div>
+
+      {showPreview && (
         <div
           style={{
-            gridColumn: '1 / -1',
-            minHeight: 0,
-            overflow: 'auto',
             border: '1px solid var(--sidebar-border)',
-            borderRadius: 12,
-            padding: '0.65rem 0.8rem',
+            borderRadius: 14,
+            padding: '0.9rem 1rem',
             background: 'var(--sidebar-hover)',
           }}
         >
           <ZhScenarioBriefing scenario={draft} variant="preview" />
         </div>
-      ) : (
-        <Section
-          title="Урок"
-          style={{ gridColumn: '1 / -1', overflow: 'hidden' }}
-          action={
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('steps')} style={btnSecondary}>
-                {regenPart === 'steps' ? 'Шаги…' : 'Пересобрать шаги'}
-              </button>
-              <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('vocabulary')} style={btnSecondary}>
-                {regenPart === 'vocabulary' ? 'Словарь…' : 'Пересобрать словарь'}
-              </button>
-            </div>
-          }
-        >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(200px, 0.9fr) minmax(240px, 1.15fr) minmax(260px, 1.2fr)',
-              gap: 10,
-              minHeight: 0,
-              flex: 1,
-              alignItems: 'stretch',
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-                <span style={{ ...labelStyle, marginBottom: 0 }}>Цели</span>
-                <button type="button" onClick={() => patch({ goals: [...goals, ''] })} style={btnSecondary}>+ цель</button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minHeight: 0, overflow: 'auto', flex: '0 1 auto', maxHeight: 88 }}>
-                {goals.map((g, i) => (
-                  <div key={`goal-${i}`} style={{ display: 'flex', gap: 5 }}>
-                    <input
-                      value={g}
-                      onChange={(e) => {
-                        const next = [...goals];
-                        next[i] = e.target.value;
-                        patch({ goals: next });
-                      }}
-                      style={inputStyle}
-                      placeholder="Цель на русском"
-                    />
-                    {goals.length > 1 && (
-                      <button type="button" onClick={() => patch({ goals: goals.filter((_, j) => j !== i) })} style={btnSecondary}>×</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                <span style={{ ...labelStyle, marginBottom: 0 }}>Грамматический фокус</span>
-                <input
-                  value={draft.grammar_focus || ''}
-                  onChange={(e) => patch({ grammar_focus: e.target.value })}
-                  style={inputStyle}
-                  placeholder="了 для завершённого действия"
-                />
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {ZH_GRAMMAR_CHIPS.map((chip) => {
-                    const on = (draft.grammar_focus || '').includes(chip);
-                    return (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => toggleGrammarChip(chip)}
-                        style={{
-                          ...btnSecondary,
-                          padding: '0.22rem 0.5rem',
-                          fontSize: '0.75rem',
-                          background: on ? 'var(--sidebar-active)' : 'transparent',
-                        }}
-                      >
-                        {chip}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 0.7fr) minmax(0, 1.3fr)', gap: 8, minHeight: 0, minWidth: 0 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexShrink: 0 }}>
-                  <span style={{ ...labelStyle, marginBottom: 0 }}>Шаги</span>
-                  <button type="button" onClick={addStep} style={btnSecondary}>+</button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minHeight: 0, overflow: 'auto', flex: 1 }}>
-                  {steps.map((s, i) => (
-                    <button
-                      key={s.id || i}
-                      type="button"
-                      onClick={() => setStepIndex(i)}
-                      style={{
-                        ...btnSecondary,
-                        textAlign: 'left',
-                        padding: '0.35rem 0.5rem',
-                        background: i === stepIndex ? 'var(--sidebar-active)' : 'transparent',
-                      }}
-                    >
-                      {i + 1}. {s.title_ru || 'Без названия'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div
-                style={{
-                  border: '1px solid var(--sidebar-border)',
-                  borderRadius: 10,
-                  padding: '0.6rem',
-                  background: 'var(--sidebar-bg)',
-                  minHeight: 0,
-                  minWidth: 0,
-                  overflow: 'auto',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
-                }}
-              >
-                {selected ? (
-                  <>
-                    <label>
-                      <span style={labelStyle}>Название шага</span>
-                      <input
-                        value={selected.title_ru}
-                        onChange={(e) => updateStep(safeIndex, { title_ru: e.target.value })}
-                        style={inputStyle}
-                      />
-                    </label>
-                    <label>
-                      <span style={labelStyle}>Ожидаемое действие ученика</span>
-                      <textarea
-                        value={selected.expected_user_action}
-                        onChange={(e) => updateStep(safeIndex, { expected_user_action: e.target.value })}
-                        rows={2}
-                        style={{ ...inputStyle, resize: 'none' }}
-                      />
-                    </label>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => setAdvanced((v) => !v)} style={btnSecondary}>
-                        {advanced ? 'Скрыть точную настройку' : 'Точная настройка'}
-                      </button>
-                      {steps.length > 1 && (
-                        <button type="button" onClick={() => removeStep(safeIndex)} style={btnSecondary}>
-                          Удалить шаг
-                        </button>
-                      )}
-                    </div>
-                    {advanced && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <label>
-                          <span style={labelStyle}>Контекст для ИИ</span>
-                          <textarea
-                            value={selected.ai_context || ''}
-                            onChange={(e) => updateStep(safeIndex, { ai_context: e.target.value })}
-                            rows={2}
-                            style={{ ...inputStyle, resize: 'none' }}
-                          />
-                        </label>
-                        <label>
-                          <span style={labelStyle}>Ключевые слова</span>
-                          <input
-                            value={(selected.keywords || []).join(', ')}
-                            onChange={(e) =>
-                              updateStep(safeIndex, {
-                                keywords: e.target.value.split(',').map((k) => k.trim()).filter(Boolean),
-                              })
-                            }
-                            style={inputStyle}
-                          />
-                        </label>
-                        <label>
-                          <span style={labelStyle}>Пример фразы (ZH)</span>
-                          <input
-                            value={selected.example_zh || ''}
-                            onChange={(e) => updateStep(safeIndex, { example_zh: e.target.value })}
-                            style={inputStyle}
-                          />
-                        </label>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p style={{ opacity: 0.7, margin: 0, fontSize: '0.85rem' }}>Добавьте шаг</p>
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexShrink: 0 }}>
-                <span style={{ ...labelStyle, marginBottom: 0 }}>Словарь</span>
-                <button type="button" onClick={addVocab} style={btnSecondary}>+ слово</button>
-              </div>
-              <p style={{ margin: '0 0 6px', fontSize: '0.72rem', opacity: 0.7, flexShrink: 0 }}>
-                «Сказать» — произнести самому. «Показать» — использует ИИ.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minHeight: 0, overflow: 'auto', flex: 1 }}>
-                {vocab.map((v, i) => (
-                  <div key={`v-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 88px auto', gap: 4 }}>
-                    <input value={v.hanzi} onChange={(e) => updateVocab(i, 'hanzi', e.target.value)} placeholder="汉字" style={inputStyle} />
-                    <input value={v.pinyin} onChange={(e) => updateVocab(i, 'pinyin', e.target.value)} placeholder="pinyin" style={inputStyle} />
-                    <input value={v.translation_ru} onChange={(e) => updateVocab(i, 'translation_ru', e.target.value)} placeholder="перевод" style={inputStyle} />
-                    <select
-                      className="roleplay-modern-select"
-                      value={v.usage === 'must_say' ? 'must_say' : 'model'}
-                      onChange={(e) => updateVocab(i, 'usage', e.target.value as ZhVocabUsage)}
-                      style={{ ...inputStyle, paddingRight: 4 }}
-                    >
-                      <option value="must_say">Сказать</option>
-                      <option value="model">Показать</option>
-                    </select>
-                    <button type="button" onClick={() => removeVocab(i)} style={btnSecondary}>×</button>
-                  </div>
-                ))}
-              </div>
-              {onAddToDictionary && draft.id && vocab.length > 0 && (
-                <button type="button" onClick={onAddToDictionary} disabled={vocabBusy} style={{ ...btnSecondary, marginTop: 6, alignSelf: 'flex-start' }}>
-                  {vocabBusy ? 'Добавляем…' : 'В мой словарь'}
-                </button>
-              )}
-              {vocabMessage && <p style={{ margin: '4px 0 0', fontSize: '0.8rem', opacity: 0.8 }}>{vocabMessage}</p>}
-            </div>
-          </div>
-        </Section>
       )}
-
-      <div
-        style={{
-          gridColumn: '1 / -1',
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.4fr) auto',
-          gap: 10,
-          alignItems: 'end',
-        }}
-      >
-        <label>
-          <span style={labelStyle}>Как набрать максимум</span>
-          <input
-            value={draft.max_score_tips_ru || ''}
-            onChange={(e) => patch({ max_score_tips_ru: e.target.value })}
-            style={inputStyle}
-            placeholder="Короткие советы ученику перед стартом"
-          />
-        </label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-          {(regenError || saveError || !canSave) && (
-            <p style={{ margin: 0, fontSize: '0.8rem', color: regenError || saveError ? 'rgb(185, 28, 28)' : undefined, opacity: regenError || saveError ? 1 : 0.7 }}>
-              {regenError || saveError || 'Чтобы сохранить, заполните название, цель и ожидаемое действие в шаге.'}
-            </p>
-          )}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button type="button" onClick={() => onSave(false)} disabled={saving || !canSave} style={{ ...btnPrimary, opacity: saving || !canSave ? 0.7 : 1 }}>
-              {saving ? 'Сохранение…' : 'Сохранить'}
-            </button>
-            <button type="button" onClick={() => onSave(true)} disabled={saving || !canSave} style={btnSecondary}>
-              Сохранить и пройти
-            </button>
-            <button type="button" onClick={() => setShowPreview((v) => !v)} style={btnSecondary}>
-              {showPreview ? 'К конструктору' : 'Превью брифинга'}
-            </button>
-            <button type="button" onClick={onBack} style={btnSecondary}>Назад</button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

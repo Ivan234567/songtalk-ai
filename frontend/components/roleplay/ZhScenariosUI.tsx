@@ -37,7 +37,7 @@ const overlayStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  padding: '1.25rem',
+  padding: '2rem',
   background: 'rgba(0,0,0,0.5)',
   backdropFilter: 'blur(4px)',
 };
@@ -520,17 +520,8 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Китайские сценарии" style={overlayStyle} onClick={briefing || draft ? undefined : onClose}>
-      <div
-        style={{
-          ...panelStyle,
-          maxWidth: draft ? 1280 : briefing ? 980 : 880,
-          maxHeight: 'calc(100vh - 2.5rem)',
-          height: draft ? 'calc(100vh - 2.5rem)' : undefined,
-          overflow: 'hidden',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ padding: '0.7rem 1rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+      <div style={{ ...panelStyle, maxWidth: draft || briefing ? 980 : 880, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
             style={{
               display: 'inline-flex',
