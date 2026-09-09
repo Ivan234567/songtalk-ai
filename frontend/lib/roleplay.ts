@@ -284,7 +284,7 @@ const ZH_LIVE_REPLY_INSTRUCTION =
   'Ignore any stored AI first line / character_opening for this turn.';
 
 const ZH_GOAL_COMPLETION =
-  ' When the goal is reached, say one short natural closing phrase in Chinese (e.g. 好的，再见！ or 那我先走了) and end. Stay in character; do not say that the scenario is complete.';
+  ' Plot checkpoints are not a kill-switch. If the learner keeps talking after the plot is done, stay in character and keep speaking Simplified Chinese. Only say a short goodbye (好的，再见) if THEY are clearly leaving. Never switch to English or Russian. Never say that the scenario is complete. Always answer their last line.';
 
 type ScenarioPromptContext = {
   hasUserMessage?: boolean;
@@ -314,7 +314,14 @@ function buildZhScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioP
         .filter((s) => done.includes(s.id))
         .map((s) => s.titleRu || s.titleEn || s.id);
       if (labels.length) {
-        content += `\nLearner already completed: ${labels.join('; ')}. Do not redo or re-ask those. Continue naturally.`;
+        content += `\nLearner already completed: ${labels.join('; ')}. Do not redo or re-ask those.`;
+      }
+      const allDone = scenario.steps.every((s) => done.includes(s.id));
+      if (allDone) {
+        content +=
+          ' All plot checkpoints are done. Keep the conversation going in Simplified Chinese until the learner says goodbye. Do not freeze, do not ignore their next line, do not switch language.';
+      } else {
+        content += ' Continue naturally.';
       }
     }
   }

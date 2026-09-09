@@ -1036,7 +1036,8 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
     })
 
     const startTime = Date.now()
-    const { text } = await sttTranscribe(fileStream)
+    const sttLanguage = req.learningLanguage === 'zh' ? 'zh' : undefined
+    const { text } = await sttTranscribe(fileStream, sttLanguage ? { language: sttLanguage } : {})
     const duration = Date.now() - startTime
     console.log('[api/agent/stt] Request completed in', duration + 'ms', { hasText: !!text, textLength: text?.length || 0 })
 
@@ -2024,14 +2025,31 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   const stepsList = Array.isArray(steps) && steps.length > 0 ? steps.filter((s) => s && typeof s.id === 'string') : []
   const completedSet = new Set(Array.isArray(completed_step_ids) ? completed_step_ids.filter((id) => typeof id === 'string') : [])
   const nextSteps = stepsList.filter((s) => !completedSet.has(s.id))
-  const currentStepLabel = nextSteps.length > 0
-    ? (nextSteps[0].titleRu || nextSteps[0].title_ru || nextSteps[0].titleEn || nextSteps[0].title_en || nextSteps[0].id).trim()
+  const stepTitle = (s) => (s.titleRu || s.title_ru || s.titleEn || s.title_en || s.id || '').toString().trim()
+  const currentStep = nextSteps[0] || null
+  const currentStepAction = currentStep
+    ? (currentStep.expectedUserAction || currentStep.expected_user_action || currentStep.titleEn || '').toString().trim()
+    : ''
+  const currentStepKeywords = currentStep && Array.isArray(currentStep.keywords)
+    ? currentStep.keywords.filter(Boolean).join(', ')
+    : ''
+  const currentStepExample = currentStep
+    ? (currentStep.exampleZh || currentStep.example_zh || '').toString().trim()
+    : ''
+  const currentStepLabel = currentStep
+    ? [stepTitle(currentStep), currentStepAction].filter(Boolean).join(' — ')
     : ''
   const stepsBlock =
     stepsList.length > 0
       ? nextSteps.length > 0
-        ? `\nSteps (user should complete these): ${stepsList.map((s) => (s.titleRu || s.title_ru || s.titleEn || s.title_en || s.id).trim()).join('; ')}\nAlready done: ${[...completedSet].join(', ') || 'none'}. Next to do: ${nextSteps.map((s) => (s.titleRu || s.title_ru || s.titleEn || s.title_en || s.id).trim()).join('; ')}. Prefer a reply that naturally moves toward the NEXT step while still answering what the agent said.`
-        : `\nAll steps are done or there are no steps. Suggest a reply that fits the agent's message and the scenario goal.`
+        ? `\nLesson steps still open: ${nextSteps.map(stepTitle).join('; ')}.` +
+          `\nNEXT step the hint must move toward: ${stepTitle(currentStep)}.` +
+          (currentStepAction ? `\nWhat the learner should do in that step: ${currentStepAction}.` : '') +
+          (currentStepKeywords ? `\nKeywords that help this step: ${currentStepKeywords}.` : '') +
+          (currentStepExample ? `\nExample learner phrase (not required verbatim): ${currentStepExample}.` : '') +
+          `\nAlready done: ${[...completedSet].join(', ') || 'none'}.` +
+          `\nThe hint must still sound like a reply to the other person, AND push this next step.`
+        : `\nAll plot steps are done. Keep a natural reply to the other person. If missing lesson words remain, use 1 of them.`
       : ''
   const historyList = Array.isArray(history)
     ? history
@@ -2049,14 +2067,18 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     ? `\nLesson words the user has not said yet — the hint MUST use 1 of them: ${vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、')}`
     : ''
 
-  const roleplaySystemContent = `You are a language coach. The user is in a roleplay dialogue. Suggest a natural REPLY the user could say — one that fits the agent's last line AND, if the scenario has steps, helps move toward the next uncompleted step.
+  const roleplaySystemContent = `You are a language coach. The user is in a roleplay lesson. Suggest a natural REPLY the user could say.
+
+The hint must do three things at once when possible:
+1) Answer or react to what the other person just said.
+2) Move toward the NEXT uncompleted step / scenario goal.
+3) If missing lesson words are listed, include 1 of them.
 
 Rules:
 - Output ONLY the suggested reply text, in the SAME language the agent used (usually English). No explanations, no "You could say:", no quotation marks around the whole thing.
 - Match the learner level: ${levelText}
-- If the agent has not spoken yet, suggest a natural opening line for the learner.
-- The reply must sound like a natural response to what the agent just said (answer their question, react to their line, stay in character).
-- If steps are provided, prefer a reply that both responds to the agent and moves the user toward the next step.
+- If the agent has not spoken yet, suggest a natural opening line that already aims at the first step.
+- If they slightly conflict, still answer the other person, but steer toward the next step and a lesson word.
 - Keep it conversational. One short reply is enough; if two variants fit, you may give 1–2 options on separate lines.`
 
   const roleplayUserContent =
@@ -2064,7 +2086,7 @@ Rules:
     historyBlock +
     stepsBlock +
     vocabHintBlock +
-    `\n\nWhat the other person (agent) just said:\n${agentMessage || '(the learner starts; no agent line yet)'}\n\nSuggest a natural reply the user could say (same language as above, one or two short options).`
+    `\n\nWhat the other person (agent) just said:\n${agentMessage || '(the learner starts; no agent line yet)'}\n\nSuggest a reply that answers them, moves the next lesson step, and uses a missing lesson word if any remain.`
 
   const debateTopic = typeof topic === 'string' ? topic.trim() : ''
   const userPosition = typeof user_position === 'string' ? user_position.trim() : ''
@@ -2161,6 +2183,8 @@ Rules:
         chineseHintMode,
         vocabulary: vocabList,
         grammarFocus: chineseGrammarFocus,
+        currentStepLabel,
+        scenarioGoal,
       })
       : null
     const systemContent = hintMode === 'debate'

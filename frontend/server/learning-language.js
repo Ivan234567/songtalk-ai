@@ -165,6 +165,8 @@ export function buildReplyHintChatSystemZh({
   chineseHintMode = 'basic',
   vocabulary = [],
   grammarFocus = '',
+  currentStepLabel = '',
+  scenarioGoal = '',
 }) {
   const metadataInstruction = buildChineseMetadataInstruction({ showPinyin, showTranslation })
   
@@ -172,22 +174,31 @@ export function buildReplyHintChatSystemZh({
   const { mustSay, all, label } = splitZhScenarioVocab(vocabulary)
   const hintWords = mustSay.length ? mustSay : all
   const vocabBlock = hintWords.length
-    ? '\n- The learner has NOT said these lesson words yet. Include 1 of them naturally in the suggested USER reply: ' +
+    ? '\n- Lesson words the learner has NOT said yet. Weave in exactly 1 of them: ' +
       hintWords.map(label).join('、') +
-      '.\n- Do not invent a hint that ignores this vocabulary list.'
+      '.\n- Do not dump the list. Do not pick a word that cannot fit this turn.'
     : ''
   const grammarBlock = grammarFocus && String(grammarFocus).trim()
     ? `\n- Grammar focus of this lesson: ${String(grammarFocus).trim()}. Use it naturally in the suggested reply.`
     : ''
+  const goalLine = currentStepLabel
+    ? `\n- Next lesson goal/step the USER should move toward: ${currentStepLabel}.`
+    : (scenarioGoal ? `\n- Scenario goal the USER should move toward: ${scenarioGoal}.` : '')
   
   return (
-    'You are a speaking coach for Chinese conversation practice. Suggest what the USER could say next in Simplified Chinese.\n\n' +
+    'You are a speaking coach for a Chinese roleplay lesson. Suggest what the USER could say next in Simplified Chinese.\n\n' +
+    'The hint must do three things at once when possible:\n' +
+    '1) Naturally answer or react to what the other person just said. Do not ignore their question.\n' +
+    '2) Move the learner toward the next lesson goal/step.\n' +
+    '3) If missing lesson words are listed, include exactly 1 of them.\n' +
+    'If they slightly conflict, still answer the other person, but steer toward the step and the word. Never lecture.\n\n' +
     'Rules:\n' +
     '- The main suggestion must be Simplified Chinese only. No explanations or quote wrappers in that part.\n' +
     `- STRICT HSK lock: ${levelText}\n` +
     '- Speak at that HSK level only: not harder, not easier.\n' +
     `- Hint style: ${hintModeInstruction}\n` +
-    '- Keep the suggestion directly relevant to the latest assistant message and recent context. If the conversation has not started, suggest a natural opening line for the learner.' +
+    '- If the conversation has not started, suggest a natural opening that already aims at the first step and a lesson word.' +
+    goalLine +
     vocabBlock +
     grammarBlock +
     '\n- Keep it concise (usually 1-2 short sentences).' +
