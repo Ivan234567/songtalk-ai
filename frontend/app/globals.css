@@ -149,6 +149,11 @@ button {
 /* РњРµРЅСЋ Р°РіРµРЅС‚Р°: РїР°РЅРµР»СЊ СЂРµР¶РёРјРѕРІ */
 .agent-mode-segment {
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.agent-mode-tab {
+  white-space: nowrap;
 }
 
 .agent-mode-segment:hover {
@@ -308,11 +313,25 @@ button {
 }
 
 /* РљРЅРѕРїРєР° РёСЃС‚РѕСЂРёРё РІ Р°РіРµРЅС‚Рµ вЂ” РµРґРёРЅС‹Р№ СЃС‚РёР»СЊ СЃ РјРµРЅСЋ */
+.agent-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
 .agent-toolbar-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  height: 40px;
+  padding: 0 0.85rem;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  white-space: nowrap;
   border-radius: 12px;
   border: 1px solid var(--sidebar-border);
   background: var(--sidebar-hover);

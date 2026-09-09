@@ -3062,13 +3062,13 @@ export function AgentTab() {
                 alignItems: 'flex-end',
                 gap: '0.75rem',
                 width: 'max-content',
-                maxWidth: 'min(360px, calc(100% - 3rem))',
+                maxWidth: 'calc(100% - 8rem)',
                 overflow: 'visible',
                 zIndex: 4,
                 pointerEvents: 'none',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end', pointerEvents: 'auto' }}>
+              <div className="agent-toolbar-row" style={{ pointerEvents: 'auto' }}>
                 <button
                   type="button"
                   onClick={() => setTranslatorOpen(true)}

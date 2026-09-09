@@ -615,9 +615,16 @@ export function ZhScenarioConstructor({
       </div>
 
       {showPreview && (
-        <Section title="Как ученик увидит брифинг">
+        <div
+          style={{
+            border: '1px solid var(--sidebar-border)',
+            borderRadius: 14,
+            padding: '0.9rem 1rem',
+            background: 'var(--sidebar-hover)',
+          }}
+        >
           <ZhScenarioBriefing scenario={draft} variant="preview" />
-        </Section>
+        </div>
       )}
     </div>
   );

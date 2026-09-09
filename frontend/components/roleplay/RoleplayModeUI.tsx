@@ -411,19 +411,24 @@ const barStyles = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
-    flexWrap: 'wrap' as const,
+    flexWrap: 'nowrap' as const,
+    flexShrink: 0,
   },
   segment: {
     display: 'inline-flex',
-    padding: 4,
-    borderRadius: 14,
+    alignItems: 'center',
+    height: 40,
+    padding: 3,
+    boxSizing: 'border-box' as const,
+    borderRadius: 12,
     background: 'var(--sidebar-hover)',
     border: '1px solid var(--sidebar-border)',
     boxShadow: '0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.04)',
   },
   tab: (active: boolean) => ({
-    padding: '0.5rem 0.875rem',
-    borderRadius: 10,
+    height: '100%',
+    padding: '0 0.85rem',
+    borderRadius: 9,
     border: 'none' as const,
     background: active ? 'var(--sidebar-active)' : 'transparent',
     color: 'var(--sidebar-text)',
@@ -434,6 +439,7 @@ const barStyles = {
     display: 'inline-flex' as const,
     alignItems: 'center' as const,
     gap: '0.4rem',
+    whiteSpace: 'nowrap' as const,
     boxShadow: active ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
   }),
 };
@@ -492,9 +498,9 @@ export function RoleplayModeUI({
               className="agent-mode-tab"
             >
               <span style={{ opacity: mode === 'chat' ? 1 : 0.75, display: 'flex' }}>{MODE_ICONS.chat}</span>
-              <span>{learningLanguage === 'zh' ? '自由对话' : 'Freestyle Mode'}</span>
+              <span style={{ whiteSpace: 'nowrap' }}>{learningLanguage === 'zh' ? '自由对话' : 'Freestyle Mode'}</span>
             </button>
-            <div style={{ position: 'relative', display: 'inline-block' }}>
+            <div style={{ position: 'relative', display: 'inline-flex', height: '100%', alignItems: 'stretch' }}>
               <button
                 type="button"
                 role="tab"
@@ -591,7 +597,7 @@ export function RoleplayModeUI({
               )}
             </div>
             {showDebate && (
-            <div style={{ position: 'relative', display: 'inline-block' }}>
+            <div style={{ position: 'relative', display: 'inline-flex', height: '100%', alignItems: 'stretch' }}>
               <button
                 type="button"
                 role="tab"
