@@ -3369,6 +3369,7 @@ export function AgentTab() {
                 position: 'absolute',
                 top: '1.25rem',
                 right: '2.5rem',
+                bottom: '1.25rem',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'flex-end',
@@ -3380,7 +3381,7 @@ export function AgentTab() {
                 pointerEvents: 'none',
               }}
             >
-              <div className="agent-toolbar-row" style={{ pointerEvents: 'auto' }}>
+              <div className="agent-toolbar-row" style={{ pointerEvents: 'auto', flexShrink: 0 }}>
                 <button
                   type="button"
                   onClick={() => setTranslatorOpen(true)}
@@ -3493,6 +3494,7 @@ export function AgentTab() {
                 <div
                   style={{
                     pointerEvents: 'auto',
+                    flexShrink: 0,
                     maxWidth: 420,
                     padding: '0.65rem 0.85rem',
                     borderRadius: 12,
@@ -3798,7 +3800,9 @@ export function AgentTab() {
                     display: 'flex',
                     flexDirection: 'column',
                     width: 'min(340px, 100%)',
-                    maxHeight: 'min(72vh, 720px)',
+                    flex: chineseSettingsOpen ? '1 1 auto' : '0 0 auto',
+                    minHeight: chineseSettingsOpen ? 0 : undefined,
+                    maxHeight: '100%',
                     alignSelf: 'flex-end',
                     borderRadius: 14,
                     border: '1px solid var(--sidebar-border)',
@@ -3824,6 +3828,7 @@ export function AgentTab() {
                       padding: '0.625rem 0.875rem',
                       cursor: 'pointer',
                       textAlign: 'left',
+                      flexShrink: 0,
                     }}
                   >
                     <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -3863,7 +3868,8 @@ export function AgentTab() {
                   </button>
                   <div
                     style={{
-                      display: chineseSettingsOpen ? 'block' : 'none',
+                      display: chineseSettingsOpen ? 'flex' : 'none',
+                      flexDirection: 'column',
                       overflowY: 'auto',
                       flex: 1,
                       minHeight: 0,
@@ -3871,7 +3877,7 @@ export function AgentTab() {
                       scrollbarGutter: 'stable',
                     }}
                   >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 0.875rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
                       {selectedVoiceTask && (
                         <section
                           style={{
