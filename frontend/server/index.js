@@ -20,6 +20,7 @@ import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from '
 import { getCost } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
+import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1036,8 +1037,7 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
     })
 
     const startTime = Date.now()
-    const sttLanguage = req.learningLanguage === 'zh' ? 'zh' : undefined
-    const { text } = await sttTranscribe(fileStream, sttLanguage ? { language: sttLanguage } : {})
+    const { text } = await sttTranscribe(fileStream)
     const duration = Date.now() - startTime
     console.log('[api/agent/stt] Request completed in', duration + 'ms', { hasText: !!text, textLength: text?.length || 0 })
 
@@ -1450,6 +1450,8 @@ app.post('/api/agent/chat', async (req, res) => {
       }
     }
 
+    send({ type: 'done' })
+
     if (steps.length > 0 && fullReply.trim()) {
       try {
         const stepDesc = (s) => {
@@ -1554,8 +1556,6 @@ Rules:
         console.error('[api/agent/chat] step-check error:', stepErr?.message)
       }
     }
-
-    send({ type: 'done' })
   } catch (err) {
     if (timeoutId) clearTimeout(timeoutId)
     const errorDetails = {
@@ -2607,6 +2607,19 @@ app.delete('/api/user-scenarios/:id', async (req, res) => {
 // ---------- End user roleplay scenarios ----------
 
 registerZhScenarioRoutes(app, {
+  supabase,
+  safeSupabaseCall,
+  getBearerToken,
+  verifyBackendJwt,
+  llm,
+  model: AITUNNEL_MODEL,
+  getBalance,
+  deductBalance,
+  getCost,
+  BALANCE_THRESHOLD_RUB,
+})
+
+registerZhVoiceTaskRoutes(app, {
   supabase,
   safeSupabaseCall,
   getBearerToken,

@@ -20,6 +20,7 @@ import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from '
 import { getCost } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
+import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -2007,8 +2008,8 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   const levelHint = req.learningLanguage === 'zh'
     ? chineseHskLevel
     : (typeof level === 'string' && level.trim()
-        ? level.trim().toUpperCase().replace(/^(EASY|MEDIUM|HARD)$/i, (m) => m.charAt(0) + m.slice(1).toLowerCase())
-        : 'B1')
+      ? level.trim().toUpperCase().replace(/^(EASY|MEDIUM|HARD)$/i, (m) => m.charAt(0) + m.slice(1).toLowerCase())
+      : 'B1')
 
   const levelGuidance = req.learningLanguage === 'zh' ? REPLY_HINT_LEVEL_ZH : {
     A1: 'Use very simple words and short sentences (e.g. "I like...", "Yes, please.", "Thank you.").',
@@ -2043,12 +2044,12 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     stepsList.length > 0
       ? nextSteps.length > 0
         ? `\nLesson steps still open: ${nextSteps.map(stepTitle).join('; ')}.` +
-          `\nNEXT step the hint must move toward: ${stepTitle(currentStep)}.` +
-          (currentStepAction ? `\nWhat the learner should do in that step: ${currentStepAction}.` : '') +
-          (currentStepKeywords ? `\nKeywords that help this step: ${currentStepKeywords}.` : '') +
-          (currentStepExample ? `\nExample learner phrase (not required verbatim): ${currentStepExample}.` : '') +
-          `\nAlready done: ${[...completedSet].join(', ') || 'none'}.` +
-          `\nThe hint must still sound like a reply to the other person, AND push this next step.`
+        `\nNEXT step the hint must move toward: ${stepTitle(currentStep)}.` +
+        (currentStepAction ? `\nWhat the learner should do in that step: ${currentStepAction}.` : '') +
+        (currentStepKeywords ? `\nKeywords that help this step: ${currentStepKeywords}.` : '') +
+        (currentStepExample ? `\nExample learner phrase (not required verbatim): ${currentStepExample}.` : '') +
+        `\nAlready done: ${[...completedSet].join(', ') || 'none'}.` +
+        `\nThe hint must still sound like a reply to the other person, AND push this next step.`
         : `\nAll plot steps are done. Keep a natural reply to the other person. If missing lesson words remain, use 1 of them.`
       : ''
   const historyList = Array.isArray(history)
@@ -2607,6 +2608,19 @@ app.delete('/api/user-scenarios/:id', async (req, res) => {
 // ---------- End user roleplay scenarios ----------
 
 registerZhScenarioRoutes(app, {
+  supabase,
+  safeSupabaseCall,
+  getBearerToken,
+  verifyBackendJwt,
+  llm,
+  model: AITUNNEL_MODEL,
+  getBalance,
+  deductBalance,
+  getCost,
+  BALANCE_THRESHOLD_RUB,
+})
+
+registerZhVoiceTaskRoutes(app, {
   supabase,
   safeSupabaseCall,
   getBearerToken,
@@ -3517,7 +3531,7 @@ function extractWordsFromText(text, segments = null) {
 async function getWordDefinitionFromAI(word, language = 'en') {
   try {
     const isChinese = language === 'zh'
-    
+
     const prompt = isChinese
       ? `Проанализируй китайское слово или иероглиф "${word}" и верни JSON с следующей структурой:
 {
@@ -4329,13 +4343,13 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
       times_seen: (existingWord.times_seen || 0) + 1,
       updated_at: new Date().toISOString()
     }
-    
+
     // Добавляем китайские поля, если это китайский язык
     if (language === 'zh') {
       updateData.pinyin = definition.pinyin || null
       updateData.hsk_level = definition.hsk_level || existingWord.hsk_level || null
     }
-    
+
     const { data: updated, error: updateError } = await safeSupabaseCall(
       () => supabase
         .from('user_vocabulary')
@@ -4398,13 +4412,13 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     mastery_level: 1,
     times_seen: 1
   }
-  
+
   // Добавляем китайские поля, если это китайский язык
   if (language === 'zh') {
     insertData.pinyin = definition.pinyin || null
     insertData.hsk_level = definition.hsk_level || null
   }
-  
+
   const { data: newWord, error: insertError } = await safeSupabaseCall(
     () => supabase
       .from('user_vocabulary')
@@ -6332,7 +6346,7 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
   const cleanedText = textToProcess.slice(0, 8000)
 
   // Вызываем AI для анализа идиом с учетом языка
-  const { idioms, usage: idiomsUsage } = await analyzeIdiomsWithAI(cleanedText, { 
+  const { idioms, usage: idiomsUsage } = await analyzeIdiomsWithAI(cleanedText, {
     maxIdioms: max_idioms,
     language: language
   })
