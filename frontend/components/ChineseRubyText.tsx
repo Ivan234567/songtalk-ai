@@ -227,6 +227,118 @@ function firstMetadataIndex(raw: string): number {
   return indices.length ? Math.min(...indices) : -1;
 }
 
+const HANZI_CHAR_RE = /[\u4e00-\u9fff\u3400-\u4dbf]/;
+
+const PROMPT_LEAK_RE =
+  /(?:let'?s go\s*[:：]|let us go\s*[:：]|your task\s*:|the above is context|now generate the response|dialogue checkpoints|learner'?s last message|progress:\s*all checkpoints|that is for the character|keep it hsk|use model vocabulary)/i;
+
+const INSTRUCTION_LINE_RE =
+  /^(?:character|personality|situation|place|goals? of this scene|learner'?s role|your task|progress|do not|do:|that is for|the above is context|now generate|spoken character|hsk level|must-say|model vocabulary|grammar focus|output format)\s*:/i;
+
+function looksLikePromptLeak(text: string): boolean {
+  if (PROMPT_LEAK_RE.test(text)) return true;
+  const firstHanzi = text.search(HANZI_CHAR_RE);
+  if (firstHanzi < 0) return false;
+  const prefix = text.slice(0, firstHanzi);
+  if (firstHanzi > 40 && /[A-Za-z]{12,}/.test(prefix)) return true;
+  return /(?:character|personality|situation|goals of this scene|learner'?s role)\s*:/i.test(prefix);
+}
+
+function isSpokenChineseLine(line: string): boolean {
+  let s = line.trim();
+  if (!s) return false;
+  s = s.replace(/^(?:let'?s go|let us go)\s*[:：]\s*/i, '');
+  if (!s) return false;
+  if (/^\s*✏️/.test(line) || /^\s*Исправление\s*:/i.test(line)) return true;
+  if (!HANZI_CHAR_RE.test(s)) return false;
+  if (INSTRUCTION_LINE_RE.test(s)) return false;
+  if (/Learner (?:said|asked)\s*:/i.test(s)) return false;
+  if (/learner'?s last message/i.test(s)) return false;
+  if (/^\d+\.\s*\[X\]/i.test(s)) return false;
+  const latin = (s.match(/[A-Za-z]/g) || []).length;
+  const cyrillic = (s.match(/[\u0400-\u04FF]/g) || []).length;
+  const hanzi = (s.match(HANZI_CHAR_RE) || []).length;
+  if (latin + cyrillic > 24 && latin + cyrillic > hanzi) return false;
+  return true;
+}
+
+/** Если модель сначала пересказала промпт, оставляем хвост с настоящей репликой. */
+function isolateAssistantPayload(raw: string): string {
+  const t = (raw || '').replace(/\r\n/g, '\n');
+  if (!t.trim()) return t;
+
+  const letsGo = [...t.matchAll(/(?:let'?s go|let us go)\s*[:：]\s*/gi)];
+  if (letsGo.length) {
+    const last = letsGo[letsGo.length - 1];
+    return t.slice((last.index || 0) + last[0].length);
+  }
+
+  if (!looksLikePromptLeak(t)) return t;
+
+  const lines = t.split('\n');
+  let blockStart = -1;
+  let prevSpoken = -2;
+  for (let i = 0; i < lines.length; i++) {
+    if (!isSpokenChineseLine(lines[i])) continue;
+    if (i !== prevSpoken + 1) blockStart = i;
+    prevSpoken = i;
+  }
+  if (blockStart === -1) return t;
+  return lines.slice(blockStart).join('\n');
+}
+
+function splitSpokenAndMetadata(raw: string): { spoken: string; metadata: string } {
+  let spoken = (raw || '').replace(/\r\n/g, '\n');
+  let metadata = '';
+
+  const metaIdx = firstMetadataIndex(spoken);
+  if (metaIdx !== -1) {
+    metadata = spoken.slice(metaIdx).trim();
+    spoken = spoken.slice(0, metaIdx);
+  }
+
+  const pinyinStart = spoken.indexOf('PINYIN:');
+  if (pinyinStart !== -1) {
+    const endIdx = spoken.indexOf('END:', pinyinStart);
+    if (endIdx !== -1) {
+      const after = spoken.slice(endIdx + 4).trim();
+      const block = spoken.slice(pinyinStart, endIdx + 4).trim();
+      spoken = after || spoken.slice(0, pinyinStart);
+      if (!metadata) metadata = block;
+    } else {
+      if (!metadata) metadata = spoken.slice(pinyinStart).trim();
+      spoken = spoken.slice(0, pinyinStart);
+    }
+  }
+
+  return { spoken, metadata };
+}
+
+function spokenLinesOnly(spoken: string): string {
+  const kept = spoken
+    .split('\n')
+    .map((line) => line.replace(/^(?:let'?s go|let us go)\s*[:：]\s*/i, '').trim())
+    .filter(isSpokenChineseLine);
+  return (kept.length ? kept.join('\n') : spoken).trim();
+}
+
+/**
+ * Для сохранения ответа ассистента: китайская реплика + metadata, без dump промпта.
+ */
+export function sanitizeChineseAssistantReply(raw: string): string {
+  const original = (raw || '').replace(/\r\n/g, '\n');
+  if (!original.trim()) return original.trim();
+
+  const payload = isolateAssistantPayload(original);
+  const { spoken, metadata } = splitSpokenAndMetadata(payload);
+  const leaked = looksLikePromptLeak(original) || looksLikePromptLeak(payload);
+  const cleanSpoken = (leaked ? spokenLinesOnly(spoken) : spoken.trim());
+  if (!cleanSpoken) {
+    return leaked ? '' : original.trim();
+  }
+  return metadata ? `${cleanSpoken}\n${metadata}` : cleanSpoken;
+}
+
 function normalizePinyinItem(item: any): ChineseSegment | null {
   if (!item || typeof item !== 'object') return null;
   const hanzi = typeof item.h === 'string' ? item.h : typeof item.hanzi === 'string' ? item.hanzi : '';
@@ -278,7 +390,7 @@ function parsePinyinMarkerFormat(raw: string): StructuredChineseResult | null {
 }
 
 export function parseStructuredChineseResponse(raw: string): StructuredChineseResult | null {
-  const text = (raw || '').trim();
+  const text = isolateAssistantPayload(raw || '').trim();
   if (!text) return null;
 
   // Сначала пробуем новый формат ««PINYIN»»
@@ -293,33 +405,20 @@ export function parseStructuredChineseResponse(raw: string): StructuredChineseRe
 
 /**
  * Извлекает чистый текст без метаданных пиньинь и перевода.
+ * Служебный dump промпта (Character / checkpoints / Let's go) тоже отрезается.
  */
 export function extractCleanChineseText(raw: string): string {
-  let text = raw || '';
-
-  const metaIdx = firstMetadataIndex(text);
-  if (metaIdx !== -1) {
-    text = text.slice(0, metaIdx);
-  }
-
-  const pinyinStart = text.indexOf('PINYIN:');
-  if (pinyinStart !== -1) {
-    const endIdx = text.indexOf('END:', pinyinStart);
-    if (endIdx !== -1) {
-      const after = text.slice(endIdx + 4).trim();
-      return after || text.slice(0, pinyinStart).trim();
-    }
-    text = text.slice(0, pinyinStart);
-  }
-
-  return text.trim();
+  const payload = isolateAssistantPayload(raw || '');
+  const { spoken } = splitSpokenAndMetadata(payload);
+  const leaked = looksLikePromptLeak(raw || '') || looksLikePromptLeak(payload);
+  return (leaked ? spokenLinesOnly(spoken) : spoken.trim());
 }
 
 /**
  * Извлекает перевод из ответа ИИ — только блок TRANSLATION, без пиньинь.
  */
 export function extractTranslation(raw: string): string | null {
-  const value = extractMarkedValue(raw || '', TRANSLATION_MARKER);
+  const value = extractMarkedValue(isolateAssistantPayload(raw || ''), TRANSLATION_MARKER);
   const translation = sanitizeDisplayText(value || '');
   return translation || null;
 }

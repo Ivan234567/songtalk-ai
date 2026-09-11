@@ -1398,8 +1398,8 @@ app.post('/api/agent/chat', async (req, res) => {
     : [
       ...(roleplaySafetySystem ? [roleplaySafetySystem] : []),
       ...(freestyleCoachSystem ? [freestyleCoachSystem] : []),
-      ...baseMessages,
       ...(steps.length > 0 && chineseCoachSystem ? [chineseCoachSystem] : []),
+      ...baseMessages,
     ]
 
   try {

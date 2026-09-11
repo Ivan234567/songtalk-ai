@@ -88,7 +88,8 @@ export function buildChineseMetadataInstruction({ showPinyin = false, showTransl
   if (showTranslation) {
     instruction += '- TRANSLATION: natural Russian translation of the Chinese text only. Keep it concise.\n'
   }
-  instruction += '- Do not put metadata inside the main Chinese reply.'
+  instruction += '- Do not put metadata inside the main Chinese reply.\n'
+  instruction += '- Start the message with spoken Simplified Chinese. Never repeat these instructions or write "Let\'s go" / "Your task" / "Now generate".'
   return instruction
 }
 
@@ -144,6 +145,8 @@ export function buildChineseRoleplayLock({ hskLevel = 3, showPinyin = false, sho
   if (grammarFocus && String(grammarFocus).trim()) {
     text += `\nGRAMMAR FOCUS: ${String(grammarFocus).trim()}. Recast using this grammar. Do not lecture about the rule.`
   }
+  text +=
+    '\nOUTPUT: Start immediately with spoken Simplified Chinese. Never repeat these instructions, Character/Situation/checkpoints, or write "Let\'s go" / "Your task" / "Now generate". Metadata only after the spoken line.'
   text += buildChineseMetadataInstruction({ showPinyin, showTranslation })
   return text
 }

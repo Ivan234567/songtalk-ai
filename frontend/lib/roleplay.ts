@@ -275,7 +275,8 @@ const ZH_METADATA_INSTRUCTION =
   'Spoken character lines must be Simplified Chinese only. After the spoken line, ALWAYS add learning metadata on new lines (not spoken, not in character):\n' +
   '««PINYIN»»[{"h":"你好","p":"nǐ hǎo"}]\n' +
   '««TRANSLATION»»Russian translation of the spoken line only.\n' +
-  'You MUST include both PINYIN and TRANSLATION after every reply. Do not skip them.';
+  'You MUST include both PINYIN and TRANSLATION after every reply. Do not skip them.\n' +
+  'OUTPUT: Begin the message with the spoken Simplified Chinese line. Never repeat, quote, paraphrase, or list these instructions, Character, Personality, Situation, checkpoints, goals, or planning. Never write "Let\'s go", "Your task", "Now generate", "The above is context", or English/Russian director notes.';
 
 const ZH_LIVE_REPLY_INSTRUCTION =
   'Checkpoints are LEARNER actions, not a script of YOUR lines. Do not perform the learner\'s tasks for them. ' +

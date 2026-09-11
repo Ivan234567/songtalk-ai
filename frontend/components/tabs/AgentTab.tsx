@@ -63,6 +63,7 @@ import {
   extractCleanChineseText,
   extractTranslation,
   extractSpeakableChineseText,
+  sanitizeChineseAssistantReply,
   type ChineseSegment,
 } from '@/components/ChineseRubyText';
 
@@ -126,6 +127,17 @@ async function readNdjsonChatReply(resp: Response): Promise<string> {
     }
   }
   return fullReply.trim();
+}
+
+function zhSafeAssistantContent(content: string, lang: string): string {
+  return lang === 'zh' ? sanitizeChineseAssistantReply(content) : content;
+}
+
+function zhSafeHistory(history: Message[], lang: string): Message[] {
+  if (lang !== 'zh') return history;
+  return history.map((m) =>
+    m.role === 'assistant' ? { ...m, content: sanitizeChineseAssistantReply(m.content) } : m,
+  );
 }
 
 function getBackendToken(): string | null {
@@ -1030,7 +1042,7 @@ export function AgentTab() {
                   ...history,
                 ]
                 : buildMessagesForAgentChat(
-                  history,
+                  zhSafeHistory(history, learningLanguage),
                   agentMode === 'roleplay' ? selectedScenario : null,
                   agentMode === 'roleplay' ? { completedStepIds: roleplayCompletedStepIds } : undefined
                 ),
@@ -1125,8 +1137,9 @@ export function AgentTab() {
           }
         }
 
-        const newMessages: Message[] = [...history, { role: 'assistant', content: fullReply }];
-        setMessages((prev) => [...prev, { role: 'assistant', content: fullReply }]);
+        const assistantContent = zhSafeAssistantContent(fullReply, learningLanguage);
+        const newMessages: Message[] = [...history, { role: 'assistant', content: assistantContent }];
+        setMessages((prev) => [...prev, { role: 'assistant', content: assistantContent }]);
 
         if (userId) {
           if (agentMode === 'debate' && debateTopic && debateUserPosition && debateAIPosition) {
@@ -1225,13 +1238,13 @@ export function AgentTab() {
           }
         }
 
-        if (!fullReply.trim()) {
+        if (!assistantContent.trim()) {
           setState('idle');
           return;
         }
 
         setState('speaking');
-        const ttsText = learningLanguage === 'zh' ? extractSpeakableChineseText(fullReply) : fullReply.trim();
+        const ttsText = learningLanguage === 'zh' ? extractSpeakableChineseText(assistantContent) : assistantContent.trim();
         if (!ttsText) {
           setState('idle');
           return;
@@ -1804,7 +1817,10 @@ export function AgentTab() {
               if (!annotated) return;
               const hasMeta = annotated.includes('««PINYIN»»') || annotated.includes('««TRANSLATION»»');
               if (!hasMeta) return;
-              const annotatedMessage: Message = { role: 'assistant', content: annotated };
+              const annotatedMessage: Message = {
+                role: 'assistant',
+                content: zhSafeAssistantContent(annotated, learningLanguage),
+              };
               setMessages((prev) => {
                 if (prev[0]?.role !== 'assistant') return prev;
                 return [annotatedMessage, ...prev.slice(1)];
