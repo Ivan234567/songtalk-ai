@@ -13,8 +13,10 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: dark;
 }
 :root {
+  color-scheme: dark;
   font-size: 17px;
   --bg: #0f0f0f;
   --bg-muted: #151515;
@@ -39,64 +41,22 @@ body {
   --fs-md: 1.02rem;
   --fs-lg: 1.2rem;
   --fs-xl: 1.5rem;
-  --sidebar-bg: #f8f9fa;
-  --sidebar-text: #1f2937;
-  --sidebar-border: rgba(0, 0, 0, 0.1);
-  --sidebar-hover: rgba(0, 0, 0, 0.05);
-  --sidebar-active: rgba(0, 0, 0, 0.1);
-  --sidebar-accent: rgba(0, 0, 0, 0.15);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f0f0f;
-    --bg-muted: #151515;
-    --card: rgba(255, 255, 255, 0.04);
-    --card-strong: rgba(255, 255, 255, 0.07);
-    --stroke: rgba(255, 255, 255, 0.12);
-    --stroke-strong: rgba(255, 255, 255, 0.18);
-    --text-primary: #e8ecf4;
-    --text-muted: rgba(232, 236, 244, 0.72);
-    --accent: #7ad7a7;
-    --accent-strong: #58c18f;
-    --accent-soft: rgba(122, 215, 167, 0.16);
-    --radius: 12px;
-    --radius-lg: 16px;
-    --shadow-soft: 0 10px 26px rgba(0, 0, 0, 0.18);
-    --shadow-hover: 0 14px 32px rgba(0, 0, 0, 0.22);
-    --space-2: 0.5rem;
-    --space-3: 0.75rem;
-    --space-4: 1rem;
-    --fs-xs: 0.82rem;
-    --fs-sm: 0.94rem;
-    --fs-md: 1.02rem;
-    --fs-lg: 1.2rem;
-    --fs-xl: 1.5rem;
-    --sidebar-bg: #1e1e1e;
-    --sidebar-text: #e5e5e5;
-    --sidebar-border: rgba(255, 255, 255, 0.1);
-    --sidebar-hover: rgba(255, 255, 255, 0.08);
-    --sidebar-active: rgba(255, 255, 255, 0.12);
-    --sidebar-accent: rgba(255, 255, 255, 0.15);
-  }
+  --sidebar-bg: #1e1e1e;
+  --sidebar-text: #e5e5e5;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-hover: rgba(255, 255, 255, 0.08);
+  --sidebar-active: rgba(255, 255, 255, 0.12);
+  --sidebar-accent: rgba(255, 255, 255, 0.15);
 }
 
 body {
   color: #f9fafb;
   background: #111827;
-  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* РўРµРјРЅР°СЏ С‚РµРјР° */
 .dark body {
   color: #f9fafb;
   background: #111827;
-}
-
-/* Светлая тема: когда html НЕ имеет класс .dark */
-html:not(.dark) body {
-  color: #1f2937;
-  background: #ffffff;
 }
 
 /* РђРґР°РїС‚РёРІРЅРѕСЃС‚СЊ */
@@ -297,19 +257,13 @@ button {
 }
 
 .roleplay-steps-map .roleplay-steps-map-check {
-  color: #16a34a;
+  color: rgba(34, 197, 94, 0.95);
 }
 
 .roleplay-steps-map .roleplay-steps-map-circle {
   border: 1.5px solid var(--sidebar-border);
   background: transparent;
   box-sizing: border-box;
-}
-
-@media (prefers-color-scheme: dark) {
-  .roleplay-steps-map .roleplay-steps-map-check {
-    color: rgba(34, 197, 94, 0.95);
-  }
 }
 
 /* РљРЅРѕРїРєР° РёСЃС‚РѕСЂРёРё РІ Р°РіРµРЅС‚Рµ вЂ” РµРґРёРЅС‹Р№ СЃС‚РёР»СЊ СЃ РјРµРЅСЋ */
