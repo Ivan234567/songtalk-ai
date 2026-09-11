@@ -18,7 +18,7 @@ import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
 import { getCost } from './balance-rates.js'
-import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction } from './learning-language.js'
+import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import {
@@ -1268,9 +1268,10 @@ app.post('/api/agent/chat', async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
-  const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context, chinese_settings, scenario_vocabulary, annotate_chinese, text: annotateSourceText } = req.body || {}
+  const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context, chinese_settings, english_settings, scenario_vocabulary, annotate_chinese, annotate_english, text: annotateSourceText } = req.body || {}
   const annotateChinese = Boolean(annotate_chinese) && req.learningLanguage === 'zh'
-  if (!annotateChinese && (!Array.isArray(messages) || messages.length === 0)) {
+  const annotateEnglish = Boolean(annotate_english) && req.learningLanguage === 'en'
+  if (!annotateChinese && !annotateEnglish && (!Array.isArray(messages) || messages.length === 0)) {
     return res.status(400).json({ error: 'Expected { messages: [...] }' })
   }
   // Китайские настройки обучения
@@ -1281,8 +1282,13 @@ app.post('/api/agent/chat', async (req, res) => {
   const chineseToneFocus = Boolean(chineseSettings?.tone_focus)
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings?.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
   const chineseGrammarFocus = typeof chineseSettings?.grammar_focus === 'string' ? chineseSettings.grammar_focus.trim() : ''
+  const englishSettings = english_settings && typeof english_settings === 'object' ? english_settings : null
+  const englishShowTranslation = englishSettings ? Boolean(englishSettings.show_translation) : false
+  const englishCorrectionMode = ['gentle', 'active'].includes(englishSettings?.correction_mode) ? englishSettings.correction_mode : 'gentle'
+  const englishCefrRaw = typeof englishSettings?.cefr_level === 'string' ? englishSettings.cefr_level.trim() : ''
+  const englishCefrLevel = /^(A1|A2|B1|B2|C1|easy|medium|hard)$/i.test(englishCefrRaw) ? englishCefrRaw : 'B1'
   const annotateSource = typeof annotateSourceText === 'string' ? annotateSourceText.trim() : ''
-  if (annotateChinese && !annotateSource) {
+  if ((annotateChinese || annotateEnglish) && !annotateSource) {
     return res.status(400).json({ error: 'Expected { text: "..." }' })
   }
   const maxTokens = typeof max_tokens === 'number' ? max_tokens : 1500
@@ -1365,6 +1371,22 @@ app.post('/api/agent/chat', async (req, res) => {
         }),
     }
     : null
+  const englishCoachSystem = req.learningLanguage === 'en'
+    ? {
+      role: 'system',
+      content: steps.length > 0
+        ? buildEnglishRoleplayLock({
+          showTranslation: englishShowTranslation,
+          correctionMode: englishCorrectionMode,
+        })
+        : getFreestyleChatSystemPrompt('en', {
+          showTranslation: englishShowTranslation,
+          correctionMode: englishCorrectionMode,
+          cefrLevel: englishCefrLevel,
+        }),
+    }
+    : null
+  const learningCoachSystem = chineseCoachSystem || englishCoachSystem
   const annotateMessages = annotateChinese
     ? [
       {
@@ -1380,20 +1402,35 @@ app.post('/api/agent/chat', async (req, res) => {
       },
       { role: 'user', content: annotateSource },
     ]
-    : null
+    : annotateEnglish
+      ? [
+        {
+          role: 'system',
+          content:
+            'You are an English learning annotator. The user sends one English sentence. ' +
+            'Output that sentence EXACTLY unchanged (same words and punctuation). ' +
+            'Then add metadata. Do not continue the dialogue, do not greet, do not add extra English sentences.' +
+            buildEnglishMetadataInstruction({
+              showTranslation: englishShowTranslation,
+            }),
+        },
+        { role: 'user', content: annotateSource },
+      ]
+      : null
   const baseMessages = annotateMessages
     ? annotateMessages
     : steps.length > 0
       ? messages
       : [
-        chineseCoachSystem || {
+        learningCoachSystem || {
           role: 'system',
           content: getFreestyleChatSystemPrompt(req.learningLanguage || 'en', {
             showPinyin: chineseShowPinyin,
-            showTranslation: chineseShowTranslation,
-            correctionMode: chineseCorrectionMode,
+            showTranslation: req.learningLanguage === 'zh' ? chineseShowTranslation : englishShowTranslation,
+            correctionMode: req.learningLanguage === 'zh' ? chineseCorrectionMode : englishCorrectionMode,
             toneFocus: chineseToneFocus,
             hskLevel: chineseHskLevel,
+            cefrLevel: englishCefrLevel,
           }),
         },
         ...messages,
@@ -1403,7 +1440,7 @@ app.post('/api/agent/chat', async (req, res) => {
     : [
       ...(roleplaySafetySystem ? [roleplaySafetySystem] : []),
       ...(freestyleCoachSystem ? [freestyleCoachSystem] : []),
-      ...(steps.length > 0 && chineseCoachSystem ? [chineseCoachSystem] : []),
+      ...(steps.length > 0 && learningCoachSystem ? [learningCoachSystem] : []),
       ...baseMessages,
     ]
 
@@ -1999,6 +2036,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     freestyle_context,
     hint_mode,
     chinese_settings,
+    english_settings,
     scenario_vocabulary,
   } = req.body || {}
   const agentMessage = typeof last_assistant_message === 'string' ? last_assistant_message.trim() : ''
@@ -2014,6 +2052,8 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
   const chineseHintMode = ['basic', 'vocabulary', 'formal', 'colloquial'].includes(chineseSettings.hint_mode) ? chineseSettings.hint_mode : 'basic'
   const chineseGrammarFocus = typeof chineseSettings.grammar_focus === 'string' ? chineseSettings.grammar_focus.trim() : ''
+  const englishSettings = english_settings && typeof english_settings === 'object' ? english_settings : {}
+  const englishShowTranslation = Boolean(englishSettings.show_translation)
   const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
   const allowProfanity = Boolean(settings.allow_profanity)
   const aiMayUseProfanity = allowProfanity && Boolean(settings.ai_may_use_profanity)
@@ -2220,11 +2260,14 @@ Rules:
         scenarioGoal,
       })
       : null
+    const englishHintMeta = req.learningLanguage === 'en'
+      ? buildEnglishMetadataInstruction({ showTranslation: englishShowTranslation })
+      : ''
     const systemContent = hintMode === 'debate'
-      ? debateSystemContent
+      ? debateSystemContent + englishHintMeta
       : hintMode === 'chat'
-        ? (zhHintSystem || chatSystemContent)
-        : (zhHintSystem || roleplaySystemContent)
+        ? (zhHintSystem || chatSystemContent + englishHintMeta)
+        : (zhHintSystem || roleplaySystemContent + englishHintMeta)
     const userContent = hintMode === 'debate'
       ? debateUserContent
       : hintMode === 'chat'

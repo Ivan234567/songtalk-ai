@@ -79,13 +79,41 @@ const TTS_VOICE_OPTIONS: Array<{ value: 'onyx' | 'nova' | 'ballad'; label: strin
   { value: 'nova', label: 'Женский (Nova)' },
 ];
 
-const FREESTYLE_HINT_MODE_LABELS: Record<FreestyleHintMode, string> = {
-  natural: 'Естественно',
-  simpler: 'Проще',
-  more_native: 'Более нативно',
-  polite_rewrite: 'Вежливый вариант',
-  no_profanity: 'Без мата',
+const ENGLISH_HINT_MODE_LABELS: Record<FreestyleHintMode, { label: string; desc: string }> = {
+  natural: { label: 'Естественно', desc: 'Обычная фраза под ваш уровень' },
+  simpler: { label: 'Проще', desc: 'Короткие слова и предложения' },
+  more_native: { label: 'Более нативно', desc: 'Как говорят носители' },
+  polite_rewrite: { label: 'Вежливый вариант', desc: 'Более вежливая формулировка' },
+  no_profanity: { label: 'Без мата', desc: 'Чистый вариант без грубостей' },
 };
+
+const ENGLISH_CEFR_OPTIONS: { value: EnglishCefrLevel; label: string }[] = [
+  { value: 'A1', label: 'A1 — начальный' },
+  { value: 'A2', label: 'A2 — базовый' },
+  { value: 'B1', label: 'B1 — средний' },
+  { value: 'B2', label: 'B2 — выше среднего' },
+  { value: 'C1', label: 'C1 — продвинутый' },
+];
+
+const ENGLISH_LEVEL_LABELS: Record<string, string> = {
+  A1: 'A1 — начальный',
+  A2: 'A2 — базовый',
+  B1: 'B1 — средний',
+  B2: 'B2 — выше среднего',
+  C1: 'C1 — продвинутый',
+  easy: 'Лёгкий',
+  medium: 'Средний',
+  hard: 'Сложный',
+};
+
+function englishLevelLabel(level?: string | null): string {
+  const key = (level || 'B1').trim();
+  return ENGLISH_LEVEL_LABELS[key] || ENGLISH_LEVEL_LABELS[key.toUpperCase()] || key;
+}
+
+function speakableAgentText(content: string): string {
+  return extractSpeakableChineseText(content) || content.trim();
+}
 
 // Режимы подсказки для китайского языка
 type ChineseHintMode = 'basic' | 'vocabulary' | 'formal' | 'colloquial';
@@ -155,6 +183,7 @@ type SbiBlock = {
 type FreestyleSlangMode = 'off' | 'light' | 'heavy';
 type FreestyleProfanityIntensity = 'light' | 'medium' | 'hard';
 type FreestyleHintMode = 'natural' | 'simpler' | 'more_native' | 'polite_rewrite' | 'no_profanity';
+type EnglishCefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 
 // Китайские настройки для 自由对话
 type ChineseHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -311,7 +340,6 @@ export function AgentTab() {
   const [replyHintLoading, setReplyHintLoading] = useState(false);
   const [replyHintText, setReplyHintText] = useState<string | null>(null);
   const [freestyleHintMode, setFreestyleHintMode] = useState<FreestyleHintMode>('natural');
-  const [freestyleSettingsOpen, setFreestyleSettingsOpen] = useState(false);
   const [freestyleSlangMode, setFreestyleSlangMode] = useState<FreestyleSlangMode>('off');
   const [freestyleAllowProfanity, setFreestyleAllowProfanity] = useState(false);
   const [freestyleAiMayUseProfanity, setFreestyleAiMayUseProfanity] = useState(false);
@@ -327,6 +355,10 @@ export function AgentTab() {
   const [chineseToneFocus, setChineseToneFocus] = useState(false);
   const [chineseCorrectionMode, setChineseCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
   const [chineseHintMode, setChineseHintMode] = useState<ChineseHintMode>('basic');
+  const [englishSettingsOpen, setEnglishSettingsOpen] = useState(true);
+  const [englishCefrLevel, setEnglishCefrLevel] = useState<EnglishCefrLevel>('B1');
+  const [englishShowTranslation, setEnglishShowTranslation] = useState(true);
+  const [englishCorrectionMode, setEnglishCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
   const [savedDialogueWords, setSavedDialogueWords] = useState<Set<string>>(() => new Set());
   const [savingDialogueWord, setSavingDialogueWord] = useState<string | null>(null);
   const [vocabToast, setVocabToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -430,6 +462,31 @@ export function AgentTab() {
     const translation = chineseShowTranslation ? 'перевод' : '';
     return [hsk, speed, pinyin, translation].filter(Boolean).join(' · ');
   }, [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin, chineseShowTranslation]);
+  const lockedEnglishLevel = useMemo(() => {
+    if (agentMode === 'roleplay' && selectedScenario) {
+      return selectedScenario.level || selectedScenario.difficulty || 'B1';
+    }
+    if (agentMode === 'debate') {
+      return debateDifficulty || 'medium';
+    }
+    return englishCefrLevel;
+  }, [agentMode, selectedScenario, debateDifficulty, englishCefrLevel]);
+  const englishLevelEditable = agentMode === 'chat';
+  const englishSettingsPayload = useMemo(
+    () => ({
+      cefr_level: lockedEnglishLevel,
+      show_translation: englishShowTranslation,
+      correction_mode: englishCorrectionMode,
+      hint_mode: freestyleHintMode,
+    }),
+    [lockedEnglishLevel, englishShowTranslation, englishCorrectionMode, freestyleHintMode]
+  );
+  const englishSettingsSummary = useMemo(() => {
+    const level = englishLevelLabel(lockedEnglishLevel);
+    const speed = chineseSpeechSpeed !== 1 ? `${chineseSpeechSpeed}x` : '';
+    const translation = englishShowTranslation ? 'перевод' : '';
+    return [level, speed, translation].filter(Boolean).join(' · ');
+  }, [lockedEnglishLevel, chineseSpeechSpeed, englishShowTranslation]);
   const activeFreestylePreset = useMemo<string | null>(() => {
     const s = freestyleSlangMode;
     const p = freestyleAllowProfanity;
@@ -1083,6 +1140,7 @@ export function AgentTab() {
                 grammar_focus: agentMode === 'roleplay' ? selectedScenario?.grammarFocus : undefined,
               }
               : undefined,
+            english_settings: learningLanguage !== 'zh' ? englishSettingsPayload : undefined,
             scenario_vocabulary:
               agentMode === 'roleplay' && selectedScenario?.scenarioVocabulary?.length
                 ? selectedScenario.scenarioVocabulary
@@ -1247,7 +1305,7 @@ export function AgentTab() {
         }
 
         setState('speaking');
-        const ttsText = learningLanguage === 'zh' ? extractSpeakableChineseText(assistantContent) : assistantContent.trim();
+        const ttsText = speakableAgentText(assistantContent);
         if (!ttsText) {
           setState('idle');
           return;
@@ -1291,10 +1349,7 @@ export function AgentTab() {
           URL.revokeObjectURL(url);
           setState('idle');
         };
-        // Применяем скорость воспроизведения для китайского
-        if (learningLanguage === 'zh') {
-          audio.playbackRate = chineseSpeechSpeed;
-        }
+        audio.playbackRate = chineseSpeechSpeed;
         await audio.play();
 
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -1357,6 +1412,7 @@ export function AgentTab() {
       handleInsufficientBalance,
       roleplayCompletedStepIds,
       finishVoiceTaskTake,
+      englishSettingsPayload,
     ]
   );
 
@@ -1404,6 +1460,13 @@ export function AgentTab() {
                 profanity_intensity: settings.profanityIntensity ?? 'light',
               }
               : undefined,
+            english_settings: learningLanguage !== 'zh' ? englishSettingsPayload : undefined,
+            scenario_steps: debateStepsForCurrentDifficulty.map((s) => ({
+              id: s.id,
+              titleRu: s.titleRu,
+              titleEn: s.titleEn,
+              completionCriteria: s.completionCriteria,
+            })),
           }, learningLanguage)),
         });
 
@@ -1495,7 +1558,7 @@ export function AgentTab() {
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
-          body: JSON.stringify(withLearningLanguageBody({ text: fullReply.trim(), voice: ttsVoice }, learningLanguage)),
+          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(fullReply), voice: ttsVoice }, learningLanguage)),
         });
 
         if (!ttsResp.ok) {
@@ -1533,10 +1596,7 @@ export function AgentTab() {
           setState('idle');
         };
 
-        // Применяем скорость воспроизведения для китайского
-        if (learningLanguage === 'zh') {
-          audio.playbackRate = chineseSpeechSpeed;
-        }
+        audio.playbackRate = chineseSpeechSpeed;
         await audio.play();
 
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -1568,7 +1628,7 @@ export function AgentTab() {
         setState('idle');
       }
     },
-    [token, userId, ttsVoice, learningLanguage, chineseSpeechSpeed, handleInsufficientBalance]
+    [token, userId, ttsVoice, learningLanguage, chineseSpeechSpeed, handleInsufficientBalance, englishSettingsPayload, debateStepsForCurrentDifficulty]
   );
 
   // Обработчик смены режима - сброс дебата при переходе в другой режим
@@ -1579,7 +1639,7 @@ export function AgentTab() {
       setSelectedVoiceTask(null);
       resetVoiceTaskPlay();
       if (mode === 'chat') {
-        setFreestyleSettingsOpen(false);
+        setEnglishSettingsOpen(true);
         setSelectedScenario(null);
         setDebateStarted(false);
         setDebateCompleted(false);
@@ -1802,17 +1862,21 @@ export function AgentTab() {
             setSessions((prev) => [newSession, ...prev.slice(0, MAX_SESSIONS - 1)]);
           }
         }
-        if (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation)) {
+        if (
+          (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation)) ||
+          (learningLanguage !== 'zh' && englishShowTranslation)
+        ) {
           void (async () => {
             try {
               const resp = await fetch(`${getApiUrl()}/api/agent/chat`, {
                 method: 'POST',
                 headers: buildAgentJsonHeaders(token, learningLanguage),
                 body: JSON.stringify(withLearningLanguageBody({
-                  annotate_chinese: true,
+                  ...(learningLanguage === 'zh'
+                    ? { annotate_chinese: true, chinese_settings: chineseSettingsPayload }
+                    : { annotate_english: true, english_settings: englishSettingsPayload }),
                   text: openingLine,
                   messages: [{ role: 'user', content: openingLine }],
-                  chinese_settings: chineseSettingsPayload,
                   max_tokens: 800,
                 }, learningLanguage)),
               });
@@ -1859,7 +1923,7 @@ export function AgentTab() {
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
-          body: JSON.stringify(withLearningLanguageBody({ text: openingLine, voice: ttsVoice }, learningLanguage)),
+          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(openingLine), voice: ttsVoice }, learningLanguage)),
         });
         if (!ttsResp.ok) {
           const j = await ttsResp.json().catch(() => ({}));
@@ -1891,10 +1955,7 @@ export function AgentTab() {
           URL.revokeObjectURL(url);
           setState('idle');
         };
-        // Применяем скорость воспроизведения для китайского
-        if (learningLanguage === 'zh') {
-          audio.playbackRate = chineseSpeechSpeed;
-        }
+        audio.playbackRate = chineseSpeechSpeed;
         await audio.play();
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (TtsContextClass) {
@@ -1923,7 +1984,7 @@ export function AgentTab() {
       // Нет жёсткой первой реплики — пользователь начинает диалог первым
       setState('idle');
     },
-    [token, userId, ttsVoice, learningLanguage, chineseSpeechSpeed, chineseShowPinyin, chineseShowTranslation, chineseSettingsPayload, handleInsufficientBalance]
+    [token, userId, ttsVoice, learningLanguage, chineseSpeechSpeed, chineseShowPinyin, chineseShowTranslation, chineseSettingsPayload, englishShowTranslation, englishSettingsPayload, handleInsufficientBalance]
   );
 
   // Обработчик начала дебата
@@ -1957,6 +2018,7 @@ export function AgentTab() {
       });
       setDebateStarted(true);
       setDebateSetupOpen(false);
+      setEnglishSettingsOpen(true);
       setMessages([]);
       setDebateCurrentSessionId(null);
       setDebateCompletionId(null);
@@ -2051,6 +2113,8 @@ export function AgentTab() {
       }
       if (learningLanguage === 'zh') {
         setChineseSettingsOpen(true);
+      } else {
+        setEnglishSettingsOpen(true);
       }
       setSelectedScenario(scenario);
       requestScenarioFirstMessage(scenario);
@@ -2575,7 +2639,7 @@ export function AgentTab() {
           history: historyPayload,
           goal: selectedScenario.goal ?? undefined,
           goal_ru: selectedScenario.goalRu ?? undefined,
-          level: (selectedScenario as { level?: string }).level ?? 'B1',
+          level: (selectedScenario as { level?: string }).level || selectedScenario.difficulty || 'B1',
           roleplay_settings: roleplaySettingsPayload,
           chinese_settings: learningLanguage === 'zh'
             ? {
@@ -2583,6 +2647,8 @@ export function AgentTab() {
               grammar_focus: selectedScenario?.grammarFocus,
             }
             : undefined,
+          english_settings: learningLanguage !== 'zh' ? englishSettingsPayload : undefined,
+          hint_mode: freestyleHintMode,
           scenario_vocabulary: missingMustSay.length
             ? missingMustSay
             : undefined,
@@ -2600,6 +2666,8 @@ export function AgentTab() {
           user_position: debateUserPosition,
           ai_position: debateAIPosition,
           roleplay_settings: debateSettingsPayload,
+          english_settings: learningLanguage !== 'zh' ? englishSettingsPayload : undefined,
+          hint_mode: freestyleHintMode,
           steps: debateStepsForCurrentDifficulty.map((s) => ({
             id: s.id,
             titleRu: s.titleRu,
@@ -2612,11 +2680,12 @@ export function AgentTab() {
           mode: 'chat',
           last_assistant_message: lastAssistant.content.trim(),
           history: historyPayload,
-          level: 'B1',
+          level: englishCefrLevel,
           roleplay_settings: freestyleSettingsPayload,
           freestyle_context: freestyleContextPayload,
           hint_mode: freestyleHintMode,
           chinese_settings: learningLanguage === 'zh' ? chineseSettingsPayload : undefined,
+          english_settings: learningLanguage !== 'zh' ? englishSettingsPayload : undefined,
         };
       } else {
         return;
@@ -2657,6 +2726,8 @@ export function AgentTab() {
     debateSettingsPayload,
     learningLanguage,
     chineseSettingsPayload,
+    englishSettingsPayload,
+    englishCefrLevel,
     zhSaidMustSay,
   ]);
 
@@ -3260,8 +3331,8 @@ export function AgentTab() {
       {/* Боковая панель истории диалога */}
       <aside
         style={{
-          width: subtitlesVisible ? (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation) ? 'min(400px, 42%)' : 'min(300px, 36%)') : 0,
-          minWidth: subtitlesVisible ? (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation) ? 280 : 240) : 0,
+          width: subtitlesVisible ? ((learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation)) || (learningLanguage !== 'zh' && englishShowTranslation) ? 'min(400px, 42%)' : 'min(300px, 36%)') : 0,
+          minWidth: subtitlesVisible ? ((learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation)) || (learningLanguage !== 'zh' && englishShowTranslation) ? 280 : 240) : 0,
           overflow: 'hidden',
           borderRight: subtitlesVisible ? '1px solid var(--sidebar-border)' : 'none',
           background: 'var(--sidebar-hover)',
@@ -3302,10 +3373,9 @@ export function AgentTab() {
                 const parsed = isChinese && chineseShowPinyin
                   ? parseStructuredChineseResponse(m.content)
                   : null;
-                const cleanText = isChinese
-                  ? extractCleanChineseText(m.content)
-                  : m.content;
-                const translation = isChinese && chineseShowTranslation
+                const cleanText = extractCleanChineseText(m.content) || m.content;
+                const showTranslation = isChinese ? chineseShowTranslation : englishShowTranslation;
+                const translation = showTranslation
                   ? extractTranslation(m.content)
                   : null;
                 return (
@@ -3637,18 +3707,24 @@ export function AgentTab() {
                   </div>
                 </div>
               )}
-              {/* Настройки для английского Freestyle Mode */}
-              {agentMode === 'chat' && learningLanguage !== 'zh' && (
+              {/* Настройки обучения для английского — единая панель во всех режимах */}
+              {learningLanguage !== 'zh' && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || (agentMode === 'debate' && debateStarted)) && (
                 <div
-                  className="freestyle-settings-panel"
+                  className="english-settings-panel"
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    width: 'min(340px, 100%)',
+                    width: 340,
+                    maxWidth: '100%',
+                    minWidth: 0,
+                    boxSizing: 'border-box',
+                    flex: englishSettingsOpen ? '1 1 auto' : '0 0 auto',
+                    minHeight: englishSettingsOpen ? 0 : undefined,
+                    maxHeight: '100%',
                     alignSelf: 'flex-end',
                     borderRadius: 14,
                     border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-hover)',
+                    background: 'var(--sidebar-bg)',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     overflow: 'hidden',
                     pointerEvents: 'auto',
@@ -3656,8 +3732,8 @@ export function AgentTab() {
                 >
                   <button
                     type="button"
-                    onClick={() => setFreestyleSettingsOpen((v) => !v)}
-                    aria-expanded={freestyleSettingsOpen}
+                    onClick={() => setEnglishSettingsOpen((v) => !v)}
+                    aria-expanded={englishSettingsOpen}
                     style={{
                       width: '100%',
                       display: 'flex',
@@ -3679,11 +3755,13 @@ export function AgentTab() {
                       </svg>
                       <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
                         <span style={{ fontSize: '0.8125rem', fontWeight: 600, letterSpacing: '0.01em' }}>
-                          Настройки стиля
+                          Настройки обучения
                         </span>
-                        {!freestyleSettingsOpen && (
+                        {!englishSettingsOpen && (
                           <span style={{ fontSize: '0.6875rem', opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {freestyleSettingsSummary}
+                            {agentMode === 'chat'
+                              ? `${englishSettingsSummary}${freestyleSettingsSummary ? ` · ${freestyleSettingsSummary}` : ''}`
+                              : englishSettingsSummary}
                           </span>
                         )}
                       </div>
@@ -3697,7 +3775,7 @@ export function AgentTab() {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      style={{ transform: freestyleSettingsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease', flexShrink: 0, opacity: 0.6 }}
+                      style={{ transform: englishSettingsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease', flexShrink: 0, opacity: 0.6 }}
                       aria-hidden
                     >
                       <polyline points="6 9 12 15 18 9" />
@@ -3705,13 +3783,443 @@ export function AgentTab() {
                   </button>
                   <div
                     style={{
-                      display: 'grid',
-                      gridTemplateRows: freestyleSettingsOpen ? '1fr' : '0fr',
-                      transition: 'grid-template-rows 0.24s ease',
+                      display: englishSettingsOpen ? 'flex' : 'none',
+                      flexDirection: 'column',
+                      overflowY: 'auto',
+                      flex: 1,
+                      minHeight: 0,
+                      overscrollBehavior: 'contain',
+                      scrollbarGutter: 'stable',
                     }}
                   >
-                    <div style={{ overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 0.875rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
+                      {agentMode === 'roleplay' && selectedScenario && (
+                        <>
+                          <RoleplayScenarioProgress
+                            scenario={selectedScenario}
+                            completedStepIds={roleplayStepsCompletedIds}
+                            saidMustSayHanzi={zhSaidMustSay}
+                            selectedSessionId={selectedSessionId}
+                            learningLanguage={learningLanguage}
+                            stepsOpen={roleplaySidebarStepsOpen}
+                            onToggleSteps={() => setRoleplaySidebarStepsOpen((v) => !v)}
+                            onSaveProgress={saveRoleplayProgress}
+                          />
+                          {(selectedScenario.goalRu || selectedScenario.goal) && (
+                            <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
+                              <button
+                                type="button"
+                                onClick={() => setRoleplaySidebarGoalOpen((v) => !v)}
+                                aria-expanded={roleplaySidebarGoalOpen}
+                                style={{
+                                  width: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  border: 'none',
+                                  background: 'transparent',
+                                  color: 'var(--sidebar-text)',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.04em',
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                  marginBottom: roleplaySidebarGoalOpen ? '0.5rem' : 0,
+                                }}
+                              >
+                                Цель задания
+                                <span style={{ opacity: 0.7 }}>{roleplaySidebarGoalOpen ? '▼' : '▶'}</span>
+                              </button>
+                              {roleplaySidebarGoalOpen && (
+                                <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, color: 'var(--sidebar-text)', opacity: 0.95 }}>
+                                  {selectedScenario.goalRu ?? selectedScenario.goal}
+                                </p>
+                              )}
+                            </section>
+                          )}
+                        </>
+                      )}
+                      {agentMode === 'debate' && debateStarted && (
+                        <>
+                          {debateStepsForCurrentDifficulty.length > 0 && (
+                            <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              <button
+                                type="button"
+                                onClick={() => setDebateSidebarStepsOpen((v) => !v)}
+                                aria-expanded={debateSidebarStepsOpen}
+                                style={{
+                                  width: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  border: 'none',
+                                  background: 'transparent',
+                                  color: 'var(--sidebar-text)',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.04em',
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                  marginBottom: debateSidebarStepsOpen ? '0.5rem' : 0,
+                                }}
+                              >
+                                Задание
+                                <span style={{ opacity: 0.7 }}>{debateSidebarStepsOpen ? '▼' : '▶'}</span>
+                              </button>
+                              {debateSidebarStepsOpen &&
+                                debateStepsForCurrentDifficulty.slice()
+                                  .sort((a, b) => a.order - b.order)
+                                  .map((step) => {
+                                    const done = debateCompletedStepIds.includes(step.id);
+                                    return (
+                                      <div
+                                        key={step.id}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.5rem',
+                                          fontSize: '0.875rem',
+                                          lineHeight: 1.4,
+                                          color: 'var(--sidebar-text)',
+                                          opacity: done ? 0.85 : 1,
+                                          marginTop: '0.35rem',
+                                        }}
+                                      >
+                                        {done ? (
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" style={{ flexShrink: 0 }} aria-hidden>
+                                            <polyline points="20 6 9 17 4 12" />
+                                          </svg>
+                                        ) : (
+                                          <span style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid var(--sidebar-border)', flexShrink: 0 }} aria-hidden />
+                                        )}
+                                        <span>{step.titleRu}</span>
+                                      </div>
+                                    );
+                                  })}
+                            </section>
+                          )}
+                          {DEBATE_GOAL_RU && (
+                            <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
+                              <button
+                                type="button"
+                                onClick={() => setDebateSidebarGoalOpen((v) => !v)}
+                                aria-expanded={debateSidebarGoalOpen}
+                                style={{
+                                  width: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  border: 'none',
+                                  background: 'transparent',
+                                  color: 'var(--sidebar-text)',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.04em',
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                  marginBottom: debateSidebarGoalOpen ? '0.5rem' : 0,
+                                }}
+                              >
+                                Цель задания
+                                <span style={{ opacity: 0.7 }}>{debateSidebarGoalOpen ? '▼' : '▶'}</span>
+                              </button>
+                              {debateSidebarGoalOpen && (
+                                <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, color: 'var(--sidebar-text)', opacity: 0.95, whiteSpace: 'pre-line' }}>
+                                  {DEBATE_GOAL_RU}
+                                </p>
+                              )}
+                            </section>
+                          )}
+                          {!debateCompleted && (
+                            (() => {
+                              const allStepsDone =
+                                debateStepsForCurrentDifficulty.length === 0 ||
+                                debateStepsForCurrentDifficulty.every((s) => debateCompletedStepIds.includes(s.id));
+                              if (!allStepsDone) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setDebateCompleted(true)}
+                                  style={{
+                                    width: '100%',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '0.5rem',
+                                    padding: '0.5rem 0.75rem',
+                                    borderRadius: 8,
+                                    border: '1px solid rgba(34, 197, 94, 0.4)',
+                                    background: 'rgba(34, 197, 94, 0.12)',
+                                    color: 'rgba(34, 197, 94, 0.95)',
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  Сохранить прогресс
+                                </button>
+                              );
+                            })()
+                          )}
+                        </>
+                      )}
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem',
+                          padding: '0.625rem 0.75rem',
+                          borderRadius: 10,
+                          background: 'var(--sidebar-bg)',
+                          border: '1px solid var(--sidebar-border)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                          Уровень сложности
+                        </span>
+                        {englishLevelEditable ? (
+                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                            <span style={{ opacity: 0.85, flexShrink: 0 }}>Уровень CEFR</span>
+                            <div style={{ minWidth: 168, maxWidth: 210, flex: 1 }}>
+                              <LevelDropdown
+                                value={englishCefrLevel}
+                                onChange={(v) => setEnglishCefrLevel(v as EnglishCefrLevel)}
+                                options={ENGLISH_CEFR_OPTIONS}
+                                openUpward={false}
+                                ariaLabel="Уровень CEFR"
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.8125rem', borderRadius: 8 }}
+                              />
+                            </div>
+                          </label>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
+                            <span style={{ opacity: 0.85 }}>Уровень</span>
+                            <span style={{ fontWeight: 600 }}>{englishLevelLabel(lockedEnglishLevel)}</span>
+                          </div>
+                        )}
+                        <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4 }}>
+                          {englishLevelEditable
+                            ? 'ИИ говорит строго на выбранном уровне — не выше и не ниже'
+                            : agentMode === 'debate'
+                              ? 'Сложность задана при старте дебата'
+                              : 'Уровень задан сценарием'}
+                        </p>
+                      </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.625rem',
+                          padding: '0.625rem 0.75rem',
+                          borderRadius: 10,
+                          background: 'var(--sidebar-bg)',
+                          border: '1px solid var(--sidebar-border)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                          Отображение
+                        </span>
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: '0.5rem 0.625rem',
+                            borderRadius: 8,
+                            background: englishShowTranslation ? 'rgba(34, 197, 94, 0.1)' : 'transparent',
+                            border: englishShowTranslation ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid transparent',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={englishShowTranslation}
+                            onChange={(e) => setEnglishShowTranslation(e.target.checked)}
+                            style={{ accentColor: 'rgb(34, 197, 94)', width: 16, height: 16 }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: '0.8125rem', color: 'var(--sidebar-text)', fontWeight: 500 }}>Перевод</span>
+                            <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.5, lineHeight: 1.3 }}>
+                              Русский перевод ответов ИИ
+                            </p>
+                          </div>
+                        </label>
+                      </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem',
+                          padding: '0.625rem 0.75rem',
+                          borderRadius: 10,
+                          background: 'var(--sidebar-bg)',
+                          border: '1px solid var(--sidebar-border)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                          Скорость воспроизведения
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                          {SPEECH_SPEED_OPTIONS.map((speed) => (
+                            <button
+                              key={speed}
+                              type="button"
+                              onClick={() => setChineseSpeechSpeed(speed)}
+                              style={{
+                                padding: '0.3rem 0.5rem',
+                                borderRadius: 6,
+                                border: chineseSpeechSpeed === speed ? '1px solid rgb(99, 102, 241)' : '1px solid var(--sidebar-border)',
+                                background: chineseSpeechSpeed === speed ? 'rgba(99, 102, 241, 0.15)' : 'var(--sidebar-hover)',
+                                color: chineseSpeechSpeed === speed ? 'rgb(99, 102, 241)' : 'var(--sidebar-text)',
+                                fontSize: '0.75rem',
+                                fontWeight: chineseSpeechSpeed === speed ? 600 : 400,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                minWidth: '2.5rem',
+                              }}
+                            >
+                              {speed}x
+                            </button>
+                          ))}
+                        </div>
+                        <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.5, lineHeight: 1.35 }}>
+                          Скорость озвучки ответов ИИ
+                        </p>
+                      </div>
+                      {((messages.length > 0 && messages[messages.length - 1]?.role === 'assistant') ||
+                        (agentMode === 'roleplay' && !!selectedScenario && (messages.length === 0 || messages[messages.length - 1]?.role === 'assistant'))) ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.625rem',
+                            padding: '0.625rem 0.75rem',
+                            borderRadius: 10,
+                            background: 'rgba(251, 191, 36, 0.08)',
+                            border: '1px solid rgba(251, 191, 36, 0.25)',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.7, color: 'rgb(251, 191, 36)' }}>
+                            Подсказка ответа
+                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                            <span style={{ fontSize: '0.6875rem', opacity: 0.6, color: 'var(--sidebar-text)' }}>Режим:</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+                              {(Object.entries(ENGLISH_HINT_MODE_LABELS) as [FreestyleHintMode, { label: string; desc: string }][]).map(([mode, { label }]) => (
+                                <button
+                                  key={mode}
+                                  type="button"
+                                  onClick={() => setFreestyleHintMode(mode)}
+                                  style={{
+                                    padding: '0.3rem 0.55rem',
+                                    borderRadius: 6,
+                                    border: freestyleHintMode === mode ? '1px solid rgb(251, 191, 36)' : '1px solid var(--sidebar-border)',
+                                    background: freestyleHintMode === mode ? 'rgba(251, 191, 36, 0.2)' : 'var(--sidebar-bg)',
+                                    color: freestyleHintMode === mode ? 'rgb(251, 191, 36)' : 'var(--sidebar-text)',
+                                    fontSize: '0.75rem',
+                                    fontWeight: freestyleHintMode === mode ? 600 : 400,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.35, color: 'var(--sidebar-text)' }}>
+                              {ENGLISH_HINT_MODE_LABELS[freestyleHintMode].desc}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={requestReplyHint}
+                            disabled={replyHintLoading}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.5rem',
+                              padding: '0.5rem 0.75rem',
+                              borderRadius: 8,
+                              border: '1px solid rgba(251, 191, 36, 0.35)',
+                              background: replyHintLoading ? 'rgba(251, 191, 36, 0.1)' : 'rgba(251, 191, 36, 0.15)',
+                              color: 'rgb(251, 191, 36)',
+                              fontSize: '0.8125rem',
+                              fontWeight: 600,
+                              cursor: replyHintLoading ? 'default' : 'pointer',
+                              opacity: replyHintLoading ? 0.7 : 1,
+                            }}
+                          >
+                            {replyHintLoading ? 'Загрузка…' : 'Получить подсказку'}
+                          </button>
+                          {replyHintText && (
+                            <div style={{ marginTop: '0.25rem', padding: '0.625rem', borderRadius: 8, background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                              <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.5, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                {extractCleanChineseText(replyHintText) || replyHintText}
+                              </p>
+                              {englishShowTranslation && extractTranslation(replyHintText) && (
+                                <p style={{ margin: '0.5rem 0 0', paddingTop: '0.5rem', borderTop: '1px dashed rgba(34, 197, 94, 0.35)', fontSize: '0.8125rem', color: 'rgba(34, 197, 94, 0.9)', fontStyle: 'italic', lineHeight: 1.4 }}>
+                                  {extractTranslation(replyHintText)}
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setReplyHintText(null)}
+                                style={{
+                                  marginTop: '0.5rem',
+                                  padding: '0.3rem 0.6rem',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  background: 'rgba(251, 191, 36, 0.2)',
+                                  color: 'rgb(251, 191, 36)',
+                                  fontSize: '0.75rem',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Скрыть
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem',
+                          padding: '0.625rem 0.75rem',
+                          borderRadius: 10,
+                          background: 'var(--sidebar-bg)',
+                          border: '1px solid var(--sidebar-border)',
+                        }}
+                      >
+                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+                          Исправление ошибок
+                        </span>
+                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', overflow: 'hidden' }}>
+                          <span style={{ opacity: 0.85, flexShrink: 0 }}>Режим коррекции</span>
+                          <select
+                            className="roleplay-modern-select"
+                            value={englishCorrectionMode}
+                            onChange={(e) => setEnglishCorrectionMode(e.target.value as ChineseCorrectionMode)}
+                            style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.75rem', minWidth: 0, maxWidth: '55%' }}
+                          >
+                            <option value="gentle">Мягкий</option>
+                            <option value="active">Активный</option>
+                          </select>
+                        </label>
+                        <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4 }}>
+                          {englishCorrectionMode === 'gentle'
+                            ? 'ИИ будет корректно продолжать диалог, мягко исправляя серьёзные ошибки'
+                            : 'ИИ будет указывать на все ошибки и предлагать правильные варианты'}
+                        </p>
+                      </div>
+                      {agentMode === 'chat' && (
+                        <>
                         {/* --- Пресеты --- */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                           <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
@@ -3873,8 +4381,9 @@ export function AgentTab() {
                             />
                           </label>
                         </div>
+                        </>
+                      )}
                       </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -4466,543 +4975,6 @@ export function AgentTab() {
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-              {learningLanguage === 'en' && agentMode === 'roleplay' && selectedScenario && !goalReached && (
-                <div
-                  style={{
-                    width: 280,
-                    flexShrink: 0,
-                    borderRadius: 12,
-                    border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-bg)',
-                    overflow: 'hidden',
-                    pointerEvents: 'auto',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setRoleplaySidebarOpen((v) => !v)}
-                    aria-expanded={roleplaySidebarOpen}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '0.5rem',
-                      padding: '0.625rem 0.875rem',
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--sidebar-text)',
-                      fontSize: '0.8125rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span>Задание и подсказки</span>
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      style={{ transform: roleplaySidebarOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}
-                      aria-hidden
-                    >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                  {roleplaySidebarOpen && (
-                    <div style={{ padding: '0 0.875rem 0.875rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '60vh', overflowY: 'auto' }}>
-                      <RoleplayScenarioProgress
-                        scenario={selectedScenario}
-                        completedStepIds={roleplayStepsCompletedIds}
-                        saidMustSayHanzi={zhSaidMustSay}
-                        selectedSessionId={selectedSessionId}
-                        learningLanguage={learningLanguage}
-                        stepsOpen={roleplaySidebarStepsOpen}
-                        onToggleSteps={() => setRoleplaySidebarStepsOpen((v) => !v)}
-                        onSaveProgress={saveRoleplayProgress}
-                        boxed
-                      />
-                      {(selectedScenario.goalRu || selectedScenario.goal) && (
-                        <section style={{ border: '1px solid rgba(34, 197, 94, 0.5)', borderRadius: 10, padding: '0.75rem', background: 'rgba(34, 197, 94, 0.06)' }}>
-                          <button
-                            type="button"
-                            onClick={() => setRoleplaySidebarGoalOpen((v) => !v)}
-                            aria-expanded={roleplaySidebarGoalOpen}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              border: 'none',
-                              background: 'transparent',
-                              color: 'var(--sidebar-text)',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.04em',
-                              cursor: 'pointer',
-                              padding: 0,
-                              marginBottom: roleplaySidebarGoalOpen ? '0.5rem' : 0,
-                            }}
-                          >
-                            Цель задания
-                            <span style={{ opacity: 0.7 }}>{roleplaySidebarGoalOpen ? '▼' : '▶'}</span>
-                          </button>
-                          {roleplaySidebarGoalOpen && (
-                            <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, color: 'var(--sidebar-text)', opacity: 0.95 }}>
-                              {selectedScenario.goalRu ?? selectedScenario.goal}
-                            </p>
-                          )}
-                        </section>
-                      )}
-                      {(messages.length === 0 || messages[messages.length - 1]?.role === 'assistant') && (
-                        <section style={{ border: '1px solid rgba(251, 191, 36, 0.4)', borderRadius: 10, padding: '0.75rem', background: 'rgba(251, 191, 36, 0.06)' }}>
-                          <button
-                            type="button"
-                            onClick={requestReplyHint}
-                            disabled={replyHintLoading}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '0.5rem',
-                              border: 'none',
-                              padding: '0.5rem 0.75rem',
-                              borderRadius: 8,
-                              background: replyHintLoading ? 'rgba(251, 191, 36, 0.1)' : 'rgba(251, 191, 36, 0.12)',
-                              color: 'rgba(251, 191, 36, 0.98)',
-                              fontSize: '0.8125rem',
-                              fontWeight: 600,
-                              cursor: replyHintLoading ? 'default' : 'pointer',
-                              opacity: replyHintLoading ? 0.8 : 1,
-                            }}
-                            title="Получить подсказку ответа от ИИ под ваш уровень"
-                          >
-                            {replyHintLoading ? (
-                              <>
-                                <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite' }}>·</span>
-                                <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '150ms' }}>·</span>
-                                <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '300ms' }}>·</span>
-                              </>
-                            ) : (
-                              <>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                  <circle cx="12" cy="12" r="10" />
-                                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                                </svg>
-                                Подсказка ответа
-                              </>
-                            )}
-                          </button>
-                          {(replyHintLoading || replyHintText !== null) && (
-                            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(251, 191, 36, 0.2)' }}>
-                              {replyHintLoading ? (
-                                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.8 }}>
-                                  ИИ подбирает естественную фразу…
-                                </p>
-                              ) : replyHintText !== null && replyHintText !== '' ? (
-                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
-                                  <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.5, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
-                                    {replyHintText}
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setReplyHintText(null)}
-                                    aria-label="Скрыть подсказку"
-                                    style={{
-                                      padding: '0.2rem',
-                                      border: 'none',
-                                      background: 'transparent',
-                                      color: 'var(--sidebar-text)',
-                                      opacity: 0.6,
-                                      cursor: 'pointer',
-                                      borderRadius: 4,
-                                      fontSize: '1rem',
-                                      lineHeight: 1,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              ) : replyHintText !== null ? (
-                                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
-                                  Не удалось загрузить. Попробуйте ещё раз.
-                                </p>
-                              ) : null}
-                            </div>
-                          )}
-                        </section>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              {agentMode === 'debate' && debateStarted && debateTopic && !debateCompleted && (
-                <div
-                  style={{
-                    width: 280,
-                    flexShrink: 0,
-                    borderRadius: 12,
-                    border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-hover)',
-                    overflow: 'hidden',
-                    pointerEvents: 'auto',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setDebateSidebarOpen((v) => !v)}
-                    aria-expanded={debateSidebarOpen}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '0.5rem',
-                      padding: '0.625rem 0.875rem',
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--sidebar-text)',
-                      fontSize: '0.8125rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span>Задание и подсказки</span>
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      style={{ transform: debateSidebarOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}
-                      aria-hidden
-                    >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                  {debateSidebarOpen && (
-                    <div style={{ padding: '0 0.875rem 0.875rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '60vh', overflowY: 'auto' }}>
-                      {debateStepsForCurrentDifficulty.length > 0 && (
-                        <section style={{ border: '1px solid var(--sidebar-border)', borderRadius: 10, padding: '0.75rem', background: 'var(--sidebar-bg)' }}>
-                          <button
-                            type="button"
-                            onClick={() => setDebateSidebarStepsOpen((v) => !v)}
-                            aria-expanded={debateSidebarStepsOpen}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              border: 'none',
-                              background: 'transparent',
-                              color: 'var(--sidebar-text)',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.04em',
-                              cursor: 'pointer',
-                              padding: 0,
-                              marginBottom: debateSidebarStepsOpen ? '0.5rem' : 0,
-                            }}
-                          >
-                            Задание
-                            <span style={{ opacity: 0.7 }}>{debateSidebarStepsOpen ? '▼' : '▶'}</span>
-                          </button>
-                          {debateSidebarStepsOpen &&
-                            debateStepsForCurrentDifficulty.slice()
-                              .sort((a, b) => a.order - b.order)
-                              .map((step) => {
-                                const done = debateCompletedStepIds.includes(step.id);
-                                return (
-                                  <div
-                                    key={step.id}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '0.5rem',
-                                      fontSize: '0.875rem',
-                                      lineHeight: 1.4,
-                                      color: 'var(--sidebar-text)',
-                                      opacity: done ? 0.85 : 1,
-                                      marginTop: '0.35rem',
-                                    }}
-                                  >
-                                    {done ? (
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" style={{ flexShrink: 0 }} aria-hidden>
-                                        <polyline points="20 6 9 17 4 12" />
-                                      </svg>
-                                    ) : (
-                                      <span style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid var(--sidebar-border)', flexShrink: 0 }} aria-hidden />
-                                    )}
-                                    <span>{step.titleRu}</span>
-                                  </div>
-                                );
-                              })}
-                        </section>
-                      )}
-                      {DEBATE_GOAL_RU && (
-                        <section style={{ border: '1px solid rgba(34, 197, 94, 0.5)', borderRadius: 10, padding: '0.75rem', background: 'rgba(34, 197, 94, 0.06)' }}>
-                          <button
-                            type="button"
-                            onClick={() => setDebateSidebarGoalOpen((v) => !v)}
-                            aria-expanded={debateSidebarGoalOpen}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              border: 'none',
-                              background: 'transparent',
-                              color: 'var(--sidebar-text)',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.04em',
-                              cursor: 'pointer',
-                              padding: 0,
-                              marginBottom: debateSidebarGoalOpen ? '0.5rem' : 0,
-                            }}
-                          >
-                            Цель задания
-                            <span style={{ opacity: 0.7 }}>{debateSidebarGoalOpen ? '▼' : '▶'}</span>
-                          </button>
-                          {debateSidebarGoalOpen && (
-                            <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, color: 'var(--sidebar-text)', opacity: 0.95, whiteSpace: 'pre-line' }}>
-                              {DEBATE_GOAL_RU}
-                            </p>
-                          )}
-                        </section>
-                      )}
-                      {messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && (
-                        <section style={{ border: '1px solid rgba(251, 191, 36, 0.4)', borderRadius: 10, padding: '0.75rem', background: 'rgba(251, 191, 36, 0.06)' }}>
-                          <button
-                            type="button"
-                            onClick={requestReplyHint}
-                            disabled={replyHintLoading}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '0.5rem',
-                              border: 'none',
-                              padding: '0.5rem 0.75rem',
-                              borderRadius: 8,
-                              background: replyHintLoading ? 'rgba(251, 191, 36, 0.1)' : 'rgba(251, 191, 36, 0.12)',
-                              color: 'rgba(251, 191, 36, 0.98)',
-                              fontSize: '0.8125rem',
-                              fontWeight: 600,
-                              cursor: replyHintLoading ? 'default' : 'pointer',
-                              opacity: replyHintLoading ? 0.8 : 1,
-                            }}
-                            title="Получить подсказку ответа от ИИ под ваш уровень"
-                          >
-                            {replyHintLoading ? (
-                              <>
-                                <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite' }}>·</span>
-                                <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '150ms' }}>·</span>
-                                <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '300ms' }}>·</span>
-                              </>
-                            ) : (
-                              <>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                  <circle cx="12" cy="12" r="10" />
-                                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                                </svg>
-                                Подсказка ответа
-                              </>
-                            )}
-                          </button>
-                          {(replyHintLoading || replyHintText !== null) && (
-                            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(251, 191, 36, 0.2)' }}>
-                              {replyHintLoading ? (
-                                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.8 }}>
-                                  ИИ подбирает естественную фразу…
-                                </p>
-                              ) : replyHintText !== null && replyHintText !== '' ? (
-                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
-                                  <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.5, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
-                                    {replyHintText}
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setReplyHintText(null)}
-                                    aria-label="Скрыть подсказку"
-                                    style={{
-                                      padding: '0.2rem',
-                                      border: 'none',
-                                      background: 'transparent',
-                                      color: 'var(--sidebar-text)',
-                                      opacity: 0.6,
-                                      cursor: 'pointer',
-                                      borderRadius: 4,
-                                      fontSize: '1rem',
-                                      lineHeight: 1,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              ) : replyHintText !== null ? (
-                                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
-                                  Не удалось загрузить. Попробуйте ещё раз.
-                                </p>
-                              ) : null}
-                            </div>
-                          )}
-                        </section>
-                      )}
-                      {!debateCompleted && (
-                        (() => {
-                          const allStepsDone =
-                            debateStepsForCurrentDifficulty.length === 0 ||
-                            debateStepsForCurrentDifficulty.every((s) => debateCompletedStepIds.includes(s.id));
-                          if (!allStepsDone) return null;
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => setDebateCompleted(true)}
-                              style={{
-                                marginTop: '0.75rem',
-                                width: '100%',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '0.5rem',
-                                padding: '0.5rem 0.75rem',
-                                borderRadius: 8,
-                                border: '1px solid rgba(34, 197, 94, 0.4)',
-                                background: 'rgba(34, 197, 94, 0.12)',
-                                color: 'rgba(34, 197, 94, 0.95)',
-                                fontSize: '0.8125rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'all 0.2s ease',
-                              }}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                              Сохранить прогресс
-                            </button>
-                          );
-                        })()
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              {messages.filter((m) => m.role === 'user').length > 0 && (
-                <>
-                  {messages[messages.length - 1]?.role === 'assistant' && (
-                    <>
-                      {/* Режим подсказки и кнопка — только для английского (для китайского они в панели настроек) */}
-                      {agentMode === 'chat' && learningLanguage !== 'zh' && (
-                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.55rem', borderRadius: 10, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', fontSize: '0.75rem' }}>
-                          <span style={{ opacity: 0.8 }}>Режим подсказки</span>
-                          <select
-                            value={freestyleHintMode}
-                            onChange={(e) => setFreestyleHintMode(e.target.value as FreestyleHintMode)}
-                            style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)', padding: '0.18rem 0.4rem', fontSize: '0.75rem' }}
-                          >
-                            {Object.entries(FREESTYLE_HINT_MODE_LABELS).map(([value, label]) => (
-                              <option key={value} value={value}>{label}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      {agentMode === 'chat' && learningLanguage !== 'zh' && (
-                        <button
-                          type="button"
-                          onClick={requestReplyHint}
-                          disabled={replyHintLoading}
-                          className="agent-toolbar-btn"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.4rem',
-                            padding: '0.5rem 0.875rem',
-                            borderRadius: 10,
-                            border: '1px solid rgba(251, 191, 36, 0.35)',
-                            background: 'rgba(251, 191, 36, 0.12)',
-                            color: 'rgba(251, 191, 36, 0.98)',
-                            fontSize: '0.8125rem',
-                            fontWeight: 500,
-                            cursor: replyHintLoading ? 'default' : 'pointer',
-                            opacity: replyHintLoading ? 0.7 : 1,
-                          }}
-                          title="Подсказка ответа по текущему стилю"
-                        >
-                          {replyHintLoading ? (
-                            <>
-                              <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite' }}>·</span>
-                              <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '150ms' }}>·</span>
-                              <span style={{ animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '300ms' }}>·</span>
-                            </>
-                          ) : (
-                            <>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="10" />
-                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                                <line x1="12" y1="17" x2="12.01" y2="17" />
-                              </svg>
-                              Подсказка ответа
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-              {/* Подсказка ответа (только для английского — для китайского она в панели настроек) */}
-              {agentMode === 'chat' && learningLanguage !== 'zh' && (replyHintLoading || replyHintText !== null) && (
-                <div
-                  style={{
-                    marginTop: '0.6rem',
-                    maxWidth: 520,
-                    padding: '0.7rem 0.85rem',
-                    borderRadius: 12,
-                    border: '1px solid rgba(251, 191, 36, 0.35)',
-                    background: 'rgba(251, 191, 36, 0.08)',
-                    alignSelf: 'flex-end',
-                    pointerEvents: 'auto',
-                  }}
-                >
-                  {replyHintLoading ? (
-                    <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.85 }}>
-                      ИИ подбирает подсказку под выбранный стиль…
-                    </p>
-                  ) : replyHintText ? (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
-                      <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
-                        {replyHintText}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setReplyHintText(null)}
-                        style={{ border: 'none', background: 'transparent', color: 'var(--sidebar-text)', opacity: 0.65, cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}
-                        aria-label="Скрыть подсказку"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ) : (
-                    <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
-                      Не удалось загрузить. Попробуйте еще раз.
-                    </p>
-                  )}
                 </div>
               )}
             </div>

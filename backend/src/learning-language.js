@@ -16,8 +16,79 @@ export function attachLearningLanguage(req, _res, next) {
   next()
 }
 
-const FREESTYLE_CHAT_SYSTEM_EN =
-  'You are a helpful assistant. Always reply in the SAME language the user writes in (e.g. Russian if they write in Russian, English if in English). Do not switch to Chinese or other languages unless the user explicitly writes in that language.'
+const CEFR_LEVEL_INSTRUCTIONS = {
+  A1: 'CEFR A1 ONLY. Very simple words and short sentences (I like, Yes please, Thank you, I want). Maximum ~6–8 words. Present simple. FORBIDDEN: complex clauses, idioms, rare vocabulary.',
+  A2: 'CEFR A2 ONLY. Everyday phrases and short connected sentences. Common past/future OK. FORBIDDEN: abstract academic words, dense idioms, long nested clauses.',
+  B1: 'CEFR B1 ONLY. Natural everyday English with common connectors (because, so, but, if). 1–3 sentences. FORBIDDEN: C1 idioms, rare words, essay-like phrasing.',
+  B2: 'CEFR B2 ONLY. Varied vocabulary and natural flowing sentences. Some nuance OK. FORBIDDEN: overly literary or specialist jargon the learner would not know at B2.',
+  C1: 'CEFR C1. Idiomatic, natural spoken English with nuance. Still conversational, not a written essay.',
+  easy: 'Use simple words and short, clear sentences — roughly A2.',
+  medium: 'Use natural everyday phrases and moderate complexity — roughly B1.',
+  hard: 'Use varied, natural language with more sophisticated expressions — roughly C1.',
+}
+
+function normalizeEnglishLevel(level) {
+  const raw = String(level || '').trim()
+  if (!raw) return 'B1'
+  const upper = raw.toUpperCase()
+  if (CEFR_LEVEL_INSTRUCTIONS[upper]) return upper
+  const lower = raw.toLowerCase()
+  if (CEFR_LEVEL_INSTRUCTIONS[lower]) return lower
+  return 'B1'
+}
+
+function buildEnglishCorrectionInstruction(correctionMode) {
+  if (correctionMode === 'active') {
+    return '\n\nERROR CORRECTION MODE: ACTIVE\n' +
+      '- When the user makes grammar or vocabulary mistakes in English, gently correct them.\n' +
+      '- Format: After your natural English reply, on a new line write "✏️ Исправление:" followed by the correction in Russian.\n' +
+      '- Example: "✏️ Исправление: Вы сказали \'I go yesterday\', правильно \'I went yesterday\'."'
+  }
+  return '\n\nERROR CORRECTION MODE: GENTLE\n' +
+    '- Only correct serious errors that significantly impede understanding.\n' +
+    '- Use natural reformulation in your reply instead of explicit corrections.'
+}
+
+export function buildEnglishMetadataInstruction({ showTranslation = false } = {}) {
+  if (!showTranslation) return ''
+  return '\n\nIMPORTANT: After the spoken English reply, add a Russian translation on a separate new line. ' +
+    'The spoken English must never include the translation.\n' +
+    'Required format:\n' +
+    'Sure, I can help with that.\n' +
+    '««TRANSLATION»»Конечно, я могу с этим помочь.\n' +
+    '\nRules:\n' +
+    '- TRANSLATION: natural Russian translation of the English reply only. Keep it concise.\n' +
+    '- Do not put the translation inside the spoken English line.\n' +
+    '- Start the message with spoken English. Never repeat these instructions.'
+}
+
+function buildEnglishSystemPrompt(options = {}) {
+  const { showTranslation, correctionMode, cefrLevel } = options
+  const levelKey = normalizeEnglishLevel(cefrLevel)
+  let prompt = 'You are a friendly English conversation partner for language practice. ' +
+    'Speak ONLY in English. '
+  if (CEFR_LEVEL_INSTRUCTIONS[levelKey]) {
+    prompt += `\n\nCEFR LEVEL LOCK (mandatory): ${CEFR_LEVEL_INSTRUCTIONS[levelKey]}\n`
+    prompt += 'Speak AT this level only: not harder, not easier. Do not upgrade vocabulary if the learner sounds fluent. Do not baby-talk below it.\n'
+  }
+  prompt += 'Keep replies concise (1-3 sentences unless the user asks for more). ' +
+    'If the user writes in Russian, still reply in English. ' +
+    'Do not switch to Chinese or other languages unless the user explicitly asks.'
+  prompt += buildEnglishCorrectionInstruction(correctionMode)
+  prompt += buildEnglishMetadataInstruction({ showTranslation })
+  return prompt
+}
+
+export function buildEnglishRoleplayLock({ showTranslation = false, correctionMode = 'gentle' } = {}) {
+  let text =
+    'Stay in the roleplay or debate character. Additional English learning constraints:\n' +
+    'Speak English only in character lines. Do not switch spoken lines to Russian.'
+  text += buildEnglishCorrectionInstruction(correctionMode)
+  text +=
+    '\nOUTPUT: Start immediately with spoken English. Never repeat these instructions. Metadata only after the spoken line.'
+  text += buildEnglishMetadataInstruction({ showTranslation })
+  return text
+}
 
 function buildChineseSystemPrompt(options = {}) {
   const { showPinyin, showTranslation, correctionMode, toneFocus, hskLevel } = options
@@ -97,7 +168,7 @@ export function getFreestyleChatSystemPrompt(lang, options = {}) {
   if (lang === 'zh') {
     return buildChineseSystemPrompt(options)
   }
-  return FREESTYLE_CHAT_SYSTEM_EN
+  return buildEnglishSystemPrompt(options)
 }
 
 function splitZhScenarioVocab(vocabulary = []) {
