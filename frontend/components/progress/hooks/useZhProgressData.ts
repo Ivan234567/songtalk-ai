@@ -99,7 +99,7 @@ export function useZhProgressData() {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async (uid: string) => {
-    const [completionsRes, assessmentsRes, scenariosRes, attemptsRes, tasksRes] = await Promise.all([
+    const [completionsRes, assessmentsRes, attemptsRes, tasksRes] = await Promise.all([
       supabase
         .from('roleplay_completions')
         .select(
@@ -118,7 +118,6 @@ export function useZhProgressData() {
         .eq('language', 'zh')
         .order('created_at', { ascending: false })
         .limit(500),
-      supabase.from('zh_scenarios').select('id, source, title'),
       supabase
         .from('zh_voice_task_attempts')
         .select('id, task_id, hsk_level, transcript, duration_sec, checklist_result, feedback, status, created_at')
@@ -134,6 +133,18 @@ export function useZhProgressData() {
     } else {
       setError(null);
     }
+
+    const completionScenarioIds = [
+      ...new Set(
+        (completionsRes.data ?? [])
+          .map((row: Record<string, unknown>) => String(row.scenario_id ?? ''))
+          .filter(Boolean),
+      ),
+    ];
+    const scenariosRes =
+      completionScenarioIds.length > 0
+        ? await supabase.from('zh_scenarios').select('id, source, title').in('id', completionScenarioIds)
+        : { data: [], error: null };
 
     const scenarioMeta = new Map<string, { source: 'user' | 'system'; title: string | null }>();
     for (const row of scenariosRes.data ?? []) {

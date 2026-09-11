@@ -317,6 +317,16 @@ export function ZhProgressDashboard() {
   const hasNoData = sessionsCount === 0;
   const heroAvg =
     mode === 'voice' ? (voiceCoverageAvg != null ? Math.round(voiceCoverageAvg) / 10 : null) : overviewAvgScore;
+  const roleplayCountAll = periodCompletions.length;
+  const voiceCountAll = periodVoice.length;
+  const systemCount =
+    mode === 'voice'
+      ? periodVoice.filter((row) => row.source === 'system').length
+      : periodCompletions.filter((row) => row.source === 'system').length;
+  const personalCount =
+    mode === 'voice'
+      ? periodVoice.filter((row) => row.source === 'user').length
+      : periodCompletions.filter((row) => row.source === 'user').length;
 
   const openFocusForObject = (objectKey: string, attemptId?: string) => {
     const params = new URLSearchParams();
@@ -369,18 +379,10 @@ export function ZhProgressDashboard() {
         onModeChange={(next) => setMode(next === 'debate' ? 'roleplay' : next)}
         progressView={progressView}
         onProgressViewChange={setProgressView}
-        roleplayCount={periodCompletions.filter((row) => (progressView === 'system' ? row.source === 'system' : row.source === 'user')).length}
-        voiceCount={periodVoice.filter((row) => (progressView === 'system' ? row.source === 'system' : row.source === 'user')).length}
-        systemCount={
-          mode === 'voice'
-            ? periodVoice.filter((row) => row.source === 'system').length
-            : periodCompletions.filter((row) => row.source === 'system').length
-        }
-        personalCount={
-          mode === 'voice'
-            ? periodVoice.filter((row) => row.source === 'user').length
-            : periodCompletions.filter((row) => row.source === 'user').length
-        }
+        roleplayCount={roleplayCountAll}
+        voiceCount={voiceCountAll}
+        systemCount={systemCount}
+        personalCount={personalCount}
         availableModes={['roleplay', 'voice']}
         roleplayLabel="Сценарии"
         voiceLabel="Минутки"
@@ -390,11 +392,36 @@ export function ZhProgressDashboard() {
         <section className={styles.emptyState}>
           <h3 className={styles.emptyTitle}>Нет данных для выбранных фильтров</h3>
           <p className={styles.emptyDescription}>
-            Пройдите ситуативный диалог или голосовую минутку — прогресс появится здесь.
+            {progressView === 'system' && personalCount > 0
+              ? `Системных прохождений нет, но есть ${personalCount} в «Личные».`
+              : progressView === 'personal' && systemCount > 0
+                ? `Личных прохождений нет, но есть ${systemCount} в «Системные».`
+                : mode === 'roleplay' && voiceCountAll > 0
+                  ? 'Сценариев за период нет. Голосовые минутки — во вкладке «Минутки».'
+                  : mode === 'voice' && roleplayCountAll > 0
+                    ? 'Минуток за период нет. Сценарии — во вкладке «Сценарии».'
+                    : 'Пройдите ситуативный диалог или голосовую минутку — прогресс появится здесь.'}
           </p>
-          <button type="button" onClick={resetFilters} className={styles.btn} style={{ marginTop: '0.65rem' }}>
-            Сбросить фильтры
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap', marginTop: '0.65rem' }}>
+            {progressView === 'system' && personalCount > 0 && (
+              <button type="button" onClick={() => setProgressView('personal')} className={styles.btn}>
+                Открыть личные
+              </button>
+            )}
+            {progressView === 'personal' && systemCount > 0 && (
+              <button type="button" onClick={() => setProgressView('system')} className={styles.btn}>
+                Открыть системные
+              </button>
+            )}
+            {mode === 'roleplay' && voiceCountAll > 0 && (
+              <button type="button" onClick={() => setMode('voice')} className={styles.btn}>
+                Открыть минутки
+              </button>
+            )}
+            <button type="button" onClick={resetFilters} className={styles.btn}>
+              Сбросить фильтры
+            </button>
+          </div>
         </section>
       )}
 
