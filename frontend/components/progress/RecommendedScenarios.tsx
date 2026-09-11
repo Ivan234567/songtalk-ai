@@ -44,8 +44,30 @@ export function RecommendedScenarios({
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const showRecommendations = Boolean(weakestCriterionKey) && rows.length > 0;
 
-  if (!weakestCriterionKey || rows.length === 0) {
+  const updateScrollState = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft < maxScroll - 4);
+  }, []);
+
+  useEffect(() => {
+    updateScrollState();
+    const el = scrollerRef.current;
+    if (!el) return;
+    const onScroll = () => updateScrollState();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [rows.length, showRecommendations, updateScrollState]);
+
+  if (!showRecommendations) {
     return (
       <section className={`${styles.card} ${className}`}>
         <h3 className={styles.sectionTitle}>Сценарии для повторения</h3>
@@ -77,27 +99,6 @@ export function RecommendedScenarios({
     if (p === 'medium') return 'Средний приоритет';
     return 'Низкий приоритет';
   };
-
-  const updateScrollState = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(el.scrollLeft < maxScroll - 4);
-  }, []);
-
-  useEffect(() => {
-    updateScrollState();
-    const el = scrollerRef.current;
-    if (!el) return;
-    const onScroll = () => updateScrollState();
-    el.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
-    return () => {
-      el.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-    };
-  }, [rows.length, updateScrollState]);
 
   const scrollCards = (dir: 'left' | 'right') => {
     const el = scrollerRef.current;
