@@ -135,7 +135,7 @@ export function ZhVoiceTaskBriefing({ task, variant = 'play', onBack, onStart }:
 
       {!isPreview && onStart && (
         <button type="button" onClick={() => onStart(task)} style={btnPrimary}>
-          Начать задание
+          Начать минутку
         </button>
       )}
     </div>

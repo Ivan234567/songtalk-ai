@@ -129,7 +129,7 @@ function ZhIntentForm({
 
   const handleGenerate = async () => {
     if (!canSubmit) {
-      setError('Опишите задание или укажите учебник и что отработать.');
+      setError('Опишите минутку или укажите учебник и что отработать.');
       return;
     }
     setLoading(true);
@@ -209,7 +209,7 @@ function ZhIntentForm({
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" onClick={handleGenerate} disabled={loading || !canSubmit} style={{ ...btnPrimary, opacity: loading || !canSubmit ? 0.7 : 1 }}>
-          {loading ? 'Генерация…' : 'Сгенерировать задание'}
+          {loading ? 'Генерация…' : 'Сгенерировать минутку'}
         </button>
         <button type="button" onClick={onManualCreate} disabled={loading} style={btnSecondary}>
           Создать вручную
@@ -253,7 +253,7 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
       setTasks(list);
     } catch (err) {
       setTasks([]);
-      setListError(err instanceof Error ? err.message : 'Не удалось загрузить задания');
+      setListError(err instanceof Error ? err.message : 'Не удалось загрузить минутки');
     } finally {
       setListLoading(false);
     }
@@ -357,7 +357,7 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Удалить задание без возможности восстановления?')) return;
+    if (!confirm('Удалить минутку без возможности восстановления?')) return;
     setDeletingId(id);
     try {
       await deleteZhVoiceTask(id);
@@ -468,7 +468,7 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Голосовые задания" style={overlayStyle} onClick={briefing || draft ? undefined : onClose}>
+    <div role="dialog" aria-modal="true" aria-label="Голосовые минутки" style={overlayStyle} onClick={briefing || draft ? undefined : onClose}>
       <div style={{ ...panelStyle, maxWidth: draft || briefing ? 980 : 720, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
@@ -511,11 +511,11 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
                 cursor: 'pointer',
               }}
             >
-              Задания
+              Минутки
             </button>
           </div>
           <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, color: 'var(--sidebar-text)' }}>
-            {briefing ? 'Брифинг' : draft ? 'Конструктор' : view === 'create' ? 'Создать задание' : 'Голосовые задания'}
+            {briefing ? 'Брифинг' : draft ? 'Конструктор' : view === 'create' ? 'Создать минутку' : 'Голосовые минутки'}
           </h2>
           <button type="button" onClick={onClose} aria-label="Закрыть" style={{ ...btnSecondary, padding: '0.4rem' }}>
             <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -611,7 +611,7 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
               ) : filtered.length === 0 ? (
                 <p style={{ opacity: 0.75, lineHeight: 1.5 }}>
                   {tasks.length === 0
-                    ? (showArchived ? 'В архиве пока ничего нет.' : 'Пока нет заданий. Создайте через «Создать» или откройте каталог приложения.')
+                    ? (showArchived ? 'В архиве пока ничего нет.' : 'Пока нет минуток. Создайте через «Создать» или откройте каталог приложения.')
                     : 'По запросу ничего не найдено.'}
                 </p>
               ) : (

@@ -163,7 +163,7 @@ export function ZhVoiceTaskConstructor({ draft, onChange, onBack, onSave, saving
     try {
       const result = await generateZhVoiceTaskPart({
         part,
-        task: toZhVoiceTaskWritePayload({ ...draft, title: draft.title || 'Задание' }),
+        task: toZhVoiceTaskWritePayload({ ...draft, title: draft.title || 'Минутка' }),
       });
       onChange(applyGeneratePartPatch(draft, part, result.patch));
     } catch (err) {
@@ -244,7 +244,7 @@ export function ZhVoiceTaskConstructor({ draft, onChange, onBack, onSave, saving
             </label>
           </Section>
 
-          <Section title="Задание">
+          <Section title="Минутка">
             <label>
               <span style={labelStyle}>Ситуация</span>
               <textarea value={draft.situation_ru || ''} onChange={(e) => patch({ situation_ru: e.target.value })} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />

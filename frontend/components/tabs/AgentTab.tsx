@@ -3024,7 +3024,7 @@ export function AgentTab() {
             : selectedVoiceTask && isVoiceTaskTakeDone
               ? 'Можно перезаписать один раз или проверить'
               : selectedVoiceTask
-                ? 'Нажмите и скажите задание'
+                ? 'Нажмите и скажите вслух'
                 : isUserStartsDebateEmpty
             ? 'Ваша очередь — начните дебат!'
             : isUserStartsRoleplayEmpty
@@ -3468,8 +3468,8 @@ export function AgentTab() {
                       setVoiceTaskView('my');
                       setVoiceTaskModalOpen(true);
                     }}
-                    aria-label="Голосовые задания"
-                    title="Голосовые задания"
+                    aria-label="Голосовая минутка"
+                    title="Голосовая минутка"
                     className="agent-toolbar-btn"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -3478,7 +3478,7 @@ export function AgentTab() {
                       <line x1="12" y1="19" x2="12" y2="23" />
                       <line x1="8" y1="23" x2="16" y2="23" />
                     </svg>
-                    <span>Задания</span>
+                    <span>Голосовая минутка</span>
                   </button>
                 )}
                 {learningLanguage === 'zh' && voiceTaskModalOpen && (
@@ -3506,7 +3506,7 @@ export function AgentTab() {
                   }}
                 >
                   <div style={{ fontWeight: 600 }}>
-                    Задание: {selectedVoiceTask.title}
+                    Минутка: {selectedVoiceTask.title}
                   </div>
                   <div style={{ opacity: 0.75, marginTop: 4 }}>
                     {zhVoiceTaskTypeLabel(selectedVoiceTask.type)}
@@ -3891,7 +3891,7 @@ export function AgentTab() {
                           }}
                         >
                           <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                            Голосовое задание
+                            Голосовая минутка
                           </span>
                           <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.4 }}>
                             {selectedVoiceTask.title}

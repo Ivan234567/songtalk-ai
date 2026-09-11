@@ -465,7 +465,7 @@ export function RoleplayModeUI({
 }: RoleplayModeUIProps) {
   const showSystemCatalog = showSystemCatalogProp ?? hasEnglishSystemCatalog(learningLanguage);
   const showDebate = learningLanguage !== 'zh';
-  const roleplayTabLabel = learningLanguage === 'zh' ? '情景对话' : 'Roleplays';
+  const roleplayTabLabel = learningLanguage === 'zh' ? 'Ситуативный диалог' : 'Roleplays';
   const [hintVisible, setHintVisible] = useState(false);
   const [roleplayDropdownOpen, setRoleplayDropdownOpen] = useState(false);
   const [debateDropdownOpen, setDebateDropdownOpen] = useState(false);
@@ -498,7 +498,7 @@ export function RoleplayModeUI({
               className="agent-mode-tab"
             >
               <span style={{ opacity: mode === 'chat' ? 1 : 0.75, display: 'flex' }}>{MODE_ICONS.chat}</span>
-              <span style={{ whiteSpace: 'nowrap' }}>{learningLanguage === 'zh' ? '自由对话' : 'Freestyle Mode'}</span>
+              <span style={{ whiteSpace: 'nowrap' }}>{learningLanguage === 'zh' ? 'Свободный диалог' : 'Freestyle Mode'}</span>
             </button>
             <div style={{ position: 'relative', display: 'inline-flex', height: '100%', alignItems: 'stretch' }}>
               <button
