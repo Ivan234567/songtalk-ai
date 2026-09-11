@@ -3260,8 +3260,8 @@ export function AgentTab() {
       {/* Боковая панель истории диалога */}
       <aside
         style={{
-          width: subtitlesVisible ? (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation) ? 440 : 320) : 0,
-          minWidth: subtitlesVisible ? (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation) ? 440 : 320) : 0,
+          width: subtitlesVisible ? (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation) ? 'min(400px, 42%)' : 'min(300px, 36%)') : 0,
+          minWidth: subtitlesVisible ? (learningLanguage === 'zh' && (chineseShowPinyin || chineseShowTranslation) ? 280 : 240) : 0,
           overflow: 'hidden',
           borderRight: subtitlesVisible ? '1px solid var(--sidebar-border)' : 'none',
           background: 'var(--sidebar-hover)',
@@ -3271,42 +3271,25 @@ export function AgentTab() {
           transition: 'width 0.25s ease, min-width 0.25s ease',
         }}
       >
-        <div style={{ padding: '0.85rem 0.85rem 0.85rem 1rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--sidebar-text)', minWidth: 0 }}>История диалога</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
-            {!historyOpen && (
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                aria-label="Открыть историю"
-                title="История разговоров"
-                className="agent-toolbar-btn"
-                style={{ height: 34, padding: '0 0.7rem' }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="10" />
-                </svg>
-                <span>История</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setSubtitlesVisible(false)}
-              aria-label="Закрыть историю диалога"
-              title="Скрыть субтитры"
-              style={{
-                padding: '0.35rem',
-                border: 'none',
-                borderRadius: 8,
-                background: 'transparent',
-                color: 'var(--sidebar-text)',
-                cursor: 'pointer',
-                opacity: 0.8,
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>
-          </div>
+        <div style={{ padding: '1rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--sidebar-text)' }}>История диалога</span>
+          <button
+            type="button"
+            onClick={() => setSubtitlesVisible(false)}
+            aria-label="Закрыть историю диалога"
+            title="Скрыть субтитры"
+            style={{
+              padding: '0.35rem',
+              border: 'none',
+              borderRadius: 8,
+              background: 'transparent',
+              color: 'var(--sidebar-text)',
+              cursor: 'pointer',
+              opacity: 0.8,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 0.75rem 1rem' }}>
           {conversationMessages.length === 0 ? (
@@ -3390,96 +3373,96 @@ export function AgentTab() {
           alignItems: 'center',
           justifyContent: selectedSession || goalReached || debateCompleted ? 'flex-start' : 'center',
           padding: '2.5rem 1.5rem',
-          overflow: selectedSession || Boolean(voiceTaskResult) || goalReached || debateCompleted ? 'auto' : 'hidden',
+          overflow: selectedSession || Boolean(voiceTaskResult) || goalReached || debateCompleted || subtitlesVisible ? 'auto' : 'hidden',
           background: 'radial-gradient(ellipse 100% 70% at 50% 30%, rgba(99, 102, 241, 0.08), transparent 55%), radial-gradient(ellipse 80% 40% at 50% 80%, rgba(139, 92, 246, 0.04), transparent 50%)',
           borderRadius: historyOpen || subtitlesVisible ? '0 28px 28px 0' : 28,
           border: '1px solid var(--sidebar-border)',
         }}
       >
-        {!historyOpen && !subtitlesVisible && (
+        {!historyOpen && (
           <>
             <div
               style={{
                 position: 'absolute',
-                top: '1.25rem',
-                left: '1.25rem',
-                display: 'flex',
-                flexDirection: 'row',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                gap: '0.5rem',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                aria-label="Открыть историю"
-                title="История разговоров"
-                className="agent-toolbar-btn"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="10" />
-                </svg>
-                <span>История</span>
-              </button>
-              {messages.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSubtitlesVisible(true)}
-                  aria-expanded={false}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    padding: '0.5rem 1.125rem',
-                    borderRadius: 999,
-                    border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-hover)',
-                    color: 'var(--sidebar-text)',
-                    fontSize: '0.8125rem',
-                    opacity: 0.9,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = '1';
-                    e.currentTarget.style.background = 'var(--sidebar-active)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'var(--sidebar-hover)';
-                    e.currentTarget.style.opacity = '0.9';
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                    <polyline points="10 9 9 9 8 9" />
-                  </svg>
-                  Показать субтитры
-                </button>
-              )}
-            </div>
-            <div
-              style={{
-                position: 'absolute',
-                top: '1.25rem',
-                right: '2.5rem',
-                bottom: '1.25rem',
+                top: '1rem',
+                left: '1rem',
+                right: '1rem',
+                bottom: '1rem',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'flex-end',
                 gap: '0.75rem',
-                width: 'max-content',
-                maxWidth: !historyOpen && !subtitlesVisible ? 'calc(100% - 8rem)' : '100%',
                 minWidth: 0,
                 overflow: 'visible',
                 zIndex: 4,
                 pointerEvents: 'none',
               }}
             >
-              <div className="agent-toolbar-row" style={{ pointerEvents: 'auto', flexShrink: 0 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  pointerEvents: 'auto',
+                  flexShrink: 0,
+                  alignSelf: 'stretch',
+                }}
+              >
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryOpen(true)}
+                    aria-label="Открыть историю"
+                    title="История разговоров"
+                    className="agent-toolbar-btn"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="10" />
+                    </svg>
+                    <span>История</span>
+                  </button>
+                  {messages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSubtitlesVisible((v) => !v)}
+                      aria-expanded={subtitlesVisible}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.5rem 1.125rem',
+                        borderRadius: 999,
+                        border: '1px solid var(--sidebar-border)',
+                        background: subtitlesVisible ? 'var(--sidebar-active)' : 'var(--sidebar-hover)',
+                        color: 'var(--sidebar-text)',
+                        fontSize: '0.8125rem',
+                        opacity: 0.9,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = '1';
+                        e.currentTarget.style.background = 'var(--sidebar-active)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!subtitlesVisible) e.currentTarget.style.background = 'var(--sidebar-hover)';
+                        e.currentTarget.style.opacity = '0.9';
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                        <polyline points="10 9 9 9 8 9" />
+                      </svg>
+                      {subtitlesVisible ? 'Скрыть субтитры' : 'Показать субтитры'}
+                    </button>
+                  )}
+                </div>
+                <div className="agent-toolbar-row" style={{ pointerEvents: 'auto', flexShrink: 0, flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={() => setTranslatorOpen(true)}
@@ -3587,6 +3570,7 @@ export function AgentTab() {
                     onClose={() => setVoiceTaskModalOpen(false)}
                   />
                 )}
+              </div>
               </div>
               {learningLanguage === 'zh' && selectedVoiceTask && (
                 <div
