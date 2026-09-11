@@ -80,11 +80,9 @@ const TTS_VOICE_OPTIONS: Array<{ value: 'onyx' | 'nova' | 'ballad'; label: strin
 ];
 
 const ENGLISH_HINT_MODE_LABELS: Record<FreestyleHintMode, { label: string; desc: string }> = {
-  natural: { label: 'Естественно', desc: 'Обычная фраза под ваш уровень' },
-  simpler: { label: 'Проще', desc: 'Короткие слова и предложения' },
-  more_native: { label: 'Более нативно', desc: 'Как говорят носители' },
-  polite_rewrite: { label: 'Вежливый вариант', desc: 'Более вежливая формулировка' },
-  no_profanity: { label: 'Без мата', desc: 'Чистый вариант без грубостей' },
+  simpler: { label: 'Проще', desc: 'Короче и легче по словам' },
+  natural: { label: 'Обычно', desc: 'Естественная фраза под ваш уровень' },
+  more_native: { label: 'Живее', desc: 'Разговорные обороты, как у носителей' },
 };
 
 const ENGLISH_CEFR_OPTIONS: { value: EnglishCefrLevel; label: string }[] = [
@@ -182,7 +180,7 @@ type SbiBlock = {
 };
 type FreestyleSlangMode = 'off' | 'light' | 'heavy';
 type FreestyleProfanityIntensity = 'light' | 'medium' | 'hard';
-type FreestyleHintMode = 'natural' | 'simpler' | 'more_native' | 'polite_rewrite' | 'no_profanity';
+type FreestyleHintMode = 'natural' | 'simpler' | 'more_native';
 type EnglishCefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 
 // Китайские настройки для 自由对话

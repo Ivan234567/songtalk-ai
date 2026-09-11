@@ -2060,7 +2060,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   const profanityIntensity = ['light', 'medium', 'hard'].includes(settings.profanity_intensity)
     ? settings.profanity_intensity
     : 'light'
-  const hintModeValue = ['natural', 'simpler', 'more_native', 'polite_rewrite', 'no_profanity'].includes(hint_mode)
+  const hintModeValue = ['natural', 'simpler', 'more_native'].includes(hint_mode)
     ? hint_mode
     : 'natural'
   const freestyleContext = freestyle_context && typeof freestyle_context === 'object' ? freestyle_context : {}
@@ -2140,6 +2140,13 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     ? `\nLesson words the user has not said yet — the hint MUST use 1 of them: ${vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、')}`
     : ''
 
+  const freestyleModeInstruction =
+    hintModeValue === 'simpler'
+      ? 'Make the suggested reply very simple: short sentence(s), easy vocabulary.'
+      : hintModeValue === 'more_native'
+        ? 'Make the suggested reply sound more native and natural with colloquial flow.'
+        : 'Keep the suggested reply natural and context-aware.'
+
   const roleplaySystemContent = `You are a language coach. The user is in a roleplay lesson. Suggest a natural REPLY the user could say.
 
 The hint must do three things at once when possible:
@@ -2150,6 +2157,8 @@ The hint must do three things at once when possible:
 Rules:
 - Output ONLY the suggested reply text, in the SAME language the agent used (usually English). No explanations, no "You could say:", no quotation marks around the whole thing.
 - Match the learner level: ${levelText}
+- Hint mode: ${hintModeValue}. ${freestyleModeInstruction}
+- If they conflict, still answer the other person and move the next step; apply hint mode only to phrasing and vocabulary.
 - If the agent has not spoken yet, suggest a natural opening line that already aims at the first step.
 - If they slightly conflict, still answer the other person, but steer toward the next step and a lesson word.
 - Keep it conversational. One short reply is enough; if two variants fit, you may give 1–2 options on separate lines.`
@@ -2173,6 +2182,8 @@ Rules:
 - The reply must directly react to the opponent's latest argument and stay logically consistent with recent dialogue context.
 - Keep the user's side consistent with their debate position (do not switch sides).
 - If a current debate step exists, naturally move toward it while still answering the latest opponent point.
+- Hint mode: ${hintModeValue}. ${freestyleModeInstruction}
+- If they conflict, still answer the opponent and keep the user's side; apply hint mode only to phrasing and vocabulary.
 - Style settings for this debate:
   - slang_mode=${slangMode}
   - allow_profanity=${allowProfanity}
@@ -2194,17 +2205,6 @@ Rules:
     stepsBlock +
     `\n\nOpponent's latest message:\n${agentMessage}\n\nSuggest the user's next reply.`
 
-  const freestyleModeInstruction =
-    hintModeValue === 'simpler'
-      ? 'Make the suggested reply very simple: short sentence(s), easy vocabulary.'
-      : hintModeValue === 'more_native'
-        ? 'Make the suggested reply sound more native and natural with colloquial flow.'
-        : hintModeValue === 'polite_rewrite'
-          ? 'Rewrite the likely reply in a polite and respectful way, even if context is tense.'
-          : hintModeValue === 'no_profanity'
-            ? 'Keep the suggested reply strictly clean and without profanity.'
-            : 'Keep the suggested reply natural and context-aware.'
-
   const chatSystemContent = `You are a speaking coach for freestyle conversation practice. The assistant just wrote a message, and you suggest what the USER could reply next.
 
 Rules:
@@ -2220,7 +2220,6 @@ Rules:
 - If slang_mode is off: keep wording neutral.
 - If slang_mode is light/heavy: mirror this style naturally.
 - If allow_profanity is false: keep it clean.
-- If hint_mode=no_profanity: keep it clean regardless of other settings.
 - Hint mode: ${hintModeValue}. ${freestyleModeInstruction}
 - Ephemeral freestyle context:
   - role_hint=${freestyleRoleHint}
