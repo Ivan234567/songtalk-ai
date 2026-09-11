@@ -365,6 +365,7 @@ app.get('/', (req, res) => {
       '/api/videos/:id',
       '/api/vocabulary/extract',
       '/api/vocabulary/define',
+      '/api/vocabulary/assist',
       '/api/vocabulary/add',
       '/api/vocabulary/list',
       '/api/vocabulary/characters/add',
@@ -3688,7 +3689,8 @@ async function getWordDefinitionFromAI(word, language = 'en') {
   "is_phrase": true/false,
   "example_sentences": ["пример1 на китайском", "пример2 на китайском"],
   "radical": "радикал/ключ 部首 или null",
-  "stroke_count": число_черт_или_null
+  "stroke_count": число_черт_или_null,
+  "mnemonic": "короткая русская мнемоника одним предложением"
 }
 
 Учти:
@@ -3698,6 +3700,7 @@ async function getWordDefinitionFromAI(word, language = 'en') {
 - frequency_rank: 1 = самое частое, 10000 = редкое
 - pinyin должен включать тона (например: nǐ hǎo)
 - radical и stroke_count заполняй только для одиночного иероглифа; для слов из нескольких иероглифов ставь null
+- mnemonic: ассоциация по форме иероглифов или смыслу, до 140 символов, на русском, без кавычек
 
 Отвечай только JSON, без дополнительного текста.`
       : `Проанализируй английское слово "${word}" и верни JSON с следующей структурой:
@@ -3775,6 +3778,9 @@ async function getWordDefinitionFromAI(word, language = 'en') {
       stroke_count: (typeof definition.stroke_count === 'number' && definition.stroke_count > 0)
         ? Math.round(definition.stroke_count)
         : null,
+      mnemonic: typeof definition.mnemonic === 'string' && definition.mnemonic.trim()
+        ? definition.mnemonic.trim().slice(0, 160)
+        : null,
     }
     return { definition: def, usage }
   } catch (error) {
@@ -3795,9 +3801,45 @@ async function getWordDefinitionFromAI(word, language = 'en') {
         example_sentences: [],
         radical: null,
         stroke_count: null,
+        mnemonic: null,
       },
       usage: null
     }
+  }
+}
+
+async function getChineseMnemonicFromAI(word, { pinyin = null, translations = [] } = {}) {
+  const gloss = (Array.isArray(translations) ? translations : [])
+    .map((item) => (typeof item === 'string' ? item : item?.translation))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(', ')
+  const hint = [pinyin, gloss].filter(Boolean).join(' — ')
+  try {
+    const chatResult = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: 'Ты преподаватель китайского. Отвечай одной короткой русской мнемоникой без кавычек и без пояснений.',
+        },
+        {
+          role: 'user',
+          content: `Слово «${word}»${hint ? ` (${hint})` : ''}. Дай одну ассоциацию, чтобы запомнить иероглифы. Одно предложение, до 140 символов.`,
+        },
+      ],
+      max_tokens: 120,
+      temperature: 0.6,
+    })
+    const usage = chatResult?.usage || null
+    const mnemonic = (chatResult.choices?.[0]?.message?.content || '')
+      .replace(/^["«]+|["»]+$/g, '')
+      .trim()
+      .slice(0, 160)
+    return { mnemonic: mnemonic || null, usage }
+  } catch (error) {
+    console.error('[getChineseMnemonicFromAI] Error:', error)
+    return { mnemonic: null, usage: null }
   }
 }
 
@@ -4355,6 +4397,132 @@ app.get('/api/vocabulary/define', asyncHandler(async (req, res) => {
     return res.status(500).json({
       error: 'Failed to get word definition',
       details: error.message
+    })
+  }
+}))
+
+const VOCAB_ASSIST_FIELDS = ['pinyin', 'translation', 'hsk_level', 'notes']
+
+app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
+  const token = getBearerToken(req)
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  }
+
+  let userData, userErr
+  try {
+    const result = await Promise.resolve(supabase.auth.getUser(token)).catch((err) => {
+      throw err
+    })
+    userData = result.data
+    userErr = result.error
+  } catch (authError) {
+    const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
+    const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
+    if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
+      return res.status(502).json({
+        error: 'Не удалось подключиться к Supabase (таймаут соединения).',
+        details: { code: errorCode, message: errorMessage },
+      })
+    }
+    throw authError
+  }
+
+  if (userErr || !userData?.user) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+  const userId = userData.user.id
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const { word, fields: rawFields } = req.body || {}
+  const hanzi = extractHanzi(word)
+  if (!hanzi) {
+    return res.status(400).json({
+      error: 'Invalid word',
+      details: 'Для подсказки нужны иероглифы (汉字)',
+    })
+  }
+
+  const fields = [...new Set(
+    (Array.isArray(rawFields) && rawFields.length ? rawFields : VOCAB_ASSIST_FIELDS)
+      .filter((field) => VOCAB_ASSIST_FIELDS.includes(field)),
+  )]
+  if (fields.length === 0) {
+    return res.status(400).json({ error: 'fields is required' })
+  }
+
+  try {
+    const needsLexicon = fields.some((field) => field !== 'notes')
+    let definition = {
+      pinyin: null,
+      definitions: [],
+      hsk_level: null,
+      mnemonic: null,
+      usage: null,
+    }
+
+    if (needsLexicon || fields.includes('notes')) {
+      definition = await getOrCreateWordDefinition(hanzi, 'zh')
+      if (definition.usage) {
+        const costRub = getCost('deepseek-v3.2', definition.usage)
+        if (costRub > 0) {
+          const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', {
+            vocabulary_assist: true,
+          })
+          if (!deductResult.ok) {
+            return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+          }
+        }
+      }
+    }
+
+    let mnemonic = typeof definition.mnemonic === 'string' && definition.mnemonic.trim()
+      ? definition.mnemonic.trim()
+      : null
+
+    if (fields.includes('notes') && !mnemonic) {
+      const extra = await getChineseMnemonicFromAI(hanzi, {
+        pinyin: definition.pinyin,
+        translations: definition.definitions,
+      })
+      mnemonic = extra.mnemonic
+      if (extra.usage) {
+        const costRub = getCost('deepseek-v3.2', extra.usage)
+        if (costRub > 0) {
+          const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', {
+            vocabulary_assist_mnemonic: true,
+          })
+          if (!deductResult.ok) {
+            return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+          }
+        }
+      }
+    }
+
+    const translations = Array.isArray(definition.definitions)
+      ? definition.definitions.map((item) => item?.translation).filter(Boolean)
+      : []
+
+    return res.json({
+      ok: true,
+      word: hanzi,
+      fields,
+      suggestion: {
+        pinyin: definition.pinyin || null,
+        translations,
+        hsk_level: definition.hsk_level || null,
+        notes: mnemonic || null,
+      },
+    })
+  } catch (error) {
+    console.error('[api/vocabulary/assist] Error:', error)
+    return res.status(500).json({
+      error: 'Failed to assist vocabulary fields',
+      details: error.message,
     })
   }
 }))

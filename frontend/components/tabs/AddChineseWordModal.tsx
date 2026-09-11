@@ -40,6 +40,8 @@ type AddChineseWordModalProps = {
 };
 
 const HSK_LEVELS = [1, 2, 3, 4, 5, 6] as const;
+type AssistField = 'pinyin' | 'translation' | 'hsk_level' | 'notes';
+type AiBusy = AssistField | 'empty' | null;
 
 function splitTranslations(raw: string): string[] {
   return raw
@@ -53,6 +55,47 @@ function PlusGlyph() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
       <path d="M12 5v14M5 12h14" />
     </svg>
+  );
+}
+
+function SparkleGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 3.2l1.15 4.4L17.6 8.8l-4.45 1.2L12 14.5l-1.15-4.5L6.4 8.8l4.45-1.2L12 3.2z" />
+      <path d="M18.4 13.2l.7 2.2 2.2.6-2.2.7-.7 2.2-.7-2.2-2.2-.7 2.2-.6.7-2.2z" opacity="0.85" />
+      <path d="M6.3 14.4l.45 1.45 1.45.4-1.45.45-.45 1.45-.45-1.45-1.45-.45 1.45-.4.45-1.45z" opacity="0.7" />
+    </svg>
+  );
+}
+
+function AiFieldButton({
+  busy,
+  disabled,
+  filledByAi,
+  onClick,
+  label,
+}: {
+  busy: boolean;
+  disabled: boolean;
+  filledByAi: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <span className="zh-add-field-tools">
+      {filledByAi && !busy ? <em className="zh-add-ai-tag">от ИИ</em> : null}
+      <button
+        type="button"
+        className={`zh-add-ai-btn${busy ? ' zh-add-ai-btn--busy' : ''}`}
+        onClick={onClick}
+        disabled={disabled}
+        title={label}
+        aria-label={label}
+      >
+        <SparkleGlyph />
+        {busy ? '…' : 'ИИ'}
+      </button>
+    </span>
   );
 }
 
@@ -72,6 +115,8 @@ export function AddChineseWordModal({
   const [notes, setNotes] = useState('');
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [aiBusy, setAiBusy] = useState<AiBusy>(null);
+  const [aiTouched, setAiTouched] = useState<Set<AssistField>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -79,6 +124,15 @@ export function AddChineseWordModal({
   const displayPinyin = useMemo(() => numberedPinyinToMarks(pinyin), [pinyin]);
   const translations = useMemo(() => splitTranslations(translation), [translation]);
   const previewUnits = useMemo(() => splitChineseWord(hanzi, displayPinyin), [hanzi, displayPinyin]);
+
+  const emptyFields = useMemo(() => {
+    const fields: AssistField[] = [];
+    if (!pinyin.trim()) fields.push('pinyin');
+    if (!translation.trim()) fields.push('translation');
+    if (hskLevel == null) fields.push('hsk_level');
+    if (!notes.trim()) fields.push('notes');
+    return fields;
+  }, [pinyin, translation, hskLevel, notes]);
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +143,8 @@ export function AddChineseWordModal({
     setNotes('');
     setSelectedCategoryIds(new Set());
     setSubmitting(false);
+    setAiBusy(null);
+    setAiTouched(new Set());
     setError(null);
     setSuccess(null);
     const t = window.setTimeout(() => hanziRef.current?.focus(), 40);
@@ -98,19 +154,38 @@ export function AddChineseWordModal({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) onClose();
+      if (e.key === 'Escape' && !submitting && !aiBusy) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, submitting, onClose]);
+  }, [open, submitting, aiBusy, onClose]);
 
   if (!open || typeof document === 'undefined') return null;
 
+  const formLocked = submitting || Boolean(aiBusy);
   const canSubmit =
     Boolean(accessToken) &&
     hanzi.length > 0 &&
     translations.length > 0 &&
-    !submitting;
+    !formLocked;
+  const canAskAi = Boolean(accessToken) && hanzi.length > 0 && !formLocked;
+
+  const markAi = (field: AssistField) => {
+    setAiTouched((prev) => {
+      const next = new Set(prev);
+      next.add(field);
+      return next;
+    });
+  };
+
+  const unmarkAi = (field: AssistField) => {
+    setAiTouched((prev) => {
+      if (!prev.has(field)) return prev;
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
+  };
 
   const toggleCategory = (id: string) => {
     setSelectedCategoryIds((prev) => {
@@ -119,6 +194,61 @@ export function AddChineseWordModal({
       else next.add(id);
       return next;
     });
+  };
+
+  const requestAssist = async (fields: AssistField[], mode: AiBusy) => {
+    if (!accessToken || !hanzi || fields.length === 0 || formLocked) return;
+
+    setAiBusy(mode);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const resp = await fetch(`${apiUrl}/api/vocabulary/assist`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ word: hanzi, fields }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) {
+        throw new Error(data?.details || data?.error || 'Не удалось получить подсказку ИИ');
+      }
+
+      const suggestion = data.suggestion || {};
+      const filled: string[] = [];
+
+      if (fields.includes('pinyin') && suggestion.pinyin) {
+        setPinyin(numberedPinyinToMarks(String(suggestion.pinyin)));
+        markAi('pinyin');
+        filled.push('пиньинь');
+      }
+      if (fields.includes('translation') && Array.isArray(suggestion.translations) && suggestion.translations.length > 0) {
+        setTranslation(suggestion.translations.filter(Boolean).join(', '));
+        markAi('translation');
+        filled.push('перевод');
+      }
+      if (fields.includes('hsk_level') && [1, 2, 3, 4, 5, 6].includes(Number(suggestion.hsk_level))) {
+        setHskLevel(Number(suggestion.hsk_level));
+        markAi('hsk_level');
+        filled.push('HSK');
+      }
+      if (fields.includes('notes') && suggestion.notes) {
+        setNotes(String(suggestion.notes).slice(0, 180));
+        markAi('notes');
+        filled.push('заметку');
+      }
+
+      if (filled.length === 0) {
+        setError('ИИ не вернул данные для выбранных полей');
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Не удалось получить подсказку ИИ');
+    } finally {
+      setAiBusy(null);
+    }
   };
 
   const handleSubmit = async (keepOpen: boolean) => {
@@ -189,6 +319,7 @@ export function AddChineseWordModal({
         setHskLevel(null);
         setNotes('');
         setSelectedCategoryIds(new Set());
+        setAiTouched(new Set());
         window.setTimeout(() => hanziRef.current?.focus(), 40);
       } else {
         onClose();
@@ -204,7 +335,7 @@ export function AddChineseWordModal({
     <div
       className="zh-add-overlay"
       onClick={() => {
-        if (!submitting) onClose();
+        if (!formLocked) onClose();
       }}
     >
       <div
@@ -216,10 +347,10 @@ export function AddChineseWordModal({
       >
         <header className="zh-add-header">
           <div>
-            <p className="zh-add-kicker">词典 · вручную</p>
+            <p className="zh-add-kicker">词典 · вручную или ИИ</p>
             <h3 id="zh-add-word-title">Новое слово</h3>
           </div>
-          <button type="button" className="zh-add-close" onClick={onClose} aria-label="Закрыть">
+          <button type="button" className="zh-add-close" onClick={onClose} aria-label="Закрыть" disabled={formLocked}>
             ×
           </button>
         </header>
@@ -247,7 +378,7 @@ export function AddChineseWordModal({
                 {translations.length > 0 ? (
                   <span className="zh-add-preview-gloss">{translations.join(' · ')}</span>
                 ) : (
-                  <span className="zh-add-preview-hint">Добавьте перевод на русский</span>
+                  <span className="zh-add-preview-hint">Перевод можно вписать или взять у ИИ</span>
                 )}
                 {hskLevel ? <span className="zh-add-hsk-badge">HSK {hskLevel}</span> : null}
               </div>
@@ -255,10 +386,26 @@ export function AddChineseWordModal({
           ) : (
             <div className="zh-add-preview-placeholder">
               <span style={{ fontFamily: CHINESE_FONT }}>汉字</span>
-              <p>Введите иероглифы — карточка соберётся сама</p>
+              <p>Сначала иероглифы — остальное вручную или кнопкой ИИ</p>
             </div>
           )}
         </div>
+
+        {hanzi ? (
+          <button
+            type="button"
+            className="zh-add-fill-empty"
+            onClick={() => void requestAssist(emptyFields, 'empty')}
+            disabled={!canAskAi || emptyFields.length === 0}
+          >
+            <SparkleGlyph />
+            {aiBusy === 'empty'
+              ? 'Подбираю пустые поля…'
+              : emptyFields.length === 0
+                ? 'Все поля заполнены'
+                : 'Заполнить пустые с ИИ'}
+          </button>
+        ) : null}
 
         <form
           className="zh-add-form"
@@ -268,7 +415,9 @@ export function AddChineseWordModal({
           }}
         >
           <label className="zh-add-field">
-            <span>Иероглифы · 汉字</span>
+            <span className="zh-add-field-head">
+              <span>Иероглифы · 汉字</span>
+            </span>
             <input
               ref={hanziRef}
               value={hanziInput}
@@ -276,6 +425,7 @@ export function AddChineseWordModal({
                 setHanziInput(e.target.value);
                 setError(null);
                 setSuccess(null);
+                setAiTouched(new Set());
               }}
               placeholder="你好"
               autoComplete="off"
@@ -289,40 +439,76 @@ export function AddChineseWordModal({
             )}
           </label>
 
-          <label className="zh-add-field">
-            <span>Пиньинь</span>
+          <div className="zh-add-field">
+            <span className="zh-add-field-head">
+              <span>Пиньинь</span>
+              <AiFieldButton
+                busy={aiBusy === 'pinyin'}
+                disabled={!canAskAi}
+                filledByAi={aiTouched.has('pinyin')}
+                label="Подставить пиньинь с ИИ"
+                onClick={() => void requestAssist(['pinyin'], 'pinyin')}
+              />
+            </span>
             <input
               value={pinyin}
-              onChange={(e) => setPinyin(e.target.value)}
+              onChange={(e) => {
+                setPinyin(e.target.value);
+                unmarkAi('pinyin');
+              }}
               onBlur={() => setPinyin(numberedPinyinToMarks(pinyin))}
               placeholder="nǐ hǎo или ni3 hao3"
               autoComplete="off"
               spellCheck={false}
               className="zh-add-input"
             />
-          </label>
+          </div>
 
-          <label className="zh-add-field">
-            <span>Перевод</span>
+          <div className="zh-add-field">
+            <span className="zh-add-field-head">
+              <span>Перевод</span>
+              <AiFieldButton
+                busy={aiBusy === 'translation'}
+                disabled={!canAskAi}
+                filledByAi={aiTouched.has('translation')}
+                label="Подставить перевод с ИИ"
+                onClick={() => void requestAssist(['translation'], 'translation')}
+              />
+            </span>
             <input
               value={translation}
-              onChange={(e) => setTranslation(e.target.value)}
+              onChange={(e) => {
+                setTranslation(e.target.value);
+                unmarkAi('translation');
+              }}
               placeholder="привет, здравствуй"
               autoComplete="off"
               className="zh-add-input"
             />
             <em className="zh-add-field-hint">Несколько значений — через запятую</em>
-          </label>
+          </div>
 
           <div className="zh-add-field">
-            <span>Уровень HSK</span>
+            <span className="zh-add-field-head">
+              <span>Уровень HSK</span>
+              <AiFieldButton
+                busy={aiBusy === 'hsk_level'}
+                disabled={!canAskAi}
+                filledByAi={aiTouched.has('hsk_level')}
+                label="Определить HSK с ИИ"
+                onClick={() => void requestAssist(['hsk_level'], 'hsk_level')}
+              />
+            </span>
             <div className="zh-add-hsk" role="radiogroup" aria-label="Уровень HSK">
               <button
                 type="button"
                 role="radio"
                 aria-checked={hskLevel === null}
                 className={`zh-add-hsk-chip${hskLevel === null ? ' zh-add-hsk-chip--active' : ''}`}
-                onClick={() => setHskLevel(null)}
+                onClick={() => {
+                  setHskLevel(null);
+                  unmarkAi('hsk_level');
+                }}
               >
                 —
               </button>
@@ -333,7 +519,10 @@ export function AddChineseWordModal({
                   role="radio"
                   aria-checked={hskLevel === level}
                   className={`zh-add-hsk-chip${hskLevel === level ? ' zh-add-hsk-chip--active' : ''}`}
-                  onClick={() => setHskLevel(level)}
+                  onClick={() => {
+                    setHskLevel(level);
+                    unmarkAi('hsk_level');
+                  }}
                 >
                   {level}
                 </button>
@@ -343,7 +532,9 @@ export function AddChineseWordModal({
 
           {categories.length > 0 && (
             <div className="zh-add-field">
-              <span>Категория</span>
+              <span className="zh-add-field-head">
+                <span>Категория</span>
+              </span>
               <div className="zh-add-cats">
                 {categories.map((cat) => {
                   const active = selectedCategoryIds.has(cat.id);
@@ -364,16 +555,29 @@ export function AddChineseWordModal({
             </div>
           )}
 
-          <label className="zh-add-field">
-            <span>Заметка</span>
-            <input
+          <div className="zh-add-field">
+            <span className="zh-add-field-head">
+              <span>Заметка</span>
+              <AiFieldButton
+                busy={aiBusy === 'notes'}
+                disabled={!canAskAi}
+                filledByAi={aiTouched.has('notes')}
+                label="Придумать мнемонику с ИИ"
+                onClick={() => void requestAssist(['notes'], 'notes')}
+              />
+            </span>
+            <textarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                unmarkAi('notes');
+              }}
               placeholder="мнемоника или короткий комментарий"
-              className="zh-add-input"
-              maxLength={160}
+              className="zh-add-input zh-add-input--notes"
+              maxLength={180}
+              rows={2}
             />
-          </label>
+          </div>
 
           {error && <div className="zh-add-alert zh-add-alert--error">{error}</div>}
           {success && <div className="zh-add-alert zh-add-alert--ok">{success}</div>}

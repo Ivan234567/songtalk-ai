@@ -1426,11 +1426,91 @@ textarea {
   flex-direction: column;
   gap: 0.35rem;
 }
-.zh-add-field > span {
+.zh-add-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-height: 1.4rem;
+}
+.zh-add-field-head > span:first-child {
   font-size: 0.75rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: rgba(148, 163, 184, 0.92);
+}
+.zh-add-field-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.zh-add-ai-tag {
+  font-style: normal;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(134, 239, 172, 0.9);
+}
+.zh-add-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.45);
+  color: #cbd5e1;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.zh-add-ai-btn svg {
+  width: 11px;
+  height: 11px;
+}
+.zh-add-ai-btn:hover:not(:disabled) {
+  border-color: rgba(74, 222, 128, 0.5);
+  color: #dcfce7;
+  background: rgba(17, 98, 47, 0.28);
+}
+.zh-add-ai-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.zh-add-ai-btn--busy {
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #bbf7d0;
+}
+.zh-add-fill-empty {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: -0.15rem 0 0.85rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.85rem;
+  border: 1px dashed rgba(74, 222, 128, 0.38);
+  background: rgba(17, 98, 47, 0.12);
+  color: #bbf7d0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.zh-add-fill-empty svg {
+  width: 14px;
+  height: 14px;
+}
+.zh-add-fill-empty:hover:not(:disabled) {
+  background: rgba(17, 98, 47, 0.22);
+  border-style: solid;
+}
+.zh-add-fill-empty:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .zh-add-field-hint {
   font-style: normal;
@@ -1455,6 +1535,11 @@ textarea {
 .zh-add-input--hanzi {
   font-size: 1.45rem;
   letter-spacing: 0.06em;
+}
+.zh-add-input--notes {
+  resize: vertical;
+  min-height: 3.4rem;
+  line-height: 1.4;
 }
 .zh-add-hsk,
 .zh-add-cats {
