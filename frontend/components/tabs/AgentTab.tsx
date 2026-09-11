@@ -281,6 +281,7 @@ export function AgentTab() {
   /** В ролевом режиме: пользователь нажал «Сохранить прогресс» — показываем экран «Прогресс сохранён». */
   const [goalReached, setGoalReached] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<SpeakingAssessmentResult | ZhSpeakingAssessmentResult | null>(null);
+  const [savedSessionAssessment, setSavedSessionAssessment] = useState<SpeakingAssessmentResult | ZhSpeakingAssessmentResult | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentLoadSavedLoading, setAssessmentLoadSavedLoading] = useState(false);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
@@ -853,6 +854,8 @@ export function AgentTab() {
     setAgentMode('chat');
     setSelectedScenario(null);
     setGoalReached(false);
+    setAssessmentResult(null);
+    setSavedSessionAssessment(null);
     setMessages([]);
     setCurrentSessionId(null);
     setSelectedSessionId(null);
@@ -2031,6 +2034,7 @@ export function AgentTab() {
     (scenario: RoleplayScenario) => {
       setGoalReached(false);
       setAssessmentResult(null);
+      setSavedSessionAssessment(null);
       setAssessmentError(null);
       setRoleplayFeedback(null);
       setRoleplayUsefulPhrase(null);
@@ -2058,6 +2062,7 @@ export function AgentTab() {
     if (!selectedScenario) return;
     setGoalReached(false);
     setAssessmentResult(null);
+    setSavedSessionAssessment(null);
     setAssessmentError(null);
     setRoleplayFeedback(null);
     setRoleplayUsefulPhrase(null);
@@ -2075,6 +2080,8 @@ export function AgentTab() {
 
   const handleGoalReachedOtherScenario = useCallback(() => {
     setGoalReached(false);
+    setAssessmentResult(null);
+    setSavedSessionAssessment(null);
     setSelectedScenario(null);
     setRoleplayFeedback(null);
     setRoleplayUsefulPhrase(null);
@@ -2104,6 +2111,7 @@ export function AgentTab() {
     setRoleplayRewriteNeutral(null);
     setRoleplayFeedbackError(null);
     setAssessmentResult(null);
+    setSavedSessionAssessment(null);
     setAssessmentError(null);
     setRoleplayCompletedStepIds([]);
     setZhSaidMustSay([]);
@@ -2475,6 +2483,7 @@ export function AgentTab() {
       }
       const result = data as SpeakingAssessmentResult | ZhSpeakingAssessmentResult;
       setAssessmentResult(result);
+      setSavedSessionAssessment(result);
       const { data: assessmentData, error: assessmentError } = await supabase
         .from('speaking_assessments')
         .insert({
@@ -2705,48 +2714,69 @@ export function AgentTab() {
     setAssessmentError(null);
   }, []);
 
+  const mapSavedAssessmentRow = useCallback((row: {
+    criteria_scores: import('@/lib/speaking-assessment').CriteriaScores;
+    overall_score: number | null;
+    feedback: import('@/lib/speaking-assessment').AssessmentFeedback;
+    user_messages: string[];
+    format: import('@/lib/speaking-assessment').AssessmentFormat;
+    scenario_id?: string | null;
+    scenario_title?: string | null;
+    agent_session_id?: string | null;
+  }) => ({
+    criteria_scores: row.criteria_scores,
+    overall_score: row.overall_score ?? 0,
+    feedback: row.feedback ?? {},
+    user_messages: row.user_messages ?? [],
+    format: row.format,
+    scenario_id: row.scenario_id ?? null,
+    scenario_title: row.scenario_title ?? null,
+    agent_session_id: row.agent_session_id ?? null,
+  } as SpeakingAssessmentResult | ZhSpeakingAssessmentResult), []);
+
+  const hydrateSavedAssessment = useCallback(async (sessionId: string) => {
+    const { data: rows, error } = await supabase
+      .from('speaking_assessments')
+      .select('*')
+      .eq('agent_session_id', sessionId)
+      .eq('language', learningLanguage)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error || !rows?.length) return null;
+    const result = mapSavedAssessmentRow(rows[0] as Parameters<typeof mapSavedAssessmentRow>[0]);
+    setSavedSessionAssessment(result);
+    return result;
+  }, [learningLanguage, mapSavedAssessmentRow]);
+
   const loadSavedAssessment = useCallback(async (sessionId: string) => {
     setAssessmentError(null);
     setAssessmentLoadSavedLoading(true);
     try {
-      const { data: rows, error } = await supabase
-        .from('speaking_assessments')
-        .select('*')
-        .eq('agent_session_id', sessionId)
-        .eq('language', learningLanguage)
-        .order('created_at', { ascending: false })
-        .limit(1);
-      if (error || !rows?.length) {
+      const result = await hydrateSavedAssessment(sessionId);
+      if (!result) {
         setAssessmentError('Для этого диалога оценка не сохранялась.');
         return;
       }
-      const row = rows[0] as {
-        criteria_scores: import('@/lib/speaking-assessment').CriteriaScores;
-        overall_score: number | null;
-        feedback: import('@/lib/speaking-assessment').AssessmentFeedback;
-        user_messages: string[];
-        format: import('@/lib/speaking-assessment').AssessmentFormat;
-        scenario_id?: string | null;
-        scenario_title?: string | null;
-        agent_session_id?: string | null;
-      };
-      const result = {
-        criteria_scores: row.criteria_scores,
-        overall_score: row.overall_score ?? 0,
-        feedback: row.feedback ?? {},
-        user_messages: row.user_messages ?? [],
-        format: row.format,
-        scenario_id: row.scenario_id ?? null,
-        scenario_title: row.scenario_title ?? null,
-        agent_session_id: row.agent_session_id ?? null,
-      } as SpeakingAssessmentResult | ZhSpeakingAssessmentResult;
       setAssessmentResult(result);
     } catch {
       setAssessmentError('Не удалось загрузить оценку.');
     } finally {
       setAssessmentLoadSavedLoading(false);
     }
-  }, [learningLanguage]);
+  }, [hydrateSavedAssessment]);
+
+  const openSavedOrRequestAssessment = useCallback(() => {
+    if (savedSessionAssessment) {
+      setAssessmentResult(savedSessionAssessment);
+      return;
+    }
+    void requestAssessment();
+  }, [savedSessionAssessment, requestAssessment]);
+
+  useEffect(() => {
+    if (!goalReached || !currentSessionId || savedSessionAssessment) return;
+    void hydrateSavedAssessment(currentSessionId);
+  }, [goalReached, currentSessionId, savedSessionAssessment, hydrateSavedAssessment]);
 
   const startRecording = useCallback(async () => {
     if (state !== 'idle' && state !== 'listening') return;
@@ -3340,9 +3370,9 @@ export function AgentTab() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: selectedSession ? 'flex-start' : 'center',
+          justifyContent: selectedSession || goalReached || debateCompleted ? 'flex-start' : 'center',
           padding: '2.5rem 1.5rem',
-          overflow: selectedSession || Boolean(voiceTaskResult) ? 'auto' : 'hidden',
+          overflow: selectedSession || Boolean(voiceTaskResult) || goalReached || debateCompleted ? 'auto' : 'hidden',
           background: 'radial-gradient(ellipse 100% 70% at 50% 30%, rgba(99, 102, 241, 0.08), transparent 55%), radial-gradient(ellipse 80% 40% at 50% 80%, rgba(139, 92, 246, 0.04), transparent 50%)',
           borderRadius: historyOpen || subtitlesVisible ? '0 28px 28px 0' : 28,
           border: '1px solid var(--sidebar-border)',
@@ -3847,7 +3877,7 @@ export function AgentTab() {
               )}
 
               {/* Настройки для китайского 自由对话 */}
-              {learningLanguage === 'zh' && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || selectedVoiceTask) && (
+              {learningLanguage === 'zh' && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || selectedVoiceTask) && (
                 <div
                   className="chinese-settings-panel"
                   style={{
@@ -4435,7 +4465,7 @@ export function AgentTab() {
                   </div>
                 </div>
               )}
-              {learningLanguage === 'en' && agentMode === 'roleplay' && selectedScenario && (
+              {learningLanguage === 'en' && agentMode === 'roleplay' && selectedScenario && !goalReached && (
                 <div
                   style={{
                     width: 280,
@@ -4611,7 +4641,7 @@ export function AgentTab() {
                   )}
                 </div>
               )}
-              {agentMode === 'debate' && debateStarted && debateTopic && (
+              {agentMode === 'debate' && debateStarted && debateTopic && !debateCompleted && (
                 <div
                   style={{
                     width: 280,
@@ -4931,7 +4961,7 @@ export function AgentTab() {
                       )}
                     </>
                   )}
-                  {agentMode !== 'chat' && (
+                  {agentMode !== 'chat' && !goalReached && !debateCompleted && (
                     <>
                       <button
                         type="button"
@@ -5162,34 +5192,41 @@ export function AgentTab() {
         ) : goalReached && agentMode === 'roleplay' && selectedScenario ? (
           <div
             style={{
+              width: 'min(540px, 100%)',
+              maxHeight: '100%',
+              overflowY: 'auto',
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '1.75rem',
-              padding: '2rem',
+              alignItems: 'stretch',
+              gap: '0.75rem',
+              margin: '3.25rem auto 0',
+              padding: '0.25rem 0.15rem 0.5rem',
               textAlign: 'center',
+              scrollbarGutter: 'stable',
             }}
           >
-            <div
-              style={{
-                width: 72,
-                height: 72,
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(22, 163, 74, 0.2))',
-                border: '2px solid rgba(34, 197, 94, 0.4)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(34, 197, 94, 0.9)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.65rem' }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  flexShrink: 0,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(22, 163, 74, 0.2))',
+                  border: '2px solid rgba(34, 197, 94, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(34, 197, 94, 0.9)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: 'var(--sidebar-text)' }}>
+                Прогресс сохранён!
+              </h2>
             </div>
-            <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--sidebar-text)' }}>
-              Прогресс сохранён!
-            </h2>
             {learningLanguage === 'zh' && selectedScenario.scenarioVocabulary?.some((v) => v.usage === 'must_say') ? (() => {
               const mustSay = getMustSayVocab(selectedScenario.scenarioVocabulary);
               const tracker = getLessonTrackerState({
@@ -5201,29 +5238,45 @@ export function AgentTab() {
               if (tracker.vocabTotal === 0) return null;
               if (tracker.lessonReady) {
                 return (
-                  <p style={{ margin: 0, fontSize: '0.9375rem', color: 'rgba(34, 197, 94, 0.95)', fontWeight: 600 }}>
+                  <p style={{ margin: 0, fontSize: '0.8125rem', color: 'rgba(34, 197, 94, 0.95)', fontWeight: 600 }}>
                     Урок сказан: все слова урока прозвучали.
                   </p>
                 );
               }
               return (
-                <p style={{ margin: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.8, maxWidth: 420 }}>
+                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.8 }}>
                   Слов урока {tracker.vocabDone}/{tracker.vocabTotal}. Ещё можно отработать: {tracker.missingMustSay.map((v) => v.hanzi).join('、')}.
                 </p>
               );
             })() : null}
             {selectedScenario.goalRu && (
-              <p style={{ margin: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.8, maxWidth: 360 }}>
-                {selectedScenario.goalRu}
-              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', justifyContent: 'center' }}>
+                {selectedScenario.goalRu.split(/\s*·\s*/).map((part) => (
+                  <span
+                    key={part}
+                    style={{
+                      padding: '0.22rem 0.55rem',
+                      borderRadius: 999,
+                      border: '1px solid var(--sidebar-border)',
+                      background: 'var(--sidebar-hover)',
+                      fontSize: '0.75rem',
+                      color: 'var(--sidebar-text)',
+                      opacity: 0.9,
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {part}
+                  </span>
+                ))}
+              </div>
             )}
             {roleplayFeedbackLoading && (
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: 0.7, maxWidth: 420 }}>
+              <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
                 Готовим короткий фидбек по диалогу…
               </p>
             )}
             {roleplayFeedback && (
-              <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--sidebar-text)', opacity: 0.85, maxWidth: 460 }}>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--sidebar-text)', opacity: 0.9, lineHeight: 1.45, textAlign: 'left' }}>
                 {roleplayFeedback}
               </p>
             )}
@@ -5231,36 +5284,35 @@ export function AgentTab() {
               <div
                 style={{
                   margin: 0,
-                  padding: '0.75rem 1rem',
+                  padding: '0.55rem 0.75rem',
                   borderRadius: 10,
                   background: 'rgba(34, 197, 94, 0.08)',
                   border: '1px solid rgba(34, 197, 94, 0.25)',
-                  maxWidth: 460,
                   textAlign: 'left',
                 }}
               >
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--sidebar-text)', opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--sidebar-text)', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   Запомни на будущее
                 </span>
                 {roleplayUsefulPhrase && (
-                  <p style={{ margin: '0.35rem 0 0', fontSize: '0.9375rem', color: 'var(--sidebar-text)', fontStyle: 'italic', lineHeight: 1.4 }}>
+                  <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: 'var(--sidebar-text)', fontStyle: 'italic', lineHeight: 1.35 }}>
                     «{roleplayUsefulPhrase}»
                   </p>
                 )}
                 {roleplayUsefulPhrasePinyin && (
-                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.75, lineHeight: 1.4 }}>
+                  <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.75, lineHeight: 1.35 }}>
                     {roleplayUsefulPhrasePinyin}
                   </p>
                 )}
                 {roleplayUsefulPhraseRu && (
-                  <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: 'var(--sidebar-text)', opacity: 0.9, lineHeight: 1.4 }}>
+                  <p style={{ margin: '0.15rem 0 0', fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.9, lineHeight: 1.35 }}>
                     — {roleplayUsefulPhraseRu}
                   </p>
                 )}
               </div>
             )}
             {roleplayStyleNote && (
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: 0.85, maxWidth: 460 }}>
+              <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.85, textAlign: 'left', lineHeight: 1.4 }}>
                 <strong>Нюанс стиля:</strong> {roleplayStyleNote}
               </p>
             )}
@@ -5268,41 +5320,40 @@ export function AgentTab() {
               <div
                 style={{
                   margin: 0,
-                  padding: '0.75rem 1rem',
+                  padding: '0.55rem 0.75rem',
                   borderRadius: 10,
                   background: 'rgba(103, 199, 163, 0.16)',
                   border: '1px solid rgba(79, 168, 134, 0.35)',
-                  maxWidth: 460,
                   textAlign: 'left',
                 }}
               >
-                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--sidebar-text)', opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--sidebar-text)', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   Нейтральный вариант
                 </span>
-                <p style={{ margin: '0.35rem 0 0', fontSize: '0.9375rem', color: 'var(--sidebar-text)', lineHeight: 1.4 }}>
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: 'var(--sidebar-text)', lineHeight: 1.35 }}>
                   {roleplayRewriteNeutral}
                 </p>
               </div>
             )}
             {roleplayFeedbackError && !roleplayFeedback && (
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: 0.6, maxWidth: 420 }}>
+              <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
                 Не удалось получить короткий фидбек — можно попробовать оценку речи.
               </p>
             )}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', paddingTop: '0.15rem' }}>
               <button
                 type="button"
                 onClick={handleGoalReachedRestart}
                 style={{
-                  padding: '0.75rem 1.5rem',
-                  borderRadius: 12,
+                  padding: '0.55rem 1.1rem',
+                  borderRadius: 10,
                   border: 'none',
                   background: 'rgba(34, 197, 94, 0.9)',
                   color: '#fff',
-                  fontSize: '0.9375rem',
+                  fontSize: '0.8125rem',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(34, 197, 94, 0.3)',
+                  boxShadow: '0 3px 10px rgba(34, 197, 94, 0.25)',
                 }}
               >
                 Повторить этот сценарий
@@ -5311,12 +5362,12 @@ export function AgentTab() {
                 type="button"
                 onClick={handleGoalReachedOtherScenario}
                 style={{
-                  padding: '0.75rem 1.5rem',
-                  borderRadius: 12,
+                  padding: '0.55rem 1.1rem',
+                  borderRadius: 10,
                   border: '1px solid var(--sidebar-border)',
                   background: 'var(--sidebar-active)',
                   color: 'var(--sidebar-text)',
-                  fontSize: '0.9375rem',
+                  fontSize: '0.8125rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
@@ -5325,26 +5376,38 @@ export function AgentTab() {
               </button>
               <button
                 type="button"
-                onClick={requestAssessment}
-                disabled={assessmentLoading || messages.filter((m) => m.role === 'user').length === 0}
+                onClick={openSavedOrRequestAssessment}
+                disabled={
+                  assessmentLoading
+                  || assessmentLoadSavedLoading
+                  || (!savedSessionAssessment && messages.filter((m) => m.role === 'user').length === 0)
+                }
                 style={{
-                  padding: '0.75rem 1.5rem',
-                  borderRadius: 12,
+                  padding: '0.55rem 1.1rem',
+                  borderRadius: 10,
                   border: '1px solid rgba(99, 102, 241, 0.5)',
                   background: 'rgba(99, 102, 241, 0.15)',
                   color: 'rgba(99, 102, 241, 0.95)',
-                  fontSize: '0.9375rem',
+                  fontSize: '0.8125rem',
                   fontWeight: 600,
-                  cursor: assessmentLoading ? 'default' : 'pointer',
-                  opacity: assessmentLoading ? 0.7 : 1,
+                  cursor: assessmentLoading || assessmentLoadSavedLoading ? 'default' : 'pointer',
+                  opacity: assessmentLoading || assessmentLoadSavedLoading ? 0.7 : 1,
                 }}
               >
-                {assessmentLoading ? 'Оценка…' : 'Оценить речь'}
+                {assessmentLoading
+                  ? 'Оценка…'
+                  : assessmentLoadSavedLoading
+                    ? 'Загрузка…'
+                    : savedSessionAssessment
+                      ? 'Посмотреть оценку'
+                      : 'Оценить речь'}
               </button>
             </div>
-            <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
-              Для полной обратной связи рекомендуем «Оценить речь».
-            </p>
+            {!savedSessionAssessment && (
+              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.55 }}>
+                Для полной обратной связи рекомендуем «Оценить речь».
+              </p>
+            )}
           </div>
         ) : debateCompleted && agentMode === 'debate' && debateTopic ? (
           <div
@@ -5577,8 +5640,12 @@ export function AgentTab() {
               </button>
               <button
                 type="button"
-                onClick={requestAssessment}
-                disabled={assessmentLoading || messages.filter((m) => m.role === 'user').length === 0}
+                onClick={openSavedOrRequestAssessment}
+                disabled={
+                  assessmentLoading
+                  || assessmentLoadSavedLoading
+                  || (!savedSessionAssessment && messages.filter((m) => m.role === 'user').length === 0)
+                }
                 style={{
                   padding: '0.75rem 1.5rem',
                   borderRadius: 12,
@@ -5587,16 +5654,24 @@ export function AgentTab() {
                   color: 'rgba(99, 102, 241, 0.95)',
                   fontSize: '0.9375rem',
                   fontWeight: 600,
-                  cursor: assessmentLoading ? 'default' : 'pointer',
-                  opacity: assessmentLoading ? 0.7 : 1,
+                  cursor: assessmentLoading || assessmentLoadSavedLoading ? 'default' : 'pointer',
+                  opacity: assessmentLoading || assessmentLoadSavedLoading ? 0.7 : 1,
                 }}
               >
-                {assessmentLoading ? 'Оценка…' : 'Оценить речь'}
+                {assessmentLoading
+                  ? 'Оценка…'
+                  : assessmentLoadSavedLoading
+                    ? 'Загрузка…'
+                    : savedSessionAssessment
+                      ? 'Посмотреть оценку'
+                      : 'Оценить речь'}
               </button>
             </div>
-            <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
-              Для полной обратной связи рекомендуем «Оценить речь».
-            </p>
+            {!savedSessionAssessment && (
+              <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
+                Для полной обратной связи рекомендуем «Оценить речь».
+              </p>
+            )}
           </div>
         ) : selectedVoiceTask && voiceTaskResult ? (
           <ZhVoiceTaskResult
