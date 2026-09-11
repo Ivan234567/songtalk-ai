@@ -3376,6 +3376,7 @@ export function AgentTab() {
                 gap: '0.75rem',
                 width: 'max-content',
                 maxWidth: 'calc(100% - 8rem)',
+                minWidth: 0,
                 overflow: 'visible',
                 zIndex: 4,
                 pointerEvents: 'none',
@@ -3495,7 +3496,12 @@ export function AgentTab() {
                   style={{
                     pointerEvents: 'auto',
                     flexShrink: 0,
-                    maxWidth: 420,
+                    width: 340,
+                    maxWidth: '100%',
+                    minWidth: 0,
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    whiteSpace: 'normal',
                     padding: '0.65rem 0.85rem',
                     borderRadius: 12,
                     border: '1px solid var(--sidebar-border)',
@@ -3505,7 +3511,7 @@ export function AgentTab() {
                     lineHeight: 1.4,
                   }}
                 >
-                  <div style={{ fontWeight: 600 }}>
+                  <div style={{ fontWeight: 600, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                     Минутка: {selectedVoiceTask.title}
                   </div>
                   <div style={{ opacity: 0.75, marginTop: 4 }}>
@@ -3799,7 +3805,10 @@ export function AgentTab() {
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    width: 'min(340px, 100%)',
+                    width: 340,
+                    maxWidth: '100%',
+                    minWidth: 0,
+                    boxSizing: 'border-box',
                     flex: chineseSettingsOpen ? '1 1 auto' : '0 0 auto',
                     minHeight: chineseSettingsOpen ? 0 : undefined,
                     maxHeight: '100%',
@@ -3893,22 +3902,22 @@ export function AgentTab() {
                           <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
                             Голосовая минутка
                           </span>
-                          <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.4 }}>
+                          <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.4, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                             {selectedVoiceTask.title}
                           </p>
                           {selectedVoiceTask.situation_ru?.trim() && (
-                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, opacity: 0.85 }}>
+                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, opacity: 0.85, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                               {selectedVoiceTask.situation_ru}
                             </p>
                           )}
                           {selectedVoiceTask.instruction_ru && (
-                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, opacity: 0.9 }}>
+                            <p style={{ margin: 0, fontSize: '0.8125rem', lineHeight: 1.45, opacity: 0.9, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                               {selectedVoiceTask.instruction_ru}
                             </p>
                           )}
                           {selectedVoiceTask.type === 'retell' && selectedVoiceTask.stimulus_zh?.trim() && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45 }}>
+                              <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                                 {selectedVoiceTask.stimulus_zh}
                               </p>
                               {chineseShowPinyin && selectedVoiceTask.stimulus_pinyin?.trim() && (
@@ -5559,31 +5568,38 @@ export function AgentTab() {
               flexDirection: 'column',
               alignItems: 'center',
               gap: '2.25rem',
+              width: '100%',
+              minWidth: 0,
+              maxWidth: '100%',
             }}
           >
             {selectedVoiceTask && (
               <div
                 style={{
-                  width: '100%',
+                  width: 'min(420px, 100%)',
                   maxWidth: 420,
+                  minWidth: 0,
+                  boxSizing: 'border-box',
                   padding: '0.85rem 1rem',
                   borderRadius: 14,
                   border: '1px solid var(--sidebar-border)',
                   background: 'var(--sidebar-bg)',
                   textAlign: 'left',
+                  overflow: 'auto',
+                  maxHeight: 'min(36vh, 280px)',
                 }}
               >
                 <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
                   {zhVoiceTaskTypeLabel(selectedVoiceTask.type)}
                   {selectedVoiceTask.hsk_level ? ` · HSK ${selectedVoiceTask.hsk_level}` : ''}
                 </div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: 6 }}>{selectedVoiceTask.title}</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: 6, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedVoiceTask.title}</div>
                 {selectedVoiceTask.instruction_ru && (
-                  <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.45, opacity: 0.9 }}>{selectedVoiceTask.instruction_ru}</p>
+                  <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.45, opacity: 0.9, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{selectedVoiceTask.instruction_ru}</p>
                 )}
                 {selectedVoiceTask.type === 'retell' && selectedVoiceTask.stimulus_zh && (
                   <div style={{ marginTop: '0.65rem' }}>
-                    <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.45 }}>
+                    <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                       {selectedVoiceTask.stimulus_zh}
                     </p>
                     {chineseShowPinyin && selectedVoiceTask.stimulus_pinyin?.trim() && (

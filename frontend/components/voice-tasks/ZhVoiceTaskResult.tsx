@@ -100,7 +100,7 @@ export function ZhVoiceTaskResult({
           {zhVoiceTaskTypeLabel(task.type)}
           {task.hsk_level ? ` · HSK ${task.hsk_level}` : ''}
         </div>
-        <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700 }}>{task.title}</h2>
+        <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{task.title}</h2>
         <p
           style={{
             margin: '0.65rem 0 0',

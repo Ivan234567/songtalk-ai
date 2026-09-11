@@ -392,7 +392,7 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, fontSize: '0.9375rem' }}>{t.title}</span>
+            <span style={{ fontWeight: 600, fontSize: '0.9375rem', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{t.title}</span>
             <span style={{ fontSize: '0.6875rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: 6, background: 'var(--sidebar-active)' }}>
               {zhVoiceTaskTypeLabel(t.type)}
             </span>
@@ -406,7 +406,7 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
             )}
           </div>
           {t.instruction_ru && (
-            <div style={{ fontSize: '0.8125rem', opacity: 0.75, marginTop: 4 }}>
+            <div style={{ fontSize: '0.8125rem', opacity: 0.75, marginTop: 4, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
               {t.instruction_ru}
             </div>
           )}
