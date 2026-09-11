@@ -28,7 +28,9 @@ type ChineseCharactersDictionaryProps = {
   apiUrl: string;
   search: string;
   hskFilter: string;
+  refreshKey?: number;
   onCountChange?: (count: number) => void;
+  onAddWord?: () => void;
 };
 
 function getApiUrl(apiUrl: string) {
@@ -330,7 +332,9 @@ export function ChineseCharactersDictionary({
   apiUrl,
   search,
   hskFilter,
+  refreshKey = 0,
   onCountChange,
+  onAddWord,
 }: ChineseCharactersDictionaryProps) {
   const [characters, setCharacters] = useState<ChineseCharacterRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -372,7 +376,7 @@ export function ChineseCharactersDictionary({
     } finally {
       setLoading(false);
     }
-  }, [accessToken, apiUrl, search, hskFilter, onCountChange]);
+  }, [accessToken, apiUrl, search, hskFilter, refreshKey, onCountChange]);
 
   useEffect(() => {
     loadCharacters();
@@ -504,7 +508,18 @@ export function ChineseCharactersDictionary({
         ) : filteredCharacters.length === 0 ? (
           <div className="zh-chars-empty">
             {characters.length === 0
-              ? 'Пока нет иероглифов. Добавляйте из переводчика или при сохранении слов.'
+              ? (
+                <>
+                  Пока нет иероглифов. Добавьте слово вручную — символы появятся здесь.
+                  {onAddWord && (
+                    <div style={{ marginTop: '0.85rem' }}>
+                      <button type="button" className="zh-add-empty-btn" onClick={onAddWord}>
+                        Добавить слово
+                      </button>
+                    </div>
+                  )}
+                </>
+              )
               : 'Нет иероглифов с выбранным тоном.'}
           </div>
         ) : (

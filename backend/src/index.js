@@ -3550,6 +3550,34 @@ function extractHanzi(text) {
     .join('')
 }
 
+function normalizeManualTranslations(raw) {
+  if (!raw) return []
+  const items = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+      ? raw.split(/[,;，、]/)
+      : []
+  return items
+    .map((item) => {
+      if (typeof item === 'string') {
+        const translation = item.trim()
+        return translation ? { translation, source: 'manual' } : null
+      }
+      if (item && typeof item === 'object' && typeof item.translation === 'string') {
+        const translation = item.translation.trim()
+        if (!translation) return null
+        return {
+          translation,
+          source: typeof item.source === 'string' && item.source.trim()
+            ? item.source.trim()
+            : 'manual',
+        }
+      }
+      return null
+    })
+    .filter(Boolean)
+}
+
 function normalizeWord(word) {
   if (!word || typeof word !== 'string') return ''
   const trimmed = word.trim()
@@ -4370,7 +4398,17 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
-  const { word, video_id, context } = req.body || {}
+  const {
+    word,
+    video_id,
+    context,
+    pinyin: rawPinyin,
+    translations: rawTranslations,
+    hsk_level: rawHskLevel,
+    part_of_speech: rawPartOfSpeech,
+    notes: rawNotes,
+    example: rawExample,
+  } = req.body || {}
 
   if (!word || typeof word !== 'string') {
     return res.status(400).json({ error: 'Word is required' })
@@ -4402,24 +4440,50 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Invalid word' })
   }
 
-  // Получаем определение слова с учетом языка (с AI только если нет в кэше)
-  const definition = await getOrCreateWordDefinition(normalizedWord, language)
-  if (definition.usage) {
-    const costRub = getCost('deepseek-v3.2', definition.usage)
-    if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { vocabulary_add: true })
-      if (!deductResult.ok) {
-        console.error('[api/vocabulary/add] Deduct failed:', deductResult.error)
-        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+  const manualTranslations = normalizeManualTranslations(rawTranslations)
+  const manualPinyin = typeof rawPinyin === 'string' && rawPinyin.trim() ? rawPinyin.trim() : null
+  const manualHsk = [1, 2, 3, 4, 5, 6].includes(Number(rawHskLevel)) ? Number(rawHskLevel) : null
+  const manualPartOfSpeech = typeof rawPartOfSpeech === 'string' && rawPartOfSpeech.trim()
+    ? rawPartOfSpeech.trim()
+    : null
+  const manualNotes = typeof rawNotes === 'string' ? rawNotes.trim() : ''
+  const manualExample = typeof rawExample === 'string' && rawExample.trim() ? rawExample.trim() : null
+  const skipAi = language === 'zh' && (manualTranslations.length > 0 || Boolean(manualPinyin))
+
+  // Ручное добавление: не вызываем AI, если пользователь сам указал перевод или пиньинь
+  let definition
+  if (skipAi) {
+    definition = {
+      definitions: manualTranslations,
+      pinyin: manualPinyin,
+      hsk_level: manualHsk,
+      part_of_speech: manualPartOfSpeech,
+      difficulty_level: null,
+      usage: null,
+    }
+  } else {
+    definition = await getOrCreateWordDefinition(normalizedWord, language)
+    if (definition.usage) {
+      const costRub = getCost('deepseek-v3.2', definition.usage)
+      if (costRub > 0) {
+        const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { vocabulary_add: true })
+        if (!deductResult.ok) {
+          console.error('[api/vocabulary/add] Deduct failed:', deductResult.error)
+          return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+        }
       }
     }
+    if (manualTranslations.length > 0) definition.definitions = manualTranslations
+    if (manualPinyin) definition.pinyin = manualPinyin
+    if (manualHsk) definition.hsk_level = manualHsk
+    if (manualPartOfSpeech) definition.part_of_speech = manualPartOfSpeech
   }
 
   // Проверяем, есть ли уже это слово в словаре пользователя (с учетом языка)
   const { data: existingWord } = await safeSupabaseCall(
     () => supabase
       .from('user_vocabulary')
-      .select('id, contexts, difficulty_level, hsk_level, part_of_speech, times_seen, language')
+      .select('id, contexts, difficulty_level, hsk_level, part_of_speech, times_seen, language, pinyin, translations, notes')
       .eq('user_id', userData.user.id)
       .eq('word', normalizedWord)
       .eq('language', language)
@@ -4451,6 +4515,13 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
       contextsArray = existingContexts
     }
 
+    if (manualExample && !contextsArray.some((c) => c.text === manualExample)) {
+      contextsArray = [
+        ...contextsArray,
+        { text: manualExample, timestamp: new Date().toISOString() },
+      ]
+    }
+
     // Обновляем запись
     const updateData = {
       contexts: contextsArray,
@@ -4460,9 +4531,16 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
       updated_at: new Date().toISOString()
     }
 
+    if (manualTranslations.length > 0) {
+      updateData.translations = manualTranslations
+    }
+    if (manualNotes) {
+      updateData.notes = manualNotes
+    }
+
     // Добавляем китайские поля, если это китайский язык
     if (language === 'zh') {
-      updateData.pinyin = definition.pinyin || null
+      updateData.pinyin = definition.pinyin || existingWord.pinyin || null
       updateData.hsk_level = definition.hsk_level || existingWord.hsk_level || null
     }
 
@@ -4516,6 +4594,13 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     })
   }
 
+  if (manualExample && !contextsArray.some((c) => c.text === manualExample)) {
+    contextsArray = [
+      ...contextsArray,
+      { text: manualExample, timestamp: new Date().toISOString() },
+    ]
+  }
+
   // Создаем новую запись
   const insertData = {
     user_id: userData.user.id,
@@ -4527,6 +4612,10 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     part_of_speech: definition.part_of_speech,
     mastery_level: 1,
     times_seen: 1
+  }
+
+  if (manualNotes) {
+    insertData.notes = manualNotes
   }
 
   // Добавляем китайские поля, если это китайский язык

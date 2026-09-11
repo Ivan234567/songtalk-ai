@@ -15,6 +15,8 @@ import {
   InteractiveChineseWord,
 } from '@/components/InteractiveChineseWord';
 import { ChineseCharactersDictionary } from '@/components/tabs/ChineseCharactersDictionary';
+import { AddChineseWordModal } from '@/components/tabs/AddChineseWordModal';
+import type { AddedChineseWord } from '@/components/tabs/AddChineseWordModal';
 import { isHanziChar } from '@/lib/chinese-display';
 
 type VocabularyProgress = {
@@ -53,6 +55,7 @@ type VocabularyWord = {
   times_practiced: number | null;
   created_at: string;
   next_review_at: string | null;
+  notes?: string | null;
   contexts?: { video_id?: string; text?: string; timestamp?: string }[];
   progress?: VocabularyProgress | null;
   categories?: VocabularyCategory[];
@@ -128,6 +131,11 @@ const UploadIcon = () => (
 const TagIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
     <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01" />
+  </svg>
+);
+const PlusIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
+    <path d="M12 5v14M5 12h14" />
   </svg>
 );
 const ChevronDownIcon = () => (
@@ -207,6 +215,8 @@ export const DictionaryTab: React.FC = () => {
   const [phrasalVerbCategoryId, setPhrasalVerbCategoryId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'words' | 'idioms' | 'phrasal-verbs' | 'characters'>('words');
   const [chineseCharactersCount, setChineseCharactersCount] = useState(0);
+  const [chineseCharsRefreshKey, setChineseCharsRefreshKey] = useState(0);
+  const [showAddChineseWord, setShowAddChineseWord] = useState(false);
   const [characterGlossMap, setCharacterGlossMap] = useState<
     Record<string, { translation?: string | null; pinyin?: string | null }>
   >({});
@@ -297,7 +307,7 @@ export const DictionaryTab: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, isChinese, viewMode]);
+  }, [accessToken, isChinese, viewMode, chineseCharsRefreshKey]);
 
   useEffect(() => {
     async function loadToken() {
@@ -1150,6 +1160,51 @@ export const DictionaryTab: React.FC = () => {
 
   const totalWords = stats?.total_words ?? words.length;
 
+  const handleChineseWordAdded = useCallback((word: AddedChineseWord, alreadyExisted: boolean) => {
+    const nextWord: VocabularyWord = {
+      id: word.id,
+      word: word.word,
+      language: word.language || 'zh',
+      pinyin: word.pinyin ?? null,
+      hsk_level: word.hsk_level ?? null,
+      translations: word.translations ?? [],
+      notes: word.notes ?? null,
+      difficulty_level: null,
+      mastery_level: 1,
+      part_of_speech: null,
+      times_seen: 1,
+      times_practiced: 0,
+      created_at: word.created_at || new Date().toISOString(),
+      next_review_at: new Date().toISOString(),
+      categories: (word.categories || []).map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        color: cat.color,
+        icon: cat.icon,
+        description: null,
+      })),
+    };
+    setWords((prev) => {
+      const idx = prev.findIndex((w) => w.id === nextWord.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...nextWord };
+        return next;
+      }
+      return [nextWord, ...prev];
+    });
+    setSelectedWordId(nextWord.id);
+    setViewMode('words');
+    if (!alreadyExisted) {
+      setStats((prev) =>
+        prev
+          ? { ...prev, total_words: (prev.total_words || 0) + 1 }
+          : { total_words: 1, words_to_review: 0 },
+      );
+    }
+    setChineseCharsRefreshKey((key) => key + 1);
+  }, []);
+
   const filteredIdioms = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
 
@@ -1344,7 +1399,7 @@ export const DictionaryTab: React.FC = () => {
                 letterSpacing: 'normal',
               }}
             >
-              Нажмите на иероглиф — пиньинь, тон и перевод. Вкладка 汉字 хранит отдельные символы.
+              Нажмите на иероглиф — пиньинь, тон и перевод. Новые слова можно добавить вручную.
             </p>
           )}
         </div>
@@ -1363,7 +1418,10 @@ export const DictionaryTab: React.FC = () => {
             }}
           >
             {viewMode === 'words' && (
-              <>Всего слов: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{totalWords}</span></>
+              <>
+                {isChinese ? 'Всего 词语' : 'Всего слов'}:{' '}
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{totalWords}</span>
+              </>
             )}
             {viewMode === 'characters' && (
               <>
@@ -1389,6 +1447,16 @@ export const DictionaryTab: React.FC = () => {
               alignItems: 'center',
             }}
           >
+            {isChinese && (
+              <button
+                type="button"
+                className="zh-add-open-btn"
+                onClick={() => setShowAddChineseWord(true)}
+                title="Добавить слово вручную"
+              >
+                <PlusIcon /> Добавить слово
+              </button>
+            )}
             <div ref={exportDropdownRef} style={{ position: 'relative' }}>
               <button
                 type="button"
@@ -2268,7 +2336,9 @@ export const DictionaryTab: React.FC = () => {
             apiUrl={getApiUrl()}
             search={debouncedSearch}
             hskFilter={difficulty}
+            refreshKey={chineseCharsRefreshKey}
             onCountChange={setChineseCharactersCount}
+            onAddWord={() => setShowAddChineseWord(true)}
           />
         ) : (
         <>
@@ -2315,7 +2385,7 @@ export const DictionaryTab: React.FC = () => {
                     }}
                   />
                   <span>
-                    Слова из караоке и видео ({words.length})
+                    {isChinese ? `词语 (${words.length})` : `Слова из караоке и видео (${words.length})`}
                   </span>
                 </>
               ) : viewMode === 'idioms' ? (
@@ -2603,10 +2673,22 @@ export const DictionaryTab: React.FC = () => {
                           Сбросить фильтры
                         </button>
                       </>
+                    ) : isChinese ? (
+                      <div className="zh-add-empty">
+                        <div className="zh-add-empty-glyph" style={{ fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' }}>
+                          词
+                        </div>
+                        <p>Словарь пока пуст. Добавьте первое слово вручную — с пиньинем и переводом.</p>
+                        <button
+                          type="button"
+                          className="zh-add-empty-btn"
+                          onClick={() => setShowAddChineseWord(true)}
+                        >
+                          <PlusIcon /> Добавить слово
+                        </button>
+                      </div>
                     ) : (
-                      isChinese
-                        ? 'Словарь пока пуст. Добавляйте слова из переводчика или диалога.'
-                        : 'Словарь пока пуст. Добавляйте слова из караоке, нажимая «Добавить в словарь».'
+                      'Словарь пока пуст. Добавляйте слова из караоке, нажимая «Добавить в словарь».'
                     )}
                   </div>
                 ) : (
@@ -3362,7 +3444,7 @@ export const DictionaryTab: React.FC = () => {
                           marginBottom: '0.15rem',
                         }}
                       >
-                        Примеры из караоке:
+                        {isChinese ? 'Примеры' : 'Примеры из караоке:'}
                       </div>
                       <ul
                         style={{
@@ -3381,6 +3463,15 @@ export const DictionaryTab: React.FC = () => {
                           <li key={idx}>{ctx.text}</li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {selectedWord.notes && (
+                    <div className="zh-translation-block">
+                      <div className="zh-translation-label">Заметка</div>
+                      <div className="zh-translation-text" style={{ fontSize: '0.92rem', fontWeight: 500 }}>
+                        {selectedWord.notes}
+                      </div>
                     </div>
                   )}
 
@@ -5235,6 +5326,16 @@ export const DictionaryTab: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {isChinese && (
+        <AddChineseWordModal
+          open={showAddChineseWord}
+          accessToken={accessToken}
+          apiUrl={getApiUrl()}
+          categories={categories}
+          onClose={() => setShowAddChineseWord(false)}
+          onAdded={handleChineseWordAdded}
+        />
       )}
     </div>
   );
