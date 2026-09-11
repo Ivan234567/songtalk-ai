@@ -30,6 +30,12 @@ import {
 } from '@/lib/zh-lesson-tracker';
 import type { SpeakingAssessmentResult, CriteriaScores, GoalAttainmentItem } from '@/lib/speaking-assessment';
 import { getCriteriaLabel } from '@/lib/speaking-assessment';
+import {
+  ZH_CRITERIA_KEYS,
+  getZhCriteriaLabel,
+  isZhCriteriaScores,
+  type ZhSpeakingAssessmentResult,
+} from '@/lib/zh-speaking-assessment';
 import { TranslatorPanel } from '@/components/TranslatorPanel';
 import { DebateSetupUI } from '@/components/debate/DebateSetupUI';
 import {
@@ -262,13 +268,14 @@ export function AgentTab() {
   const [ttsVoice, setTtsVoice] = useState<'onyx' | 'nova' | 'ballad'>('onyx');
   /** В ролевом режиме: пользователь нажал «Сохранить прогресс» — показываем экран «Прогресс сохранён». */
   const [goalReached, setGoalReached] = useState(false);
-  const [assessmentResult, setAssessmentResult] = useState<SpeakingAssessmentResult | null>(null);
+  const [assessmentResult, setAssessmentResult] = useState<SpeakingAssessmentResult | ZhSpeakingAssessmentResult | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentLoadSavedLoading, setAssessmentLoadSavedLoading] = useState(false);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const [roleplayFeedback, setRoleplayFeedback] = useState<string | null>(null);
   const [roleplayUsefulPhrase, setRoleplayUsefulPhrase] = useState<string | null>(null);
   const [roleplayUsefulPhraseRu, setRoleplayUsefulPhraseRu] = useState<string | null>(null);
+  const [roleplayUsefulPhrasePinyin, setRoleplayUsefulPhrasePinyin] = useState<string | null>(null);
   const [roleplayStyleNote, setRoleplayStyleNote] = useState<string | null>(null);
   const [roleplayRewriteNeutral, setRoleplayRewriteNeutral] = useState<string | null>(null);
   const [roleplayFeedbackLoading, setRoleplayFeedbackLoading] = useState(false);
@@ -358,9 +365,16 @@ export function AgentTab() {
           allow_profanity: Boolean(selectedScenario.allowProfanity),
           ai_may_use_profanity: Boolean(selectedScenario.aiMayUseProfanity),
           profanity_intensity: selectedScenario.profanityIntensity ?? 'light',
+          ...(learningLanguage === 'zh'
+            ? {
+              hsk_level: chineseHskLevel,
+              vocabulary: selectedScenario.scenarioVocabulary,
+              grammar_focus: selectedScenario.grammarFocus,
+            }
+            : {}),
         }
         : undefined,
-    [selectedScenario]
+    [selectedScenario, learningLanguage, chineseHskLevel]
   );
   const freestyleSettingsPayload = useMemo(
     () => ({
@@ -757,6 +771,7 @@ export function AgentTab() {
       .from('agent_sessions')
       .select('id, title, messages, created_at, scenario_id, scenario_title, completed_step_ids')
       .eq('user_id', userId)
+      .eq('language', learningLanguage)
       .order('created_at', { ascending: false })
       .limit(MAX_SESSIONS)
       .then(({ data, error }) => {
@@ -777,7 +792,7 @@ export function AgentTab() {
     return () => {
       mounted = false;
     };
-  }, [userId]);
+  }, [userId, learningLanguage]);
 
   useEffect(() => {
     if (state !== 'listening') {
@@ -1187,6 +1202,7 @@ export function AgentTab() {
                   user_id: userId,
                   title,
                   messages: newMessages,
+                  language: learningLanguage,
                   ...scenarioPayload,
                   ...stepsPayload,
                 })
@@ -1751,6 +1767,7 @@ export function AgentTab() {
               user_id: userId,
               title,
               messages: [assistantMessage],
+              language: learningLanguage,
               ...scenarioPayload,
             })
             .select('id, title, messages, created_at, scenario_id, scenario_title')
@@ -2002,6 +2019,7 @@ export function AgentTab() {
       setRoleplayFeedback(null);
       setRoleplayUsefulPhrase(null);
       setRoleplayUsefulPhraseRu(null);
+      setRoleplayUsefulPhrasePinyin(null);
       setRoleplayStyleNote(null);
       setRoleplayRewriteNeutral(null);
       setRoleplayFeedbackError(null);
@@ -2028,6 +2046,7 @@ export function AgentTab() {
     setRoleplayFeedback(null);
     setRoleplayUsefulPhrase(null);
     setRoleplayUsefulPhraseRu(null);
+    setRoleplayUsefulPhrasePinyin(null);
     setRoleplayStyleNote(null);
     setRoleplayRewriteNeutral(null);
     setRoleplayFeedbackError(null);
@@ -2044,6 +2063,7 @@ export function AgentTab() {
     setRoleplayFeedback(null);
     setRoleplayUsefulPhrase(null);
     setRoleplayUsefulPhraseRu(null);
+    setRoleplayUsefulPhrasePinyin(null);
     setRoleplayStyleNote(null);
     setRoleplayRewriteNeutral(null);
     setRoleplayFeedbackError(null);
@@ -2063,6 +2083,7 @@ export function AgentTab() {
     setRoleplayFeedback(null);
     setRoleplayUsefulPhrase(null);
     setRoleplayUsefulPhraseRu(null);
+    setRoleplayUsefulPhrasePinyin(null);
     setRoleplayStyleNote(null);
     setRoleplayRewriteNeutral(null);
     setRoleplayFeedbackError(null);
@@ -2127,11 +2148,13 @@ export function AgentTab() {
       const feedbackText = typeof data?.feedback === 'string' ? data.feedback : '';
       const usefulPhrase = typeof data?.useful_phrase === 'string' && data.useful_phrase.trim() ? data.useful_phrase.trim() : null;
       const usefulPhraseRu = typeof data?.useful_phrase_ru === 'string' && data.useful_phrase_ru.trim() ? data.useful_phrase_ru.trim() : null;
+      const usefulPhrasePinyin = typeof data?.useful_phrase_pinyin === 'string' && data.useful_phrase_pinyin.trim() ? data.useful_phrase_pinyin.trim() : null;
       const styleNote = typeof data?.style_note === 'string' && data.style_note.trim() ? data.style_note.trim() : null;
       const rewriteNeutral = typeof data?.rewrite_neutral === 'string' && data.rewrite_neutral.trim() ? data.rewrite_neutral.trim() : null;
       setRoleplayFeedback(feedbackText || null);
       setRoleplayUsefulPhrase(usefulPhrase);
       setRoleplayUsefulPhraseRu(usefulPhraseRu);
+      setRoleplayUsefulPhrasePinyin(usefulPhrasePinyin);
       setRoleplayStyleNote(styleNote);
       setRoleplayRewriteNeutral(rewriteNeutral);
       if (userId && selectedScenario && feedbackText) {
@@ -2383,6 +2406,7 @@ export function AgentTab() {
 
   const requestAssessment = useCallback(async () => {
     if (!token || !userId) return;
+    if (learningLanguage === 'zh' && agentMode === 'debate') return;
     const userMessages = messages.filter((m) => m.role === 'user');
     if (userMessages.length === 0) return;
     let completionIdForUpdate: string | null = debateCompletionId;
@@ -2427,7 +2451,7 @@ export function AgentTab() {
         setAssessmentError(data?.error || `Ошибка ${resp.status}`);
         return;
       }
-      const result = data as SpeakingAssessmentResult;
+      const result = data as SpeakingAssessmentResult | ZhSpeakingAssessmentResult;
       setAssessmentResult(result);
       const { data: assessmentData, error: assessmentError } = await supabase
         .from('speaking_assessments')
@@ -2439,6 +2463,7 @@ export function AgentTab() {
           scenario_id: result.scenario_id ?? null,
           scenario_title: result.scenario_title ?? null,
           format: result.format,
+          language: learningLanguage,
           criteria_scores: result.criteria_scores,
           overall_score: result.overall_score,
           feedback: result.feedback,
@@ -2666,6 +2691,7 @@ export function AgentTab() {
         .from('speaking_assessments')
         .select('*')
         .eq('agent_session_id', sessionId)
+        .eq('language', learningLanguage)
         .order('created_at', { ascending: false })
         .limit(1);
       if (error || !rows?.length) {
@@ -2682,7 +2708,7 @@ export function AgentTab() {
         scenario_title?: string | null;
         agent_session_id?: string | null;
       };
-      const result: SpeakingAssessmentResult = {
+      const result = {
         criteria_scores: row.criteria_scores,
         overall_score: row.overall_score ?? 0,
         feedback: row.feedback ?? {},
@@ -2691,14 +2717,14 @@ export function AgentTab() {
         scenario_id: row.scenario_id ?? null,
         scenario_title: row.scenario_title ?? null,
         agent_session_id: row.agent_session_id ?? null,
-      };
+      } as SpeakingAssessmentResult | ZhSpeakingAssessmentResult;
       setAssessmentResult(result);
     } catch {
       setAssessmentError('Не удалось загрузить оценку.');
     } finally {
       setAssessmentLoadSavedLoading(false);
     }
-  }, []);
+  }, [learningLanguage]);
 
   const startRecording = useCallback(async () => {
     if (state !== 'idle' && state !== 'listening') return;
@@ -5199,6 +5225,11 @@ export function AgentTab() {
                     «{roleplayUsefulPhrase}»
                   </p>
                 )}
+                {roleplayUsefulPhrasePinyin && (
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.75, lineHeight: 1.4 }}>
+                    {roleplayUsefulPhrasePinyin}
+                  </p>
+                )}
                 {roleplayUsefulPhraseRu && (
                   <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: 'var(--sidebar-text)', opacity: 0.9, lineHeight: 1.4 }}>
                     — {roleplayUsefulPhraseRu}
@@ -6012,14 +6043,20 @@ export function AgentTab() {
                 <span style={{ fontSize: '1.125rem', color: 'var(--sidebar-text)', opacity: 0.8 }}>из 10</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                {(Object.keys(assessmentResult.criteria_scores) as (keyof CriteriaScores)[]).map((key) => {
-                  const score = assessmentResult.criteria_scores[key];
+                {(isZhCriteriaScores(assessmentResult.criteria_scores)
+                  ? ZH_CRITERIA_KEYS
+                  : (Object.keys(assessmentResult.criteria_scores) as (keyof CriteriaScores)[])
+                ).map((key) => {
+                  const score = assessmentResult.criteria_scores[key as keyof typeof assessmentResult.criteria_scores];
                   if (typeof score !== 'number') return null;
                   const pct = (score / 10) * 100;
+                  const label = isZhCriteriaScores(assessmentResult.criteria_scores)
+                    ? getZhCriteriaLabel(key)
+                    : getCriteriaLabel(key as keyof CriteriaScores);
                   return (
                     <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem' }}>
-                        <span style={{ color: 'var(--sidebar-text)', opacity: 0.9 }}>{getCriteriaLabel(key)}</span>
+                        <span style={{ color: 'var(--sidebar-text)', opacity: 0.9 }}>{label}</span>
                         <span style={{ fontWeight: 600, color: 'var(--sidebar-text)' }}>{score}</span>
                       </div>
                       <div style={{ height: 6, borderRadius: 3, background: 'var(--sidebar-border)', overflow: 'hidden' }}>
@@ -6041,6 +6078,33 @@ export function AgentTab() {
                 <p style={{ margin: 0, fontSize: '1.0625rem', color: 'var(--sidebar-text)', opacity: 0.9, lineHeight: 1.55 }}>
                   {assessmentResult.feedback.summary}
                 </p>
+              )}
+              {'useful_phrase_zh' in (assessmentResult.feedback || {}) && assessmentResult.feedback && (assessmentResult.feedback as { useful_phrase_zh?: string }).useful_phrase_zh && (
+                <div
+                  style={{
+                    padding: '0.75rem 1rem',
+                    borderRadius: 10,
+                    background: 'rgba(34, 197, 94, 0.08)',
+                    border: '1px solid rgba(34, 197, 94, 0.25)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--sidebar-text)', opacity: 0.85, textTransform: 'uppercase' }}>
+                    Запомни на будущее
+                  </span>
+                  <p style={{ margin: '0.35rem 0 0', fontSize: '1rem', color: 'var(--sidebar-text)', fontStyle: 'italic' }}>
+                    «{(assessmentResult.feedback as { useful_phrase_zh?: string }).useful_phrase_zh}»
+                  </p>
+                  {(assessmentResult.feedback as { useful_phrase_pinyin?: string }).useful_phrase_pinyin && (
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.875rem', color: 'var(--sidebar-text)', opacity: 0.75 }}>
+                      {(assessmentResult.feedback as { useful_phrase_pinyin?: string }).useful_phrase_pinyin}
+                    </p>
+                  )}
+                  {(assessmentResult.feedback as { useful_phrase_ru?: string }).useful_phrase_ru && (
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.875rem', color: 'var(--sidebar-text)', opacity: 0.9 }}>
+                      — {(assessmentResult.feedback as { useful_phrase_ru?: string }).useful_phrase_ru}
+                    </p>
+                  )}
+                </div>
               )}
               {assessmentResult.feedback?.goal_attainment && assessmentResult.feedback.goal_attainment.length > 0 && (
                 <div>

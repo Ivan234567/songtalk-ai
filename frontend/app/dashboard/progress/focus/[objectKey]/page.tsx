@@ -6,6 +6,13 @@ import { supabase } from '@/lib/supabase';
 import { getRoleplayScenarioById } from '@/lib/roleplay';
 import { getDebateStepsByDifficulty, normalizeDebateTopic } from '@/lib/debate';
 import { getCriteriaLabel, type AssessmentFeedback, type CriteriaScores } from '@/lib/speaking-assessment';
+import { ZH_CRITERIA_KEYS, getZhCriteriaLabel, isZhCriteriaScores } from '@/lib/zh-speaking-assessment';
+import {
+  zhChecklistCoveragePct,
+  zhVoiceTaskVerdictLabel,
+  type ZhChecklistItemStatus,
+  type ZhVoiceTaskVerdict,
+} from '@/lib/zh-voice-tasks';
 import { FocusHero } from '@/components/progress/focus/FocusHero';
 import { FocusCriteria } from '@/components/progress/focus/FocusCriteria';
 import { FocusAttemptSelector } from '@/components/progress/focus/FocusAttemptSelector';
@@ -15,7 +22,7 @@ import { FocusTranscript } from '@/components/progress/focus/FocusTranscript';
 import styles from '@/components/progress/focus/focus.module.css';
 
 type PeriodValue = '7d' | '30d' | '90d' | 'all';
-type ModeValue = 'roleplay' | 'debate';
+type ModeValue = 'roleplay' | 'debate' | 'voice';
 type ViewValue = 'system' | 'personal';
 type CriterionKey = keyof CriteriaScores;
 
@@ -34,7 +41,7 @@ type FocusAttempt = {
   attemptId: string;
   completedAt: string;
   overallScore: number | null;
-  criteriaScores: CriteriaScores | null;
+  criteriaScores: CriteriaScores | Record<string, number> | null;
   steps: Array<{ id: string; title: string; completed: boolean }>;
   stepCompletionPct: number | null;
   goals: Array<{ goal_id: string; goal_label?: string; achieved: boolean }>;
@@ -44,6 +51,8 @@ type FocusAttempt = {
   debateSessionId: string | null;
   agentSessionId: string | null;
   fallbackUserMessages: string[];
+  verdict?: ZhVoiceTaskVerdict | null;
+  coveragePct?: number | null;
 };
 
 type FocusModel = {
@@ -60,7 +69,7 @@ function isPeriodValue(value: string | null): value is PeriodValue {
   return value === '7d' || value === '30d' || value === '90d' || value === 'all';
 }
 function isModeValue(value: string | null): value is ModeValue {
-  return value === 'roleplay' || value === 'debate';
+  return value === 'roleplay' || value === 'debate' || value === 'voice';
 }
 function isViewValue(value: string | null): value is ViewValue {
   return value === 'system' || value === 'personal';
@@ -117,7 +126,7 @@ function toOptionalText(value: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
-function buildFallbackCoachingInsights(criteria: CriteriaScores | null): { strengths: string[]; improvements: string[] } {
+function buildFallbackCoachingInsights(criteria: CriteriaScores | Record<string, number> | null): { strengths: string[]; improvements: string[] } {
   if (!criteria) {
     return {
       strengths: ['Недостаточно данных для оценки сильных сторон.'],
@@ -125,20 +134,20 @@ function buildFallbackCoachingInsights(criteria: CriteriaScores | null): { stren
     };
   }
 
-  const entries: Array<{ key: CriterionKey; score: number }> = [
-    { key: 'fluency', score: criteria.fluency },
-    { key: 'vocabulary_grammar', score: criteria.vocabulary_grammar },
-    { key: 'pronunciation', score: criteria.pronunciation },
-    { key: 'completeness', score: criteria.completeness },
-    { key: 'dialogue_skills', score: criteria.dialogue_skills },
-  ];
+  const entries = isZhCriteriaScores(criteria)
+    ? ZH_CRITERIA_KEYS.map((key) => ({ key, score: criteria[key], label: getZhCriteriaLabel(key) }))
+    : (['fluency', 'vocabulary_grammar', 'pronunciation', 'completeness', 'dialogue_skills'] as CriterionKey[]).map((key) => ({
+        key,
+        score: (criteria as CriteriaScores)[key],
+        label: getCriteriaLabel(key),
+      }));
 
-  const best = [...entries].sort((a, b) => b.score - a.score).slice(0, 2);
-  const weakest = [...entries].sort((a, b) => a.score - b.score).slice(0, 2);
+  const best = [...entries].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 2);
+  const weakest = [...entries].sort((a, b) => (a.score ?? 0) - (b.score ?? 0)).slice(0, 2);
 
   return {
-    strengths: best.map((item) => `${getCriteriaLabel(item.key)}: ${item.score.toFixed(1)}/10`),
-    improvements: weakest.map((item) => `${getCriteriaLabel(item.key)}: ${item.score.toFixed(1)}/10`),
+    strengths: best.map((item) => `${item.label}: ${(item.score ?? 0).toFixed(1)}/10`),
+    improvements: weakest.map((item) => `${item.label}: ${(item.score ?? 0).toFixed(1)}/10`),
   };
 }
 
@@ -156,7 +165,13 @@ export default function ProgressFocusPage() {
     }
   }, [rawObjectKey]);
   const period = isPeriodValue(searchParams.get('period')) ? (searchParams.get('period') as PeriodValue) : '30d';
-  const modeFromPath: ModeValue | null = objectKey.startsWith('rp:') ? 'roleplay' : objectKey.startsWith('db:') ? 'debate' : null;
+  const modeFromPath: ModeValue | null = objectKey.startsWith('rp:')
+    ? 'roleplay'
+    : objectKey.startsWith('db:')
+      ? 'debate'
+      : objectKey.startsWith('vt:')
+        ? 'voice'
+        : null;
   const modeForBack = isModeValue(searchParams.get('mode')) ? (searchParams.get('mode') as ModeValue) : modeFromPath ?? 'roleplay';
   const viewForBack = isViewValue(searchParams.get('view')) ? (searchParams.get('view') as ViewValue) : 'system';
   const trendForBack = searchParams.get('trend');
@@ -193,7 +208,68 @@ export default function ProgressFocusPage() {
         const userId = userData.user.id;
         const periodStart = getPeriodStart(period);
 
-        if (modeFromPath === 'roleplay') {
+        if (modeFromPath === 'voice') {
+          const taskId = objectKey.slice(3);
+          const [attemptsRes, taskRes] = await Promise.all([
+            supabase
+              .from('zh_voice_task_attempts')
+              .select('id, task_id, hsk_level, transcript, checklist_result, feedback, created_at, status')
+              .eq('user_id', userId)
+              .eq('status', 'checked')
+              .eq('task_id', taskId)
+              .order('created_at', { ascending: false })
+              .limit(500),
+            supabase.from('zh_voice_tasks').select('id, title, hsk_level, type').eq('id', taskId).maybeSingle(),
+          ]);
+          if (attemptsRes.error) throw new Error(attemptsRes.error.message);
+          const rows = (attemptsRes.data ?? []).filter((r: { created_at: string }) =>
+            periodStart ? new Date(r.created_at) >= periodStart : true
+          );
+          const attempts: FocusAttempt[] = rows.map((row: Record<string, unknown>) => {
+            const result = row.checklist_result && typeof row.checklist_result === 'object'
+              ? (row.checklist_result as { verdict?: ZhVoiceTaskVerdict; checklist?: Array<{ id: string; status: ZhChecklistItemStatus; note_ru?: string; label_ru?: string }> })
+              : null;
+            const checklist = Array.isArray(result?.checklist) ? result!.checklist! : [];
+            const coveragePct = zhChecklistCoveragePct(checklist);
+            const verdict = result?.verdict === 'done' || result?.verdict === 'almost' || result?.verdict === 'missed'
+              ? result.verdict
+              : null;
+            const steps = checklist.map((item) => ({
+              id: item.id,
+              title: item.label_ru || item.note_ru || item.id,
+              completed: item.status === 'done',
+            }));
+            return {
+              attemptId: String(row.id),
+              completedAt: String(row.created_at),
+              overallScore: coveragePct,
+              criteriaScores: null,
+              steps,
+              stepCompletionPct: coveragePct,
+              goals: [],
+              strengths: toFeedbackList(typeof row.feedback === 'string' ? [row.feedback] : []),
+              improvements: [],
+              coachComment: verdict ? zhVoiceTaskVerdictLabel(verdict) : toOptionalText(row.feedback),
+              debateSessionId: null,
+              agentSessionId: null,
+              fallbackUserMessages: typeof row.transcript === 'string' && row.transcript.trim() ? [row.transcript] : [],
+              verdict,
+              coveragePct,
+            };
+          });
+          const coverages = attempts.map((a) => a.coveragePct).filter((v): v is number => typeof v === 'number');
+          if (!cancelled) {
+            setModel({
+              mode: 'voice',
+              title: (taskRes.data?.title as string) || 'Голосовая минутка',
+              subtitle: taskRes.data?.hsk_level ? `HSK ${taskRes.data.hsk_level}` : 'Голосовая минутка',
+              attempts,
+              avgScore: coverages.length ? Math.round(coverages.reduce((s, v) => s + v, 0) / coverages.length) : null,
+              bestScore: coverages.length ? Math.max(...coverages) : null,
+              avgStepPct: coverages.length ? Math.round(coverages.reduce((s, v) => s + v, 0) / coverages.length) : null,
+            });
+          }
+        } else if (modeFromPath === 'roleplay') {
           const scenarioId = objectKey.slice(3);
           const [cRes, aRes] = await Promise.all([
             supabase
@@ -392,21 +468,29 @@ export default function ProgressFocusPage() {
     const improvements = selectedAttempt.improvements.length > 0 ? selectedAttempt.improvements : fallback.improvements;
     const comment = selectedAttempt.coachComment
       || (selectedAttempt.overallScore != null
-        ? `Общий балл: ${selectedAttempt.overallScore.toFixed(1)} из 10. Продолжайте практиковаться и улучшать навыки.`
+        ? model?.mode === 'voice'
+          ? `Покрытие чеклиста: ${Math.round(selectedAttempt.overallScore)}%.`
+          : `Общий балл: ${selectedAttempt.overallScore.toFixed(1)} из 10. Продолжайте практиковаться и улучшать навыки.`
         : 'Оценка по этой попытке не доступна.');
 
     return { strengths, improvements, comment };
-  }, [selectedAttempt]);
+  }, [selectedAttempt, model]);
 
   const criteriaStats = useMemo(() => {
-    if (!model) return [] as Array<{ key: CriterionKey; label: string; current: number | null; avg: number | null }>;
-    const keys: CriterionKey[] = ['fluency', 'vocabulary_grammar', 'pronunciation', 'completeness', 'dialogue_skills'];
+    if (!model || model.mode === 'voice') return [] as Array<{ key: string; label: string; current: number | null; avg: number | null }>;
+    const sample = selectedAttempt?.criteriaScores ?? model.attempts.find((a) => a.criteriaScores)?.criteriaScores;
+    const keys = isZhCriteriaScores(sample)
+      ? [...ZH_CRITERIA_KEYS]
+      : (['fluency', 'vocabulary_grammar', 'pronunciation', 'completeness', 'dialogue_skills'] as CriterionKey[]);
     return keys.map((key) => {
-      const vals = model.attempts.map((a) => a.criteriaScores?.[key]).filter((v): v is number => typeof v === 'number');
+      const vals = model.attempts
+        .map((a) => (a.criteriaScores as Record<string, number> | null)?.[key])
+        .filter((v): v is number => typeof v === 'number');
+      const current = (selectedAttempt?.criteriaScores as Record<string, number> | null)?.[key];
       return {
         key,
-        label: getCriteriaLabel(key),
-        current: typeof selectedAttempt?.criteriaScores?.[key] === 'number' ? selectedAttempt.criteriaScores[key] : null,
+        label: isZhCriteriaScores(sample) ? getZhCriteriaLabel(key) : getCriteriaLabel(key as CriterionKey),
+        current: typeof current === 'number' ? current : null,
         avg: vals.length ? round1(vals.reduce((s, v) => s + v, 0) / vals.length) : null,
       };
     });
@@ -482,9 +566,10 @@ export default function ProgressFocusPage() {
         goalsDone={goalsDone}
         goalsTotal={goalsTotal}
         bestScore={model.bestScore}
+        scoreMaxLabel={model.mode === 'voice' ? '%' : '/10'}
       />
 
-      <FocusCriteria criteria={focusCriteria} />
+      {model.mode !== 'voice' && <FocusCriteria criteria={focusCriteria} />}
 
       <FocusAttemptSelector
         attempts={model.attempts}

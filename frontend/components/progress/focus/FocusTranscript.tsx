@@ -10,7 +10,7 @@ type DialogMessage = {
 };
 
 type FocusTranscriptProps = {
-  mode: 'roleplay' | 'debate';
+  mode: 'roleplay' | 'debate' | 'voice';
   agentSessionId: string | null;
   debateSessionId: string | null;
   fallbackUserMessages: string[];
@@ -38,9 +38,9 @@ export function FocusTranscript({
       setMessages([]);
 
       try {
-        if (mode === 'roleplay') {
+        if (mode === 'roleplay' || mode === 'voice') {
           if (agentSessionId) {
-            const { data, err } = await supabase
+            const { data, error: err } = await supabase
               .from('agent_sessions')
               .select('messages')
               .eq('id', agentSessionId)
@@ -65,7 +65,7 @@ export function FocusTranscript({
           return;
         }
 
-        const { data, err } = await supabase
+        const { data, error: err } = await supabase
           .from('debate_sessions')
           .select('messages')
           .eq('id', debateSessionId)
@@ -102,7 +102,9 @@ export function FocusTranscript({
       <div className={styles.transcriptHeader}>
         <div className={styles.transcriptHeaderLeft}>
           <span className={styles.transcriptIcon}>💬</span>
-          <h2 className={styles.sectionTitle} style={{ margin: 0 }}>Расшифровка диалога</h2>
+          <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+            {mode === 'voice' ? 'Расшифровка попытки' : 'Расшифровка диалога'}
+          </h2>
         </div>
         {hasMessages && (
           <div className={styles.transcriptStats}>

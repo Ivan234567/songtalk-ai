@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import type { CriteriaScores } from '@/lib/speaking-assessment';
 import styles from './progress.module.css';
 
 type CriteriaItem = {
-  key: keyof CriteriaScores;
+  key: string;
   label: string;
   value: number;
   min: number | null;
@@ -16,8 +15,8 @@ type CriteriaItem = {
 
 type CriteriaOverviewProps = {
   criteria: CriteriaItem[];
-  selectedCriterionKey?: keyof CriteriaScores | null;
-  onCriterionSelect?: (key: keyof CriteriaScores | null) => void;
+  selectedCriterionKey?: string | null;
+  onCriterionSelect?: (key: string | null) => void;
   className?: string;
 };
 

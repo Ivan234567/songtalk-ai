@@ -683,7 +683,17 @@ export function ProgressDashboard() {
       <CriteriaOverview
         criteria={criteriaOverview}
         selectedCriterionKey={selectedCriterionKey}
-        onCriterionSelect={setSelectedCriterionKey}
+        onCriterionSelect={(key) =>
+          setSelectedCriterionKey(
+            key === 'fluency' ||
+              key === 'vocabulary_grammar' ||
+              key === 'pronunciation' ||
+              key === 'completeness' ||
+              key === 'dialogue_skills'
+              ? key
+              : null
+          )
+        }
       />
 
       <RecentSessions

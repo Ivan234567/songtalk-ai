@@ -44,11 +44,13 @@ export function useDashboardMetrics() {
       videosRes,
       roleplayRes,
       debateRes,
+      voiceAttemptsRes,
     ] = await Promise.all([
       supabase
         .from('agent_sessions')
         .select('messages, created_at')
-        .eq('user_id', uid),
+        .eq('user_id', uid)
+        .eq('language', learningLanguage),
       supabase
         .from('user_vocabulary')
         .select('id', { head: true, count: 'exact' })
@@ -65,22 +67,36 @@ export function useDashboardMetrics() {
             .from('user_phrasal_verbs')
             .select('id', { head: true, count: 'exact' })
             .eq('user_id', uid),
-      supabase
-        .from('user_videos')
-        .select('id', { head: true, count: 'exact' })
-        .eq('user_id', uid),
+      isChinese
+        ? Promise.resolve({ error: null, count: 0 })
+        : supabase
+            .from('user_videos')
+            .select('id', { head: true, count: 'exact' })
+            .eq('user_id', uid),
       supabase
         .from('roleplay_completions')
         .select('completed_at')
         .eq('user_id', uid)
+        .eq('language', learningLanguage)
         .order('completed_at', { ascending: false })
         .limit(500),
-      supabase
-        .from('debate_completions')
-        .select('completed_at')
-        .eq('user_id', uid)
-        .order('completed_at', { ascending: false })
-        .limit(500),
+      isChinese
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from('debate_completions')
+            .select('completed_at')
+            .eq('user_id', uid)
+            .order('completed_at', { ascending: false })
+            .limit(500),
+      isChinese
+        ? supabase
+            .from('zh_voice_task_attempts')
+            .select('created_at, duration_sec, status')
+            .eq('user_id', uid)
+            .eq('status', 'checked')
+            .order('created_at', { ascending: false })
+            .limit(500)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     const minutesByDate = new Map<string, number>();
@@ -93,6 +109,19 @@ export function useDashboardMetrics() {
         conversationMinutes += mins;
         const createdAt = (row as { created_at?: string }).created_at;
         if (createdAt && mins > 0) {
+          const dateKey = new Date(createdAt).toISOString().slice(0, 10);
+          minutesByDate.set(dateKey, (minutesByDate.get(dateKey) ?? 0) + mins);
+        }
+      }
+    }
+
+    if (!voiceAttemptsRes.error && voiceAttemptsRes.data) {
+      for (const row of voiceAttemptsRes.data) {
+        const durationSec = Number((row as { duration_sec?: number }).duration_sec) || 0;
+        const mins = Math.max(1, Math.round(durationSec / 60));
+        conversationMinutes += mins;
+        const createdAt = (row as { created_at?: string }).created_at;
+        if (createdAt) {
           const dateKey = new Date(createdAt).toISOString().slice(0, 10);
           minutesByDate.set(dateKey, (minutesByDate.get(dateKey) ?? 0) + mins);
         }
@@ -133,6 +162,10 @@ export function useDashboardMetrics() {
           allDates.add(new Date(createdAt).toISOString().slice(0, 10));
         }
       }
+    }
+    for (const r of voiceAttemptsRes.data ?? []) {
+      const createdAt = (r as { created_at?: string }).created_at;
+      if (createdAt) allDates.add(new Date(createdAt).toISOString().slice(0, 10));
     }
 
     let streakDays = 0;

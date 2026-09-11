@@ -7,7 +7,7 @@ import type { CriteriaScores } from '@/lib/speaking-assessment';
 import type { CompletionRow, AssessmentRow, DebateCompletionRow } from './useProgressData';
 
 export type PeriodFilterValue = '7d' | '30d' | '90d' | 'all';
-export type ProgressModeValue = 'roleplay' | 'debate';
+export type ProgressModeValue = 'roleplay' | 'debate' | 'voice';
 export type ProgressViewValue = 'system' | 'personal';
 
 export const PERIOD_FILTER_OPTIONS: { value: PeriodFilterValue; label: string }[] = [

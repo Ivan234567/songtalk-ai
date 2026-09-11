@@ -144,8 +144,12 @@ type ProgressFiltersProps = {
   onProgressViewChange: (v: ProgressViewValue) => void;
   roleplayCount?: number;
   debateCount?: number;
+  voiceCount?: number;
   systemCount?: number;
   personalCount?: number;
+  availableModes?: ProgressModeValue[];
+  roleplayLabel?: string;
+  voiceLabel?: string;
 };
 
 export function ProgressFilters({
@@ -157,8 +161,12 @@ export function ProgressFilters({
   onProgressViewChange,
   roleplayCount,
   debateCount,
+  voiceCount,
   systemCount,
   personalCount,
+  availableModes = ['roleplay', 'debate'],
+  roleplayLabel = 'Ролевые сценарии',
+  voiceLabel = 'Минутки',
 }: ProgressFiltersProps) {
   /* Keyboard shortcuts for all filter groups */
   useEffect(() => {
@@ -174,14 +182,19 @@ export function ProgressFilters({
         onPeriodChange(period);
         return;
       }
-      if (key === 'r') {
+      if (key === 'r' && availableModes.includes('roleplay')) {
         e.preventDefault();
         onModeChange('roleplay');
         return;
       }
-      if (key === 'd') {
+      if (key === 'd' && availableModes.includes('debate')) {
         e.preventDefault();
         onModeChange('debate');
+        return;
+      }
+      if (key === 'v' && availableModes.includes('voice')) {
+        e.preventDefault();
+        onModeChange('voice');
         return;
       }
       if (key === 's') {
@@ -196,7 +209,7 @@ export function ProgressFilters({
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onPeriodChange, onModeChange, onProgressViewChange]);
+  }, [onPeriodChange, onModeChange, onProgressViewChange, availableModes]);
 
   const periodOptions: SegmentOption<PeriodFilterValue>[] = PERIOD_FILTER_OPTIONS.map(
     (opt, i) => ({
@@ -207,10 +220,13 @@ export function ProgressFilters({
     })
   );
 
-  const modeOptions: SegmentOption<ProgressModeValue>[] = [
-    { value: 'roleplay', label: 'Ролевые сценарии', badge: roleplayCount, shortcutHint: 'R' },
-    { value: 'debate', label: 'Дебаты', badge: debateCount, shortcutHint: 'D' },
-  ];
+  const modeOptions: SegmentOption<ProgressModeValue>[] = (
+    [
+      { value: 'roleplay' as const, label: roleplayLabel, badge: roleplayCount, shortcutHint: 'R' },
+      { value: 'debate' as const, label: 'Дебаты', badge: debateCount, shortcutHint: 'D' },
+      { value: 'voice' as const, label: voiceLabel, badge: voiceCount, shortcutHint: 'V' },
+    ] satisfies SegmentOption<ProgressModeValue>[]
+  ).filter((opt) => availableModes.includes(opt.value));
 
   const viewOptions: SegmentOption<ProgressViewValue>[] = [
     { value: 'system', label: 'Системные', badge: systemCount, shortcutHint: 'S' },

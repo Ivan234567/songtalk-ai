@@ -6,12 +6,14 @@ import styles from './progress.module.css';
 
 export type RecentSessionRow = {
   id: string;
-  rowMode: 'roleplay' | 'debate';
+  rowMode: 'roleplay' | 'debate' | 'voice';
   title: string;
   completedAt: string;
   score: number | null;
   objectKey: string;
   completionId: string;
+  scoreScale?: 10 | 100;
+  scoreLabel?: string;
 };
 
 type RecentSessionsProps = {
@@ -138,18 +140,27 @@ export function RecentSessions({
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className={styles.sessionTitleRow}>
                 <span className={styles.sessionModeIcon} aria-hidden="true">
-                  {row.rowMode === 'roleplay' ? '🎭' : '⚔️'}
+                  {row.rowMode === 'roleplay' ? '🎭' : row.rowMode === 'voice' ? '🎙️' : '⚔️'}
                 </span>
                 <div className={styles.sessionTitle}>{row.title}</div>
               </div>
               <div className={styles.sessionMeta}>
-                {row.score != null ? `${row.score.toFixed(1)}` : '—'} · {formatRelativeDate(row.completedAt)}
+                {row.scoreLabel
+                  ? row.scoreLabel
+                  : row.score != null
+                    ? row.scoreScale === 100
+                      ? `${Math.round(row.score)}%`
+                      : `${row.score.toFixed(1)}`
+                    : '—'}{' '}
+                · {formatRelativeDate(row.completedAt)}
               </div>
               {row.score != null && (
                 <div className={styles.sessionScoreBar}>
                   <div
                     className={styles.sessionScoreFill}
-                    style={{ width: `${Math.max(0, Math.min(100, row.score * 10))}%` }}
+                    style={{
+                      width: `${Math.max(0, Math.min(100, row.scoreScale === 100 ? row.score : row.score * 10))}%`,
+                    }}
                   />
                 </div>
               )}

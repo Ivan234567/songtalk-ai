@@ -7,7 +7,7 @@ import styles from './focus.module.css';
 type FocusHeroProps = {
   title: string;
   subtitle: string | null;
-  mode: 'roleplay' | 'debate';
+  mode: 'roleplay' | 'debate' | 'voice';
   backHref: string;
   score: number | null;
   attemptNumber: number | null;
@@ -16,6 +16,7 @@ type FocusHeroProps = {
   goalsDone: number;
   goalsTotal: number;
   bestScore: number | null;
+  scoreMaxLabel?: string;
 };
 
 export function FocusHero({
@@ -30,6 +31,7 @@ export function FocusHero({
   goalsDone,
   goalsTotal,
   bestScore,
+  scoreMaxLabel = '/10',
 }: FocusHeroProps) {
   const [animatedScore, setAnimatedScore] = useState(0);
   const [mounted, setMounted] = useState(false);
@@ -55,10 +57,13 @@ export function FocusHero({
   }, [score]);
 
   const displayScore = score != null ? animatedScore : null;
-  const pct = displayScore != null ? Math.max(0, Math.min(100, (displayScore / 10) * 100)) : 0;
+  const pct =
+    displayScore != null
+      ? Math.max(0, Math.min(100, scoreMaxLabel === '%' ? displayScore : (displayScore / 10) * 100))
+      : 0;
 
-  const modeLabel = mode === 'roleplay' ? 'Ролевой сценарий' : 'Дебаты';
-  const modeIcon = mode === 'roleplay' ? '🎭' : '⚔️';
+  const modeLabel = mode === 'roleplay' ? 'Ролевой сценарий' : mode === 'voice' ? 'Голосовая минутка' : 'Дебаты';
+  const modeIcon = mode === 'roleplay' ? '🎭' : mode === 'voice' ? '🎙️' : '⚔️';
 
   return (
     <section className={styles.hero}>
@@ -84,9 +89,13 @@ export function FocusHero({
         >
           <div className={styles.heroScoreInner}>
             <span className={styles.heroScoreValue}>
-              {displayScore != null ? displayScore.toFixed(1) : '—'}
+              {displayScore != null
+                ? scoreMaxLabel === '%'
+                  ? `${Math.round(displayScore)}`
+                  : displayScore.toFixed(1)
+                : '—'}
             </span>
-            <span className={styles.heroScoreMax}>/10</span>
+            <span className={styles.heroScoreMax}>{scoreMaxLabel === '%' ? '%' : scoreMaxLabel}</span>
           </div>
         </div>
         {mounted && score != null && <div className={styles.heroScoreGlow} />}

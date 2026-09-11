@@ -95,12 +95,14 @@ export function useProgressData() {
         .from('roleplay_completions')
         .select('id, scenario_id, scenario_title, scenario_level, completed_at, feedback, useful_phrase_en, useful_phrase_ru, completed_step_ids')
         .eq('user_id', uid)
+        .eq('language', 'en')
         .order('completed_at', { ascending: false })
         .limit(500),
       supabase
         .from('speaking_assessments')
         .select('id, scenario_id, overall_score, criteria_scores, feedback, user_messages, agent_session_id, created_at')
         .eq('user_id', uid)
+        .eq('language', 'en')
         .not('scenario_id', 'is', null)
         .order('created_at', { ascending: false })
         .limit(500),
@@ -114,6 +116,7 @@ export function useProgressData() {
         .from('speaking_assessments')
         .select('id, scenario_id, overall_score, criteria_scores, feedback, user_messages, agent_session_id, created_at')
         .eq('user_id', uid)
+        .eq('language', 'en')
         .order('created_at', { ascending: false })
         .limit(500),
       supabase

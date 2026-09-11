@@ -3,13 +3,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getCriteriaLabel } from '@/lib/speaking-assessment';
-import type { CriteriaScores } from '@/lib/speaking-assessment';
 import { Sparkline } from '@/components/ui/Sparkline';
 import styles from './progress.module.css';
 
 export type RecommendRow = {
   id: string;
-  rowMode: 'roleplay' | 'debate';
+  rowMode: 'roleplay' | 'debate' | 'voice';
   title: string;
   completedAt: string;
   score: number | null;
@@ -23,12 +22,13 @@ export type RecommendRow = {
 };
 
 type RecommendedScenariosProps = {
-  weakestCriterionKey: keyof CriteriaScores | null;
+  weakestCriterionKey: string | null;
   rows: RecommendRow[];
   onOpenFocus?: (objectKey: string, completionId?: string) => void;
   onStartPractice?: (objectKey: string) => void;
   className?: string;
   criterionLabelPrefix?: string;
+  criterionLabel?: string;
 };
 
 export function RecommendedScenarios({
@@ -38,6 +38,7 @@ export function RecommendedScenarios({
   onStartPractice,
   className = '',
   criterionLabelPrefix = 'Слабый критерий',
+  criterionLabel,
 }: RecommendedScenariosProps) {
   const router = useRouter();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -112,7 +113,7 @@ export function RecommendedScenarios({
     <section className={`${styles.card} ${className}`}>
       <h3 className={styles.sectionTitle}>Сценарии для повторения</h3>
       <p className={styles.sectionHint} style={{ marginTop: '0.25rem' }}>
-        {criterionLabelPrefix}: <strong>{getCriteriaLabel(weakestCriterionKey)}</strong>. Рекомендуем повторить:
+        {criterionLabelPrefix}: <strong>{criterionLabel || getCriteriaLabel(weakestCriterionKey as 'fluency')}</strong>. Рекомендуем повторить:
       </p>
       <div className={styles.recommendCarousel} style={{ marginTop: '0.45rem' }}>
         <button
@@ -132,7 +133,7 @@ export function RecommendedScenarios({
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                 <span className={styles.recommendTitle}>
-                  {row.rowMode === 'roleplay' ? '🎭 ' : '⚔️ '}
+                  {row.rowMode === 'roleplay' ? '🎭 ' : row.rowMode === 'voice' ? '🎙️ ' : '⚔️ '}
                   {row.title}
                 </span>
                 <span
@@ -149,7 +150,7 @@ export function RecommendedScenarios({
               </div>
 
               <div className={styles.recommendCriterion}>
-                {getCriteriaLabel(weakestCriterionKey)}: {row.criterionScore.toFixed(1)} · Балл:{' '}
+                {criterionLabel || getCriteriaLabel(weakestCriterionKey as 'fluency')}: {row.criterionScore.toFixed(1)} · Балл:{' '}
                 {row.score != null ? row.score.toFixed(1) : '—'}
               </div>
 

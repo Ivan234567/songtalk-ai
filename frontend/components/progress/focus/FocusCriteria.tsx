@@ -1,11 +1,10 @@
 'use client';
 
 import React from 'react';
-import type { CriteriaScores } from '@/lib/speaking-assessment';
 import styles from './focus.module.css';
 
 type CriteriaItem = {
-  key: keyof CriteriaScores;
+  key: string;
   label: string;
   value: number;
 };
@@ -20,6 +19,11 @@ const CRITERIA_ICONS: Record<string, string> = {
   pronunciation: '🎯',
   completeness: '✅',
   dialogue_skills: '💬',
+  task_completion: '✅',
+  vocabulary: '📚',
+  grammar: '🧩',
+  interaction: '💬',
+  connected_speech: '🔗',
 };
 
 const CRITERIA_DESCRIPTIONS: Record<string, string> = {
@@ -28,6 +32,11 @@ const CRITERIA_DESCRIPTIONS: Record<string, string> = {
   pronunciation: 'Произношение и интонация',
   completeness: 'Полнота выполнения задания',
   dialogue_skills: 'Навыки ведения диалога',
+  task_completion: 'Достижение цели сценария и шагов',
+  vocabulary: 'Нужные слова и уместность HSK',
+  grammar: 'Порядок слов и частицы',
+  interaction: 'Вопросы, реакции, не односложные ответы',
+  connected_speech: 'Длина и связность реплик',
 };
 
 function getScoreLevel(score: number): { label: string; color: string; bg: string; border: string } {

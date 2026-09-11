@@ -11,7 +11,7 @@ export type ActivityItem = {
 };
 
 export type ActivityEntry = {
-  type: 'agent' | 'roleplay' | 'debate' | 'karaoke' | 'dictionary';
+  type: 'agent' | 'roleplay' | 'debate' | 'karaoke' | 'dictionary' | 'voice';
   label: string;
   tab: 'agent' | 'dictionary' | 'karaoke' | 'progress';
 };
@@ -49,11 +49,13 @@ export function useRecentActivity() {
       vocabRes,
       idiomsRes,
       phrasalRes,
+      voiceRes,
     ] = await Promise.all([
       supabase
         .from('agent_sessions')
         .select('messages, created_at')
         .eq('user_id', uid)
+        .eq('language', learningLanguage)
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: false })
         .limit(100),
@@ -61,23 +63,28 @@ export function useRecentActivity() {
         .from('roleplay_completions')
         .select('completed_at, scenario_title')
         .eq('user_id', uid)
+        .eq('language', learningLanguage)
         .gte('completed_at', sinceIso)
         .order('completed_at', { ascending: false })
         .limit(50),
-      supabase
-        .from('debate_completions')
-        .select('completed_at, topic, topic_ru')
-        .eq('user_id', uid)
-        .gte('completed_at', sinceIso)
-        .order('completed_at', { ascending: false })
-        .limit(50),
-      supabase
-        .from('user_videos')
-        .select('created_at, title')
-        .eq('user_id', uid)
-        .gte('created_at', sinceIso)
-        .order('created_at', { ascending: false })
-        .limit(50),
+      isChinese
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from('debate_completions')
+            .select('completed_at, topic, topic_ru')
+            .eq('user_id', uid)
+            .gte('completed_at', sinceIso)
+            .order('completed_at', { ascending: false })
+            .limit(50),
+      isChinese
+        ? Promise.resolve({ data: [], error: null })
+        : supabase
+            .from('user_videos')
+            .select('created_at, title')
+            .eq('user_id', uid)
+            .gte('created_at', sinceIso)
+            .order('created_at', { ascending: false })
+            .limit(50),
       supabase
         .from('user_vocabulary')
         .select('created_at')
@@ -100,6 +107,16 @@ export function useRecentActivity() {
             .eq('user_id', uid)
             .gte('created_at', sinceIso)
             .limit(200),
+      isChinese
+        ? supabase
+            .from('zh_voice_task_attempts')
+            .select('created_at, status')
+            .eq('user_id', uid)
+            .eq('status', 'checked')
+            .gte('created_at', sinceIso)
+            .order('created_at', { ascending: false })
+            .limit(50)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     const byDate = new Map<string, ActivityEntry[]>();
@@ -138,6 +155,16 @@ export function useRecentActivity() {
       add(dateKey, {
         type: 'roleplay',
         label: title ? `Сценарий: ${title}` : 'Ролевой диалог',
+        tab: 'progress',
+      });
+    }
+
+    for (const row of voiceRes.data ?? []) {
+      const createdAt = (row as { created_at: string }).created_at;
+      const dateKey = new Date(createdAt).toISOString().slice(0, 10);
+      add(dateKey, {
+        type: 'voice',
+        label: 'Голосовая минутка',
         tab: 'progress',
       });
     }

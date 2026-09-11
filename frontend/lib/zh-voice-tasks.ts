@@ -393,6 +393,25 @@ export async function evaluateZhVoiceTask(
   });
 }
 
+export function zhChecklistCoveragePct(
+  checklist: Array<{ status?: ZhChecklistItemStatus | string } | null> | null | undefined
+): number | null {
+  if (!Array.isArray(checklist) || checklist.length === 0) return null;
+  const points = checklist.map((item): number => {
+    if (item?.status === 'done') return 100;
+    if (item?.status === 'almost') return 50;
+    return 0;
+  });
+  return Math.round(points.reduce((sum, n) => sum + n, 0) / points.length);
+}
+
+export function zhVerdictCoveragePct(verdict?: ZhVoiceTaskVerdict | null): number | null {
+  if (verdict === 'done') return 100;
+  if (verdict === 'almost') return 50;
+  if (verdict === 'missed') return 0;
+  return null;
+}
+
 export function zhVoiceTaskVerdictLabel(verdict?: ZhVoiceTaskVerdict | null): string {
   if (verdict === 'done') return 'Сделано';
   if (verdict === 'almost') return 'Почти';

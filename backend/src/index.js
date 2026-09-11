@@ -21,6 +21,13 @@ import { getCost } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
+import {
+  buildZhRoleplayFeedbackSystem,
+  buildZhRoleplayFeedbackUserPrompt,
+  buildZhAssessSpeakingSystem,
+  buildZhAssessSpeakingUserPrompt,
+  normalizeZhCriteriaScores,
+} from './zh-speaking-assessment.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1628,7 +1635,11 @@ app.post('/api/agent/roleplay-feedback', async (req, res) => {
   const profanityIntensity = ['light', 'medium', 'hard'].includes(settings.profanity_intensity)
     ? settings.profanity_intensity
     : 'light'
-  const FEEDBACK_SYSTEM = `You are a supportive language coach. Give brief, actionable feedback on the user's dialogue in this scenario.
+  const isZhFeedback = req.learningLanguage === 'zh'
+  const hskLevel = Number.isFinite(Number(roleplay_settings?.hsk_level)) ? Number(roleplay_settings.hsk_level) : null
+  const FEEDBACK_SYSTEM = isZhFeedback
+    ? buildZhRoleplayFeedbackSystem()
+    : `You are a supportive language coach. Give brief, actionable feedback on the user's dialogue in this scenario.
 
 Rules:
 1. Name one concrete STRENGTH: refer to something they said or did well (e.g. "You used 'I'd like to...' well" or "You asked for the address clearly").
@@ -1647,7 +1658,14 @@ Roleplay style settings:
 - ai_may_use_profanity: ${aiMayUseProfanity}
 - profanity_intensity: ${profanityIntensity}
 `
-  const userPrompt = `Scenario: ${scenario_title || 'Roleplay'}.${goalBlock}
+  const userPrompt = isZhFeedback
+    ? buildZhRoleplayFeedbackUserPrompt({
+      scenarioTitle: scenario_title,
+      goal: scenarioGoal,
+      hskLevel,
+      userMessages,
+    })
+    : `Scenario: ${scenario_title || 'Roleplay'}.${goalBlock}
 ${settingsBlock}
 
 User's dialogue lines (transcript):
@@ -1662,7 +1680,7 @@ Return JSON with "feedback" and "useful_phrase".`
         { role: 'system', content: FEEDBACK_SYSTEM },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: 280,
+      max_tokens: isZhFeedback ? 360 : 280,
       temperature: 0.4,
     })
     const usage = completion?.usage
@@ -1676,6 +1694,7 @@ Return JSON with "feedback" and "useful_phrase".`
     let feedback = ''
     let useful_phrase = ''
     let useful_phrase_ru = ''
+    let useful_phrase_pinyin = ''
     let style_note = ''
     let rewrite_neutral = ''
     try {
@@ -1683,6 +1702,7 @@ Return JSON with "feedback" and "useful_phrase".`
       feedback = typeof parsed.feedback === 'string' ? parsed.feedback.trim() : raw
       useful_phrase = typeof parsed.useful_phrase === 'string' ? parsed.useful_phrase.trim() : ''
       useful_phrase_ru = typeof parsed.useful_phrase_ru === 'string' ? parsed.useful_phrase_ru.trim() : ''
+      useful_phrase_pinyin = typeof parsed.useful_phrase_pinyin === 'string' ? parsed.useful_phrase_pinyin.trim() : ''
       style_note = typeof parsed.style_note === 'string' ? parsed.style_note.trim() : ''
       rewrite_neutral = typeof parsed.rewrite_neutral === 'string' ? parsed.rewrite_neutral.trim() : ''
     } catch {
@@ -1692,6 +1712,7 @@ Return JSON with "feedback" and "useful_phrase".`
       feedback: feedback || '',
       useful_phrase: useful_phrase || null,
       useful_phrase_ru: useful_phrase_ru || null,
+      useful_phrase_pinyin: useful_phrase_pinyin || null,
       style_note: style_note || null,
       rewrite_neutral: rewrite_neutral || null,
       scenario_id: scenario_id || null,
@@ -2654,6 +2675,87 @@ app.post('/api/agent/assess-speaking', async (req, res) => {
   const userMessages = messages.filter((m) => m.role === 'user').map((m) => m.content).filter(Boolean)
   if (userMessages.length === 0) {
     return res.status(400).json({ error: 'No user messages to assess' })
+  }
+
+  if (req.learningLanguage === 'zh') {
+    const zhGoal = (typeof goal === 'string' && goal.trim()) || ''
+    const zhHsk = Number.isFinite(Number(roleplay_settings?.hsk_level))
+      ? Number(roleplay_settings.hsk_level)
+      : Number.isFinite(Number(req.body?.hsk_level))
+        ? Number(req.body.hsk_level)
+        : null
+    const completenessGuidance = (zhGoal || (Array.isArray(steps) && steps.length > 0))
+      ? '\nFor task_completion: if the learner addressed the scenario goal and expected steps, give 8-10. Do not demand extra information the scene did not ask for.'
+      : ''
+    const systemPrompt = buildZhAssessSpeakingSystem({ completenessGuidance })
+    const userPrompt = buildZhAssessSpeakingUserPrompt({
+      scenarioTitle: scenario_title,
+      goal: zhGoal || goal,
+      steps,
+      vocabulary: req.body?.vocabulary || roleplay_settings?.vocabulary,
+      grammarFocus: req.body?.grammar_focus || roleplay_settings?.grammar_focus,
+      hskLevel: zhHsk,
+      userMessages,
+    })
+    try {
+      const completion = await llm.chat.completions.create({
+        model: AITUNNEL_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 800,
+        temperature: 0.3,
+      })
+      const usage = completion?.usage
+      if (usage && (usage.input_tokens || usage.output_tokens)) {
+        const costRub = getCost('deepseek-v3.2', usage)
+        if (costRub > 0) {
+          await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { assess_speaking: true, language: 'zh' })
+        }
+      }
+      const raw = completion.choices?.[0]?.message?.content?.trim() || ''
+      let json
+      const m = raw.match(/\{[\s\S]*\}/)
+      if (m) {
+        try {
+          json = JSON.parse(m[0])
+        } catch {
+          json = null
+        }
+      }
+      if (!json || !json.criteria_scores) {
+        console.error('[api/agent/assess-speaking] Invalid zh LLM response:', raw?.slice(0, 300))
+        return res.status(500).json({ error: 'Assessment parsing failed' })
+      }
+      const scores = normalizeZhCriteriaScores(json.criteria_scores, clampScore)
+      const vals = Object.values(scores).filter((v) => typeof v === 'number')
+      const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+      const feedbackObj = json && typeof json.feedback === 'object' && json.feedback !== null
+        ? json.feedback
+        : { strengths: [], improvements: [], summary: '' }
+      return res.json({
+        criteria_scores: scores,
+        overall_score: Math.round(overall * 10) / 10,
+        feedback: {
+          strengths: Array.isArray(feedbackObj.strengths) ? feedbackObj.strengths : [],
+          improvements: Array.isArray(feedbackObj.improvements) ? feedbackObj.improvements : [],
+          summary: typeof feedbackObj.summary === 'string' ? feedbackObj.summary : '',
+          useful_phrase_zh: typeof feedbackObj.useful_phrase_zh === 'string' ? feedbackObj.useful_phrase_zh : '',
+          useful_phrase_pinyin: typeof feedbackObj.useful_phrase_pinyin === 'string' ? feedbackObj.useful_phrase_pinyin : '',
+          useful_phrase_ru: typeof feedbackObj.useful_phrase_ru === 'string' ? feedbackObj.useful_phrase_ru : '',
+        },
+        user_messages: userMessages,
+        format: 'dialogue',
+        language: 'zh',
+        scenario_id: scenario_id || null,
+        scenario_title: scenario_title || null,
+        agent_session_id: agent_session_id || null,
+      })
+    } catch (err) {
+      console.error('[api/agent/assess-speaking] zh error:', err?.message)
+      return res.status(500).json({ error: err?.message || 'Assessment failed' })
+    }
   }
 
   const fmt = ['dialogue', 'monologue', 'presentation', 'debate'].includes(format) ? format : 'dialogue'
