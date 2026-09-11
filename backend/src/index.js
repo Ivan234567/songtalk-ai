@@ -27,6 +27,10 @@ import {
   buildZhAssessSpeakingSystem,
   buildZhAssessSpeakingUserPrompt,
   normalizeZhCriteriaScores,
+  applyZhTaskCompletionOverride,
+  sanitizeZhTaskFeedback,
+  buildZhGoalAttainment,
+  getZhStepProgress,
 } from './zh-speaking-assessment.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -1613,7 +1617,7 @@ app.post('/api/agent/roleplay-feedback', async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
-  const { messages, scenario_id, scenario_title, goal, goal_ru, roleplay_settings } = req.body || {}
+  const { messages, scenario_id, scenario_title, goal, goal_ru, roleplay_settings, steps, completed_step_ids } = req.body || {}
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'Expected { messages: [{role, content}, ...] }' })
   }
@@ -1664,6 +1668,8 @@ Roleplay style settings:
       goal: scenarioGoal,
       hskLevel,
       userMessages,
+      steps,
+      completedStepIds: completed_step_ids,
     })
     : `Scenario: ${scenario_title || 'Roleplay'}.${goalBlock}
 ${settingsBlock}
@@ -1707,6 +1713,10 @@ Return JSON with "feedback" and "useful_phrase".`
       rewrite_neutral = typeof parsed.rewrite_neutral === 'string' ? parsed.rewrite_neutral.trim() : ''
     } catch {
       feedback = raw
+    }
+    if (isZhFeedback) {
+      const cleaned = sanitizeZhTaskFeedback({ summary: feedback }, steps, completed_step_ids)
+      feedback = cleaned.summary || feedback
     }
     res.json({
       feedback: feedback || '',
@@ -2667,7 +2677,7 @@ app.post('/api/agent/assess-speaking', async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
-  const { messages, scenario_id, scenario_title, format, agent_session_id, goal, steps, topic, user_position, micro_goals, roleplay_settings } = req.body || {}
+  const { messages, scenario_id, scenario_title, format, agent_session_id, goal, steps, completed_step_ids, topic, user_position, micro_goals, roleplay_settings } = req.body || {}
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'Expected { messages: [{role, content}, ...] }' })
   }
@@ -2678,20 +2688,22 @@ app.post('/api/agent/assess-speaking', async (req, res) => {
   }
 
   if (req.learningLanguage === 'zh') {
-    const zhGoal = (typeof goal === 'string' && goal.trim()) || ''
     const zhHsk = Number.isFinite(Number(roleplay_settings?.hsk_level))
       ? Number(roleplay_settings.hsk_level)
       : Number.isFinite(Number(req.body?.hsk_level))
         ? Number(req.body.hsk_level)
         : null
-    const completenessGuidance = (zhGoal || (Array.isArray(steps) && steps.length > 0))
-      ? '\nFor task_completion: if the learner addressed the scenario goal and expected steps, give 8-10. Do not demand extra information the scene did not ask for.'
-      : ''
+    const zhProgress = getZhStepProgress(steps, completed_step_ids)
+    const completenessGuidance = zhProgress.hasChecklist
+      ? zhProgress.allDone
+        ? '\nFor task_completion: ALL checklist steps are DONE. Score 9-10. Do not say they missed steps. Do not invent extra required actions from the scene description.'
+        : '\nFor task_completion: only the NOT DONE checklist items are missing. Do not invent others. Score from the checklist only.'
+      : '\nFor task_completion: there is no plot checklist. Do not invent required steps such as asking about origin/hometown.'
     const systemPrompt = buildZhAssessSpeakingSystem({ completenessGuidance })
     const userPrompt = buildZhAssessSpeakingUserPrompt({
       scenarioTitle: scenario_title,
-      goal: zhGoal || goal,
       steps,
+      completedStepIds: completed_step_ids,
       vocabulary: req.body?.vocabulary || roleplay_settings?.vocabulary,
       grammarFocus: req.body?.grammar_focus || roleplay_settings?.grammar_focus,
       hskLevel: zhHsk,
@@ -2728,22 +2740,24 @@ app.post('/api/agent/assess-speaking', async (req, res) => {
         console.error('[api/agent/assess-speaking] Invalid zh LLM response:', raw?.slice(0, 300))
         return res.status(500).json({ error: 'Assessment parsing failed' })
       }
-      const scores = normalizeZhCriteriaScores(json.criteria_scores, clampScore)
+      const scores = applyZhTaskCompletionOverride(
+        normalizeZhCriteriaScores(json.criteria_scores, clampScore),
+        steps,
+        completed_step_ids,
+        clampScore,
+      )
       const vals = Object.values(scores).filter((v) => typeof v === 'number')
       const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
       const feedbackObj = json && typeof json.feedback === 'object' && json.feedback !== null
         ? json.feedback
         : { strengths: [], improvements: [], summary: '' }
+      const cleanedFeedback = sanitizeZhTaskFeedback(feedbackObj, steps, completed_step_ids)
       return res.json({
         criteria_scores: scores,
         overall_score: Math.round(overall * 10) / 10,
         feedback: {
-          strengths: Array.isArray(feedbackObj.strengths) ? feedbackObj.strengths : [],
-          improvements: Array.isArray(feedbackObj.improvements) ? feedbackObj.improvements : [],
-          summary: typeof feedbackObj.summary === 'string' ? feedbackObj.summary : '',
-          useful_phrase_zh: typeof feedbackObj.useful_phrase_zh === 'string' ? feedbackObj.useful_phrase_zh : '',
-          useful_phrase_pinyin: typeof feedbackObj.useful_phrase_pinyin === 'string' ? feedbackObj.useful_phrase_pinyin : '',
-          useful_phrase_ru: typeof feedbackObj.useful_phrase_ru === 'string' ? feedbackObj.useful_phrase_ru : '',
+          ...cleanedFeedback,
+          goal_attainment: buildZhGoalAttainment(steps, completed_step_ids),
         },
         user_messages: userMessages,
         format: 'dialogue',

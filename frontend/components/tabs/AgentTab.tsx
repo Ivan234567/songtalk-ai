@@ -2153,6 +2153,8 @@ export function AgentTab() {
           scenario_title: selectedScenario.title,
           goal: selectedScenario.goal ?? undefined,
           goal_ru: selectedScenario.goalRu ?? undefined,
+          steps: selectedScenario.steps ?? undefined,
+          completed_step_ids: selectedScenario.steps?.length ? roleplayCompletedStepIds : undefined,
           roleplay_settings: roleplaySettingsPayload,
         }, learningLanguage)),
       });
@@ -2198,7 +2200,7 @@ export function AgentTab() {
     } finally {
       setRoleplayFeedbackLoading(false);
     }
-  }, [token, userId, selectedScenario, messages, roleplaySettingsPayload, learningLanguage]);
+  }, [token, userId, selectedScenario, messages, roleplaySettingsPayload, learningLanguage, roleplayCompletedStepIds]);
 
   useEffect(() => {
     if (!goalReached || agentMode !== 'roleplay' || !selectedScenario) return;
@@ -2445,6 +2447,10 @@ export function AgentTab() {
           agent_session_id: agentMode === 'debate' ? debateCurrentSessionId ?? null : currentSessionId ?? null,
           goal: agentMode === 'debate' ? undefined : selectedScenario?.goal ?? undefined,
           steps: agentMode === 'debate' ? debateStepsForCurrentDifficulty : selectedScenario?.steps ?? undefined,
+          completed_step_ids:
+            agentMode === 'roleplay' && selectedScenario?.steps?.length
+              ? roleplayCompletedStepIds
+              : undefined,
           topic: agentMode === 'debate' ? debateTopic ?? undefined : undefined,
           user_position: agentMode === 'debate' ? debateUserPosition ?? undefined : undefined,
           roleplay_settings:
@@ -2521,7 +2527,7 @@ export function AgentTab() {
     } finally {
       setAssessmentLoading(false);
     }
-  }, [token, userId, messages, selectedScenario, currentSessionId, agentMode, debateTopic, debateUserPosition, debateCurrentSessionId, debateCompletionId, saveDebateCompletion, debateMicroGoals, debateDifficulty, debateStepsForCurrentDifficulty, roleplaySettingsPayload, debateSettingsPayload, learningLanguage]);
+  }, [token, userId, messages, selectedScenario, currentSessionId, agentMode, debateTopic, debateUserPosition, debateCurrentSessionId, debateCompletionId, saveDebateCompletion, debateMicroGoals, debateDifficulty, debateStepsForCurrentDifficulty, roleplaySettingsPayload, debateSettingsPayload, learningLanguage, roleplayCompletedStepIds]);
 
   const requestReplyHint = useCallback(async () => {
     if (!token) return;
