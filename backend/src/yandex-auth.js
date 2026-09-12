@@ -12,11 +12,18 @@ const YANDEX_TOKEN_URL = 'https://oauth.yandex.ru/token'
 const YANDEX_USERINFO_URL = 'https://login.yandex.ru/info?format=json'
 
 function pickYandexEmail(info) {
-  const fromDefault = typeof info?.default_email === 'string' ? info.default_email.trim() : ''
-  if (fromDefault) return fromDefault.toLowerCase()
-  const emails = Array.isArray(info?.emails) ? info.emails : []
-  const first = emails.find((item) => typeof item === 'string' && item.trim())
-  return first ? first.trim().toLowerCase() : ''
+  const candidates = [
+    info?.default_email,
+    info?.email,
+    ...(Array.isArray(info?.emails) ? info.emails : []),
+  ]
+  const fromProfile = candidates.find((item) => typeof item === 'string' && item.trim())
+  if (fromProfile) return fromProfile.trim().toLowerCase()
+
+  const login = typeof info?.login === 'string' ? info.login.trim() : ''
+  if (!login) return ''
+  if (login.includes('@')) return login.toLowerCase()
+  return `${login.toLowerCase()}@yandex.ru`
 }
 
 function yandexAvatarUrl(info) {
@@ -84,8 +91,9 @@ export function registerYandexAuthRoutes(app, { supabase, asyncHandler }) {
 
     const email = pickYandexEmail(info)
     if (!email) {
+      console.error('[auth/yandex] no email in profile, keys:', Object.keys(info || {}))
       return res.status(400).json({
-        error: 'Яндекс не вернул email. Разрешите приложению доступ к адресу почты и попробуйте снова.',
+        error: 'Яндекс не вернул email. В кабинете OAuth включите доступ к адресу почты и попробуйте снова.',
       })
     }
 

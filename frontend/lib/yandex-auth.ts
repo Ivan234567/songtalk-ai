@@ -39,6 +39,8 @@ export async function startYandexAuth(): Promise<void> {
     response_type: 'code',
     client_id: YANDEX_CLIENT_ID,
     redirect_uri: YANDEX_REDIRECT_URI,
+    scope: 'login:info login:email login:avatar',
+    force_confirm: 'yes',
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',
