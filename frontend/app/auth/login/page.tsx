@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { logSecurityEvent } from '@/lib/securityEvents'
+import YandexAuthButton from '@/components/auth/YandexAuthButton'
 import styles from '../auth.module.css'
 
 export default function LoginPage() {
@@ -140,6 +141,7 @@ export default function LoginPage() {
               'Войти'
             )}
           </button>
+          <YandexAuthButton disabled={loading} />
         </form>
 
         <div className={styles.authFooterLinkWrap}>

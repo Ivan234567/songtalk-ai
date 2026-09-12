@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import YandexAuthButton from '@/components/auth/YandexAuthButton'
 import styles from '../auth.module.css'
 
 export default function RegisterPage() {
@@ -288,6 +289,7 @@ export default function RegisterPage() {
               'Зарегистрироваться'
             )}
           </button>
+          <YandexAuthButton disabled={loading} />
         </form>
 
         <div className={styles.authDivider}>

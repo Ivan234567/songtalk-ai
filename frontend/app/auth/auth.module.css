@@ -332,6 +332,60 @@
   border-bottom-color: var(--auth-text);
 }
 
+.authSocialDivider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.35rem 0 0.15rem;
+  color: var(--auth-neutral-light);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.authSocialDivider::before,
+.authSocialDivider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--auth-border);
+}
+
+.authBtnYandex {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid var(--auth-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--auth-text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.authBtnYandex:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.authBtnYandex:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.authYandexIcon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
 /* Блок успеха (регистрация) */
 .authSuccess {
   padding: 1rem 1.25rem;

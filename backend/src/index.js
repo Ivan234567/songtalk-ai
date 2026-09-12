@@ -21,6 +21,7 @@ import { getCost } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
+import { registerYandexAuthRoutes } from './yandex-auth.js'
 import {
   buildZhRoleplayFeedbackSystem,
   buildZhRoleplayFeedbackUserPrompt,
@@ -55,6 +56,7 @@ const SERVER_TIMEOUT_MS = Number.parseInt(process.env.SERVER_TIMEOUT_MS || '9000
 // Разрешаем несколько origins для CORS (разные домены Vercel)
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'http://localhost:3000',
+  'https://speakeasy-voice.vercel.app',
   'https://songtalk-ai-frontend-ivans-projects-bf7082bb.vercel.app',
   'https://songtalk-ai-qt84.vercel.app',
   'http://localhost:3000',
@@ -571,6 +573,8 @@ app.post('/api/auth/exchange-supabase-token', asyncHandler(async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' })
   }
 }))
+
+registerYandexAuthRoutes(app, { supabase, asyncHandler })
 
 // Chat endpoint (AITUNNEL proxy) — requires backend JWT (independent of Supabase availability)
 app.post('/api/chat', asyncHandler(async (req, res) => {

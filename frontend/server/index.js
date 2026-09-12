@@ -21,6 +21,7 @@ import { getCost } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
+import { registerYandexAuthRoutes } from './yandex-auth.js'
 import {
   buildZhRoleplayFeedbackSystem,
   buildZhRoleplayFeedbackUserPrompt,
@@ -55,6 +56,7 @@ const SERVER_TIMEOUT_MS = Number.parseInt(process.env.SERVER_TIMEOUT_MS || '9000
 // Разрешаем несколько origins для CORS (разные домены Vercel)
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'http://localhost:3000',
+  'https://speakeasy-voice.vercel.app',
   'https://songtalk-ai-frontend-ivans-projects-bf7082bb.vercel.app',
   'https://songtalk-ai-qt84.vercel.app',
   'http://localhost:3000',
@@ -366,6 +368,7 @@ app.get('/', (req, res) => {
       '/api/vocabulary/extract',
       '/api/vocabulary/define',
       '/api/vocabulary/assist',
+      '/api/vocabulary/phrases/assist',
       '/api/vocabulary/add',
       '/api/vocabulary/list',
       '/api/vocabulary/characters/add',
@@ -570,6 +573,8 @@ app.post('/api/auth/exchange-supabase-token', asyncHandler(async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' })
   }
 }))
+
+registerYandexAuthRoutes(app, { supabase, asyncHandler })
 
 // Chat endpoint (AITUNNEL proxy) — requires backend JWT (independent of Supabase availability)
 app.post('/api/chat', asyncHandler(async (req, res) => {
@@ -885,14 +890,20 @@ app.post('/api/tts', async (req, res) => {
       return res.status(402).json({ error: 'Пополните баланс' })
     }
 
-    const { text, voice } = req.body || {}
+    const { text, voice, language } = req.body || {}
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ error: 'Text is required and must be a non-empty string' })
     }
 
+    const instructions = language === 'zh'
+      ? 'Speak natural Mandarin Chinese. This is a dictionary pronunciation: clear, moderately paced, no extra words.'
+      : language === 'en'
+        ? 'Speak natural American English. This is a dictionary pronunciation of the given word or phrase: clear, moderately paced, no extra words.'
+        : undefined
+
     const startTime = Date.now()
-    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice })
+    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice, instructions })
     const duration = Date.now() - startTime
     console.log('[api/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
 
@@ -3754,7 +3765,8 @@ async function getWordDefinitionFromAI(word, language = 'en') {
   "difficulty_level": "A1|A2|B1|B2|C1|C2",
   "frequency_rank": число_от_1_до_10000,
   "is_phrase": true/false,
-  "example_sentences": ["пример1", "пример2"]
+  "example_sentences": ["пример1", "пример2"],
+  "mnemonic": "короткая русская мнемоника одним предложением"
 }
 
 Учти:
@@ -3762,6 +3774,7 @@ async function getWordDefinitionFromAI(word, language = 'en') {
 - Если слово является фразовым глаголом или идиомой, установи is_phrase: true
 - example_sentences должны быть короткими и понятными примерами использования
 - frequency_rank: 1 = самое частое слово, 10000 = редкое слово
+- mnemonic: ассоциация по звучанию или смыслу, до 140 символов, на русском, без кавычек
 
 Отвечай только JSON, без дополнительного текста.`
 
@@ -3882,6 +3895,100 @@ async function getChineseMnemonicFromAI(word, { pinyin = null, translations = []
   } catch (error) {
     console.error('[getChineseMnemonicFromAI] Error:', error)
     return { mnemonic: null, usage: null }
+  }
+}
+
+async function getEnglishMnemonicFromAI(word, { translations = [], partOfSpeech = null } = {}) {
+  const gloss = (Array.isArray(translations) ? translations : [])
+    .map((item) => (typeof item === 'string' ? item : item?.translation))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(', ')
+  const hint = [partOfSpeech, gloss].filter(Boolean).join(' — ')
+  try {
+    const chatResult = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: 'Ты преподаватель английского. Отвечай одной короткой русской мнемоникой без кавычек и без пояснений.',
+        },
+        {
+          role: 'user',
+          content: `Слово «${word}»${hint ? ` (${hint})` : ''}. Дай одну ассоциацию, чтобы запомнить слово. Одно предложение, до 140 символов.`,
+        },
+      ],
+      max_tokens: 120,
+      temperature: 0.6,
+    })
+    const usage = chatResult?.usage || null
+    const mnemonic = (chatResult.choices?.[0]?.message?.content || '')
+      .replace(/^["«]+|["»]+$/g, '')
+      .trim()
+      .slice(0, 160)
+    return { mnemonic: mnemonic || null, usage }
+  } catch (error) {
+    console.error('[getEnglishMnemonicFromAI] Error:', error)
+    return { mnemonic: null, usage: null }
+  }
+}
+
+async function getEnglishPhraseAssistFromAI(phrase, kind = 'idiom') {
+  const isIdiom = kind !== 'phrasal-verb'
+  const label = isIdiom ? 'идиому' : 'фразовый глагол'
+  try {
+    const chatResult = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: isIdiom
+            ? 'Ты преподаватель английского. Разбираешь идиомы: смысл не равен сумме слов. Отвечай строго JSON без markdown.'
+            : 'Ты преподаватель английского. Разбираешь фразовые глаголы: смысл связки не равен сумме глагола и частицы. Отвечай строго JSON без markdown.',
+        },
+        {
+          role: 'user',
+          content: `Разбери английск${isIdiom ? 'ую идиому' : 'ий фразовый глагол'} «${phrase}» и верни JSON:
+{
+  "meaning": "смысл на русском, как это понимают носители",
+  "literal_translation": "дословный перевод по словам",
+  "usage_examples": ["короткий пример на английском", "ещё один пример"]
+}
+
+Учти:
+- meaning — это то, что нужно запомнить как перевод
+- literal_translation — только чтобы показать, почему дословно нельзя
+- usage_examples: 1-2 коротких предложения на английском
+- не выдумывай, если это не настоящая ${label}
+
+Отвечай только JSON.`,
+        },
+      ],
+      max_tokens: 400,
+      temperature: 0.3,
+    })
+    const usage = chatResult?.usage || null
+    let jsonText = (chatResult.choices?.[0]?.message?.content || '').trim() || '{}'
+    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+    if (jsonMatch) jsonText = jsonMatch[1]
+    const parsed = JSON.parse(jsonText)
+    const examples = Array.isArray(parsed.usage_examples)
+      ? parsed.usage_examples.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean).slice(0, 3)
+      : []
+    return {
+      suggestion: {
+        meaning: typeof parsed.meaning === 'string' ? parsed.meaning.trim() : null,
+        literal_translation: typeof parsed.literal_translation === 'string' ? parsed.literal_translation.trim() : null,
+        usage_examples: examples,
+      },
+      usage,
+    }
+  } catch (error) {
+    console.error('[getEnglishPhraseAssistFromAI] Error:', error)
+    return {
+      suggestion: { meaning: null, literal_translation: null, usage_examples: [] },
+      usage: null,
+    }
   }
 }
 
@@ -4161,6 +4268,44 @@ async function getOrCreateWordDefinition(word, language = 'en') {
     cached_at: new Date().toISOString(),
     usage
   }
+}
+
+function applyEnglishLexicon(word, cache) {
+  if (!word) return word
+  const cacheExamples = Array.isArray(cache?.example_sentences) ? cache.example_sentences.filter(Boolean) : []
+  const ownExamples = Array.isArray(word.example_sentences) ? word.example_sentences.filter(Boolean) : []
+  return {
+    ...word,
+    phonetic_transcription: word.phonetic_transcription || cache?.phonetic_transcription || null,
+    example_sentences: ownExamples.length > 0 ? ownExamples : cacheExamples,
+    part_of_speech: word.part_of_speech || cache?.part_of_speech || null,
+    difficulty_level: word.difficulty_level || cache?.difficulty_level || null,
+  }
+}
+
+async function enrichEnglishVocabularyRows(words) {
+  if (!Array.isArray(words) || words.length === 0) return words
+  const keys = [...new Set(words.map((w) => w?.word).filter(Boolean))]
+  if (keys.length === 0) return words
+  const { data: cached } = await safeSupabaseCall(
+    () => supabase
+      .from('word_definitions_cache')
+      .select('word, phonetic_transcription, part_of_speech, example_sentences, difficulty_level')
+      .eq('language', 'en')
+      .in('word', keys),
+    { timeoutMs: 10000, maxRetries: 1 },
+  )
+  const map = {}
+  for (const row of cached || []) {
+    if (row?.word) map[row.word] = row
+  }
+  return words.map((word) => applyEnglishLexicon(word, map[word.word]))
+}
+
+async function maybeEnrichEnglishWord(word, language) {
+  if (language !== 'en' || !word) return word
+  const [enriched] = await enrichEnglishVocabularyRows([word])
+  return enriched
 }
 
 // ============================================================================
@@ -4443,7 +4588,9 @@ app.get('/api/vocabulary/define', asyncHandler(async (req, res) => {
   }
 }))
 
-const VOCAB_ASSIST_FIELDS = ['pinyin', 'translation', 'hsk_level', 'notes']
+const VOCAB_ASSIST_FIELDS_ZH = ['pinyin', 'translation', 'hsk_level', 'notes']
+const VOCAB_ASSIST_FIELDS_EN = ['translation', 'difficulty_level', 'part_of_speech', 'notes']
+const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 
 app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
   const token = getBearerToken(req)
@@ -4480,18 +4627,41 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
+  const { data: assistProfile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userId)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = assistProfile?.learning_language === 'zh' ? 'zh' : 'en'
+  const isChineseAssist = language === 'zh'
+  const allowedFields = isChineseAssist ? VOCAB_ASSIST_FIELDS_ZH : VOCAB_ASSIST_FIELDS_EN
+
   const { word, fields: rawFields } = req.body || {}
   const hanzi = extractHanzi(word)
-  if (!hanzi) {
+  const englishWord = normalizeWord(word)
+  const targetWord = isChineseAssist ? hanzi : englishWord
+
+  if (!targetWord) {
     return res.status(400).json({
       error: 'Invalid word',
-      details: 'Для подсказки нужны иероглифы (汉字)',
+      details: isChineseAssist
+        ? 'Для подсказки нужны иероглифы (汉字)'
+        : 'Для подсказки нужно английское слово',
+    })
+  }
+  if (!isChineseAssist && hanzi && !/[a-zA-Z]/.test(String(word || ''))) {
+    return res.status(400).json({
+      error: 'Invalid word',
+      details: 'Для английского словаря нужна латиница',
     })
   }
 
   const fields = [...new Set(
-    (Array.isArray(rawFields) && rawFields.length ? rawFields : VOCAB_ASSIST_FIELDS)
-      .filter((field) => VOCAB_ASSIST_FIELDS.includes(field)),
+    (Array.isArray(rawFields) && rawFields.length ? rawFields : allowedFields)
+      .filter((field) => allowedFields.includes(field)),
   )]
   if (fields.length === 0) {
     return res.status(400).json({ error: 'fields is required' })
@@ -4503,12 +4673,14 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
       pinyin: null,
       definitions: [],
       hsk_level: null,
+      difficulty_level: null,
+      part_of_speech: null,
       mnemonic: null,
       usage: null,
     }
 
     if (needsLexicon || fields.includes('notes')) {
-      definition = await getOrCreateWordDefinition(hanzi, 'zh')
+      definition = await getOrCreateWordDefinition(targetWord, language)
       if (definition.usage) {
         const costRub = getCost('deepseek-v3.2', definition.usage)
         if (costRub > 0) {
@@ -4527,10 +4699,15 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
       : null
 
     if (fields.includes('notes') && !mnemonic) {
-      const extra = await getChineseMnemonicFromAI(hanzi, {
-        pinyin: definition.pinyin,
-        translations: definition.definitions,
-      })
+      const extra = isChineseAssist
+        ? await getChineseMnemonicFromAI(targetWord, {
+            pinyin: definition.pinyin,
+            translations: definition.definitions,
+          })
+        : await getEnglishMnemonicFromAI(targetWord, {
+            translations: definition.definitions,
+            partOfSpeech: definition.part_of_speech,
+          })
       mnemonic = extra.mnemonic
       if (extra.usage) {
         const costRub = getCost('deepseek-v3.2', extra.usage)
@@ -4551,12 +4728,17 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
 
     return res.json({
       ok: true,
-      word: hanzi,
+      word: targetWord,
+      language,
       fields,
       suggestion: {
         pinyin: definition.pinyin || null,
         translations,
         hsk_level: definition.hsk_level || null,
+        difficulty_level: CEFR_LEVELS.includes(definition.difficulty_level)
+          ? definition.difficulty_level
+          : null,
+        part_of_speech: definition.part_of_speech || null,
         notes: mnemonic || null,
       },
     })
@@ -4564,6 +4746,94 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
     console.error('[api/vocabulary/assist] Error:', error)
     return res.status(500).json({
       error: 'Failed to assist vocabulary fields',
+      details: error.message,
+    })
+  }
+}))
+
+app.post('/api/vocabulary/phrases/assist', asyncHandler(async (req, res) => {
+  const token = getBearerToken(req)
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  }
+
+  let userData, userErr
+  try {
+    const result = await Promise.resolve(supabase.auth.getUser(token)).catch((err) => {
+      throw err
+    })
+    userData = result.data
+    userErr = result.error
+  } catch (authError) {
+    const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
+    const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
+    if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
+      return res.status(502).json({
+        error: 'Не удалось подключиться к Supabase (таймаут соединения).',
+        details: { code: errorCode, message: errorMessage },
+      })
+    }
+    throw authError
+  }
+
+  if (userErr || !userData?.user) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+  const userId = userData.user.id
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const { phrase, kind: rawKind, fields: rawFields } = req.body || {}
+  const kind = rawKind === 'phrasal-verb' ? 'phrasal-verb' : 'idiom'
+  const target = typeof phrase === 'string' ? phrase.trim() : ''
+  if (!target || extractHanzi(target)) {
+    return res.status(400).json({
+      error: 'Invalid phrase',
+      details: kind === 'idiom' ? 'Нужна английская идиома' : 'Нужен английский фразовый глагол',
+    })
+  }
+
+  const allowed = ['meaning', 'literal_translation', 'usage_examples']
+  const fields = [...new Set(
+    (Array.isArray(rawFields) && rawFields.length ? rawFields : allowed)
+      .filter((field) => allowed.includes(field)),
+  )]
+  if (fields.length === 0) {
+    return res.status(400).json({ error: 'fields is required' })
+  }
+
+  try {
+    const { suggestion, usage } = await getEnglishPhraseAssistFromAI(target, kind)
+    if (usage) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', {
+          vocabulary_phrase_assist: true,
+        })
+        if (!deductResult.ok) {
+          return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+        }
+      }
+    }
+
+    return res.json({
+      ok: true,
+      phrase: target,
+      kind,
+      fields,
+      suggestion: {
+        meaning: fields.includes('meaning') ? suggestion.meaning : null,
+        literal_translation: fields.includes('literal_translation') ? suggestion.literal_translation : null,
+        usage_examples: fields.includes('usage_examples') ? suggestion.usage_examples : [],
+      },
+    })
+  } catch (error) {
+    console.error('[api/vocabulary/phrases/assist] Error:', error)
+    return res.status(500).json({
+      error: 'Failed to assist phrase fields',
       details: error.message,
     })
   }
@@ -4615,6 +4885,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     pinyin: rawPinyin,
     translations: rawTranslations,
     hsk_level: rawHskLevel,
+    difficulty_level: rawDifficultyLevel,
     part_of_speech: rawPartOfSpeech,
     notes: rawNotes,
     example: rawExample,
@@ -4643,6 +4914,11 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
         details: 'Для китайского словаря нужны иероглифы (汉字)',
       })
     }
+  } else if (extractHanzi(word) && !/[a-zA-Z]/.test(word)) {
+    return res.status(400).json({
+      error: 'Invalid word',
+      details: 'Для английского словаря нужна латиница',
+    })
   }
 
   const normalizedWord = normalizeWord(word)
@@ -4653,14 +4929,15 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
   const manualTranslations = normalizeManualTranslations(rawTranslations)
   const manualPinyin = typeof rawPinyin === 'string' && rawPinyin.trim() ? rawPinyin.trim() : null
   const manualHsk = [1, 2, 3, 4, 5, 6].includes(Number(rawHskLevel)) ? Number(rawHskLevel) : null
+  const manualDifficulty = CEFR_LEVELS.includes(rawDifficultyLevel) ? rawDifficultyLevel : null
   const manualPartOfSpeech = typeof rawPartOfSpeech === 'string' && rawPartOfSpeech.trim()
     ? rawPartOfSpeech.trim()
     : null
   const manualNotes = typeof rawNotes === 'string' ? rawNotes.trim() : ''
   const manualExample = typeof rawExample === 'string' && rawExample.trim() ? rawExample.trim() : null
-  const skipAi = language === 'zh' && (manualTranslations.length > 0 || Boolean(manualPinyin))
+  const skipAi = manualTranslations.length > 0 || (language === 'zh' && Boolean(manualPinyin))
 
-  // Ручное добавление: не вызываем AI, если пользователь сам указал перевод или пиньинь
+  // Ручное добавление: не вызываем AI, если пользователь сам указал перевод (или пиньинь)
   let definition
   if (skipAi) {
     definition = {
@@ -4668,7 +4945,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
       pinyin: manualPinyin,
       hsk_level: manualHsk,
       part_of_speech: manualPartOfSpeech,
-      difficulty_level: null,
+      difficulty_level: manualDifficulty,
       usage: null,
     }
   } else {
@@ -4686,7 +4963,24 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     if (manualTranslations.length > 0) definition.definitions = manualTranslations
     if (manualPinyin) definition.pinyin = manualPinyin
     if (manualHsk) definition.hsk_level = manualHsk
+    if (manualDifficulty) definition.difficulty_level = manualDifficulty
     if (manualPartOfSpeech) definition.part_of_speech = manualPartOfSpeech
+  }
+
+  if (skipAi && language === 'en') {
+    const { data: cachedLexicon } = await safeSupabaseCall(
+      () => supabase
+        .from('word_definitions_cache')
+        .select('part_of_speech, difficulty_level')
+        .eq('language', 'en')
+        .eq('word', normalizedWord)
+        .maybeSingle(),
+      { timeoutMs: 8000, maxRetries: 1 },
+    )
+    if (cachedLexicon) {
+      if (!definition.part_of_speech) definition.part_of_speech = cachedLexicon.part_of_speech || null
+      if (!definition.difficulty_level) definition.difficulty_level = cachedLexicon.difficulty_level || null
+    }
   }
 
   // Проверяем, есть ли уже это слово в словаре пользователя (с учетом языка)
@@ -4799,7 +5093,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
 
     return res.json({
       ok: true,
-      word: updated || existingWord,
+      word: await maybeEnrichEnglishWord(updated || existingWord, language),
       message: 'Word updated in vocabulary'
     })
   }
@@ -4890,7 +5184,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
 
   return res.json({
     ok: true,
-    word: newWord,
+    word: await maybeEnrichEnglishWord(newWord, language),
     message: 'Word added to vocabulary'
   })
 }))
@@ -5610,6 +5904,10 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
       videos: wordVideos
     }
   })
+
+  if (language === 'en') {
+    wordsWithProgress = await enrichEnglishVocabularyRows(wordsWithProgress)
+  }
 
   // Получаем статистику
   const { data: stats } = await safeSupabaseCall(
