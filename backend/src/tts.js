@@ -62,7 +62,7 @@ function prepareInput(text, options = {}) {
 /**
  * Синтезирует речь из текста.
  * @param {string} text — исходный текст (эмодзи будут удалены, длина ограничена)
- * @param {{ maxLength?: number, voice?: string }} [options] — maxLength (по умолчанию 2000), voice (по умолчанию 'nova')
+ * @param {{ maxLength?: number, voice?: string, instructions?: string }} [options] — maxLength (по умолчанию 2000), voice (по умолчанию 'nova'), instructions для gpt-4o-mini-tts
  * @returns {Promise<Buffer>} — аудио buffer (audio/mpeg)
  */
 export async function synthesize(text, options = {}) {
@@ -74,12 +74,16 @@ export async function synthesize(text, options = {}) {
   const ttsClient = getClient()
   const model = getModel()
   const voice = options.voice ?? 'nova'
-
-  const speech = await ttsClient.audio.speech.create({
+  const payload = {
     model,
     input,
     voice,
-  })
+  }
+  if (options.instructions && String(model).includes('gpt-4o')) {
+    payload.instructions = options.instructions
+  }
+
+  const speech = await ttsClient.audio.speech.create(payload)
 
   if (!speech) {
     throw new Error('Empty response from TTS API')

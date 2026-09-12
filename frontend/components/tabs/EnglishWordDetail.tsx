@@ -28,7 +28,6 @@ type EnglishWordDetailProps = {
   examples: string[];
   wordAudioUrl: string | null;
   wordAudioLoading: boolean;
-  wordAudioRef: React.RefObject<HTMLAudioElement | null>;
   categories: VocabularyCategory[];
   onPronounce: () => void;
   onAssignCategories: () => void;
@@ -39,7 +38,6 @@ export function EnglishWordDetail({
   examples,
   wordAudioUrl,
   wordAudioLoading,
-  wordAudioRef,
   categories,
   onPronounce,
   onAssignCategories,
@@ -235,8 +233,6 @@ export function EnglishWordDetail({
           </div>
         </div>
       )}
-
-      <audio ref={wordAudioRef} src={wordAudioUrl || undefined} />
     </div>
   );
 }

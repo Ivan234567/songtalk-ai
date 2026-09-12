@@ -25,7 +25,6 @@ type EnglishPhraseDetailProps = {
   videos?: { id: string; title: string }[];
   audioUrl: string | null;
   audioLoading: boolean;
-  audioRef: React.RefObject<HTMLAudioElement | null>;
   onPronounce: () => void;
   onAssignCategories?: () => void;
 };
@@ -62,7 +61,6 @@ export function EnglishPhraseDetail({
   videos,
   audioUrl,
   audioLoading,
-  audioRef,
   onPronounce,
   onAssignCategories,
 }: EnglishPhraseDetailProps) {
@@ -244,8 +242,6 @@ export function EnglishPhraseDetail({
           </div>
         </div>
       )}
-
-      <audio ref={audioRef} src={audioUrl || undefined} />
     </div>
   );
 }

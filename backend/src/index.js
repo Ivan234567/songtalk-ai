@@ -886,14 +886,20 @@ app.post('/api/tts', async (req, res) => {
       return res.status(402).json({ error: 'Пополните баланс' })
     }
 
-    const { text, voice } = req.body || {}
+    const { text, voice, language } = req.body || {}
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ error: 'Text is required and must be a non-empty string' })
     }
 
+    const instructions = language === 'zh'
+      ? 'Speak natural Mandarin Chinese. This is a dictionary pronunciation: clear, moderately paced, no extra words.'
+      : language === 'en'
+        ? 'Speak natural American English. This is a dictionary pronunciation of the given word or phrase: clear, moderately paced, no extra words.'
+        : undefined
+
     const startTime = Date.now()
-    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice })
+    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice, instructions })
     const duration = Date.now() - startTime
     console.log('[api/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
 

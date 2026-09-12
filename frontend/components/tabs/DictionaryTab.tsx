@@ -125,6 +125,49 @@ function getApiUrl() {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
+function ensureAudioElement(ref: { current: HTMLAudioElement | null }): HTMLAudioElement {
+  if (typeof Audio === 'undefined') {
+    throw new Error('Аудио не поддерживается в этом браузере');
+  }
+  if (!ref.current) {
+    ref.current = new Audio();
+  }
+  return ref.current;
+}
+
+async function playAudioUrl(ref: { current: HTMLAudioElement | null }, url: string) {
+  const audio = ensureAudioElement(ref);
+  audio.pause();
+  audio.src = url;
+  await audio.play();
+}
+
+async function fetchTtsBlobUrl(accessToken: string, text: string, language: string) {
+  const resp = await fetch(`${getApiUrl()}/api/tts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ text, language }),
+  });
+
+  if (!resp.ok) {
+    const errData = await resp.json().catch(() => ({} as { error?: string }));
+    throw new Error(errData?.error || 'Не удалось синтезировать произношение');
+  }
+
+  const blob = await resp.blob();
+  if (!blob.size) {
+    throw new Error('Пустой ответ синтеза речи');
+  }
+  const contentType = (blob.type || resp.headers.get('content-type') || '').toLowerCase();
+  if (contentType && !contentType.includes('audio') && !contentType.includes('octet-stream')) {
+    throw new Error('Сервер вернул не аудио');
+  }
+  return URL.createObjectURL(blob);
+}
+
 const iconStyle = { width: 14, height: 14, flexShrink: 0 };
 const DownloadIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={iconStyle}>
@@ -816,9 +859,18 @@ export const DictionaryTab: React.FC = () => {
   const synthesizeWordAudio = useCallback(async () => {
     if (!accessToken || !selectedWord) return;
 
+    const playOrAlert = async (url: string) => {
+      try {
+        await playAudioUrl(wordAudioRef, url);
+      } catch (e) {
+        console.error('Word TTS play error:', e);
+        alert('Не удалось воспроизвести произношение');
+      }
+    };
+
     // If audio already exists, just play it
     if (wordAudioUrl) {
-      wordAudioRef.current?.play();
+      await playOrAlert(wordAudioUrl);
       return;
     }
 
@@ -831,31 +883,13 @@ export const DictionaryTab: React.FC = () => {
     const cachedUrl = audioCacheRef.current.get(wordKey);
     if (cachedUrl) {
       setWordAudioUrl(cachedUrl);
-      setTimeout(() => {
-        wordAudioRef.current?.play();
-      }, 100);
+      await playOrAlert(cachedUrl);
       return;
     }
 
     setWordAudioLoading(true);
     try {
-      const resp = await fetch(`${getApiUrl()}/api/tts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ text: word }),
-      });
-
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        const msg = errData?.error || 'Не удалось синтезировать произношение слова';
-        throw new Error(msg);
-      }
-
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
+      const url = await fetchTtsBlobUrl(accessToken, word, learningLanguage);
 
       // Cache the URL
       audioCacheRef.current.set(wordKey, url);
@@ -872,25 +906,31 @@ export const DictionaryTab: React.FC = () => {
         return url;
       });
 
-      // Automatically play after synthesis
-      setTimeout(() => {
-        wordAudioRef.current?.play();
-      }, 100);
+      await playAudioUrl(wordAudioRef, url);
     } catch (e) {
       console.error('Word TTS error:', e);
       alert(e instanceof Error ? e.message : 'Не удалось синтезировать произношение');
     } finally {
       setWordAudioLoading(false);
     }
-  }, [accessToken, selectedWord, wordAudioUrl]);
+  }, [accessToken, selectedWord, wordAudioUrl, learningLanguage]);
 
   // Synthesize audio for selected idiom (called by button)
   const synthesizeIdiomAudio = useCallback(async () => {
     if (!accessToken || !selectedIdiom) return;
 
+    const playOrAlert = async (url: string) => {
+      try {
+        await playAudioUrl(idiomAudioRef, url);
+      } catch (e) {
+        console.error('Idiom TTS play error:', e);
+        alert('Не удалось воспроизвести произношение');
+      }
+    };
+
     // If audio already exists, just play it
     if (idiomAudioUrl) {
-      idiomAudioRef.current?.play();
+      await playOrAlert(idiomAudioUrl);
       return;
     }
 
@@ -903,30 +943,13 @@ export const DictionaryTab: React.FC = () => {
     const cachedUrl = audioCacheRef.current.get(phraseKey);
     if (cachedUrl) {
       setIdiomAudioUrl(cachedUrl);
-      setTimeout(() => {
-        idiomAudioRef.current?.play();
-      }, 100);
+      await playOrAlert(cachedUrl);
       return;
     }
 
     setIdiomAudioLoading(true);
     try {
-      const resp = await fetch(`${getApiUrl()}/api/tts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ text: phrase }),
-      });
-
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData?.error || 'Не удалось синтезировать произношение идиомы');
-      }
-
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
+      const url = await fetchTtsBlobUrl(accessToken, phrase, learningLanguage);
 
       // Cache the URL
       audioCacheRef.current.set(phraseKey, url);
@@ -938,23 +961,29 @@ export const DictionaryTab: React.FC = () => {
         return url;
       });
 
-      // Automatically play after synthesis
-      setTimeout(() => {
-        idiomAudioRef.current?.play();
-      }, 100);
+      await playAudioUrl(idiomAudioRef, url);
     } catch (e) {
       console.error('Idiom TTS error:', e);
       alert(e instanceof Error ? e.message : 'Не удалось синтезировать произношение');
     } finally {
       setIdiomAudioLoading(false);
     }
-  }, [accessToken, selectedIdiom, idiomAudioUrl]);
+  }, [accessToken, selectedIdiom, idiomAudioUrl, learningLanguage]);
 
   const synthesizePhrasalVerbAudio = useCallback(async () => {
     if (!accessToken || !selectedPhrasalVerb) return;
 
+    const playOrAlert = async (url: string) => {
+      try {
+        await playAudioUrl(phrasalVerbAudioRef, url);
+      } catch (e) {
+        console.error('Phrasal verb TTS play error:', e);
+        alert('Не удалось воспроизвести произношение');
+      }
+    };
+
     if (phrasalVerbAudioUrl) {
-      phrasalVerbAudioRef.current?.play();
+      await playOrAlert(phrasalVerbAudioUrl);
       return;
     }
 
@@ -965,45 +994,26 @@ export const DictionaryTab: React.FC = () => {
     const cachedUrl = audioCacheRef.current.get(phraseKey);
     if (cachedUrl) {
       setPhrasalVerbAudioUrl(cachedUrl);
-      setTimeout(() => {
-        phrasalVerbAudioRef.current?.play();
-      }, 100);
+      await playOrAlert(cachedUrl);
       return;
     }
 
     setPhrasalVerbAudioLoading(true);
     try {
-      const resp = await fetch(`${getApiUrl()}/api/tts`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ text: phrase }),
-      });
-
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData?.error || 'Не удалось синтезировать произношение фразового глагола');
-      }
-
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
+      const url = await fetchTtsBlobUrl(accessToken, phrase, learningLanguage);
       audioCacheRef.current.set(phraseKey, url);
       setPhrasalVerbAudioUrl((prev) => {
         if (prev && prev !== url) URL.revokeObjectURL(prev);
         return url;
       });
-      setTimeout(() => {
-        phrasalVerbAudioRef.current?.play();
-      }, 100);
+      await playAudioUrl(phrasalVerbAudioRef, url);
     } catch (e) {
       console.error('Phrasal verb TTS error:', e);
       alert(e instanceof Error ? e.message : 'Не удалось синтезировать произношение');
     } finally {
       setPhrasalVerbAudioLoading(false);
     }
-  }, [accessToken, selectedPhrasalVerb, phrasalVerbAudioUrl]);
+  }, [accessToken, selectedPhrasalVerb, phrasalVerbAudioUrl, learningLanguage]);
 
   // Category management functions
   const handleCreateCategory = useCallback(async () => {
@@ -3823,7 +3833,6 @@ export const DictionaryTab: React.FC = () => {
                     </div>
                   )}
 
-                  <audio ref={wordAudioRef} src={wordAudioUrl || undefined} />
                 </div>
               ) : (
                 <EnglishWordDetail
@@ -3831,7 +3840,6 @@ export const DictionaryTab: React.FC = () => {
                   examples={selectedWordExamples}
                   wordAudioUrl={wordAudioUrl}
                   wordAudioLoading={wordAudioLoading}
-                  wordAudioRef={wordAudioRef}
                   categories={categories}
                   onPronounce={synthesizeWordAudio}
                   onAssignCategories={() => {
@@ -3944,7 +3952,6 @@ export const DictionaryTab: React.FC = () => {
                         <>🔊 Произношение</>
                       )}
                     </button>
-                    <audio ref={idiomAudioRef} src={idiomAudioUrl || undefined} />
                   </div>
 
                   {selectedIdiom.meaning && (
@@ -4111,7 +4118,6 @@ export const DictionaryTab: React.FC = () => {
                   videos={selectedIdiom.videos}
                   audioUrl={idiomAudioUrl}
                   audioLoading={idiomAudioLoading}
-                  audioRef={idiomAudioRef}
                   onPronounce={synthesizeIdiomAudio}
                   onAssignCategories={selectedIdiom.id ? () => {
                     setAssigningIdiomId(selectedIdiom.id!);
@@ -4167,7 +4173,6 @@ export const DictionaryTab: React.FC = () => {
                 videos={selectedPhrasalVerb.videos}
                 audioUrl={phrasalVerbAudioUrl}
                 audioLoading={phrasalVerbAudioLoading}
-                audioRef={phrasalVerbAudioRef}
                 onPronounce={synthesizePhrasalVerbAudio}
                 onAssignCategories={selectedPhrasalVerb.id ? () => {
                   setAssigningPhrasalVerbId(selectedPhrasalVerb.id!);
