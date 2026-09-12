@@ -70,3 +70,25 @@ export function normalizeEnglishWord(text: string): string {
   if (!trimmed) return '';
   return trimmed.toLowerCase().replace(/^[^a-zA-Z0-9']+|[^a-zA-Z0-9']+$/g, '');
 }
+
+const POS_RU: Record<string, string> = {
+  noun: 'существительное',
+  verb: 'глагол',
+  adjective: 'прилагательное',
+  adverb: 'наречие',
+  pronoun: 'местоимение',
+  preposition: 'предлог',
+  conjunction: 'союз',
+  interjection: 'междометие',
+  article: 'артикль',
+  phrase: 'фраза',
+  idiom: 'идиома',
+  'phrasal verb': 'фраз. глагол',
+};
+
+export function formatPartOfSpeech(value?: string | null): string | null {
+  if (!value || typeof value !== 'string') return null;
+  const key = value.trim().toLowerCase();
+  if (!key) return null;
+  return POS_RU[key] || value.trim();
+}

@@ -765,6 +765,65 @@ textarea {
   color: #f1f5f9;
   line-height: 1.35;
 }
+.en-detail-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.en-detail-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.en-detail-word {
+  font-size: 2.35rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  color: #f8fafc;
+  line-height: 1.08;
+  word-break: break-word;
+}
+.en-detail-ipa {
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: #86efac;
+  letter-spacing: 0.02em;
+}
+.en-translation-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.en-translation-chip {
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(17, 98, 47, 0.35);
+  border: 1px solid rgba(74, 222, 128, 0.28);
+  color: #ecfdf5;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.en-example-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.en-example-item {
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.9rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #e2e8f0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  font-style: italic;
+}
 .dictionary-list-item--zh {
   align-items: flex-start !important;
 }

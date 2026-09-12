@@ -4200,6 +4200,44 @@ async function getOrCreateWordDefinition(word, language = 'en') {
   }
 }
 
+function applyEnglishLexicon(word, cache) {
+  if (!word) return word
+  const cacheExamples = Array.isArray(cache?.example_sentences) ? cache.example_sentences.filter(Boolean) : []
+  const ownExamples = Array.isArray(word.example_sentences) ? word.example_sentences.filter(Boolean) : []
+  return {
+    ...word,
+    phonetic_transcription: word.phonetic_transcription || cache?.phonetic_transcription || null,
+    example_sentences: ownExamples.length > 0 ? ownExamples : cacheExamples,
+    part_of_speech: word.part_of_speech || cache?.part_of_speech || null,
+    difficulty_level: word.difficulty_level || cache?.difficulty_level || null,
+  }
+}
+
+async function enrichEnglishVocabularyRows(words) {
+  if (!Array.isArray(words) || words.length === 0) return words
+  const keys = [...new Set(words.map((w) => w?.word).filter(Boolean))]
+  if (keys.length === 0) return words
+  const { data: cached } = await safeSupabaseCall(
+    () => supabase
+      .from('word_definitions_cache')
+      .select('word, phonetic_transcription, part_of_speech, example_sentences, difficulty_level')
+      .eq('language', 'en')
+      .in('word', keys),
+    { timeoutMs: 10000, maxRetries: 1 },
+  )
+  const map = {}
+  for (const row of cached || []) {
+    if (row?.word) map[row.word] = row
+  }
+  return words.map((word) => applyEnglishLexicon(word, map[word.word]))
+}
+
+async function maybeEnrichEnglishWord(word, language) {
+  if (language !== 'en' || !word) return word
+  const [enriched] = await enrichEnglishVocabularyRows([word])
+  return enriched
+}
+
 // ============================================================================
 // Vocabulary API Endpoints
 // ============================================================================
@@ -4771,6 +4809,22 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     if (manualPartOfSpeech) definition.part_of_speech = manualPartOfSpeech
   }
 
+  if (skipAi && language === 'en') {
+    const { data: cachedLexicon } = await safeSupabaseCall(
+      () => supabase
+        .from('word_definitions_cache')
+        .select('part_of_speech, difficulty_level')
+        .eq('language', 'en')
+        .eq('word', normalizedWord)
+        .maybeSingle(),
+      { timeoutMs: 8000, maxRetries: 1 },
+    )
+    if (cachedLexicon) {
+      if (!definition.part_of_speech) definition.part_of_speech = cachedLexicon.part_of_speech || null
+      if (!definition.difficulty_level) definition.difficulty_level = cachedLexicon.difficulty_level || null
+    }
+  }
+
   // Проверяем, есть ли уже это слово в словаре пользователя (с учетом языка)
   const { data: existingWord } = await safeSupabaseCall(
     () => supabase
@@ -4881,7 +4935,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
 
     return res.json({
       ok: true,
-      word: updated || existingWord,
+      word: await maybeEnrichEnglishWord(updated || existingWord, language),
       message: 'Word updated in vocabulary'
     })
   }
@@ -4972,7 +5026,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
 
   return res.json({
     ok: true,
-    word: newWord,
+    word: await maybeEnrichEnglishWord(newWord, language),
     message: 'Word added to vocabulary'
   })
 }))
@@ -5692,6 +5746,10 @@ app.get('/api/vocabulary/list', asyncHandler(async (req, res) => {
       videos: wordVideos
     }
   })
+
+  if (language === 'en') {
+    wordsWithProgress = await enrichEnglishVocabularyRows(wordsWithProgress)
+  }
 
   // Получаем статистику
   const { data: stats } = await safeSupabaseCall(

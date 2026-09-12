@@ -19,6 +19,7 @@ import { AddChineseWordModal } from '@/components/tabs/AddChineseWordModal';
 import type { AddedChineseWord } from '@/components/tabs/AddChineseWordModal';
 import { AddEnglishWordModal } from '@/components/tabs/AddEnglishWordModal';
 import type { AddedEnglishWord } from '@/components/tabs/AddEnglishWordModal';
+import { EnglishWordDetail } from '@/components/tabs/EnglishWordDetail';
 import { isHanziChar } from '@/lib/chinese-display';
 
 type VocabularyProgress = {
@@ -59,6 +60,8 @@ type VocabularyWord = {
   next_review_at: string | null;
   notes?: string | null;
   contexts?: { video_id?: string; text?: string; timestamp?: string }[];
+  phonetic_transcription?: string | null;
+  example_sentences?: string[] | null;
   progress?: VocabularyProgress | null;
   categories?: VocabularyCategory[];
   videos?: { id: string; title: string; video_type?: string; video_id?: string; video_url?: string }[];
@@ -735,6 +738,23 @@ export const DictionaryTab: React.FC = () => {
     return selectedWord.translations.map((t) => t.translation).join(', ');
   }, [selectedWord]);
 
+  const selectedWordExamples = useMemo(() => {
+    if (!selectedWord) return [];
+    const seen = new Set<string>();
+    const items: string[] = [];
+    const push = (text?: string | null) => {
+      const value = typeof text === 'string' ? text.trim() : '';
+      if (!value) return;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push(value);
+    };
+    (selectedWord.contexts || []).forEach((ctx) => push(ctx.text));
+    (selectedWord.example_sentences || []).forEach((ex) => push(ex));
+    return items.slice(0, 6);
+  }, [selectedWord]);
+
   // Synthesize audio for selected word with caching
   useEffect(() => {
     if (!accessToken || !selectedWord) {
@@ -1174,6 +1194,8 @@ export const DictionaryTab: React.FC = () => {
     const rawPos = 'part_of_speech' in word ? word.part_of_speech : null;
     const rawPinyin = 'pinyin' in word ? word.pinyin : null;
     const rawHsk = 'hsk_level' in word ? word.hsk_level : null;
+    const rawPhonetic = 'phonetic_transcription' in word ? word.phonetic_transcription : null;
+    const rawExamples = 'example_sentences' in word ? word.example_sentences : null;
     const nextWord: VocabularyWord = {
       id: word.id,
       word: word.word,
@@ -1185,6 +1207,8 @@ export const DictionaryTab: React.FC = () => {
       difficulty_level: typeof rawDifficulty === 'string' && isCefrLevel(rawDifficulty) ? rawDifficulty : null,
       mastery_level: 1,
       part_of_speech: typeof rawPos === 'string' ? rawPos : null,
+      phonetic_transcription: typeof rawPhonetic === 'string' ? rawPhonetic : null,
+      example_sentences: Array.isArray(rawExamples) ? rawExamples.filter((item): item is string => typeof item === 'string') : [],
       times_seen: 1,
       times_practiced: 0,
       created_at: word.created_at || new Date().toISOString(),
@@ -3607,272 +3631,23 @@ export const DictionaryTab: React.FC = () => {
                   <audio ref={wordAudioRef} src={wordAudioUrl || undefined} />
                 </div>
               ) : (
-              <>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: '0.75rem',
+                <EnglishWordDetail
+                  word={selectedWord}
+                  examples={selectedWordExamples}
+                  wordAudioUrl={wordAudioUrl}
+                  wordAudioLoading={wordAudioLoading}
+                  wordAudioRef={wordAudioRef}
+                  categories={categories}
+                  onPronounce={synthesizeWordAudio}
+                  onAssignCategories={() => {
+                    setAssigningWordId(selectedWord.id);
+                    setAssigningIdiomId(null);
+                    const currentCategoryIds = (selectedWord.categories?.map(c => c.id) || [])
+                      .filter((id) => categories.some((c) => c.id === id));
+                    setSelectedCategoryIds(new Set(currentCategoryIds));
+                    setShowAssignCategoriesModal(true);
                   }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Выбранное слово
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.75rem',
-                      }}
-                    >
-                      <div>
-                        <span
-                          style={{
-                            fontSize: '1.1rem',
-                            fontWeight: 700,
-                            color: '#f9fafb',
-                          }}
-                        >
-                          {selectedWord.word}
-                        </span>
-                      </div>
-                      <button
-                        onClick={synthesizeWordAudio}
-                        disabled={wordAudioLoading}
-                        style={{
-                          padding: '0.4rem 0.8rem',
-                          borderRadius: '0.6rem',
-                          border: '1px solid rgba(82,82,91,0.9)',
-                          background: wordAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
-                          color: wordAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
-                          fontSize: '0.8rem',
-                          cursor: wordAudioLoading ? 'default' : 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.4rem',
-                          opacity: wordAudioLoading ? 0.7 : 1,
-                          transition: 'all 0.2s',
-                        }}
-                        title={
-                          wordAudioLoading
-                            ? 'Синтез произношения...'
-                            : wordAudioUrl
-                              ? 'Воспроизвести произношение'
-                              : 'Синтезировать и воспроизвести произношение'
-                        }
-                      >
-                        {wordAudioLoading ? (
-                          <>🔊 Синтез...</>
-                        ) : wordAudioUrl ? (
-                          <>▶ Произношение</>
-                        ) : (
-                          <>🔊 Произношение</>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-end',
-                      gap: '0.25rem',
-                      fontSize: '0.75rem',
-                      color: 'rgba(148,163,184,0.9)',
-                    }}
-                  >
-                    {getWordLevelBadge(selectedWord, learningLanguage) && (
-                      <span
-                        style={{
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '999px',
-                          background: '#256f40',
-                          color: 'rgba(219,234,254,0.98)',
-                        }}
-                      >
-                        Уровень: {getWordLevelBadge(selectedWord, learningLanguage)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {selectedWord.translations && selectedWord.translations.length > 0 && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Переводы:
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.95rem',
-                        color: '#e5e7eb',
-                      }}
-                    >
-                      {selectedWord.translations.map((t) => t.translation).join(', ')}
-                    </div>
-                  </div>
-                )}
-
-                {selectedWord.contexts && selectedWord.contexts.length > 0 && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Примеры из караоке:
-                    </div>
-                    <ul
-                      style={{
-                        margin: 0,
-                        paddingLeft: '1.1rem',
-                        fontSize: '0.85rem',
-                        color: 'rgba(209,213,219,0.98)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.25rem',
-                        maxHeight: '150px',
-                        overflowY: 'auto',
-                      }}
-                    >
-                      {selectedWord.contexts.slice(0, 5).map((ctx, idx) => (
-                        <li key={idx}>{ctx.text}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <div>
-                  <div
-                    style={{
-                      fontSize: '0.8rem',
-                      color: 'rgba(148,163,184,0.9)',
-                      marginBottom: '0.5rem',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span>Категории:</span>
-                    <button
-                      onClick={() => {
-                        setAssigningWordId(selectedWord.id);
-                        setAssigningIdiomId(null);
-                        const currentCategoryIds = (selectedWord.categories?.map(c => c.id) || [])
-                          .filter((id) => categories.some((c) => c.id === id));
-                        setSelectedCategoryIds(new Set(currentCategoryIds));
-                        setShowAssignCategoriesModal(true);
-                      }}
-                      style={{
-                        padding: '0.3rem 0.6rem',
-                        borderRadius: '0.5rem',
-                        border: '1px solid rgba(75,85,99,0.9)',
-                        background: 'rgba(24,24,27,0.95)',
-                        color: '#e5e7eb',
-                        fontSize: '0.75rem',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Изменить
-                    </button>
-                  </div>
-                  {categoriesForCurrentLanguage(selectedWord.categories).length > 0 ? (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '0.4rem',
-                      }}
-                    >
-                      {categoriesForCurrentLanguage(selectedWord.categories).map((cat) => (
-                        <span
-                          key={cat.id}
-                          style={{
-                            padding: '0.25rem 0.6rem',
-                            borderRadius: '999px',
-                            background: cat.color || '#11622f',
-                            color: '#ffffff',
-                            fontSize: '0.8rem',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                          }}
-                          title={cat.description || cat.name}
-                        >
-                          {cat.icon && <span>{cat.icon}</span>}
-                          <span>{cat.name}</span>
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        fontSize: '0.85rem',
-                        color: 'rgba(148,163,184,0.7)',
-                        fontStyle: 'italic',
-                      }}
-                    >
-                      Нет категорий
-                    </div>
-                  )}
-                </div>
-
-                {selectedWord.videos && selectedWord.videos.length > 0 && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Связанные видео:
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '0.5rem',
-                        fontSize: '0.85rem',
-                      }}
-                    >
-                      {selectedWord.videos.map((v) => (
-                        <span
-                          key={v.id}
-                          style={{
-                            padding: '0.3rem 0.6rem',
-                            borderRadius: '999px',
-                            background: '#256f40',
-                            color: 'rgba(219,234,254,0.98)',
-                          }}
-                        >
-                          {v.title || 'Видео'}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Hidden audio element for pronunciation */}
-                <audio ref={wordAudioRef} src={wordAudioUrl || undefined} />
-              </>
+                />
               )
             ) : (
               <div
