@@ -1347,6 +1347,25 @@ textarea {
   color: #f8fafc;
   line-height: 1.05;
 }
+.zh-add-preview-en {
+  font-size: 2.05rem;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.zh-add-preview-pos {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.95);
+  color: #e2e8f0;
+  font-size: 0.75rem;
+}
+.zh-add-input--en {
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
 .zh-add-preview-meta {
   display: flex;
   flex-wrap: wrap;

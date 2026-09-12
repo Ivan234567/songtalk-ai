@@ -3754,7 +3754,8 @@ async function getWordDefinitionFromAI(word, language = 'en') {
   "difficulty_level": "A1|A2|B1|B2|C1|C2",
   "frequency_rank": число_от_1_до_10000,
   "is_phrase": true/false,
-  "example_sentences": ["пример1", "пример2"]
+  "example_sentences": ["пример1", "пример2"],
+  "mnemonic": "короткая русская мнемоника одним предложением"
 }
 
 Учти:
@@ -3762,6 +3763,7 @@ async function getWordDefinitionFromAI(word, language = 'en') {
 - Если слово является фразовым глаголом или идиомой, установи is_phrase: true
 - example_sentences должны быть короткими и понятными примерами использования
 - frequency_rank: 1 = самое частое слово, 10000 = редкое слово
+- mnemonic: ассоциация по звучанию или смыслу, до 140 символов, на русском, без кавычек
 
 Отвечай только JSON, без дополнительного текста.`
 
@@ -3881,6 +3883,41 @@ async function getChineseMnemonicFromAI(word, { pinyin = null, translations = []
     return { mnemonic: mnemonic || null, usage }
   } catch (error) {
     console.error('[getChineseMnemonicFromAI] Error:', error)
+    return { mnemonic: null, usage: null }
+  }
+}
+
+async function getEnglishMnemonicFromAI(word, { translations = [], partOfSpeech = null } = {}) {
+  const gloss = (Array.isArray(translations) ? translations : [])
+    .map((item) => (typeof item === 'string' ? item : item?.translation))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(', ')
+  const hint = [partOfSpeech, gloss].filter(Boolean).join(' — ')
+  try {
+    const chatResult = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: 'Ты преподаватель английского. Отвечай одной короткой русской мнемоникой без кавычек и без пояснений.',
+        },
+        {
+          role: 'user',
+          content: `Слово «${word}»${hint ? ` (${hint})` : ''}. Дай одну ассоциацию, чтобы запомнить слово. Одно предложение, до 140 символов.`,
+        },
+      ],
+      max_tokens: 120,
+      temperature: 0.6,
+    })
+    const usage = chatResult?.usage || null
+    const mnemonic = (chatResult.choices?.[0]?.message?.content || '')
+      .replace(/^["«]+|["»]+$/g, '')
+      .trim()
+      .slice(0, 160)
+    return { mnemonic: mnemonic || null, usage }
+  } catch (error) {
+    console.error('[getEnglishMnemonicFromAI] Error:', error)
     return { mnemonic: null, usage: null }
   }
 }
@@ -4443,7 +4480,9 @@ app.get('/api/vocabulary/define', asyncHandler(async (req, res) => {
   }
 }))
 
-const VOCAB_ASSIST_FIELDS = ['pinyin', 'translation', 'hsk_level', 'notes']
+const VOCAB_ASSIST_FIELDS_ZH = ['pinyin', 'translation', 'hsk_level', 'notes']
+const VOCAB_ASSIST_FIELDS_EN = ['translation', 'difficulty_level', 'part_of_speech', 'notes']
+const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 
 app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
   const token = getBearerToken(req)
@@ -4480,18 +4519,41 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
     return res.status(402).json({ error: 'Пополните баланс' })
   }
 
+  const { data: assistProfile } = await safeSupabaseCall(
+    () => supabase
+      .from('user_profiles')
+      .select('learning_language')
+      .eq('user_id', userId)
+      .single(),
+    { timeoutMs: 10000, maxRetries: 1 }
+  )
+  const language = assistProfile?.learning_language === 'zh' ? 'zh' : 'en'
+  const isChineseAssist = language === 'zh'
+  const allowedFields = isChineseAssist ? VOCAB_ASSIST_FIELDS_ZH : VOCAB_ASSIST_FIELDS_EN
+
   const { word, fields: rawFields } = req.body || {}
   const hanzi = extractHanzi(word)
-  if (!hanzi) {
+  const englishWord = normalizeWord(word)
+  const targetWord = isChineseAssist ? hanzi : englishWord
+
+  if (!targetWord) {
     return res.status(400).json({
       error: 'Invalid word',
-      details: 'Для подсказки нужны иероглифы (汉字)',
+      details: isChineseAssist
+        ? 'Для подсказки нужны иероглифы (汉字)'
+        : 'Для подсказки нужно английское слово',
+    })
+  }
+  if (!isChineseAssist && hanzi && !/[a-zA-Z]/.test(String(word || ''))) {
+    return res.status(400).json({
+      error: 'Invalid word',
+      details: 'Для английского словаря нужна латиница',
     })
   }
 
   const fields = [...new Set(
-    (Array.isArray(rawFields) && rawFields.length ? rawFields : VOCAB_ASSIST_FIELDS)
-      .filter((field) => VOCAB_ASSIST_FIELDS.includes(field)),
+    (Array.isArray(rawFields) && rawFields.length ? rawFields : allowedFields)
+      .filter((field) => allowedFields.includes(field)),
   )]
   if (fields.length === 0) {
     return res.status(400).json({ error: 'fields is required' })
@@ -4503,12 +4565,14 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
       pinyin: null,
       definitions: [],
       hsk_level: null,
+      difficulty_level: null,
+      part_of_speech: null,
       mnemonic: null,
       usage: null,
     }
 
     if (needsLexicon || fields.includes('notes')) {
-      definition = await getOrCreateWordDefinition(hanzi, 'zh')
+      definition = await getOrCreateWordDefinition(targetWord, language)
       if (definition.usage) {
         const costRub = getCost('deepseek-v3.2', definition.usage)
         if (costRub > 0) {
@@ -4527,10 +4591,15 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
       : null
 
     if (fields.includes('notes') && !mnemonic) {
-      const extra = await getChineseMnemonicFromAI(hanzi, {
-        pinyin: definition.pinyin,
-        translations: definition.definitions,
-      })
+      const extra = isChineseAssist
+        ? await getChineseMnemonicFromAI(targetWord, {
+            pinyin: definition.pinyin,
+            translations: definition.definitions,
+          })
+        : await getEnglishMnemonicFromAI(targetWord, {
+            translations: definition.definitions,
+            partOfSpeech: definition.part_of_speech,
+          })
       mnemonic = extra.mnemonic
       if (extra.usage) {
         const costRub = getCost('deepseek-v3.2', extra.usage)
@@ -4551,12 +4620,17 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
 
     return res.json({
       ok: true,
-      word: hanzi,
+      word: targetWord,
+      language,
       fields,
       suggestion: {
         pinyin: definition.pinyin || null,
         translations,
         hsk_level: definition.hsk_level || null,
+        difficulty_level: CEFR_LEVELS.includes(definition.difficulty_level)
+          ? definition.difficulty_level
+          : null,
+        part_of_speech: definition.part_of_speech || null,
         notes: mnemonic || null,
       },
     })
@@ -4615,6 +4689,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     pinyin: rawPinyin,
     translations: rawTranslations,
     hsk_level: rawHskLevel,
+    difficulty_level: rawDifficultyLevel,
     part_of_speech: rawPartOfSpeech,
     notes: rawNotes,
     example: rawExample,
@@ -4643,6 +4718,11 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
         details: 'Для китайского словаря нужны иероглифы (汉字)',
       })
     }
+  } else if (extractHanzi(word) && !/[a-zA-Z]/.test(word)) {
+    return res.status(400).json({
+      error: 'Invalid word',
+      details: 'Для английского словаря нужна латиница',
+    })
   }
 
   const normalizedWord = normalizeWord(word)
@@ -4653,14 +4733,15 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
   const manualTranslations = normalizeManualTranslations(rawTranslations)
   const manualPinyin = typeof rawPinyin === 'string' && rawPinyin.trim() ? rawPinyin.trim() : null
   const manualHsk = [1, 2, 3, 4, 5, 6].includes(Number(rawHskLevel)) ? Number(rawHskLevel) : null
+  const manualDifficulty = CEFR_LEVELS.includes(rawDifficultyLevel) ? rawDifficultyLevel : null
   const manualPartOfSpeech = typeof rawPartOfSpeech === 'string' && rawPartOfSpeech.trim()
     ? rawPartOfSpeech.trim()
     : null
   const manualNotes = typeof rawNotes === 'string' ? rawNotes.trim() : ''
   const manualExample = typeof rawExample === 'string' && rawExample.trim() ? rawExample.trim() : null
-  const skipAi = language === 'zh' && (manualTranslations.length > 0 || Boolean(manualPinyin))
+  const skipAi = manualTranslations.length > 0 || (language === 'zh' && Boolean(manualPinyin))
 
-  // Ручное добавление: не вызываем AI, если пользователь сам указал перевод или пиньинь
+  // Ручное добавление: не вызываем AI, если пользователь сам указал перевод (или пиньинь)
   let definition
   if (skipAi) {
     definition = {
@@ -4668,7 +4749,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
       pinyin: manualPinyin,
       hsk_level: manualHsk,
       part_of_speech: manualPartOfSpeech,
-      difficulty_level: null,
+      difficulty_level: manualDifficulty,
       usage: null,
     }
   } else {
@@ -4686,6 +4767,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     if (manualTranslations.length > 0) definition.definitions = manualTranslations
     if (manualPinyin) definition.pinyin = manualPinyin
     if (manualHsk) definition.hsk_level = manualHsk
+    if (manualDifficulty) definition.difficulty_level = manualDifficulty
     if (manualPartOfSpeech) definition.part_of_speech = manualPartOfSpeech
   }
 

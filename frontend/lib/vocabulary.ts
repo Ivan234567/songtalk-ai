@@ -62,3 +62,11 @@ export function extractChineseCharacters(text: string): string {
 export function containsEnglish(text: string): boolean {
   return /[a-zA-Z]/.test(text);
 }
+
+/** Нормализует английское слово для ключа словаря. */
+export function normalizeEnglishWord(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  return trimmed.toLowerCase().replace(/^[^a-zA-Z0-9']+|[^a-zA-Z0-9']+$/g, '');
+}
