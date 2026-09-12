@@ -824,6 +824,26 @@ textarea {
   line-height: 1.45;
   font-style: italic;
 }
+.en-literal-block {
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.9rem;
+  background: rgba(15, 23, 42, 0.28);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-left: 3px solid rgba(148, 163, 184, 0.42);
+}
+.en-literal-text {
+  font-size: 0.95rem;
+  font-weight: 500;
+  font-style: italic;
+  color: rgba(226, 232, 240, 0.88);
+  line-height: 1.4;
+}
+.en-literal-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  color: rgba(148, 163, 184, 0.9);
+  line-height: 1.4;
+}
 .dictionary-list-item--zh {
   align-items: flex-start !important;
 }

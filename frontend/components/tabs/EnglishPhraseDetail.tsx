@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { formatPartOfSpeech, getWordLevelBadge, type CefrLevel } from '@/lib/vocabulary';
+import type { CefrLevel } from '@/lib/vocabulary';
 
 type VocabularyCategory = {
   id: string;
@@ -11,123 +11,139 @@ type VocabularyCategory = {
   icon: string | null;
 };
 
-type EnglishWord = {
-  id: string;
-  word: string;
-  translations: { translation: string; source?: string }[] | null;
-  difficulty_level: CefrLevel | null;
-  part_of_speech: string | null;
-  notes?: string | null;
-  phonetic_transcription?: string | null;
+type PhraseKind = 'idiom' | 'phrasal-verb';
+
+type EnglishPhraseDetailProps = {
+  kind: PhraseKind;
+  phrase: string;
+  meaning?: string | null;
+  literalTranslation?: string | null;
+  examples?: string[] | null;
+  difficultyLevel?: CefrLevel | string | null;
   categories?: VocabularyCategory[];
+  allowedCategories: VocabularyCategory[];
   videos?: { id: string; title: string }[];
-};
-
-type EnglishWordDetailProps = {
-  word: EnglishWord;
-  examples: string[];
-  wordAudioUrl: string | null;
-  wordAudioLoading: boolean;
-  wordAudioRef: React.RefObject<HTMLAudioElement | null>;
-  categories: VocabularyCategory[];
+  audioUrl: string | null;
+  audioLoading: boolean;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   onPronounce: () => void;
-  onAssignCategories: () => void;
+  onAssignCategories?: () => void;
 };
 
-export function EnglishWordDetail({
-  word,
+const COPY: Record<
+  PhraseKind,
+  { kicker: string; typeChip: string; meaning: string; literal: string; hint: string }
+> = {
+  idiom: {
+    kicker: 'Разбор идиомы',
+    typeChip: 'идиома',
+    meaning: 'Смысл',
+    literal: 'Дословно',
+    hint: 'По словам это не то же самое — запоминайте смысл выше.',
+  },
+  'phrasal-verb': {
+    kicker: 'Разбор фразового глагола',
+    typeChip: 'фраз. глагол',
+    meaning: 'Смысл',
+    literal: 'Дословно',
+    hint: 'Глагол + частица дают новый смысл, а не сумму частей.',
+  },
+};
+
+export function EnglishPhraseDetail({
+  kind,
+  phrase,
+  meaning,
+  literalTranslation,
   examples,
-  wordAudioUrl,
-  wordAudioLoading,
-  wordAudioRef,
+  difficultyLevel,
   categories,
+  allowedCategories,
+  videos,
+  audioUrl,
+  audioLoading,
+  audioRef,
   onPronounce,
   onAssignCategories,
-}: EnglishWordDetailProps) {
-  const level = getWordLevelBadge(word, 'en');
-  const pos = formatPartOfSpeech(word.part_of_speech);
-  const visibleCategories = (word.categories || []).filter((cat) =>
-    categories.some((item) => item.id === cat.id),
+}: EnglishPhraseDetailProps) {
+  const copy = COPY[kind];
+  const visibleCategories = (categories || []).filter((cat) =>
+    allowedCategories.some((item) => item.id === cat.id),
   );
+  const usage = (examples || []).map((item) => item.trim()).filter(Boolean);
 
   return (
     <div className="zh-detail-panel">
       <div className="zh-detail-hero">
         <div className="en-detail-hero-top">
           <div className="zh-translation-label" style={{ marginBottom: 0 }}>
-            Разбор слова
+            {copy.kicker}
           </div>
           <div className="zh-detail-meta">
             <span className="zh-detail-meta-chip" style={{ background: 'rgba(51,65,85,0.95)' }}>
-              слово
+              {copy.typeChip}
             </span>
-            {level ? <span className="zh-detail-meta-chip">{level}</span> : null}
-            {pos ? (
-              <span className="zh-detail-meta-chip" style={{ background: 'rgba(51,65,85,0.95)' }}>
-                {pos}
-              </span>
-            ) : null}
+            {difficultyLevel ? <span className="zh-detail-meta-chip">{difficultyLevel}</span> : null}
           </div>
         </div>
 
         <div className="en-detail-head">
-          <div className="en-detail-word">{word.word}</div>
-          {word.phonetic_transcription ? (
-            <div className="en-detail-ipa">{word.phonetic_transcription}</div>
-          ) : null}
+          <div className="en-detail-word">{phrase}</div>
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button
             onClick={onPronounce}
-            disabled={wordAudioLoading}
+            disabled={audioLoading}
             style={{
               padding: '0.45rem 0.85rem',
               borderRadius: '0.65rem',
               border: '1px solid rgba(82,82,91,0.9)',
-              background: wordAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
-              color: wordAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
+              background: audioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
+              color: audioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
               fontSize: '0.8rem',
-              cursor: wordAudioLoading ? 'default' : 'pointer',
+              cursor: audioLoading ? 'default' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '0.4rem',
-              opacity: wordAudioLoading ? 0.7 : 1,
+              opacity: audioLoading ? 0.7 : 1,
               transition: 'all 0.2s',
             }}
             title={
-              wordAudioLoading
+              audioLoading
                 ? 'Синтез произношения...'
-                : wordAudioUrl
+                : audioUrl
                   ? 'Воспроизвести произношение'
                   : 'Синтезировать и воспроизвести произношение'
             }
           >
-            {wordAudioLoading ? '🔊 Синтез...' : wordAudioUrl ? '▶ Произношение' : '🔊 Произношение'}
+            {audioLoading ? '🔊 Синтез...' : audioUrl ? '▶ Произношение' : '🔊 Произношение'}
           </button>
         </div>
       </div>
 
-      {word.translations && word.translations.length > 0 && (
+      {meaning ? (
         <div className="zh-translation-block">
-          <div className="zh-translation-label">Перевод</div>
-          <div className="en-translation-chips">
-            {word.translations.map((item, idx) => (
-              <span key={`${item.translation}-${idx}`} className="en-translation-chip">
-                {item.translation}
-              </span>
-            ))}
-          </div>
+          <div className="zh-translation-label">{copy.meaning}</div>
+          <div className="zh-translation-text">{meaning}</div>
         </div>
-      )}
+      ) : null}
 
-      {examples.length > 0 && (
+      {literalTranslation ? (
+        <div className="en-literal-block">
+          <div className="zh-translation-label">{copy.literal}</div>
+          <div className="en-literal-text">{literalTranslation}</div>
+          <p className="en-literal-hint">{copy.hint}</p>
+        </div>
+      ) : null}
+
+      {usage.length > 0 && (
         <div>
           <div className="zh-translation-label" style={{ marginBottom: '0.5rem' }}>
             Примеры
           </div>
           <ul className="en-example-list">
-            {examples.map((example, idx) => (
+            {usage.map((example, idx) => (
               <li key={`${example}-${idx}`} className="en-example-item">
                 {example}
               </li>
@@ -135,15 +151,6 @@ export function EnglishWordDetail({
           </ul>
         </div>
       )}
-
-      {word.notes ? (
-        <div className="zh-translation-block">
-          <div className="zh-translation-label">Заметка</div>
-          <div className="zh-translation-text" style={{ fontSize: '0.92rem', fontWeight: 500 }}>
-            {word.notes}
-          </div>
-        </div>
-      ) : null}
 
       <div>
         <div
@@ -157,20 +164,22 @@ export function EnglishWordDetail({
           }}
         >
           <span>Категории:</span>
-          <button
-            onClick={onAssignCategories}
-            style={{
-              padding: '0.3rem 0.6rem',
-              borderRadius: '0.5rem',
-              border: '1px solid rgba(75,85,99,0.9)',
-              background: 'rgba(24,24,27,0.95)',
-              color: '#e5e7eb',
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-            }}
-          >
-            Изменить
-          </button>
+          {onAssignCategories ? (
+            <button
+              onClick={onAssignCategories}
+              style={{
+                padding: '0.3rem 0.6rem',
+                borderRadius: '0.5rem',
+                border: '1px solid rgba(75,85,99,0.9)',
+                background: 'rgba(24,24,27,0.95)',
+                color: '#e5e7eb',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+              }}
+            >
+              Изменить
+            </button>
+          ) : null}
         </div>
         {visibleCategories.length > 0 ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
@@ -207,7 +216,7 @@ export function EnglishWordDetail({
         )}
       </div>
 
-      {word.videos && word.videos.length > 0 && (
+      {videos && videos.length > 0 && (
         <div>
           <div
             style={{
@@ -219,7 +228,7 @@ export function EnglishWordDetail({
             Связанные видео:
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', fontSize: '0.85rem' }}>
-            {word.videos.map((v) => (
+            {videos.map((v) => (
               <span
                 key={v.id}
                 style={{
@@ -236,7 +245,7 @@ export function EnglishWordDetail({
         </div>
       )}
 
-      <audio ref={wordAudioRef} src={wordAudioUrl || undefined} />
+      <audio ref={audioRef} src={audioUrl || undefined} />
     </div>
   );
 }

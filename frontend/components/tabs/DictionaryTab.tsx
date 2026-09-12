@@ -19,7 +19,10 @@ import { AddChineseWordModal } from '@/components/tabs/AddChineseWordModal';
 import type { AddedChineseWord } from '@/components/tabs/AddChineseWordModal';
 import { AddEnglishWordModal } from '@/components/tabs/AddEnglishWordModal';
 import type { AddedEnglishWord } from '@/components/tabs/AddEnglishWordModal';
+import { AddEnglishPhraseModal } from '@/components/tabs/AddEnglishPhraseModal';
+import type { AddedEnglishPhrase, PhraseKind } from '@/components/tabs/AddEnglishPhraseModal';
 import { EnglishWordDetail } from '@/components/tabs/EnglishWordDetail';
+import { EnglishPhraseDetail } from '@/components/tabs/EnglishPhraseDetail';
 import { isHanziChar } from '@/lib/chinese-display';
 
 type VocabularyProgress = {
@@ -223,6 +226,8 @@ export const DictionaryTab: React.FC = () => {
   const [chineseCharsRefreshKey, setChineseCharsRefreshKey] = useState(0);
   const [showAddChineseWord, setShowAddChineseWord] = useState(false);
   const [showAddEnglishWord, setShowAddEnglishWord] = useState(false);
+  const [showAddEnglishPhrase, setShowAddEnglishPhrase] = useState(false);
+  const [addPhraseKind, setAddPhraseKind] = useState<PhraseKind>('idiom');
   const [characterGlossMap, setCharacterGlossMap] = useState<
     Record<string, { translation?: string | null; pinyin?: string | null }>
   >({});
@@ -271,6 +276,7 @@ export const DictionaryTab: React.FC = () => {
     setSelectedPhrasalVerbPhrases(new Set());
     setShowAddChineseWord(false);
     setShowAddEnglishWord(false);
+    setShowAddEnglishPhrase(false);
   }, [learningLanguage, isLanguageReady]);
 
   useEffect(() => {
@@ -944,6 +950,61 @@ export const DictionaryTab: React.FC = () => {
     }
   }, [accessToken, selectedIdiom, idiomAudioUrl]);
 
+  const synthesizePhrasalVerbAudio = useCallback(async () => {
+    if (!accessToken || !selectedPhrasalVerb) return;
+
+    if (phrasalVerbAudioUrl) {
+      phrasalVerbAudioRef.current?.play();
+      return;
+    }
+
+    const phrase = selectedPhrasalVerb.phrase.trim();
+    if (!phrase) return;
+
+    const phraseKey = `phrasal-verb:${phrase.toLowerCase()}`;
+    const cachedUrl = audioCacheRef.current.get(phraseKey);
+    if (cachedUrl) {
+      setPhrasalVerbAudioUrl(cachedUrl);
+      setTimeout(() => {
+        phrasalVerbAudioRef.current?.play();
+      }, 100);
+      return;
+    }
+
+    setPhrasalVerbAudioLoading(true);
+    try {
+      const resp = await fetch(`${getApiUrl()}/api/tts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ text: phrase }),
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData?.error || 'Не удалось синтезировать произношение фразового глагола');
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      audioCacheRef.current.set(phraseKey, url);
+      setPhrasalVerbAudioUrl((prev) => {
+        if (prev && prev !== url) URL.revokeObjectURL(prev);
+        return url;
+      });
+      setTimeout(() => {
+        phrasalVerbAudioRef.current?.play();
+      }, 100);
+    } catch (e) {
+      console.error('Phrasal verb TTS error:', e);
+      alert(e instanceof Error ? e.message : 'Не удалось синтезировать произношение');
+    } finally {
+      setPhrasalVerbAudioLoading(false);
+    }
+  }, [accessToken, selectedPhrasalVerb, phrasalVerbAudioUrl]);
+
   // Category management functions
   const handleCreateCategory = useCallback(async () => {
     if (!accessToken || !categoryForm.name.trim()) return;
@@ -1244,6 +1305,70 @@ export const DictionaryTab: React.FC = () => {
     }
   }, [isChinese]);
 
+  const handleIdiomAdded = useCallback((phrase: AddedEnglishPhrase, alreadyExisted: boolean) => {
+    const next: UserIdiom = {
+      id: typeof phrase.id === 'string' ? phrase.id : undefined,
+      phrase: phrase.phrase,
+      literal_translation: phrase.literal_translation || '',
+      meaning: phrase.meaning || '',
+      usage_examples: phrase.usage_examples || [],
+      videos: [],
+      created_at: phrase.created_at,
+      categories: (phrase.categories || []).map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        color: cat.color,
+        icon: cat.icon,
+        description: null,
+      })),
+    };
+    setIdioms((prev) => {
+      const key = next.phrase.trim().toLowerCase();
+      const idx = prev.findIndex((item) => item.phrase.trim().toLowerCase() === key || (next.id && item.id === next.id));
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...next };
+        return copy;
+      }
+      return [next, ...prev];
+    });
+    setSelectedIdiom(next);
+    setViewMode('idioms');
+    void alreadyExisted;
+  }, []);
+
+  const handlePhrasalVerbAdded = useCallback((phrase: AddedEnglishPhrase, alreadyExisted: boolean) => {
+    const next: UserPhrasalVerb = {
+      id: typeof phrase.id === 'string' ? phrase.id : undefined,
+      phrase: phrase.phrase,
+      literal_translation: phrase.literal_translation || '',
+      meaning: phrase.meaning || '',
+      usage_examples: phrase.usage_examples || [],
+      videos: [],
+      created_at: phrase.created_at,
+      categories: (phrase.categories || []).map((cat) => ({
+        id: cat.id,
+        name: cat.name,
+        color: cat.color,
+        icon: cat.icon,
+        description: null,
+      })),
+    };
+    setPhrasalVerbs((prev) => {
+      const key = next.phrase.trim().toLowerCase();
+      const idx = prev.findIndex((item) => item.phrase.trim().toLowerCase() === key || (next.id && item.id === next.id));
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...next };
+        return copy;
+      }
+      return [next, ...prev];
+    });
+    setSelectedPhrasalVerb(next);
+    setViewMode('phrasal-verbs');
+    void alreadyExisted;
+  }, []);
+
   const filteredIdioms = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
 
@@ -1439,7 +1564,11 @@ export const DictionaryTab: React.FC = () => {
           >
             {isChinese
               ? 'Нажмите на иероглиф — пиньинь, тон и перевод. Новые слова можно добавить вручную.'
-              : 'Личный словарь: добавляйте слова вручную или из караоке и видео.'}
+              : viewMode === 'idioms'
+                ? 'Идиома переводится по смыслу: дословный разбор почти всегда врёт.'
+                : viewMode === 'phrasal-verbs'
+                  ? 'Фразовый глагол — новый смысл, а не сумма глагола и предлога.'
+                  : 'Личный словарь: добавляйте слова вручную или из караоке и видео.'}
           </p>
         </div>
         <div
@@ -1486,14 +1615,52 @@ export const DictionaryTab: React.FC = () => {
               alignItems: 'center',
             }}
           >
+            {isChinese && (
             <button
               type="button"
               className="zh-add-open-btn"
-              onClick={() => (isChinese ? setShowAddChineseWord(true) : setShowAddEnglishWord(true))}
+              onClick={() => setShowAddChineseWord(true)}
               title="Добавить слово вручную"
             >
               <PlusIcon /> Добавить слово
             </button>
+            )}
+            {!isChinese && viewMode === 'words' && (
+            <button
+              type="button"
+              className="zh-add-open-btn"
+              onClick={() => setShowAddEnglishWord(true)}
+              title="Добавить слово вручную"
+            >
+              <PlusIcon /> Добавить слово
+            </button>
+            )}
+            {!isChinese && viewMode === 'idioms' && (
+            <button
+              type="button"
+              className="zh-add-open-btn"
+              onClick={() => {
+                setAddPhraseKind('idiom');
+                setShowAddEnglishPhrase(true);
+              }}
+              title="Добавить идиому вручную"
+            >
+              <PlusIcon /> Добавить идиому
+            </button>
+            )}
+            {!isChinese && viewMode === 'phrasal-verbs' && (
+            <button
+              type="button"
+              className="zh-add-open-btn"
+              onClick={() => {
+                setAddPhraseKind('phrasal-verb');
+                setShowAddEnglishPhrase(true);
+              }}
+              title="Добавить фразовый глагол вручную"
+            >
+              <PlusIcon /> Добавить фразовый глагол
+            </button>
+            )}
             <div ref={exportDropdownRef} style={{ position: 'relative' }}>
               <button
                 type="button"
@@ -2444,7 +2611,7 @@ export const DictionaryTab: React.FC = () => {
                     }}
                   />
                   <span>
-                    Идиомы из песен ({filteredIdioms.length})
+                    Идиомы ({filteredIdioms.length})
                   </span>
                 </>
               ) : (
@@ -2466,7 +2633,7 @@ export const DictionaryTab: React.FC = () => {
                     }}
                   />
                   <span>
-                    Фразовые глаголы из песен ({filteredPhrasalVerbs.length})
+                    Фразовые глаголы ({filteredPhrasalVerbs.length})
                   </span>
                 </>
               )}
@@ -2971,7 +3138,22 @@ export const DictionaryTab: React.FC = () => {
                     ) : (
                       isChinese
                         ? '成语 пока нет. Добавляйте выражения из переводчика или диалога.'
-                        : 'Идиом пока нет. Включите определитель идиом в караоке и добавьте интересные выражения.'
+                        : (
+                      <div className="zh-add-empty">
+                        <div className="zh-add-empty-glyph">Idiom</div>
+                        <p>Идиом пока нет. Добавьте первую вручную — смысл отдельно, дословно отдельно.</p>
+                        <button
+                          type="button"
+                          className="zh-add-empty-btn"
+                          onClick={() => {
+                            setAddPhraseKind('idiom');
+                            setShowAddEnglishPhrase(true);
+                          }}
+                        >
+                          <PlusIcon /> Добавить идиому
+                        </button>
+                      </div>
+                        )
                     )}
                   </div>
                 ) : (
@@ -3204,7 +3386,20 @@ export const DictionaryTab: React.FC = () => {
                         </button>
                       </>
                     ) : (
-                      'Фразовых глаголов пока нет. Включите определитель фразовых глаголов в караоке и добавьте интересные выражения.'
+                      <div className="zh-add-empty">
+                        <div className="zh-add-empty-glyph">give up</div>
+                        <p>Фразовых глаголов пока нет. Добавьте первый вручную — смысл связки, не сумму слов.</p>
+                        <button
+                          type="button"
+                          className="zh-add-empty-btn"
+                          onClick={() => {
+                            setAddPhraseKind('phrasal-verb');
+                            setShowAddEnglishPhrase(true);
+                          }}
+                        >
+                          <PlusIcon /> Добавить фразовый глагол
+                        </button>
+                      </div>
                     )}
                   </div>
                 ) : (
@@ -3904,301 +4099,30 @@ export const DictionaryTab: React.FC = () => {
                   )}
                 </div>
               ) : (
-              <>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Выбранная идиома
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.75rem',
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: '1.1rem',
-                            fontWeight: 700,
-                            color: '#f9fafb',
-                          }}
-                        >
-                          {selectedIdiom.phrase}
-                        </div>
-                      </div>
-                      <button
-                        onClick={synthesizeIdiomAudio}
-                        disabled={idiomAudioLoading}
-                        style={{
-                          padding: '0.4rem 0.8rem',
-                          borderRadius: '0.6rem',
-                          border: '1px solid rgba(82,82,91,0.9)',
-                          background: idiomAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
-                          color: idiomAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
-                          fontSize: '0.8rem',
-                          cursor: idiomAudioLoading ? 'default' : 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.4rem',
-                          opacity: idiomAudioLoading ? 0.7 : 1,
-                          transition: 'all 0.2s',
-                        }}
-                        title={
-                          idiomAudioLoading
-                            ? 'Синтез произношения...'
-                            : idiomAudioUrl
-                              ? 'Воспроизвести произношение'
-                              : 'Синтезировать и воспроизвести произношение'
-                        }
-                      >
-                        {idiomAudioLoading ? (
-                          <>🔊 Синтез...</>
-                        ) : idiomAudioUrl ? (
-                          <>▶ Произношение</>
-                        ) : (
-                          <>🔊 Произношение</>
-                        )}
-                      </button>
-                      <audio ref={idiomAudioRef} src={idiomAudioUrl || undefined} />
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-end',
-                      gap: '0.25rem',
-                      fontSize: '0.75rem',
-                      color: 'rgba(148,163,184,0.9)',
-                    }}
-                  >
-                    {selectedIdiom.difficulty_level && (
-                      <span
-                        style={{
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '999px',
-                          background: '#256f40',
-                          color: 'rgba(219,234,254,0.98)',
-                        }}
-                      >
-                        Уровень: {selectedIdiom.difficulty_level}
-                      </span>
-                    )}
-                    {selectedIdiom.videos && selectedIdiom.videos.length > 0 && (
-                      <span>
-                        Связанных видео: {selectedIdiom.videos.length}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {selectedIdiom.meaning && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Значение:
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.95rem',
-                        color: '#e5e7eb',
-                      }}
-                    >
-                      {selectedIdiom.meaning}
-                    </div>
-                  </div>
-                )}
-
-                {selectedIdiom.literal_translation && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Дословный перевод:
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.95rem',
-                        color: '#e5e7eb',
-                        fontStyle: 'italic',
-                      }}
-                    >
-                      {selectedIdiom.literal_translation}
-                    </div>
-                  </div>
-                )}
-
-                {selectedIdiom.usage_examples && selectedIdiom.usage_examples.length > 0 && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Примеры использования:
-                    </div>
-                    <ul
-                      style={{
-                        margin: 0,
-                        paddingLeft: '1.1rem',
-                        fontSize: '0.85rem',
-                        color: 'rgba(209,213,219,0.98)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.25rem',
-                        maxHeight: '150px',
-                        overflowY: 'auto',
-                      }}
-                    >
-                      {selectedIdiom.usage_examples.map((ex, idx) => (
-                        <li key={idx}>{ex}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {selectedIdiom.id && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.5rem',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <span>Категории:</span>
-                      <button
-                        onClick={() => {
-                          setAssigningIdiomId(selectedIdiom.id!);
-                          setAssigningWordId(null);
-                          const currentCategoryIds = (selectedIdiom.categories?.map(c => c.id) || [])
-                            .filter((id) => categories.some((c) => c.id === id));
-                          setSelectedCategoryIds(new Set(currentCategoryIds));
-                          setShowAssignCategoriesModal(true);
-                        }}
-                        style={{
-                          padding: '0.3rem 0.6rem',
-                          borderRadius: '0.5rem',
-                          border: '1px solid rgba(75,85,99,0.9)',
-                          background: 'rgba(24,24,27,0.95)',
-                          color: '#e5e7eb',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Изменить
-                      </button>
-                    </div>
-                    {categoriesForCurrentLanguage(selectedIdiom.categories).length > 0 ? (
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: '0.4rem',
-                        }}
-                      >
-                        {categoriesForCurrentLanguage(selectedIdiom.categories).map((cat) => (
-                          <span
-                            key={cat.id}
-                            style={{
-                              padding: '0.25rem 0.6rem',
-                              borderRadius: '999px',
-                              background: cat.color || '#11622f',
-                              color: '#ffffff',
-                              fontSize: '0.8rem',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                            }}
-                            title={cat.description || cat.name}
-                          >
-                            {cat.icon && <span>{cat.icon}</span>}
-                            <span>{cat.name}</span>
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          fontSize: '0.85rem',
-                          color: 'rgba(148,163,184,0.7)',
-                          fontStyle: 'italic',
-                        }}
-                      >
-                        Нет категорий
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {selectedIdiom.videos && selectedIdiom.videos.length > 0 && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Связанные видео:
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '0.5rem',
-                        fontSize: '0.85rem',
-                      }}
-                    >
-                      {selectedIdiom.videos.map((v) => (
-                        <span
-                          key={v.id}
-                          style={{
-                            padding: '0.3rem 0.6rem',
-                            borderRadius: '999px',
-                            background: '#256f40',
-                            color: 'rgba(219,234,254,0.98)',
-                          }}
-                        >
-                          {v.title || 'Видео'}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              </>
+                <EnglishPhraseDetail
+                  kind="idiom"
+                  phrase={selectedIdiom.phrase}
+                  meaning={selectedIdiom.meaning}
+                  literalTranslation={selectedIdiom.literal_translation}
+                  examples={selectedIdiom.usage_examples}
+                  difficultyLevel={selectedIdiom.difficulty_level}
+                  categories={selectedIdiom.categories}
+                  allowedCategories={categories}
+                  videos={selectedIdiom.videos}
+                  audioUrl={idiomAudioUrl}
+                  audioLoading={idiomAudioLoading}
+                  audioRef={idiomAudioRef}
+                  onPronounce={synthesizeIdiomAudio}
+                  onAssignCategories={selectedIdiom.id ? () => {
+                    setAssigningIdiomId(selectedIdiom.id!);
+                    setAssigningWordId(null);
+                    setAssigningPhrasalVerbId(null);
+                    const currentCategoryIds = (selectedIdiom.categories?.map(c => c.id) || [])
+                      .filter((id) => categories.some((c) => c.id === id));
+                    setSelectedCategoryIds(new Set(currentCategoryIds));
+                    setShowAssignCategoriesModal(true);
+                  } : undefined}
+                />
               )
             ) : (
               <div
@@ -4231,360 +4155,28 @@ export const DictionaryTab: React.FC = () => {
             }}
           >
             {selectedPhrasalVerb ? (
-              <>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    gap: '1rem',
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Выбранный фразовый глагол
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '1.15rem',
-                        fontWeight: 700,
-                        color: '#f9fafb',
-                        marginBottom: '0.5rem',
-                      }}
-                    >
-                      {selectedPhrasalVerb.phrase}
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <button
-                        onClick={async () => {
-                          if (!accessToken || !selectedPhrasalVerb) return;
-                          const phrase = selectedPhrasalVerb.phrase.trim();
-                          if (!phrase) return;
-
-                          const phraseKey = `phrasal-verb:${phrase.toLowerCase()}`;
-
-                          // Check cache first
-                          const cachedUrl = audioCacheRef.current.get(phraseKey);
-                          if (cachedUrl) {
-                            setPhrasalVerbAudioUrl((prev) => {
-                              if (prev && prev !== cachedUrl) {
-                                URL.revokeObjectURL(prev);
-                              }
-                              return cachedUrl;
-                            });
-                            if (phrasalVerbAudioRef.current) {
-                              phrasalVerbAudioRef.current.play().catch(console.error);
-                            }
-                            return;
-                          }
-
-                          setPhrasalVerbAudioLoading(true);
-                          try {
-                            const resp = await fetch(`${getApiUrl()}/api/tts`, {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                Authorization: `Bearer ${accessToken}`,
-                              },
-                              body: JSON.stringify({ text: phrase }),
-                            });
-
-                            if (!resp.ok) {
-                              const errData = await resp.json().catch(() => ({}));
-                              throw new Error(errData?.error || 'Не удалось синтезировать произношение фразового глагола');
-                            }
-
-                            const blob = await resp.blob();
-                            const url = URL.createObjectURL(blob);
-                            audioCacheRef.current.set(phraseKey, url);
-                            setPhrasalVerbAudioUrl((prev) => {
-                              if (prev && prev !== url) {
-                                URL.revokeObjectURL(prev);
-                              }
-                              return url;
-                            });
-                            if (phrasalVerbAudioRef.current) {
-                              phrasalVerbAudioRef.current.play().catch(console.error);
-                            }
-                          } catch (e: any) {
-                            console.error('Error synthesizing phrasal verb audio:', e);
-                            alert(e?.message || 'Не удалось синтезировать произношение');
-                          } finally {
-                            setPhrasalVerbAudioLoading(false);
-                          }
-                        }}
-                        style={{
-                          padding: '0.4rem 0.8rem',
-                          borderRadius: '0.6rem',
-                          border: '1px solid rgba(82,82,91,0.9)',
-                          background: phrasalVerbAudioLoading ? 'rgba(24,24,27,0.95)' : 'rgba(17,98,47,0.9)',
-                          color: phrasalVerbAudioLoading ? 'rgba(148,163,184,0.9)' : '#e5e7eb',
-                          fontSize: '0.8rem',
-                          cursor: phrasalVerbAudioLoading ? 'default' : 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.4rem',
-                          opacity: phrasalVerbAudioLoading ? 0.7 : 1,
-                          transition: 'all 0.2s',
-                        }}
-                        title={
-                          phrasalVerbAudioLoading
-                            ? 'Синтез произношения...'
-                            : phrasalVerbAudioUrl
-                              ? 'Воспроизвести произношение'
-                              : 'Синтезировать и воспроизвести произношение'
-                        }
-                      >
-                        {phrasalVerbAudioLoading ? (
-                          <>🔊 Синтез...</>
-                        ) : phrasalVerbAudioUrl ? (
-                          <>▶ Произношение</>
-                        ) : (
-                          <>🔊 Произношение</>
-                        )}
-                      </button>
-                      <audio ref={phrasalVerbAudioRef} src={phrasalVerbAudioUrl || undefined} />
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-end',
-                      gap: '0.25rem',
-                      fontSize: '0.75rem',
-                      color: 'rgba(148,163,184,0.9)',
-                    }}
-                  >
-                    {selectedPhrasalVerb.difficulty_level && (
-                      <span
-                        style={{
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '999px',
-                          background: '#256f40',
-                          color: 'rgba(219,234,254,0.98)',
-                        }}
-                      >
-                        Уровень: {selectedPhrasalVerb.difficulty_level}
-                      </span>
-                    )}
-                    {selectedPhrasalVerb.videos && selectedPhrasalVerb.videos.length > 0 && (
-                      <span>
-                        Связанных видео: {selectedPhrasalVerb.videos.length}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {selectedPhrasalVerb.meaning && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Значение:
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.95rem',
-                        color: '#e5e7eb',
-                      }}
-                    >
-                      {selectedPhrasalVerb.meaning}
-                    </div>
-                  </div>
-                )}
-
-                {selectedPhrasalVerb.literal_translation && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Дословный перевод:
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.95rem',
-                        color: '#e5e7eb',
-                      }}
-                    >
-                      {selectedPhrasalVerb.literal_translation}
-                    </div>
-                  </div>
-                )}
-
-                {selectedPhrasalVerb.usage_examples && selectedPhrasalVerb.usage_examples.length > 0 && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.5rem',
-                      }}
-                    >
-                      Примеры использования:
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.5rem',
-                      }}
-                    >
-                      {selectedPhrasalVerb.usage_examples.map((example, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            padding: '0.6rem 0.75rem',
-                            borderRadius: '0.75rem',
-                            fontSize: '0.9rem',
-                            color: '#e5e7eb',
-                          }}
-                        >
-                          {example}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {selectedPhrasalVerb.id && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.5rem',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <span>Категории:</span>
-                      <button
-                        onClick={() => {
-                          setAssigningPhrasalVerbId(selectedPhrasalVerb.id!);
-                          setAssigningWordId(null);
-                          setAssigningIdiomId(null);
-                          setSelectedCategoryIds(
-                            new Set(selectedPhrasalVerb.categories?.map((c) => c.id) || [])
-                          );
-                          setShowAssignCategoriesModal(true);
-                        }}
-                        style={{
-                          padding: '0.3rem 0.6rem',
-                          borderRadius: '0.5rem',
-                          border: '1px solid rgba(75,85,99,0.9)',
-                          background: 'rgba(24,24,27,0.95)',
-                          color: '#e5e7eb',
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Изменить
-                      </button>
-                    </div>
-                    {selectedPhrasalVerb.categories && selectedPhrasalVerb.categories.length > 0 ? (
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: '0.4rem',
-                        }}
-                      >
-                        {selectedPhrasalVerb.categories.map((cat) => (
-                          <span
-                            key={cat.id}
-                            style={{
-                              padding: '0.25rem 0.6rem',
-                              borderRadius: '999px',
-                              background: cat.color || '#11622f',
-                              color: '#ffffff',
-                              fontSize: '0.8rem',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                            }}
-                            title={cat.description || cat.name}
-                          >
-                            {cat.icon && <span>{cat.icon}</span>}
-                            <span>{cat.name}</span>
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          fontSize: '0.85rem',
-                          color: 'rgba(148,163,184,0.7)',
-                          fontStyle: 'italic',
-                        }}
-                      >
-                        Нет категорий
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {selectedPhrasalVerb.videos && selectedPhrasalVerb.videos.length > 0 && (
-                  <div>
-                    <div
-                      style={{
-                        fontSize: '0.8rem',
-                        color: 'rgba(148,163,184,0.9)',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
-                      Связанные видео:
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '0.5rem',
-                        fontSize: '0.85rem',
-                      }}
-                    >
-                      {selectedPhrasalVerb.videos.map((v) => (
-                        <span
-                          key={v.id}
-                          style={{
-                            padding: '0.3rem 0.6rem',
-                            borderRadius: '999px',
-                            background: '#256f40',
-                            color: 'rgba(219,234,254,0.98)',
-                          }}
-                        >
-                          {v.title || 'Видео'}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              </>
+              <EnglishPhraseDetail
+                kind="phrasal-verb"
+                phrase={selectedPhrasalVerb.phrase}
+                meaning={selectedPhrasalVerb.meaning}
+                literalTranslation={selectedPhrasalVerb.literal_translation}
+                examples={selectedPhrasalVerb.usage_examples}
+                difficultyLevel={selectedPhrasalVerb.difficulty_level}
+                categories={selectedPhrasalVerb.categories}
+                allowedCategories={categories}
+                videos={selectedPhrasalVerb.videos}
+                audioUrl={phrasalVerbAudioUrl}
+                audioLoading={phrasalVerbAudioLoading}
+                audioRef={phrasalVerbAudioRef}
+                onPronounce={synthesizePhrasalVerbAudio}
+                onAssignCategories={selectedPhrasalVerb.id ? () => {
+                  setAssigningPhrasalVerbId(selectedPhrasalVerb.id!);
+                  setAssigningWordId(null);
+                  setAssigningIdiomId(null);
+                  setSelectedCategoryIds(new Set(selectedPhrasalVerb.categories?.map((c) => c.id) || []));
+                  setShowAssignCategoriesModal(true);
+                } : undefined}
+              />
             ) : (
               <div
                 style={{
@@ -5130,6 +4722,7 @@ export const DictionaryTab: React.FC = () => {
           onAdded={handleWordAdded}
         />
       ) : (
+        <>
         <AddEnglishWordModal
           open={showAddEnglishWord}
           accessToken={accessToken}
@@ -5138,6 +4731,16 @@ export const DictionaryTab: React.FC = () => {
           onClose={() => setShowAddEnglishWord(false)}
           onAdded={handleWordAdded}
         />
+        <AddEnglishPhraseModal
+          open={showAddEnglishPhrase}
+          kind={addPhraseKind}
+          accessToken={accessToken}
+          apiUrl={getApiUrl()}
+          categories={categories}
+          onClose={() => setShowAddEnglishPhrase(false)}
+          onAdded={addPhraseKind === 'phrasal-verb' ? handlePhrasalVerbAdded : handleIdiomAdded}
+        />
+        </>
       )}
     </div>
   );

@@ -366,6 +366,7 @@ app.get('/', (req, res) => {
       '/api/vocabulary/extract',
       '/api/vocabulary/define',
       '/api/vocabulary/assist',
+      '/api/vocabulary/phrases/assist',
       '/api/vocabulary/add',
       '/api/vocabulary/list',
       '/api/vocabulary/characters/add',
@@ -3922,6 +3923,65 @@ async function getEnglishMnemonicFromAI(word, { translations = [], partOfSpeech 
   }
 }
 
+async function getEnglishPhraseAssistFromAI(phrase, kind = 'idiom') {
+  const isIdiom = kind !== 'phrasal-verb'
+  const label = isIdiom ? 'идиому' : 'фразовый глагол'
+  try {
+    const chatResult = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: isIdiom
+            ? 'Ты преподаватель английского. Разбираешь идиомы: смысл не равен сумме слов. Отвечай строго JSON без markdown.'
+            : 'Ты преподаватель английского. Разбираешь фразовые глаголы: смысл связки не равен сумме глагола и частицы. Отвечай строго JSON без markdown.',
+        },
+        {
+          role: 'user',
+          content: `Разбери английск${isIdiom ? 'ую идиому' : 'ий фразовый глагол'} «${phrase}» и верни JSON:
+{
+  "meaning": "смысл на русском, как это понимают носители",
+  "literal_translation": "дословный перевод по словам",
+  "usage_examples": ["короткий пример на английском", "ещё один пример"]
+}
+
+Учти:
+- meaning — это то, что нужно запомнить как перевод
+- literal_translation — только чтобы показать, почему дословно нельзя
+- usage_examples: 1-2 коротких предложения на английском
+- не выдумывай, если это не настоящая ${label}
+
+Отвечай только JSON.`,
+        },
+      ],
+      max_tokens: 400,
+      temperature: 0.3,
+    })
+    const usage = chatResult?.usage || null
+    let jsonText = (chatResult.choices?.[0]?.message?.content || '').trim() || '{}'
+    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+    if (jsonMatch) jsonText = jsonMatch[1]
+    const parsed = JSON.parse(jsonText)
+    const examples = Array.isArray(parsed.usage_examples)
+      ? parsed.usage_examples.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean).slice(0, 3)
+      : []
+    return {
+      suggestion: {
+        meaning: typeof parsed.meaning === 'string' ? parsed.meaning.trim() : null,
+        literal_translation: typeof parsed.literal_translation === 'string' ? parsed.literal_translation.trim() : null,
+        usage_examples: examples,
+      },
+      usage,
+    }
+  } catch (error) {
+    console.error('[getEnglishPhraseAssistFromAI] Error:', error)
+    return {
+      suggestion: { meaning: null, literal_translation: null, usage_examples: [] },
+      usage: null,
+    }
+  }
+}
+
 // Оценка количества токенов для анализа текста на идиомы
 // Простая эвристика: 1 токен ≈ 3.5 символа
 function estimateTokensForText(text = '') {
@@ -4676,6 +4736,94 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
     console.error('[api/vocabulary/assist] Error:', error)
     return res.status(500).json({
       error: 'Failed to assist vocabulary fields',
+      details: error.message,
+    })
+  }
+}))
+
+app.post('/api/vocabulary/phrases/assist', asyncHandler(async (req, res) => {
+  const token = getBearerToken(req)
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  }
+
+  let userData, userErr
+  try {
+    const result = await Promise.resolve(supabase.auth.getUser(token)).catch((err) => {
+      throw err
+    })
+    userData = result.data
+    userErr = result.error
+  } catch (authError) {
+    const errorCode = authError?.cause?.code || authError?.code || authError?.error?.code
+    const errorMessage = authError?.message || authError?.error?.message || 'Unknown error'
+    if (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || errorCode === 'ETIMEDOUT' || errorCode === 'ECONNRESET') {
+      return res.status(502).json({
+        error: 'Не удалось подключиться к Supabase (таймаут соединения).',
+        details: { code: errorCode, message: errorMessage },
+      })
+    }
+    throw authError
+  }
+
+  if (userErr || !userData?.user) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+  const userId = userData.user.id
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const { phrase, kind: rawKind, fields: rawFields } = req.body || {}
+  const kind = rawKind === 'phrasal-verb' ? 'phrasal-verb' : 'idiom'
+  const target = typeof phrase === 'string' ? phrase.trim() : ''
+  if (!target || extractHanzi(target)) {
+    return res.status(400).json({
+      error: 'Invalid phrase',
+      details: kind === 'idiom' ? 'Нужна английская идиома' : 'Нужен английский фразовый глагол',
+    })
+  }
+
+  const allowed = ['meaning', 'literal_translation', 'usage_examples']
+  const fields = [...new Set(
+    (Array.isArray(rawFields) && rawFields.length ? rawFields : allowed)
+      .filter((field) => allowed.includes(field)),
+  )]
+  if (fields.length === 0) {
+    return res.status(400).json({ error: 'fields is required' })
+  }
+
+  try {
+    const { suggestion, usage } = await getEnglishPhraseAssistFromAI(target, kind)
+    if (usage) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', {
+          vocabulary_phrase_assist: true,
+        })
+        if (!deductResult.ok) {
+          return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
+        }
+      }
+    }
+
+    return res.json({
+      ok: true,
+      phrase: target,
+      kind,
+      fields,
+      suggestion: {
+        meaning: fields.includes('meaning') ? suggestion.meaning : null,
+        literal_translation: fields.includes('literal_translation') ? suggestion.literal_translation : null,
+        usage_examples: fields.includes('usage_examples') ? suggestion.usage_examples : [],
+      },
+    })
+  } catch (error) {
+    console.error('[api/vocabulary/phrases/assist] Error:', error)
+    return res.status(500).json({
+      error: 'Failed to assist phrase fields',
       details: error.message,
     })
   }
