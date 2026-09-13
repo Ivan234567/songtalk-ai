@@ -48,18 +48,18 @@ function HeroWaves() {
       >
         <defs>
           <linearGradient id="waveGrad1" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#79e0c2" stopOpacity="0.2" />
-            <stop offset="45%" stopColor="#4ad495" stopOpacity="0.8" />
-            <stop offset="100%" stopColor="#2fb06e" stopOpacity="0.55" />
+            <stop offset="0%" stopColor="var(--wave-c1)" stopOpacity="0.2" />
+            <stop offset="45%" stopColor="var(--wave-c2)" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="var(--wave-c3)" stopOpacity="0.55" />
           </linearGradient>
           <linearGradient id="waveGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#2fb06e" stopOpacity="0.22" />
-            <stop offset="55%" stopColor="#6bf0b0" stopOpacity="0.75" />
-            <stop offset="100%" stopColor="#83ffce" stopOpacity="0.55" />
+            <stop offset="0%" stopColor="var(--wave-c3)" stopOpacity="0.22" />
+            <stop offset="55%" stopColor="var(--wave-c4)" stopOpacity="0.75" />
+            <stop offset="100%" stopColor="var(--wave-c5)" stopOpacity="0.55" />
           </linearGradient>
           <linearGradient id="waveGradSoft" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#2fb06e" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#2a7c55" stopOpacity="0.3" />
+            <stop offset="0%" stopColor="var(--wave-c3)" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="var(--wave-c6)" stopOpacity="0.3" />
           </linearGradient>
           <filter id="waveBlur" x="-10%" y="-20%" width="120%" height="140%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="8" />
@@ -271,7 +271,8 @@ function LandingPageInner() {
   }, []);
 
   return (
-    <div className={styles.wrapper}>
+    <div className={styles.wrapper} data-preview-lang={previewLang}>
+      <div className={styles.accentWash} aria-hidden />
       <header className={styles.header}>
         <Link href="/" className={styles.logoLink} aria-label="Speakeasy — на главную">
           <Logo />
@@ -303,7 +304,10 @@ function LandingPageInner() {
               ? 'Хватит молчать — тренируй упрощённый китайский: ситуативные диалоги HSK, голосовые минутки, словарь с пиньинем. Без осуждающих взглядов.'
               : 'Хватит молчать — тренируй речь в живых сценариях с ИИ. От заказа кофе до дебатов. Без осуждающих взглядов. Только ты и твой темп.'}
           </p>
-          <p className={styles.heroLangHint}>Язык превью — English / 中文 — переключается в шапке. Меняются слайды, отзывы и FAQ.</p>
+          <LangPreviewToggle variant="hero" />
+          <p className={styles.heroLangHint}>
+            Выбери язык превью — меняются слайды, отзывы, FAQ и акцентный цвет.
+          </p>
           <div className={styles.heroCtaWrap}>
             <Link href="/auth/register" className={styles.heroCtaGlass}>
               Начать

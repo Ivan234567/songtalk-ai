@@ -163,7 +163,7 @@ function StyleSettingsMock() {
       </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem' }}>
         <span style={{ opacity: 0.8 }}>Formality</span>
-        <input type="range" min={0} max={100} defaultValue={35} disabled style={{ flex: 1, minWidth: 0, accentColor: 'rgba(107, 240, 176, 0.8)' }} />
+        <input type="range" min={0} max={100} defaultValue={35} disabled style={{ flex: 1, minWidth: 0, accentColor: 'rgba(var(--land-a), 0.8)' }} />
         <span style={{ opacity: 0.7, width: 14, textAlign: 'right' }}>4</span>
       </label>
     </div>

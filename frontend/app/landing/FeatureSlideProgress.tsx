@@ -21,7 +21,7 @@ function ScoreRingMock() {
         <div>
           <div className={styles.prodKpiLabel}>Средний балл</div>
           <div className={styles.prodKpiValue}>7.2</div>
-          <div style={{ fontSize: '0.65rem', color: 'rgba(107, 240, 176, 0.9)' }}>↑ 0.4 за неделю</div>
+          <div style={{ fontSize: '0.65rem', color: 'rgba(var(--land-a), 0.9)' }}>↑ 0.4 за неделю</div>
         </div>
       </div>
     </div>
@@ -44,7 +44,7 @@ function CriteriaBarsMock({ previewLang }: { previewLang: LandingPreviewLang }) 
         { label: 'Полнота и логика', value: 8.0 },
         { label: 'Диалог', value: 7.6 },
       ];
-  const color = (v: number) => (v >= 7.5 ? 'var(--accent, rgba(107,240,176,0.95))' : v >= 5 ? 'rgba(245, 158, 11, 0.9)' : 'rgba(239, 68, 68, 0.9)');
+  const color = (v: number) => (v >= 7.5 ? 'rgb(var(--land-a))' : v >= 5 ? 'rgba(245, 158, 11, 0.9)' : 'rgba(239, 68, 68, 0.9)');
   return (
     <div className={styles.prodPanel} role="img" aria-label="Критерии">
       <span className={styles.prodPanelLabel}>Критерии оценки</span>
@@ -106,7 +106,7 @@ function TrendStreakMock() {
     <div className={styles.prodKpi} role="img" aria-label="Тренд и серия">
       <div className={styles.prodKpiLabel}>Балл по дням</div>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
-        <svg viewBox="0 0 80 28" width="88" height="28" style={{ color: 'rgba(107, 240, 176, 0.95)' }}>
+        <svg viewBox="0 0 80 28" width="88" height="28" style={{ color: 'rgba(var(--land-a), 0.95)' }}>
           <polyline
             fill="none"
             stroke="currentColor"

@@ -8,8 +8,6 @@ import { useLandingPreviewLang } from './preview-lang';
 
 const TELEGRAM_SUPPORT = 'https://t.me/SPEAKEASY_SUPPORT';
 
-/* Цвета QR в стиле лендинга: мятный на тёмном */
-const QR_FG = '#6bf0b0';
 const QR_BG = 'transparent';
 
 const LINKS_ABOUT = [
@@ -45,6 +43,7 @@ function LinkColumn({ title, items }: { title: string; items: typeof LINKS_ABOUT
 
 export function FooterSection() {
   const { previewLang } = useLandingPreviewLang();
+  const qrFg = previewLang === 'zh' ? '#ffb080' : '#6bf0b0';
   return (
     <footer className={styles.ft} role="contentinfo">
       {/* Mesh-фон */}
@@ -96,7 +95,7 @@ export function FooterSection() {
                       size={120}
                       level="M"
                       marginSize={1}
-                      fgColor={QR_FG}
+                      fgColor={qrFg}
                       bgColor={QR_BG}
                       className={styles.ftTelegramQr}
                     />
