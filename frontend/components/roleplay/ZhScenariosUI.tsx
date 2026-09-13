@@ -22,6 +22,7 @@ import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
 import { ZhScenarioConstructor } from '@/components/roleplay/ZhScenarioConstructor';
 import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
+import { ZhScenarioCatalog } from '@/components/roleplay/ZhScenarioCatalog';
 
 type ZhScenariosUIProps = {
   onSelectScenario: (scenario: RoleplayScenario) => void;
@@ -231,6 +232,7 @@ export function ZhScenariosUI({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [vocabBusyId, setVocabBusyId] = useState<string | null>(null);
   const [vocabMessage, setVocabMessage] = useState<{ id: string; text: string } | null>(null);
+  const [copySuccessMessage, setCopySuccessMessage] = useState<string | null>(null);
 
   const loadList = useCallback(async () => {
     setListLoading(true);
@@ -346,10 +348,20 @@ export function ZhScenariosUI({
     setDuplicatingId(id);
     try {
       const copy = await duplicateZhScenario(id);
-      setShowArchived(false);
-      setView('my');
-      onCopyToMineSuccess?.(copy.id);
-      setVocabMessage({ id: copy.id, text: 'Сохранено в «Мои сценарии»' });
+      if (view === 'catalog') {
+        setCopySuccessMessage('Сохранено в «Мои сценарии»');
+        window.setTimeout(() => {
+          setCopySuccessMessage(null);
+          setShowArchived(false);
+          setView('my');
+          onCopyToMineSuccess?.(copy.id);
+        }, 1500);
+      } else {
+        setShowArchived(false);
+        setView('my');
+        onCopyToMineSuccess?.(copy.id);
+        setVocabMessage({ id: copy.id, text: 'Сохранено в «Мои сценарии»' });
+      }
     } catch (err) {
       setVocabMessage({
         id,
@@ -510,7 +522,15 @@ export function ZhScenariosUI({
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Китайские сценарии" style={overlayStyle} onClick={briefing || draft ? undefined : onClose}>
-      <div style={{ ...panelStyle, maxWidth: draft || briefing ? 980 : 720, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
+      <div
+        style={{
+          ...panelStyle,
+          maxWidth: draft || briefing ? 980 : view === 'catalog' ? 960 : 720,
+          overflow: draft ? 'visible' : 'hidden',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.04)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
             style={{
@@ -571,9 +591,13 @@ export function ZhScenariosUI({
               Мои сценарии
             </button>
           </div>
-          <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, color: 'var(--sidebar-text)' }}>
-            {briefing ? 'Брифинг' : draft ? 'Конструктор' : view === 'create' ? 'Создать сценарий' : view === 'catalog' ? 'Каталог сценариев' : 'Мои сценарии'}
-          </h2>
+          {view !== 'catalog' || briefing || draft ? (
+            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, color: 'var(--sidebar-text)' }}>
+              {briefing ? 'Брифинг' : draft ? 'Конструктор' : view === 'create' ? 'Создать сценарий' : 'Мои сценарии'}
+            </h2>
+          ) : (
+            <div style={{ flex: 1 }} />
+          )}
           <button type="button" onClick={onClose} aria-label="Закрыть" style={{ ...btnSecondary, padding: '0.4rem' }}>
             <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <line x1={18} y1={6} x2={6} y2={18} />
@@ -611,6 +635,19 @@ export function ZhScenariosUI({
             defaultHsk={defaultHsk}
             onGenerated={(next) => { setSaveError(null); setDraft(next); }}
             onManualCreate={() => { setSaveError(null); setDraft(emptyManualZhScenario(defaultHsk)); }}
+          />
+        ) : view === 'catalog' ? (
+          <ZhScenarioCatalog
+            scenarios={scenarios}
+            loading={listLoading}
+            searchQuery={searchQuery}
+            onSearchQuery={setSearchQuery}
+            hskFilter={hskFilter}
+            onHskFilter={setHskFilter}
+            onSelect={handlePlay}
+            onSaveToMine={(s) => handleDuplicate(s.id)}
+            savingId={duplicatingId}
+            copyMessage={copySuccessMessage}
           />
         ) : (
           <>
