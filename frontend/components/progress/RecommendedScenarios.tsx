@@ -19,13 +19,15 @@ export type RecommendRow = {
   scoreHistory?: number[];
   reasonText?: string;
   priority?: 'high' | 'medium' | 'low';
+  practiceMode?: 'rehearsal' | 'life' | 'stress';
+  practiceLabel?: string;
 };
 
 type RecommendedScenariosProps = {
   weakestCriterionKey: string | null;
   rows: RecommendRow[];
   onOpenFocus?: (objectKey: string, completionId?: string) => void;
-  onStartPractice?: (objectKey: string) => void;
+  onStartPractice?: (objectKey: string, practiceMode?: RecommendRow['practiceMode']) => void;
   className?: string;
   criterionLabelPrefix?: string;
   criterionLabel?: string;
@@ -44,7 +46,7 @@ export function RecommendedScenarios({
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
-  const showRecommendations = Boolean(weakestCriterionKey) && rows.length > 0;
+  const showRecommendations = rows.length > 0;
 
   const updateScrollState = useCallback(() => {
     const el = scrollerRef.current;
@@ -78,6 +80,8 @@ export function RecommendedScenarios({
     );
   }
 
+  const hasCriterion = Boolean(weakestCriterionKey && criterionLabel);
+
   const handleClick = (row: RecommendRow) => {
     if (onOpenFocus) {
       onOpenFocus(row.objectKey, row.completionId);
@@ -88,9 +92,11 @@ export function RecommendedScenarios({
 
   const handlePracticeNow = (row: RecommendRow) => {
     if (onStartPractice) {
-      onStartPractice(row.objectKey);
+      onStartPractice(row.objectKey, row.practiceMode);
     } else {
-      router.push(`/dashboard?tab=agent&from=progress&target=${encodeURIComponent(row.objectKey)}`);
+      const params = new URLSearchParams({ tab: 'agent', from: 'progress', target: row.objectKey });
+      if (row.practiceMode) params.set('play_mode', row.practiceMode);
+      router.push(`/dashboard?${params.toString()}`);
     }
   };
 
@@ -114,7 +120,14 @@ export function RecommendedScenarios({
     <section className={`${styles.card} ${className}`}>
       <h3 className={styles.sectionTitle}>Сценарии для повторения</h3>
       <p className={styles.sectionHint} style={{ marginTop: '0.25rem' }}>
-        {criterionLabelPrefix}: <strong>{criterionLabel || getCriteriaLabel(weakestCriterionKey as 'fluency')}</strong>. Рекомендуем повторить:
+        {hasCriterion ? (
+          <>
+            {criterionLabelPrefix}: <strong>{criterionLabel || getCriteriaLabel(weakestCriterionKey as 'fluency')}</strong>.
+            Рекомендуем повторить:
+          </>
+        ) : (
+          'Следующий слой той же сцены — не новый диалог.'
+        )}
       </p>
       <div className={styles.recommendCarousel} style={{ marginTop: '0.45rem' }}>
         <button
@@ -151,8 +164,11 @@ export function RecommendedScenarios({
               </div>
 
               <div className={styles.recommendCriterion}>
-                {criterionLabel || getCriteriaLabel(weakestCriterionKey as 'fluency')}: {row.criterionScore.toFixed(1)} · Балл:{' '}
-                {row.score != null ? row.score.toFixed(1) : '—'}
+                {row.practiceMode
+                  ? `Следующий слой: ${row.practiceMode === 'life' ? 'Как в жизни' : row.practiceMode === 'stress' ? 'Стресс' : 'Репетиция'}`
+                  : `${criterionLabel || (weakestCriterionKey ? getCriteriaLabel(weakestCriterionKey as 'fluency') : 'Критерий')}: ${row.criterionScore.toFixed(1)} · Балл: ${
+                      row.score != null ? row.score.toFixed(1) : '—'
+                    }`}
               </div>
 
               {row.reasonText && (
@@ -178,7 +194,7 @@ export function RecommendedScenarios({
                   className={`${styles.btn} ${styles.btnPrimary}`}
                   onClick={() => handlePracticeNow(row)}
                 >
-                  Практиковать сейчас
+                  {row.practiceLabel || 'Практиковать сейчас'}
                 </button>
                 <button
                   type="button"

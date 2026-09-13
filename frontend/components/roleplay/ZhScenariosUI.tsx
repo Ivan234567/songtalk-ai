@@ -22,7 +22,8 @@ import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
 import { ZhScenarioConstructor } from '@/components/roleplay/ZhScenarioConstructor';
 import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
-import { ZhScenarioCatalog } from '@/components/roleplay/ZhScenarioCatalog';
+import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
+import { type ZhPlayMode } from '@/lib/zh-play-mode';
 
 type ZhScenariosUIProps = {
   onSelectScenario: (scenario: RoleplayScenario) => void;
@@ -30,6 +31,8 @@ type ZhScenariosUIProps = {
   initialView: 'catalog' | 'create' | 'my';
   defaultHsk?: ZhHskLevel;
   onCopyToMineSuccess?: (newScenarioId: string) => void;
+  initialScenarioId?: string | null;
+  initialPlayMode?: ZhPlayMode;
 };
 
 const overlayStyle: React.CSSProperties = {
@@ -125,14 +128,18 @@ function ZhIntentForm({
   const [lesson, setLesson] = useState('');
   const [goal, setGoal] = useState('');
   const [hsk, setHsk] = useState<ZhHskLevel>(defaultHsk);
+  const [fromLife, setFromLife] = useState(false);
+  const [lifeWhen, setLifeWhen] = useState<'today' | 'week' | 'practice'>('week');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = prompt.trim() || (textbook.trim() && (goal.trim() || lesson.trim()));
+  const canSubmit = fromLife
+    ? Boolean(prompt.trim())
+    : Boolean(prompt.trim() || (textbook.trim() && (goal.trim() || lesson.trim())));
 
   const handleGenerate = async () => {
     if (!canSubmit) {
-      setError('Опишите ситуацию или укажите учебник и что отрабатывать.');
+      setError(fromLife ? 'Опишите, что случится в жизни.' : 'Опишите ситуацию или укажите учебник и что отрабатывать.');
       return;
     }
     setLoading(true);
@@ -147,8 +154,11 @@ function ZhIntentForm({
         role_mode: 'ai',
         starter: 'auto',
         formality: 'auto',
+        from_life: fromLife,
+        life_when: fromLife ? lifeWhen : undefined,
       });
-      onGenerated(draftFromGenerateResult(result));
+      const draft = draftFromGenerateResult(result);
+      onGenerated({ ...draft, from_life: fromLife || draft.from_life, life_when: fromLife ? lifeWhen : draft.life_when });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка генерации');
     } finally {
@@ -156,35 +166,81 @@ function ZhIntentForm({
     }
   };
 
+  const lifeWhenLabel = (value: typeof lifeWhen) =>
+    value === 'today' ? 'сегодня' : value === 'week' ? 'на этой неделе' : 'просто потренировать';
+
   return (
     <div style={{ padding: '1rem 1.25rem 1.1rem', overflow: 'visible', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => setFromLife(false)}
+          style={{ ...btnSecondary, background: !fromLife ? 'var(--sidebar-active)' : 'transparent' }}
+        >
+          Урок / ситуация
+        </button>
+        <button
+          type="button"
+          onClick={() => setFromLife(true)}
+          style={{ ...btnSecondary, background: fromLife ? 'var(--sidebar-active)' : 'transparent' }}
+        >
+          Моя ситуация
+        </button>
+      </div>
       <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.4, opacity: 0.85 }}>
-        Опишите урок своими словами — ИИ соберёт диалог, шаги и словарь.
+        {fromLife
+          ? 'Что случится в жизни — ИИ соберёт один диалог на 3–5 шагов, не квест на неделю.'
+          : 'Опишите урок своими словами — ИИ соберёт диалог, шаги и словарь.'}
       </p>
       <label>
-        <span style={labelStyle}>Что хотите отработать</span>
+        <span style={labelStyle}>{fromLife ? 'Что случится' : 'Что хотите отработать'}</span>
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={3}
-          placeholder="Например: HSK 2 урок 8, в магазине одежды — размер, цвет, цена, купить"
+          placeholder={
+            fromLife
+              ? 'Например: в четверг к терапевту в Шанхае, болит горло'
+              : 'Например: HSK 2 урок 8, в магазине одежды — размер, цвет, цена, купить'
+          }
           style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
         />
       </label>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-        <label>
-          <span style={labelStyle}>Учебник</span>
-          <input value={textbook} onChange={(e) => setTextbook(e.target.value)} placeholder="необязательно" style={inputStyle} />
-        </label>
-        <label>
-          <span style={labelStyle}>Урок</span>
-          <input value={lesson} onChange={(e) => setLesson(e.target.value)} placeholder="Урок 8" style={inputStyle} />
-        </label>
-      </div>
-      <label>
-        <span style={labelStyle}>Цель своими словами</span>
-        <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="необязательно" style={inputStyle} />
-      </label>
+      {fromLife && (
+        <div>
+          <span style={labelStyle}>Когда</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {(['today', 'week', 'practice'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setLifeWhen(value)}
+                style={{ ...btnSecondary, background: lifeWhen === value ? 'var(--sidebar-active)' : 'transparent', fontSize: '0.875rem' }}
+              >
+                {lifeWhenLabel(value)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {!fromLife && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <label>
+              <span style={labelStyle}>Учебник</span>
+              <input value={textbook} onChange={(e) => setTextbook(e.target.value)} placeholder="необязательно" style={inputStyle} />
+            </label>
+            <label>
+              <span style={labelStyle}>Урок</span>
+              <input value={lesson} onChange={(e) => setLesson(e.target.value)} placeholder="Урок 8" style={inputStyle} />
+            </label>
+          </div>
+          <label>
+            <span style={labelStyle}>Цель своими словами</span>
+            <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="необязательно" style={inputStyle} />
+          </label>
+        </>
+      )}
       <div>
         <span style={labelStyle}>HSK</span>
         <HskLevelPicker value={hsk} onChange={setHsk} />
@@ -212,6 +268,8 @@ export function ZhScenariosUI({
   initialView,
   defaultHsk = 3,
   onCopyToMineSuccess,
+  initialScenarioId,
+  initialPlayMode,
 }: ZhScenariosUIProps) {
   const [view, setView] = useState<'catalog' | 'create' | 'my'>(
     initialView === 'create' || initialView === 'catalog' ? initialView : 'my'
@@ -263,9 +321,26 @@ export function ZhScenariosUI({
   useEffect(() => {
     const next = initialView === 'create' || initialView === 'catalog' ? initialView : 'my';
     setView(next);
-    setBriefing(null);
-    setDraft(null);
-  }, [initialView]);
+    if (!initialScenarioId) {
+      setBriefing(null);
+      setDraft(null);
+    }
+  }, [initialView, initialScenarioId]);
+
+  useEffect(() => {
+    if (!initialScenarioId) return;
+    let cancelled = false;
+    (async () => {
+      const full = await getZhScenario(initialScenarioId);
+      if (cancelled || !full) return;
+      setView(full.source === 'system' ? 'catalog' : 'my');
+      setDraft(null);
+      setBriefing(full);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialScenarioId]);
 
   useEffect(() => {
     if (view === 'my' || view === 'catalog') loadList();
@@ -295,8 +370,12 @@ export function ZhScenariosUI({
     () => filtered.filter((s) => s.last_completed_at && !showArchived).slice(0, 5),
     [filtered, showArchived]
   );
-  const mainList = recentlyPlayed.length
-    ? filtered.filter((s) => !recentlyPlayed.some((r) => r.id === s.id))
+  const fromLifeList = useMemo(
+    () => filtered.filter((s) => s.from_life && !recentlyPlayed.some((r) => r.id === s.id)),
+    [filtered, recentlyPlayed]
+  );
+  const mainList = recentlyPlayed.length || fromLifeList.length
+    ? filtered.filter((s) => !recentlyPlayed.some((r) => r.id === s.id) && !s.from_life)
     : filtered;
 
   const handleSaveDraft = async (andPlay: boolean) => {
@@ -445,7 +524,17 @@ export function ZhScenariosUI({
                 HSK {s.hsk_level}
               </span>
             )}
+            {s.from_life && (
+              <span style={{ fontSize: '0.6875rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: 6, background: 'rgba(79, 168, 134, 0.18)' }}>
+                Из жизни
+              </span>
+            )}
           </div>
+          {s.mastered_modes && (s.completions_count ?? 0) > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <ZhPlayModeDots mastered={s.mastered_modes} compact />
+            </div>
+          )}
           {(textbookLine(s) || goal) && (
             <div style={{ fontSize: '0.8125rem', opacity: 0.75, marginTop: 4 }}>
               {textbookLine(s) || goal}
@@ -608,7 +697,9 @@ export function ZhScenariosUI({
 
         {briefing ? (
           <ZhScenarioBriefing
+            key={`${briefing.id}:${initialPlayMode || 'rehearsal'}`}
             scenario={briefing}
+            initialPlayMode={initialPlayMode}
             onBack={() => setBriefing(null)}
             onStart={(playable) => {
               onSelectScenario(playable);
@@ -705,6 +796,14 @@ export function ZhScenariosUI({
                       <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.8125rem', fontWeight: 600, opacity: 0.8 }}>Недавно играли</h3>
                       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {recentlyPlayed.map(renderCard)}
+                      </ul>
+                    </div>
+                  )}
+                  {fromLifeList.length > 0 && (
+                    <div style={{ marginBottom: '1rem' }}>
+                      <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.8125rem', fontWeight: 600, opacity: 0.8 }}>Моя ситуация</h3>
+                      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {fromLifeList.map(renderCard)}
                       </ul>
                     </div>
                   )}

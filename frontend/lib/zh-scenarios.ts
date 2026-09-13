@@ -4,6 +4,14 @@
 
 import { getStoredBackendToken } from '@/lib/backend-jwt';
 import type { RoleplayScenario } from '@/lib/roleplay';
+import { supabase } from '@/lib/supabase';
+import {
+  defaultStressTwist,
+  masteredModesFromCompletions,
+  parseZhPlayMode,
+  type ZhMasteredModes,
+  type ZhPlayMode,
+} from '@/lib/zh-play-mode';
 
 export type ZhStarter = 'ai' | 'user';
 export type ZhFormality = 'ni' | 'nin' | 'mixed';
@@ -84,12 +92,16 @@ export interface ZhScenario {
   suggested_first_line?: string;
   suggested_first_line_pinyin?: string;
   max_score_tips_ru?: string;
+  stress_twist_ru?: string;
+  from_life?: boolean;
+  life_when?: string;
   steps: ZhScenarioStep[];
   vocabulary: ZhScenarioVocabItem[];
   created_at?: string;
   updated_at?: string;
   completions_count?: number;
   last_completed_at?: string | null;
+  mastered_modes?: ZhMasteredModes;
 }
 
 export type ZhScenarioWritePayload = Partial<
@@ -114,6 +126,9 @@ export type ZhScenarioWritePayload = Partial<
     | 'suggested_first_line'
     | 'suggested_first_line_pinyin'
     | 'max_score_tips_ru'
+    | 'stress_twist_ru'
+    | 'from_life'
+    | 'life_when'
     | 'steps'
     | 'vocabulary'
     | 'status'
@@ -198,6 +213,8 @@ export type GenerateZhScenarioParams = {
   user_role?: string;
   starter?: 'auto' | ZhStarter;
   formality?: 'auto' | ZhFormality;
+  from_life?: boolean;
+  life_when?: string;
 };
 
 export type GenerateZhScenarioResult = {
@@ -280,6 +297,9 @@ export function draftFromGenerateResult(result: GenerateZhScenarioResult): ZhSce
     suggested_first_line: asString(p.suggested_first_line),
     suggested_first_line_pinyin: asString(p.suggested_first_line_pinyin),
     max_score_tips_ru: asString(p.max_score_tips_ru),
+    stress_twist_ru: asString(p.stress_twist_ru),
+    from_life: p.from_life === true,
+    life_when: asString(p.life_when),
     steps: Array.isArray(p.steps) ? (p.steps as ZhScenario['steps']) : [],
     vocabulary,
   };
@@ -414,6 +434,9 @@ export function toZhWritePayload(s: ZhScenario): ZhScenarioWritePayload & { titl
     suggested_first_line: s.suggested_first_line,
     suggested_first_line_pinyin: s.suggested_first_line_pinyin,
     max_score_tips_ru: s.max_score_tips_ru,
+    stress_twist_ru: s.stress_twist_ru,
+    from_life: s.from_life,
+    life_when: s.life_when,
     steps: s.steps,
     vocabulary: (s.vocabulary || []).filter((v) => v.hanzi?.trim()),
     status: canSaveZhScenario(s) ? 'ready' : 'draft',
@@ -466,15 +489,18 @@ function personalityInstruction(personality?: ZhAiPersonality, note?: string): s
 /** Собирает systemPrompt и поля RoleplayScenario для существующего игрового контура. */
 export function zhScenarioToRoleplay(
   scenario: ZhScenario,
-  sessionStarter?: ZhStarter
+  sessionStarter?: ZhStarter,
+  extras?: { playMode?: ZhPlayMode; memoryFacts?: string[] }
 ): RoleplayScenario {
   const starter = sessionStarter ?? scenario.starter ?? 'ai';
+  const playMode = parseZhPlayMode(extras?.playMode);
   const goals = Array.isArray(scenario.goals) ? scenario.goals.filter(Boolean) : [];
   const steps = Array.isArray(scenario.steps) ? [...scenario.steps].sort((a, b) => a.order - b.order) : [];
   const vocab = Array.isArray(scenario.vocabulary) ? scenario.vocabulary : [];
   const textbookLine = [scenario.textbook?.title, scenario.textbook?.lesson_no].filter(Boolean).join(' · ');
   const mustSay = vocab.filter((v) => v.usage === 'must_say' && v.hanzi?.trim());
   const modelVocab = vocab.filter((v) => v.usage !== 'must_say' && v.hanzi?.trim());
+  const stressTwist = scenario.stress_twist_ru?.trim() || defaultStressTwist(scenario.setting_ru);
 
   const stepsBlock = steps.length
     ? [
@@ -578,6 +604,10 @@ export function zhScenarioToRoleplay(
     level: scenario.hsk_level ? `HSK ${scenario.hsk_level}` : undefined,
     grammarFocus: scenario.grammar_focus?.trim() || undefined,
     aiPersonality: scenario.ai_personality,
+    playMode,
+    stressTwistRu: stressTwist,
+    fromLife: scenario.from_life === true,
+    memoryFacts: (extras?.memoryFacts || []).filter(Boolean).slice(0, 3),
     scenarioVocabulary: vocab
       .filter((v) => v.hanzi?.trim())
       .map((v) => ({
@@ -588,3 +618,44 @@ export function zhScenarioToRoleplay(
       })),
   };
 }
+
+export async function getZhScenarioMemory(scenarioId: string): Promise<string[]> {
+  if (!scenarioId) return [];
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) return [];
+  const { data, error } = await supabase
+    .from('zh_scenario_memories')
+    .select('facts')
+    .eq('user_id', uid)
+    .eq('scenario_id', scenarioId)
+    .maybeSingle();
+  if (error || !data) return [];
+  return Array.isArray(data.facts)
+    ? data.facts.map((f: unknown) => (typeof f === 'string' ? f.trim() : '')).filter(Boolean).slice(0, 3)
+    : [];
+}
+
+export async function upsertZhScenarioMemory(scenarioId: string, facts: string[]): Promise<void> {
+  if (!scenarioId) return;
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) return;
+  const clean = facts.map((f) => f.trim()).filter(Boolean).slice(0, 3);
+  if (!clean.length) return;
+  await supabase.from('zh_scenario_memories').upsert(
+    {
+      user_id: uid,
+      scenario_id: scenarioId,
+      facts: clean,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,scenario_id' }
+  );
+}
+
+export function withZhPlayMode(scenario: RoleplayScenario, playMode: ZhPlayMode): RoleplayScenario {
+  return { ...scenario, playMode: parseZhPlayMode(playMode) };
+}
+
+export { masteredModesFromCompletions };

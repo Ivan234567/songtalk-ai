@@ -8,6 +8,12 @@
 
 import scenariosData from '@/data/roleplay-scenarios.json';
 import { hasEnglishSystemCatalog, type LearningLanguage } from '@/lib/learning-language';
+import {
+  defaultStressTwist,
+  parseZhPlayMode,
+  zhPlayModePromptOverlay,
+  type ZhPlayMode,
+} from '@/lib/zh-play-mode';
 
 /** Категория сценария */
 export type RoleplayCategory = 'everyday' | 'professional' | 'fun';
@@ -75,7 +81,15 @@ export interface RoleplayScenario {
   grammarFocus?: string;
   /** Характер ИИ-собеседника в китайском сценарии. */
   aiPersonality?: string;
-  /** Подсказка для ученика: как говорить, чтобы получить максимальные баллы (показывается в брифинге перед стартом). */
+  /** Режим попытки китайского сценария: rehearsal / life / stress. */
+  playMode?: ZhPlayMode;
+  /** Осложнение режима «Стресс» — не меняет цели карточки. */
+  stressTwistRu?: string;
+  /** Сценарий создан из реальной ситуации ученика. */
+  fromLife?: boolean;
+  /** Факты прошлой попытки этой же сцены. */
+  memoryFacts?: string[];
+  /** Подсказка «как набрать максимум» (показывается в брифинге перед стартом). */
   maxScoreTipsRu?: string;
   /** Уровень (для личных сценариев: A1–C1 или easy/medium/hard); сохраняется в прогресс. */
   level?: string;
@@ -290,6 +304,7 @@ const ZH_GOAL_COMPLETION =
 type ScenarioPromptContext = {
   hasUserMessage?: boolean;
   completedStepIds?: string[];
+  rewindHint?: string;
 };
 
 function buildZhScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioPromptContext = {}): string {
@@ -298,6 +313,15 @@ function buildZhScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioP
   content += '\n\n' + RESPOND_TO_USER_INSTRUCTION;
   content += '\n\n' + ZH_LIVE_REPLY_INSTRUCTION;
   content += '\n\n' + ZH_METADATA_INSTRUCTION + '\n\n' + scenario.systemPrompt;
+  const playMode = parseZhPlayMode(scenario.playMode);
+  content +=
+    '\n\n' +
+    zhPlayModePromptOverlay({
+      mode: playMode,
+      stressTwist: scenario.stressTwistRu || defaultStressTwist(scenario.settingRu),
+      memoryFacts: scenario.memoryFacts,
+      rewindHint: ctx.rewindHint,
+    });
   const conversationLive = Boolean(ctx.hasUserMessage);
   if (!conversationLive && scenario.openingInstruction?.trim()) {
     content += '\n\nFirst line instruction: ' + scenario.openingInstruction.trim();
@@ -378,13 +402,14 @@ function buildScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioPro
 export function buildMessagesForAgentChat(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   scenario: RoleplayScenario | null,
-  extras?: { completedStepIds?: string[] }
+  extras?: { completedStepIds?: string[]; rewindHint?: string }
 ): AgentChatMessage[] {
   const base = history.map((m) => ({ role: m.role, content: m.content }));
   if (!scenario?.systemPrompt) return base;
   const systemContent = buildScenarioSystemContent(scenario, {
     hasUserMessage: history.some((m) => m.role === 'user'),
     completedStepIds: extras?.completedStepIds,
+    rewindHint: extras?.rewindHint,
   });
   return [{ role: 'system', content: systemContent }, ...base];
 }

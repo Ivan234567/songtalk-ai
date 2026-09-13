@@ -17,6 +17,7 @@ type FocusHeroProps = {
   goalsTotal: number;
   bestScore: number | null;
   scoreMaxLabel?: string;
+  extra?: React.ReactNode;
 };
 
 export function FocusHero({
@@ -32,6 +33,7 @@ export function FocusHero({
   goalsTotal,
   bestScore,
   scoreMaxLabel = '/10',
+  extra,
 }: FocusHeroProps) {
   const [animatedScore, setAnimatedScore] = useState(0);
   const [mounted, setMounted] = useState(false);
@@ -104,6 +106,7 @@ export function FocusHero({
       {/* Title */}
       <h1 className={styles.heroTitle}>{title}</h1>
       {subtitle && <p className={styles.heroSubtitle}>{subtitle}</p>}
+      {extra}
 
       {/* Meta */}
       <p className={styles.heroMeta}>

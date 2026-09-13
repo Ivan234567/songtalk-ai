@@ -25,6 +25,17 @@ export interface ZhAssessmentFeedback {
   useful_phrase_pinyin?: string;
   useful_phrase_ru?: string;
   goal_attainment?: GoalAttainmentItem[];
+  missed_listening?: Array<{ said_zh: string; said_ru?: string; what_happened_ru: string }>;
+  repair_phrases?: Array<{ zh: string; pinyin?: string; ru: string }>;
+  rewind_forks?: Array<{
+    title_ru: string;
+    hint_zh?: string;
+    hint_ru?: string;
+    after_user_line?: string;
+    message_index?: number;
+  }>;
+  memory_facts?: string[];
+  repair_used?: boolean;
 }
 
 export interface ZhSpeakingAssessmentResult {

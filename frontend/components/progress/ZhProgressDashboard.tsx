@@ -4,6 +4,15 @@ import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ZH_CRITERIA_KEYS, getZhCriteriaLabel, type ZhCriteriaKey } from '@/lib/zh-speaking-assessment';
 import { zhVoiceTaskVerdictLabel } from '@/lib/zh-voice-tasks';
+import {
+  emptyMasteredModes,
+  isZhAttemptMastered,
+  nextZhPlayModeCta,
+  parseZhPlayMode,
+  recommendedNextPlayMode,
+  ZH_PLAY_MODE_LABELS,
+} from '@/lib/zh-play-mode';
+import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 import { useZhProgressData, type ZhAssessmentRow } from './hooks/useZhProgressData';
 import {
   getPeriodStart,
@@ -267,6 +276,50 @@ export function ZhProgressDashboard() {
 
   const activeCriterionKey = selectedCriterionKey ?? weakestCriterionKey;
 
+  const sceneMastery = useMemo(() => {
+    const byId = new Map<
+      string,
+      {
+        scenarioId: string;
+        title: string;
+        lastAt: string;
+        lastCompletionId: string;
+        lastScore: number | null;
+        mastered: ReturnType<typeof emptyMasteredModes>;
+      }
+    >();
+    for (const row of scopedCompletions) {
+      const assessment = assessmentByCompletionId.get(row.id);
+      const mode = parseZhPlayMode(row.play_mode);
+      const existing = byId.get(row.scenario_id);
+      if (!existing) {
+        const mastered = emptyMasteredModes();
+        if (isZhAttemptMastered(assessment?.overall_score)) mastered[mode] = true;
+        byId.set(row.scenario_id, {
+          scenarioId: row.scenario_id,
+          title: row.scenario_title || row.scenario_id,
+          lastAt: row.completed_at,
+          lastCompletionId: row.id,
+          lastScore: typeof assessment?.overall_score === 'number' ? assessment.overall_score : null,
+          mastered,
+        });
+        continue;
+      }
+      if (isZhAttemptMastered(assessment?.overall_score)) existing.mastered[mode] = true;
+      if (new Date(row.completed_at).getTime() > new Date(existing.lastAt).getTime()) {
+        existing.lastAt = row.completed_at;
+        existing.lastCompletionId = row.id;
+        existing.lastScore = typeof assessment?.overall_score === 'number' ? assessment.overall_score : existing.lastScore;
+      }
+    }
+    return Array.from(byId.values());
+  }, [scopedCompletions, assessmentByCompletionId]);
+
+  const lifeReadyScenes = useMemo(
+    () => sceneMastery.filter((scene) => scene.mastered.rehearsal && scene.mastered.life),
+    [sceneMastery]
+  );
+
   const coachFocusRows = useMemo((): RecommendRow[] => {
     if (mode === 'voice') {
       return scopedVoice
@@ -289,29 +342,60 @@ export function ZhProgressDashboard() {
         .sort((a, b) => a.criterionScore - b.criterionScore)
         .slice(0, 8);
     }
-    if (!activeCriterionKey) return [];
-    return recentSessions
-      .map((row) => {
-        const assessment = assessmentByCompletionId.get(row.completionId);
-        const criterionScore = assessment?.criteria_scores?.[activeCriterionKey] ?? null;
+    const nextLayer: RecommendRow[] = sceneMastery
+      .map((scene) => {
+        const nextMode = recommendedNextPlayMode(scene.mastered);
+        if (!nextMode) return null;
+        const prevMode = nextMode === 'life' ? 'rehearsal' : 'life';
         return {
-          ...row,
+          id: `next:${scene.scenarioId}:${nextMode}`,
           rowMode: 'roleplay' as const,
-          criterionScore: criterionScore ?? 0,
-          reasonText:
-            (criterionScore ?? 0) <= 4.5
-              ? 'Критерий заметно проседает. Повторение даст максимальный прирост.'
-              : (criterionScore ?? 0) <= 6.5
-                ? 'Критерий ниже целевого уровня. Нужна закрепляющая практика.'
-                : 'Полезно повторить для стабилизации навыка.',
-          priority:
-            (criterionScore ?? 0) <= 4.5 ? 'high' : (criterionScore ?? 0) <= 6.5 ? 'medium' : 'low',
-        } as RecommendRow;
+          title: scene.title,
+          completedAt: scene.lastAt,
+          score: scene.lastScore,
+          criterionScore: scene.lastScore ?? 10,
+          objectKey: `rp:${scene.scenarioId}`,
+          completionId: scene.lastCompletionId,
+          reasonText: nextZhPlayModeCta(prevMode) || `Пройти ту же сцену в режиме «${ZH_PLAY_MODE_LABELS[nextMode]}».`,
+          priority: 'high' as const,
+          practiceMode: nextMode,
+          practiceLabel: nextZhPlayModeCta(prevMode) || ZH_PLAY_MODE_LABELS[nextMode],
+        };
       })
-      .filter((row) => row.criterionScore > 0)
-      .sort((a, b) => a.criterionScore - b.criterionScore)
-      .slice(0, 8);
-  }, [mode, scopedVoice, activeCriterionKey, recentSessions, assessmentByCompletionId]);
+      .filter((row): row is RecommendRow => Boolean(row));
+
+    const weakness: RecommendRow[] = activeCriterionKey
+      ? recentSessions
+          .map((row) => {
+            const assessment = assessmentByCompletionId.get(row.completionId);
+            const criterionScore = assessment?.criteria_scores?.[activeCriterionKey] ?? null;
+            return {
+              ...row,
+              rowMode: 'roleplay' as const,
+              criterionScore: criterionScore ?? 0,
+              reasonText:
+                (criterionScore ?? 0) <= 4.5
+                  ? 'Критерий заметно проседает. Повторение даст максимальный прирост.'
+                  : (criterionScore ?? 0) <= 6.5
+                    ? 'Критерий ниже целевого уровня. Нужна закрепляющая практика.'
+                    : 'Полезно повторить для стабилизации навыка.',
+              priority:
+                (criterionScore ?? 0) <= 4.5 ? 'high' : (criterionScore ?? 0) <= 6.5 ? 'medium' : 'low',
+            } as RecommendRow;
+          })
+          .filter((row) => row.criterionScore > 0)
+          .sort((a, b) => a.criterionScore - b.criterionScore)
+      : [];
+
+    const seen = new Set<string>();
+    const merged: RecommendRow[] = [];
+    for (const row of [...nextLayer, ...weakness]) {
+      if (seen.has(row.objectKey)) continue;
+      seen.add(row.objectKey);
+      merged.push(row);
+    }
+    return merged.slice(0, 8);
+  }, [mode, scopedVoice, activeCriterionKey, recentSessions, assessmentByCompletionId, sceneMastery]);
 
   const sessionsCount = mode === 'voice' ? scopedVoice.length : scopedCompletions.length;
   const hasNoData = sessionsCount === 0;
@@ -475,11 +559,41 @@ export function ZhProgressDashboard() {
 
       <RecentSessions sessions={recentSessions} limit={5} onOpenFocus={openFocusForObject} />
 
+      {mode === 'roleplay' && lifeReadyScenes.length > 0 && (
+        <section className={styles.card}>
+          <h3 className={styles.sectionTitle}>Уже как в жизни</h3>
+          <p className={styles.sectionHint} style={{ marginTop: '0.35rem' }}>
+            Репетиция и «как в жизни» закрыты. Эти сцены можно без карточки на экране.
+          </p>
+          <ul className={styles.lifeReadyList}>
+            {lifeReadyScenes.slice(0, 8).map((scene) => (
+              <li key={scene.scenarioId} className={styles.lifeReadyRow}>
+                <div className={styles.lifeReadyMain}>
+                  <span className={styles.recommendTitle}>{scene.title}</span>
+                  <ZhPlayModeDots mastered={scene.mastered} compact />
+                </div>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={() => openFocusForObject(`rp:${scene.scenarioId}`, scene.lastCompletionId)}
+                >
+                  Разбор
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <RecommendedScenarios
         weakestCriterionKey={mode === 'voice' ? 'coverage' : activeCriterionKey}
         rows={coachFocusRows}
         onOpenFocus={openFocusForObject}
-        onStartPractice={(objectKey) => router.push(`/dashboard?tab=agent&from=progress&target=${encodeURIComponent(objectKey)}`)}
+        onStartPractice={(objectKey, practiceMode) => {
+          const params = new URLSearchParams({ tab: 'agent', from: 'progress', target: objectKey });
+          if (practiceMode) params.set('play_mode', practiceMode);
+          router.push(`/dashboard?${params.toString()}`);
+        }}
         criterionLabelPrefix={mode === 'voice' ? 'Фокус минуток' : selectedCriterionKey ? 'Фокус-критерий' : 'Слабый критерий'}
         criterionLabel={mode === 'voice' ? 'покрытие чеклиста' : activeCriterionKey ? getZhCriteriaLabel(activeCriterionKey) : undefined}
       />

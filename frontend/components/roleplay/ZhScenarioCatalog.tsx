@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import type { ZhHskLevel, ZhScenario } from '@/lib/zh-scenarios';
+import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 
 const HSK_FILTERS: { value: string; label: string }[] = [
   { value: 'all', label: 'Все HSK' },
@@ -171,6 +172,9 @@ function CatalogCard({
       <span style={{ display: 'block', fontSize: '1rem', fontWeight: 600, lineHeight: 1.3 }}>
         {scenario.title}
       </span>
+      {scenario.mastered_modes && (scenario.completions_count ?? 0) > 0 && (
+        <ZhPlayModeDots mastered={scenario.mastered_modes} compact />
+      )}
       {shortInfo && (
         <span
           style={{

@@ -589,6 +589,16 @@ export function ZhScenarioConstructor({
             placeholder="Короткие советы ученику перед стартом"
           />
         </label>
+        <label>
+          <span style={labelStyle}>Осложнение для режима «Стресс»</span>
+          <textarea
+            value={draft.stress_twist_ru || ''}
+            onChange={(e) => patch({ stress_twist_ru: e.target.value })}
+            rows={2}
+            style={{ ...inputStyle, resize: 'vertical' }}
+            placeholder="Например: нужного размера нет, собеседник не расслышал имя"
+          />
+        </label>
       </Section>
 
       {regenError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{regenError}</p>}

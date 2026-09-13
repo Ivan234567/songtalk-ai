@@ -153,6 +153,74 @@ export function sanitizeZhTaskFeedback(feedback, steps, completedIds) {
     useful_phrase_zh: typeof src.useful_phrase_zh === 'string' ? src.useful_phrase_zh : '',
     useful_phrase_pinyin: typeof src.useful_phrase_pinyin === 'string' ? src.useful_phrase_pinyin : '',
     useful_phrase_ru: typeof src.useful_phrase_ru === 'string' ? src.useful_phrase_ru : '',
+    ...normalizeZhListenReviewFields(src),
+  }
+}
+
+function asListenText(value, max = 240) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : ''
+}
+
+export function normalizeZhListenReviewFields(src) {
+  const rec = src && typeof src === 'object' ? src : {}
+  const missed = Array.isArray(rec.missed_listening)
+    ? rec.missed_listening
+        .map((item) => {
+          const row = item && typeof item === 'object' ? item : {}
+          const said_zh = asListenText(row.said_zh || row.saidZh, 200)
+          const what = asListenText(row.what_happened_ru || row.whatHappenedRu, 240)
+          if (!said_zh && !what) return null
+          return {
+            said_zh,
+            said_ru: asListenText(row.said_ru || row.saidRu, 200) || undefined,
+            what_happened_ru: what,
+          }
+        })
+        .filter(Boolean)
+        .slice(0, 3)
+    : []
+  const repair_phrases = Array.isArray(rec.repair_phrases)
+    ? rec.repair_phrases
+        .map((item) => {
+          const row = item && typeof item === 'object' ? item : {}
+          const zh = asListenText(row.zh, 80)
+          if (!zh) return null
+          return {
+            zh,
+            pinyin: asListenText(row.pinyin, 80) || undefined,
+            ru: asListenText(row.ru, 120),
+          }
+        })
+        .filter(Boolean)
+        .slice(0, 3)
+    : []
+  const rewind_forks = Array.isArray(rec.rewind_forks)
+    ? rec.rewind_forks
+        .map((item) => {
+          const row = item && typeof item === 'object' ? item : {}
+          const title_ru = asListenText(row.title_ru || row.titleRu, 160)
+          if (!title_ru) return null
+          const idx = Number(row.message_index ?? row.messageIndex)
+          return {
+            title_ru,
+            hint_zh: asListenText(row.hint_zh || row.hintZh, 200) || undefined,
+            hint_ru: asListenText(row.hint_ru || row.hintRu, 200) || undefined,
+            after_user_line: asListenText(row.after_user_line || row.afterUserLine, 200) || undefined,
+            message_index: Number.isInteger(idx) && idx >= 0 ? idx : undefined,
+          }
+        })
+        .filter(Boolean)
+        .slice(0, 3)
+    : []
+  const memory_facts = Array.isArray(rec.memory_facts)
+    ? rec.memory_facts.map((f) => asListenText(f, 120)).filter(Boolean).slice(0, 3)
+    : []
+  return {
+    missed_listening: missed,
+    repair_phrases,
+    rewind_forks,
+    memory_facts,
+    repair_used: rec.repair_used === true,
   }
 }
 
@@ -166,9 +234,13 @@ Rules:
 3. Do NOT comment on pronunciation, tones, Whisper, or STT.
 4. Do not praise or scold personality. Stay brief.
 5. The plot checklist in the user message is ground truth. Never say they missed a step that is marked DONE. Never invent extra steps (origin/hometown/происхождение) that are not on the checklist. If all steps are DONE, the suggestion must be about language, not about missing plot tasks.
+6. missed_listening: 0–3 cases where the learner's next line ignored or contradicted the AI's previous meaning. Judge meaning, not exact hanzi. Empty array if they tracked the conversation.
+7. rewind_forks: 1–3 moments where a fuller Chinese reply would have helped. Keep titles in Russian.
+8. memory_facts: 1–3 short facts the same NPC could remember next time (name used, what they ordered, what failed). Russian or Chinese, very short.
+9. repair_used: true if the learner asked to repeat/slow down/clarify in Chinese.
 
 Respond ONLY with valid JSON, no markdown:
-{"feedback":"1-2 short Russian sentences","useful_phrase":"simplified Chinese phrase","useful_phrase_pinyin":"pinyin with tone marks","useful_phrase_ru":"Russian translation","style_note":"","rewrite_neutral":""}`
+{"feedback":"1-2 short Russian sentences","useful_phrase":"simplified Chinese phrase","useful_phrase_pinyin":"pinyin with tone marks","useful_phrase_ru":"Russian translation","style_note":"","rewrite_neutral":"","missed_listening":[{"said_zh":"AI line in Chinese","said_ru":"Russian","what_happened_ru":"what the learner did with it"}],"repair_phrases":[{"zh":"请再说一遍。","pinyin":"qǐng zài shuō yí biàn.","ru":"Повторите, пожалуйста."}],"rewind_forks":[{"title_ru":"short Russian fork title","hint_zh":"one Chinese nudge","hint_ru":"Russian","after_user_line":"snippet of the learner line after that moment"}],"memory_facts":["1-3 short facts from this attempt"],"repair_used":false}`
 }
 
 export function buildZhRoleplayFeedbackUserPrompt({ scenarioTitle, goal, hskLevel, userMessages, steps, completedStepIds }) {
@@ -190,7 +262,7 @@ RUBRIC (1-10 each):
 1. task_completion: follow the PLOT CHECKLIST in the user message. The server will overwrite this score from the tracker; do not invent extra required steps.
 2. vocabulary: used lesson/must-say words (or clear synonyms), HSK-appropriate, not empty 好/是 only
 3. grammar: word order, particles 了/的/吗/过/在 where needed; errors that block meaning score lower
-4. interaction: questions, reactions, turn-taking; not one-word replies
+4. interaction: questions, reactions, turn-taking; not one-word replies. In life/stress modes, failing to repair after a mishear lowers this score.
 5. connected_speech: length and linking (然后, 因为, 可是); not acoustic fluency
 ${completenessGuidance}
 
@@ -212,7 +284,12 @@ Return ONLY valid JSON, no markdown:
     "summary": "2-3 Russian sentences",
     "useful_phrase_zh": "one Simplified Chinese phrase",
     "useful_phrase_pinyin": "pinyin with tone marks",
-    "useful_phrase_ru": "Russian"
+    "useful_phrase_ru": "Russian",
+    "missed_listening": [{"said_zh":"", "said_ru":"", "what_happened_ru":""}],
+    "repair_phrases": [{"zh":"请再说一遍。","pinyin":"qǐng zài shuō yí biàn.","ru":"Повторите, пожалуйста."}],
+    "rewind_forks": [{"title_ru":"","hint_zh":"","hint_ru":"","after_user_line":""}],
+    "memory_facts": ["short fact"],
+    "repair_used": false
   }
 }`
 }
@@ -265,5 +342,13 @@ export function applyZhTaskCompletionOverride(scores, steps, completedIds, clamp
   const out = { ...scores }
   const locked = scoreZhTaskCompletion(steps, completedIds)
   if (locked != null) out.task_completion = clampScore(locked)
+  return out
+}
+
+export function applyZhInteractionRepairPenalty(scores, clampScore, { playMode, repairUsed, missedCount }) {
+  const out = { ...scores }
+  if ((playMode === 'life' || playMode === 'stress') && !repairUsed && missedCount > 0) {
+    out.interaction = clampScore(Math.min(out.interaction ?? 10, 5))
+  }
   return out
 }

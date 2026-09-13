@@ -3,6 +3,15 @@
 import React, { useState } from 'react';
 import type { RoleplayScenario } from '@/lib/roleplay';
 import {
+  ZH_PLAY_MODES,
+  ZH_PLAY_MODE_HINTS,
+  ZH_PLAY_MODE_LABELS,
+  defaultStressTwist,
+  parseZhPlayMode,
+  type ZhPlayMode,
+} from '@/lib/zh-play-mode';
+import {
+  getZhScenarioMemory,
   personalityLabel,
   zhScenarioToRoleplay,
   type ZhScenario,
@@ -53,6 +62,7 @@ type ZhScenarioBriefingProps = {
   onAddToDictionary?: () => void;
   vocabBusy?: boolean;
   vocabMessage?: string | null;
+  initialPlayMode?: ZhPlayMode;
 };
 
 export function ZhScenarioBriefing({
@@ -63,9 +73,12 @@ export function ZhScenarioBriefing({
   onAddToDictionary,
   vocabBusy,
   vocabMessage,
+  initialPlayMode,
 }: ZhScenarioBriefingProps) {
   const isPreview = variant === 'preview';
   const [starter, setStarter] = useState<ZhStarter>(scenario.starter || 'ai');
+  const [playMode, setPlayMode] = useState<ZhPlayMode>(parseZhPlayMode(initialPlayMode));
+  const [starting, setStarting] = useState(false);
   const vocab = scenario.vocabulary || [];
   const mustSay = vocab.filter((v) => v.usage === 'must_say');
   const modelVocab = vocab.filter((v) => v.usage !== 'must_say');
@@ -74,6 +87,22 @@ export function ZhScenarioBriefing({
     .join('  ·  ');
   const steps = [...(scenario.steps || [])].sort((a, b) => a.order - b.order);
   const effectiveStarter = isPreview ? scenario.starter || 'ai' : starter;
+  const dense = isPreview || playMode === 'rehearsal';
+  const lifeMode = !isPreview && playMode === 'life';
+  const stressMode = !isPreview && playMode === 'stress';
+  const goalLine = (scenario.goals || []).filter(Boolean).join(' · ');
+  const twist = scenario.stress_twist_ru?.trim() || defaultStressTwist(scenario.setting_ru);
+
+  const handleStart = async () => {
+    if (!onStart) return;
+    setStarting(true);
+    try {
+      const memoryFacts = scenario.id ? await getZhScenarioMemory(scenario.id) : [];
+      onStart(zhScenarioToRoleplay(scenario, starter, { playMode, memoryFacts }));
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
     <div style={{ padding: isPreview ? '0.25rem 0' : '1.25rem 1.5rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -96,10 +125,15 @@ export function ZhScenarioBriefing({
               HSK {scenario.hsk_level}
             </span>
           )}
+          {scenario.from_life && (
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: 6, background: 'rgba(79, 168, 134, 0.18)' }}>
+              Из жизни
+            </span>
+          )}
           {textbookLine(scenario) && (
             <span style={{ fontSize: '0.8125rem', opacity: 0.75 }}>{textbookLine(scenario)}</span>
           )}
-          {scenario.ai_personality && (
+          {scenario.ai_personality && dense && (
             <span style={{ fontSize: '0.75rem', fontWeight: 600, opacity: 0.75 }}>
               Собеседник: {personalityLabel(scenario.ai_personality)}
             </span>
@@ -107,19 +141,64 @@ export function ZhScenarioBriefing({
         </div>
       </div>
 
-      {scenario.setting_ru && (
+      {!isPreview && (
+        <div style={{ padding: '0.85rem 1rem', borderRadius: 12, border: '1px solid var(--sidebar-border)' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+            Режим этой попытки
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {ZH_PLAY_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setPlayMode(mode)}
+                style={{
+                  ...btnSecondary,
+                  background: playMode === mode ? 'var(--sidebar-active)' : 'transparent',
+                  fontSize: '0.875rem',
+                  padding: '0.55rem 0.85rem',
+                }}
+              >
+                {ZH_PLAY_MODE_LABELS[mode]}
+              </button>
+            ))}
+          </div>
+          <p style={{ margin: '0.65rem 0 0', fontSize: '0.8125rem', opacity: 0.75, lineHeight: 1.4 }}>
+            {ZH_PLAY_MODE_HINTS[playMode]} Только для этой попытки, карточка не меняется.
+          </p>
+        </div>
+      )}
+
+      {dense && scenario.setting_ru && (
         <Card title="Место">
           <div>{scenario.setting_ru}</div>
         </Card>
       )}
 
-      {(scenario.scenario_text_ru || scenario.description) && (
+      {dense && (scenario.scenario_text_ru || scenario.description) && (
         <Card title="Ситуация">
           <div>{scenario.scenario_text_ru || scenario.description}</div>
         </Card>
       )}
 
-      {(scenario.user_role || scenario.ai_role) && (
+      {lifeMode && (
+        <Card title="Цель сцены">
+          <div>{goalLine || scenario.scenario_text_ru || scenario.description || scenario.title}</div>
+        </Card>
+      )}
+
+      {stressMode && (
+        <>
+          <Card title="Цель сцены">
+            <div>{goalLine || scenario.title}</div>
+          </Card>
+          <Card title="Осложнение">
+            <div>{twist}</div>
+          </Card>
+        </>
+      )}
+
+      {dense && (scenario.user_role || scenario.ai_role) && (
         <Card title="Роли">
           {scenario.user_role && <div>Вы — {scenario.user_role}</div>}
           {scenario.ai_role && <div style={{ marginTop: scenario.user_role ? 4 : 0 }}>ИИ — {scenario.ai_role}</div>}
@@ -129,7 +208,7 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {scenario.goals?.filter(Boolean).length > 0 && (
+      {dense && scenario.goals?.filter(Boolean).length > 0 && (
         <Card title="Цели">
           <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
             {scenario.goals.filter(Boolean).map((g) => (
@@ -139,13 +218,13 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {scenario.grammar_focus?.trim() && (
+      {dense && scenario.grammar_focus?.trim() && (
         <Card title="Грамматика урока">
           <div>{scenario.grammar_focus}</div>
         </Card>
       )}
 
-      {steps.length > 0 && (
+      {dense && steps.length > 0 && (
         <Card title="Шаги">
           <ol style={{ margin: 0, paddingLeft: '1.15rem' }}>
             {steps.map((s) => (
@@ -157,7 +236,7 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {(mustSay.length > 0 || modelVocab.length > 0) && (
+      {dense && (mustSay.length > 0 || modelVocab.length > 0) && (
         <Card title="Слова урока">
           {mustSay.length > 0 && (
             <div style={{ marginBottom: modelVocab.length ? 10 : 0 }}>
@@ -197,7 +276,7 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {scenario.max_score_tips_ru && (
+      {dense && scenario.max_score_tips_ru && (
         <Card title="Как набрать максимум">
           <div style={{ fontSize: '0.9375rem', lineHeight: 1.45 }}>{scenario.max_score_tips_ru}</div>
         </Card>
@@ -236,12 +315,12 @@ export function ZhScenarioBriefing({
               : 'Вы подходите и говорите первым. Только для этой попытки.'}
           </p>
         )}
-        {effectiveStarter === 'ai' && scenario.character_opening && (
+        {dense && effectiveStarter === 'ai' && scenario.character_opening && (
           <p style={{ margin: '0.75rem 0 0', fontSize: '1rem', fontStyle: 'italic' }}>
             «{scenario.character_opening}»
           </p>
         )}
-        {effectiveStarter === 'user' && userLine && (
+        {dense && effectiveStarter === 'user' && userLine && (
           <p style={{ margin: '0.75rem 0 0', fontSize: '1rem', fontStyle: 'italic' }}>
             Начните с: «{userLine}»
           </p>
@@ -251,10 +330,11 @@ export function ZhScenarioBriefing({
       {!isPreview && onStart && (
         <button
           type="button"
-          onClick={() => onStart(zhScenarioToRoleplay(scenario, starter))}
-          style={btnPrimary}
+          onClick={() => void handleStart()}
+          disabled={starting}
+          style={{ ...btnPrimary, opacity: starting ? 0.7 : 1 }}
         >
-          Начать диалог
+          {starting ? 'Готовим…' : 'Начать диалог'}
         </button>
       )}
     </div>

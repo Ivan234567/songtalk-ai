@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { parseZhPlayMode, type ZhPlayMode } from '@/lib/zh-play-mode';
 import type { ZhAssessmentFeedback, ZhCriteriaScores } from '@/lib/zh-speaking-assessment';
 import {
   zhChecklistCoveragePct,
@@ -21,6 +22,7 @@ export type ZhCompletionRow = {
   useful_phrase_en: string | null;
   useful_phrase_ru: string | null;
   completed_step_ids?: string[] | null;
+  play_mode?: ZhPlayMode | null;
   source: 'user' | 'system';
 };
 
@@ -99,16 +101,24 @@ export function useZhProgressData() {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async (uid: string) => {
-    const [completionsRes, assessmentsRes, attemptsRes, tasksRes] = await Promise.all([
+    const completionsSelect =
+      'id, scenario_id, scenario_title, scenario_level, completed_at, feedback, useful_phrase_en, useful_phrase_ru, completed_step_ids, play_mode';
+    const completionsSelectLegacy = completionsSelect.replace(', play_mode', '');
+    const fetchCompletions = (columns: string) =>
       supabase
         .from('roleplay_completions')
-        .select(
-          'id, scenario_id, scenario_title, scenario_level, completed_at, feedback, useful_phrase_en, useful_phrase_ru, completed_step_ids'
-        )
+        .select(columns)
         .eq('user_id', uid)
         .eq('language', 'zh')
         .order('completed_at', { ascending: false })
-        .limit(500),
+        .limit(500);
+
+    let completionsRes = await fetchCompletions(completionsSelect);
+    if (completionsRes.error && /play_mode/i.test(completionsRes.error.message || '')) {
+      completionsRes = await fetchCompletions(completionsSelectLegacy);
+    }
+
+    const [assessmentsRes, attemptsRes, tasksRes] = await Promise.all([
       supabase
         .from('speaking_assessments')
         .select(
@@ -165,6 +175,7 @@ export function useZhProgressData() {
         useful_phrase_en: (row.useful_phrase_en as string | null) ?? null,
         useful_phrase_ru: (row.useful_phrase_ru as string | null) ?? null,
         completed_step_ids: Array.isArray(row.completed_step_ids) ? (row.completed_step_ids as string[]) : null,
+        play_mode: parseZhPlayMode(row.play_mode),
         source: meta?.source ?? 'user',
       };
     });

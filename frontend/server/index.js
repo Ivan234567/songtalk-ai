@@ -29,7 +29,9 @@ import {
   buildZhAssessSpeakingUserPrompt,
   normalizeZhCriteriaScores,
   applyZhTaskCompletionOverride,
+  applyZhInteractionRepairPenalty,
   sanitizeZhTaskFeedback,
+  normalizeZhListenReviewFields,
   buildZhGoalAttainment,
   getZhStepProgress,
 } from './zh-speaking-assessment.js'
@@ -1735,7 +1737,7 @@ Return JSON with "feedback" and "useful_phrase".`
         { role: 'system', content: FEEDBACK_SYSTEM },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: isZhFeedback ? 360 : 280,
+        max_tokens: isZhFeedback ? 720 : 280,
       temperature: 0.4,
     })
     const usage = completion?.usage
@@ -1752,6 +1754,13 @@ Return JSON with "feedback" and "useful_phrase".`
     let useful_phrase_pinyin = ''
     let style_note = ''
     let rewrite_neutral = ''
+    let listenReview = {
+      missed_listening: [],
+      repair_phrases: [],
+      rewind_forks: [],
+      memory_facts: [],
+      repair_used: false,
+    }
     try {
       const parsed = JSON.parse(raw.replace(/^```json\s*|\s*```$/g, '').trim())
       feedback = typeof parsed.feedback === 'string' ? parsed.feedback.trim() : raw
@@ -1760,12 +1769,14 @@ Return JSON with "feedback" and "useful_phrase".`
       useful_phrase_pinyin = typeof parsed.useful_phrase_pinyin === 'string' ? parsed.useful_phrase_pinyin.trim() : ''
       style_note = typeof parsed.style_note === 'string' ? parsed.style_note.trim() : ''
       rewrite_neutral = typeof parsed.rewrite_neutral === 'string' ? parsed.rewrite_neutral.trim() : ''
+      listenReview = normalizeZhListenReviewFields(parsed)
     } catch {
       feedback = raw
     }
     if (isZhFeedback) {
-      const cleaned = sanitizeZhTaskFeedback({ summary: feedback }, steps, completed_step_ids)
+      const cleaned = sanitizeZhTaskFeedback({ summary: feedback, ...listenReview }, steps, completed_step_ids)
       feedback = cleaned.summary || feedback
+      listenReview = normalizeZhListenReviewFields(cleaned)
     }
     res.json({
       feedback: feedback || '',
@@ -1776,6 +1787,11 @@ Return JSON with "feedback" and "useful_phrase".`
       rewrite_neutral: rewrite_neutral || null,
       scenario_id: scenario_id || null,
       scenario_title: scenario_title || null,
+      missed_listening: listenReview.missed_listening,
+      repair_phrases: listenReview.repair_phrases,
+      rewind_forks: listenReview.rewind_forks,
+      memory_facts: listenReview.memory_facts,
+      repair_used: listenReview.repair_used,
     })
   } catch (err) {
     console.error('[api/agent/roleplay-feedback] error:', err?.message)
@@ -2770,7 +2786,7 @@ app.post('/api/agent/assess-speaking', async (req, res) => {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: 800,
+        max_tokens: 1100,
         temperature: 0.3,
       })
       const usage = completion?.usage
@@ -2794,18 +2810,34 @@ app.post('/api/agent/assess-speaking', async (req, res) => {
         console.error('[api/agent/assess-speaking] Invalid zh LLM response:', raw?.slice(0, 300))
         return res.status(500).json({ error: 'Assessment parsing failed' })
       }
-      const scores = applyZhTaskCompletionOverride(
+      const scoresLocked = applyZhTaskCompletionOverride(
         normalizeZhCriteriaScores(json.criteria_scores, clampScore),
         steps,
         completed_step_ids,
         clampScore,
       )
+      const listenFromModel = normalizeZhListenReviewFields(json.feedback || json)
+      const userSaidRepair = /请再说|再说一遍|慢一点|慢一些|你是说|没听清|听不懂|什么意思/.test(
+        (userMessages || []).join('\n'),
+      )
+      const repairUsed = listenFromModel.repair_used || userSaidRepair
+      const playMode =
+        req.body?.play_mode === 'life' || req.body?.play_mode === 'stress' ? req.body.play_mode : 'rehearsal'
+      const scores = applyZhInteractionRepairPenalty(scoresLocked, clampScore, {
+        playMode,
+        repairUsed,
+        missedCount: listenFromModel.missed_listening.length,
+      })
       const vals = Object.values(scores).filter((v) => typeof v === 'number')
       const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
       const feedbackObj = json && typeof json.feedback === 'object' && json.feedback !== null
         ? json.feedback
         : { strengths: [], improvements: [], summary: '' }
-      const cleanedFeedback = sanitizeZhTaskFeedback(feedbackObj, steps, completed_step_ids)
+      const cleanedFeedback = sanitizeZhTaskFeedback(
+        { ...feedbackObj, ...listenFromModel, repair_used: repairUsed },
+        steps,
+        completed_step_ids,
+      )
       return res.json({
         criteria_scores: scores,
         overall_score: Math.round(overall * 10) / 10,

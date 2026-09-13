@@ -8,6 +8,7 @@ type FocusAttempt = {
   completedAt: string;
   overallScore: number | null;
   stepCompletionPct: number | null;
+  playModeLabel?: string;
 };
 
 type FocusAttemptSelectorProps = {
@@ -112,7 +113,7 @@ export function FocusAttemptSelector({
                 type="button"
                 className={`${styles.timelinePoint} ${isActive ? styles.timelinePointActive : ''} ${isBest ? styles.timelinePointBest : ''}`}
                 onClick={() => onSelect(attempt.attemptId)}
-                title={`Попытка #${index + 1} — ${attemptDate}`}
+                title={`Попытка #${index + 1} — ${attemptDate}${attempt.playModeLabel ? ` · ${attempt.playModeLabel}` : ''}`}
               >
                 {/* Point dot */}
                 <div className={styles.timelinePointDot}>
@@ -130,7 +131,9 @@ export function FocusAttemptSelector({
                 {/* Number and date */}
                 <div className={styles.timelinePointMeta}>
                   <span className={styles.timelinePointNumber}>#{index + 1}</span>
-                  <span className={styles.timelinePointDate}>{attemptDate}</span>
+                  <span className={styles.timelinePointDate}>
+                    {attempt.playModeLabel ? `${attempt.playModeLabel} · ${attemptDate}` : attemptDate}
+                  </span>
                 </div>
               </button>
             );
@@ -167,6 +170,13 @@ export function FocusAttemptSelector({
                     })}
                   </span>
                 </div>
+                {selected.playModeLabel && (
+                  <div className={styles.timelineDetailItem}>
+                    <span className={styles.timelineDetailIcon}>●</span>
+                    <span className={styles.timelineDetailLabel}>Режим:</span>
+                    <span className={styles.timelineDetailValue}>{selected.playModeLabel}</span>
+                  </div>
+                )}
               </>
             );
           })()}

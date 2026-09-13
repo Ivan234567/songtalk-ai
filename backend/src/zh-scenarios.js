@@ -138,6 +138,9 @@ function buildPayload(input = {}, columns = {}) {
     suggested_first_line_pinyin:
       asTrimmed(src.suggested_first_line_pinyin || src.suggestedFirstLinePinyin, 300) || undefined,
     max_score_tips_ru: asTrimmed(src.max_score_tips_ru || src.maxScoreTipsRu, 800) || undefined,
+    stress_twist_ru: asTrimmed(src.stress_twist_ru || src.stressTwistRu, 300) || undefined,
+    from_life: src.from_life === true || src.fromLife === true || columns.from_life === true,
+    life_when: asTrimmed(src.life_when || src.lifeWhen || columns.life_when, 40) || undefined,
     steps,
     vocabulary,
   }
@@ -184,12 +187,16 @@ function toApiScenario(row, extras = {}) {
     suggested_first_line: payload.suggested_first_line,
     suggested_first_line_pinyin: payload.suggested_first_line_pinyin,
     max_score_tips_ru: payload.max_score_tips_ru,
+    stress_twist_ru: payload.stress_twist_ru,
+    from_life: payload.from_life === true,
+    life_when: payload.life_when,
     steps,
     vocabulary,
     created_at: row.created_at,
     updated_at: row.updated_at,
     completions_count: extras.completions_count ?? 0,
     last_completed_at: extras.last_completed_at ?? null,
+    mastered_modes: extras.mastered_modes || { rehearsal: false, life: false, stress: false },
   }
 }
 
@@ -218,16 +225,32 @@ function vocabFromPayload(payload) {
 async function attachCompletionStats(supabase, userId, list) {
   const ids = list.map((s) => s.id).filter(Boolean)
   if (!ids.length) return list
-  const { data: completions } = await supabase
+  let { data: completions, error } = await supabase
     .from('roleplay_completions')
-    .select('scenario_id, completed_at')
+    .select('scenario_id, completed_at, play_mode')
     .eq('user_id', userId)
     .in('scenario_id', ids)
+  if (error && /play_mode/i.test(error.message || '')) {
+    const retry = await supabase
+      .from('roleplay_completions')
+      .select('scenario_id, completed_at')
+      .eq('user_id', userId)
+      .in('scenario_id', ids)
+    completions = retry.data
+  }
   const byScenario = {}
   for (const c of completions || []) {
     const id = c.scenario_id
-    if (!byScenario[id]) byScenario[id] = { count: 0, lastCompletedAt: null }
+    if (!byScenario[id]) {
+      byScenario[id] = {
+        count: 0,
+        lastCompletedAt: null,
+        mastered_modes: { rehearsal: false, life: false, stress: false },
+      }
+    }
     byScenario[id].count += 1
+    const mode = c.play_mode === 'life' || c.play_mode === 'stress' ? c.play_mode : 'rehearsal'
+    byScenario[id].mastered_modes[mode] = true
     const at = c.completed_at ? new Date(c.completed_at).toISOString() : null
     if (at && (!byScenario[id].lastCompletedAt || at > byScenario[id].lastCompletedAt)) {
       byScenario[id].lastCompletedAt = at
@@ -237,6 +260,7 @@ async function attachCompletionStats(supabase, userId, list) {
     const stats = byScenario[s.id]
     s.completions_count = stats ? stats.count : 0
     s.last_completed_at = stats?.lastCompletedAt ?? null
+    s.mastered_modes = stats?.mastered_modes || { rehearsal: false, life: false, stress: false }
   }
   return list
 }
@@ -331,6 +355,7 @@ Output ONLY valid JSON, no markdown, no code fence. Schema:
   "suggested_first_line": "learner first-line example in Simplified Chinese",
   "suggested_first_line_pinyin": "pinyin with tone marks",
   "max_score_tips_ru": "short tips in Russian: how to score well in this scene",
+  "stress_twist_ru": "one Russian sentence: a complication that stays inside the same goal (out of stock, misheard, busy)",
   "steps": [
     {
       "id": "step1",
@@ -360,7 +385,8 @@ Rules:
 - If textbook/goal implies a grammar point, set grammar_focus. Otherwise infer one clear focus or leave a short empty-safe phrase.
 - If textbook/lesson is given, prefer starter "ai" (the other person greets, like a textbook dialogue), unless the learner is clearly the initiator (phone call, asking for directions).
 - If the user did not specify a role, choose a natural learner role and a complementary AI role.
-- Playable in 2–4 minutes. No profanity. No English spoken lines.`
+- Playable in 2–4 minutes. No profanity. No English spoken lines.
+- Always include stress_twist_ru: one realistic snag that does NOT change the scene goal (e.g. item unavailable, they misheard a name, they are in a hurry).`
 
 const ZH_GENERATE_PART_SYSTEM = `You update ONE part of an existing Simplified Chinese roleplay scenario for Russian-speaking learners (HSK 1–6).
 Output ONLY valid JSON, no markdown, no code fence.
@@ -437,8 +463,14 @@ export function registerZhScenarioRoutes(app, {
     })
     const formalityHint = inferFormality(formalityReq, hsk)
 
+    const fromLife = body.from_life === true || body.fromLife === true
+    const lifeWhen = asTrimmed(body.life_when || body.lifeWhen, 40)
     const parts = []
     if (prompt) parts.push(`Learner request (Russian): ${prompt}`)
+    if (fromLife) {
+      parts.push('This is a REAL upcoming situation in the learner\'s life. Keep 3–5 steps, practical, not a week-long quest.')
+      if (lifeWhen) parts.push(`When: ${lifeWhen}`)
+    }
     if (textbookTitle) parts.push(`Textbook: ${textbookTitle}`)
     if (lessonNo) parts.push(`Lesson: ${lessonNo}`)
     if (goal) parts.push(`Practice goal: ${goal}`)
@@ -488,6 +520,8 @@ export function registerZhScenarioRoutes(app, {
           starter: asStarter(parsed.starter, starterHint),
           formality: asFormality(parsed.formality, formalityHint),
           slang_mode: asSlang(parsed.slang_mode, 'off'),
+          from_life: fromLife,
+          life_when: lifeWhen,
           textbook: {
             title: parsed.textbook?.title || textbookTitle,
             lesson_no: parsed.textbook?.lesson_no || lessonNo,
@@ -500,6 +534,8 @@ export function registerZhScenarioRoutes(app, {
           slang_mode: 'off',
           textbook_title: textbookTitle,
           lesson_no: lessonNo,
+          from_life: fromLife,
+          life_when: lifeWhen,
         }
       )
 

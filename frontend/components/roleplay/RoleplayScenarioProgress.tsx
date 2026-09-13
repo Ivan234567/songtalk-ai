@@ -7,6 +7,7 @@ import {
   getMustSayVocab,
   type ZhTrackerVocabItem,
 } from '@/lib/zh-lesson-tracker';
+import { parseZhPlayMode, zhScaffoldPolicy } from '@/lib/zh-play-mode';
 
 const headerBtn: React.CSSProperties = {
   width: '100%',
@@ -46,6 +47,8 @@ export function RoleplayScenarioProgress({
   onToggleSteps,
   onSaveProgress,
   boxed = false,
+  vocabPeeked = false,
+  onPeekVocab,
 }: {
   scenario: RoleplayScenario;
   completedStepIds: string[];
@@ -56,7 +59,13 @@ export function RoleplayScenarioProgress({
   onToggleSteps: () => void;
   onSaveProgress: () => void;
   boxed?: boolean;
+  vocabPeeked?: boolean;
+  onPeekVocab?: () => void;
 }) {
+  const policy = learningLanguage === 'zh' ? zhScaffoldPolicy(parseZhPlayMode(scenario.playMode)) : null;
+  const hideSteps = Boolean(policy && !policy.showSteps);
+  const hideVocab = Boolean(policy && !policy.showVocab && !(policy.vocabPeekOnce && vocabPeeked));
+  const canPeekVocab = Boolean(policy?.vocabPeekOnce && !vocabPeeked && onPeekVocab);
   const steps = (scenario.steps || [])
     .slice()
     .sort((a, b) => a.order - b.order);
@@ -70,8 +79,8 @@ export function RoleplayScenarioProgress({
     mustSay,
     saidHanzi: saidMustSayHanzi,
   });
-  const hasSteps = steps.length > 0;
-  const showZhVocab = mustSay.length > 0;
+  const hasSteps = steps.length > 0 && !hideSteps;
+  const showZhVocab = mustSay.length > 0 && !hideVocab;
   const canMarkGoal = !selectedSessionId && tracker.plotReady;
   const isZh = learningLanguage === 'zh';
 
@@ -128,6 +137,26 @@ export function RoleplayScenarioProgress({
               );
             })}
         </>
+      )}
+
+      {canPeekVocab && (
+        <button
+          type="button"
+          onClick={onPeekVocab}
+          style={{
+            marginTop: '0.5rem',
+            padding: '0.4rem 0.65rem',
+            borderRadius: 8,
+            border: '1px solid var(--sidebar-border)',
+            background: 'transparent',
+            color: 'var(--sidebar-text)',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Подглядеть слова один раз
+        </button>
       )}
 
       {showZhVocab && (

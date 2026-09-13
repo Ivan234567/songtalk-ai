@@ -21,6 +21,7 @@ import {
   type ZhVoiceTaskEvaluateResult,
 } from '@/lib/zh-voice-tasks';
 import { RoleplayScenarioProgress } from '@/components/roleplay/RoleplayScenarioProgress';
+import { ZhAfterSessionReview } from '@/components/roleplay/ZhAfterSessionReview';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import {
   applyUserUtteranceToSaid,
@@ -36,6 +37,20 @@ import {
   isZhCriteriaScores,
   type ZhSpeakingAssessmentResult,
 } from '@/lib/zh-speaking-assessment';
+import {
+  fallbackRewindForks,
+  nextZhPlayMode,
+  normalizeZhListenReview,
+  parseZhPlayMode,
+  resolveRewindIndex,
+  zhPlayModeSpeechRate,
+  zhRepairUsed,
+  zhScaffoldPolicy,
+  type ZhListenReview,
+  type ZhPlayMode,
+  type ZhRewindFork,
+} from '@/lib/zh-play-mode';
+import { upsertZhScenarioMemory, withZhPlayMode } from '@/lib/zh-scenarios';
 import { TranslatorPanel } from '@/components/TranslatorPanel';
 import { DebateSetupUI } from '@/components/debate/DebateSetupUI';
 import {
@@ -72,6 +87,11 @@ const DEBATE_GOAL_RU = `Дебат успешно завершен, когда:
 • Обе стороны представили свои основные аргументы (минимум 2-3 обмена репликами)
 • Вы защитили свою позицию хотя бы одним четким аргументом
 • Произошел естественный обмен мнениями`;
+
+function zhEffectiveSpeechRate(base: number, scenario: RoleplayScenario | null): number {
+  if (!scenario || scenario.language !== 'zh') return base;
+  return zhPlayModeSpeechRate(base, parseZhPlayMode(scenario.playMode));
+}
 
 const TTS_VOICE_OPTIONS: Array<{ value: 'onyx' | 'nova' | 'ballad'; label: string }> = [
   { value: 'onyx', label: 'Мужской (Onyx)' },
@@ -251,6 +271,11 @@ export function AgentTab() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<RoleplayScenario | null>(null);
+  const [zhVocabPeeked, setZhVocabPeeked] = useState(false);
+  const [zhRewindUsed, setZhRewindUsed] = useState(false);
+  const [zhRewindHint, setZhRewindHint] = useState<string | null>(null);
+  const [zhListenReview, setZhListenReview] = useState<ZhListenReview | null>(null);
+  const [zhRevealedMeta, setZhRevealedMeta] = useState<Record<number, boolean>>({});
   const [agentMode, setAgentMode] = useState<'chat' | 'roleplay' | 'debate'>('chat');
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
   const [scenarioView, setScenarioView] = useState<'catalog' | 'create' | 'my'>('catalog');
@@ -284,6 +309,8 @@ export function AgentTab() {
 
   /** Id сценария, только что скопированного из каталога в «Мои» — для подсветки в списке */
   const [highlightedUserScenarioId, setHighlightedUserScenarioId] = useState<string | null>(null);
+  const [progressDeepLink, setProgressDeepLink] = useState<{ id: string; playMode: ZhPlayMode } | null>(null);
+  const progressTargetHandledRef = useRef<string | null>(null);
   const [translatorOpen, setTranslatorOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const [aiChatMessages, setAiChatMessages] = useState<Message[]>([]);
@@ -517,6 +544,26 @@ export function AgentTab() {
     },
     [redirectToBalance]
   );
+
+  useEffect(() => {
+    if (learningLanguage !== 'zh') return;
+    const from = searchParams.get('from');
+    const target = searchParams.get('target');
+    if (from !== 'progress' || !target || !target.startsWith('rp:')) return;
+    if (progressTargetHandledRef.current === target) return;
+    const scenarioId = target.slice(3).trim();
+    if (!scenarioId) return;
+    progressTargetHandledRef.current = target;
+    setProgressDeepLink({ id: scenarioId, playMode: parseZhPlayMode(searchParams.get('play_mode')) });
+    setAgentMode('roleplay');
+    setScenarioModalOpen(true);
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('from');
+    next.delete('target');
+    next.delete('play_mode');
+    next.set('tab', 'agent');
+    router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
+  }, [learningLanguage, searchParams, pathname, router]);
 
   const showVocabToast = useCallback((type: 'ok' | 'err', text: string) => {
     setVocabToast({ type, text });
@@ -897,7 +944,7 @@ export function AgentTab() {
       const blob = await ttsResp.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio.playbackRate = chineseSpeechSpeed;
+      audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
       audio.onended = () => URL.revokeObjectURL(url);
       await audio.play().catch(() => URL.revokeObjectURL(url));
     } catch {
@@ -1016,7 +1063,7 @@ export function AgentTab() {
       const blob = await ttsResp.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio.playbackRate = chineseSpeechSpeed;
+      audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
       audio.onended = () => URL.revokeObjectURL(url);
       await audio.play().catch(() => URL.revokeObjectURL(url));
     } catch {
@@ -1102,7 +1149,7 @@ export function AgentTab() {
                 : buildMessagesForAgentChat(
                   zhSafeHistory(history, learningLanguage),
                   agentMode === 'roleplay' ? selectedScenario : null,
-                  agentMode === 'roleplay' ? { completedStepIds: roleplayCompletedStepIds } : undefined
+                  agentMode === 'roleplay' ? { completedStepIds: roleplayCompletedStepIds, rewindHint: zhRewindHint || undefined } : undefined
                 ),
             max_tokens: 1500,
             scenario_steps:
@@ -1347,7 +1394,7 @@ export function AgentTab() {
           URL.revokeObjectURL(url);
           setState('idle');
         };
-        audio.playbackRate = chineseSpeechSpeed;
+        audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
         await audio.play();
 
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -1409,6 +1456,7 @@ export function AgentTab() {
       chineseSpeechSpeed,
       handleInsufficientBalance,
       roleplayCompletedStepIds,
+      zhRewindHint,
       finishVoiceTaskTake,
       englishSettingsPayload,
     ]
@@ -1594,7 +1642,7 @@ export function AgentTab() {
           setState('idle');
         };
 
-        audio.playbackRate = chineseSpeechSpeed;
+        audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
         await audio.play();
 
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -1953,7 +2001,7 @@ export function AgentTab() {
           URL.revokeObjectURL(url);
           setState('idle');
         };
-        audio.playbackRate = chineseSpeechSpeed;
+        audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, scenario);
         await audio.play();
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (TtsContextClass) {
@@ -2115,6 +2163,11 @@ export function AgentTab() {
         setEnglishSettingsOpen(true);
       }
       setSelectedScenario(scenario);
+      setZhVocabPeeked(false);
+      setZhRewindUsed(false);
+      setZhRewindHint(null);
+      setZhListenReview(null);
+      setZhRevealedMeta({});
       requestScenarioFirstMessage(scenario);
     },
     [learningLanguage, requestScenarioFirstMessage]
@@ -2137,8 +2190,72 @@ export function AgentTab() {
     setCurrentSessionId(null);
     setRoleplayCompletedStepIds([]);
     setZhSaidMustSay([]);
+    setZhVocabPeeked(false);
+    setZhRewindUsed(false);
+    setZhRewindHint(null);
+    setZhListenReview(null);
+    setZhRevealedMeta({});
     requestScenarioFirstMessage(selectedScenario);
   }, [selectedScenario, requestScenarioFirstMessage]);
+
+  const handleZhNextMode = useCallback(() => {
+    if (!selectedScenario) return;
+    const next = nextZhPlayMode(parseZhPlayMode(selectedScenario.playMode));
+    if (!next) return;
+    const nextScenario = withZhPlayMode(selectedScenario, next);
+    setGoalReached(false);
+    setAssessmentResult(null);
+    setSavedSessionAssessment(null);
+    setAssessmentError(null);
+    setRoleplayFeedback(null);
+    setRoleplayUsefulPhrase(null);
+    setRoleplayUsefulPhraseRu(null);
+    setRoleplayUsefulPhrasePinyin(null);
+    setRoleplayStyleNote(null);
+    setRoleplayRewriteNeutral(null);
+    setRoleplayFeedbackError(null);
+    setMessages([]);
+    setCurrentSessionId(null);
+    setRoleplayCompletedStepIds([]);
+    setZhSaidMustSay([]);
+    setZhVocabPeeked(false);
+    setZhRewindUsed(false);
+    setZhRewindHint(null);
+    setZhListenReview(null);
+    setZhRevealedMeta({});
+    setSelectedScenario(nextScenario);
+    requestScenarioFirstMessage(nextScenario);
+  }, [selectedScenario, requestScenarioFirstMessage]);
+
+  const handleZhRewind = useCallback(
+    (fork: ZhRewindFork) => {
+      if (zhRewindUsed) return;
+      const idx = resolveRewindIndex(messages, fork);
+      if (idx < 0) return;
+      setMessages(messages.slice(0, idx + 1));
+      setGoalReached(false);
+      setAssessmentResult(null);
+      setSavedSessionAssessment(null);
+      setAssessmentError(null);
+      setRoleplayFeedback(null);
+      setRoleplayFeedbackError(null);
+      setRoleplayUsefulPhrase(null);
+      setRoleplayUsefulPhraseRu(null);
+      setRoleplayUsefulPhrasePinyin(null);
+      setRoleplayStyleNote(null);
+      setRoleplayRewriteNeutral(null);
+      setZhListenReview(null);
+      setZhRewindUsed(true);
+      setZhRewindHint(fork.hint_zh || fork.hint_ru || null);
+      setCurrentSessionId((id) => {
+        if (id) {
+          void supabase.from('agent_sessions').update({ messages: messages.slice(0, idx + 1) }).eq('id', id);
+        }
+        return id;
+      });
+    },
+    [zhRewindUsed, messages]
+  );
 
   const handleGoalReachedOtherScenario = useCallback(() => {
     setGoalReached(false);
@@ -2245,6 +2362,17 @@ export function AgentTab() {
       setRoleplayUsefulPhrasePinyin(usefulPhrasePinyin);
       setRoleplayStyleNote(styleNote);
       setRoleplayRewriteNeutral(rewriteNeutral);
+      if (learningLanguage === 'zh') {
+        const userLines = messages.filter((m) => m.role === 'user').map((m) => m.content);
+        const review = normalizeZhListenReview(data, zhRepairUsed(userLines));
+        if (!review.rewind_forks.length) {
+          review.rewind_forks = fallbackRewindForks(messages);
+        }
+        setZhListenReview(review);
+        if (selectedScenario.id && review.memory_facts.length) {
+          void upsertZhScenarioMemory(selectedScenario.id, review.memory_facts);
+        }
+      }
       if (userId && selectedScenario && feedbackText) {
         const { data: latest } = await supabase
           .from('roleplay_completions')
@@ -2523,12 +2651,8 @@ export function AgentTab() {
               : undefined,
           topic: agentMode === 'debate' ? debateTopic ?? undefined : undefined,
           user_position: agentMode === 'debate' ? debateUserPosition ?? undefined : undefined,
-          roleplay_settings:
-            agentMode === 'roleplay'
-              ? roleplaySettingsPayload
-              : agentMode === 'debate'
-                ? debateSettingsPayload
-                : undefined,
+          roleplay_settings: roleplaySettingsPayload,
+          play_mode: selectedScenario?.language === 'zh' ? parseZhPlayMode(selectedScenario.playMode) : undefined,
           micro_goals:
             agentMode === 'debate'
               ? debateMicroGoals.map((id) => {
@@ -2546,6 +2670,17 @@ export function AgentTab() {
       const result = data as SpeakingAssessmentResult | ZhSpeakingAssessmentResult;
       setAssessmentResult(result);
       setSavedSessionAssessment(result);
+      if (learningLanguage === 'zh' && result.feedback) {
+        const userLines = messages.filter((m) => m.role === 'user').map((m) => m.content);
+        const review = normalizeZhListenReview(result.feedback, zhRepairUsed(userLines));
+        if (!review.rewind_forks.length) {
+          review.rewind_forks = fallbackRewindForks(messages);
+        }
+        setZhListenReview(review);
+        if (selectedScenario?.id && review.memory_facts.length) {
+          void upsertZhScenarioMemory(selectedScenario.id, review.memory_facts);
+        }
+      }
       const { data: assessmentData, error: assessmentError } = await supabase
         .from('speaking_assessments')
         .insert({
@@ -3029,6 +3164,7 @@ export function AgentTab() {
       scenario_level?: string | null;
       completed_step_ids?: string[];
       language?: string;
+      play_mode?: ZhPlayMode;
     } = {
       user_id: userId,
       scenario_id: selectedScenario.id,
@@ -3036,6 +3172,9 @@ export function AgentTab() {
       scenario_level: selectedScenario.level ?? null,
       language: learningLanguage,
     };
+    if (selectedScenario.language === 'zh') {
+      payload.play_mode = parseZhPlayMode(selectedScenario.playMode);
+    }
     if (selectedScenario.steps?.length) {
       payload.completed_step_ids = roleplayCompletedStepIds;
     }
@@ -3368,12 +3507,21 @@ export function AgentTab() {
               {conversationMessages.map((m, i) => {
                 // Для китайского режима — парсим структурированный ответ
                 const isChinese = learningLanguage === 'zh';
-                const parsed = isChinese && chineseShowPinyin
+                const pinyinPolicy =
+                  selectedScenario?.language === 'zh' && agentMode === 'roleplay' && !goalReached
+                    ? zhScaffoldPolicy(parseZhPlayMode(selectedScenario.playMode)).pinyin
+                    : 'always';
+                const metaUnlocked =
+                  pinyinPolicy === 'always' ||
+                  (pinyinPolicy === 'after' && goalReached) ||
+                  (pinyinPolicy === 'tap' && Boolean(zhRevealedMeta[i] || goalReached));
+                const showPinyinNow = isChinese && chineseShowPinyin && (pinyinPolicy === 'always' || metaUnlocked);
+                const parsed = showPinyinNow
                   ? parseStructuredChineseResponse(m.content)
                   : null;
                 const cleanText = extractCleanChineseText(m.content) || m.content;
-                const showTranslation = isChinese ? chineseShowTranslation : englishShowTranslation;
-                const translation = showTranslation
+                const showTranslationNow = (isChinese ? chineseShowTranslation : englishShowTranslation) && (pinyinPolicy === 'always' || metaUnlocked);
+                const translation = showTranslationNow
                   ? extractTranslation(m.content)
                   : null;
                 return (
@@ -3395,6 +3543,24 @@ export function AgentTab() {
                     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {cleanText}
                     </div>
+                    {m.role === 'assistant' && isChinese && pinyinPolicy === 'tap' && !metaUnlocked && (
+                      <button
+                        type="button"
+                        onClick={() => setZhRevealedMeta((prev) => ({ ...prev, [i]: true }))}
+                        style={{
+                          marginTop: 8,
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: 8,
+                          border: '1px solid var(--sidebar-border)',
+                          background: 'transparent',
+                          color: 'var(--sidebar-text)',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Показать пиньинь
+                      </button>
+                    )}
                     {/* Перевод */}
                     {translation && (
                       <div
@@ -3588,11 +3754,19 @@ export function AgentTab() {
                   <ZhScenariosUI
                     initialView={scenarioView}
                     defaultHsk={chineseHskLevel}
+                    initialScenarioId={progressDeepLink?.id}
+                    initialPlayMode={progressDeepLink?.playMode}
                     onSelectScenario={(s) => {
                       handleSelectScenario(s);
                       setScenarioModalOpen(false);
+                      setProgressDeepLink(null);
+                      progressTargetHandledRef.current = null;
                     }}
-                    onClose={() => setScenarioModalOpen(false)}
+                    onClose={() => {
+                      setScenarioModalOpen(false);
+                      setProgressDeepLink(null);
+                      progressTargetHandledRef.current = null;
+                    }}
                     onCopyToMineSuccess={(id) => {
                       setScenarioView('my');
                       setHighlightedUserScenarioId(id);
@@ -3806,6 +3980,8 @@ export function AgentTab() {
                             stepsOpen={roleplaySidebarStepsOpen}
                             onToggleSteps={() => setRoleplaySidebarStepsOpen((v) => !v)}
                             onSaveProgress={saveRoleplayProgress}
+                            vocabPeeked={zhVocabPeeked}
+                            onPeekVocab={() => setZhVocabPeeked(true)}
                           />
                           {(selectedScenario.goalRu || selectedScenario.goal) && (
                             <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
@@ -4575,6 +4751,8 @@ export function AgentTab() {
                             stepsOpen={roleplaySidebarStepsOpen}
                             onToggleSteps={() => setRoleplaySidebarStepsOpen((v) => !v)}
                             onSaveProgress={saveRoleplayProgress}
+                            vocabPeeked={zhVocabPeeked}
+                            onPeekVocab={() => setZhVocabPeeked(true)}
                           />
                           {(selectedScenario.goalRu || selectedScenario.goal) && (
                             <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
@@ -5246,6 +5424,15 @@ export function AgentTab() {
                 Не удалось получить короткий фидбек — можно попробовать оценку речи.
               </p>
             )}
+            {learningLanguage === 'zh' && (
+              <ZhAfterSessionReview
+                playMode={parseZhPlayMode(selectedScenario.playMode)}
+                review={zhListenReview}
+                rewindUsed={zhRewindUsed}
+                onRewind={handleZhRewind}
+                onNextMode={nextZhPlayMode(parseZhPlayMode(selectedScenario.playMode)) ? handleZhNextMode : undefined}
+              />
+            )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', paddingTop: '0.15rem' }}>
               <button
                 type="button"
@@ -5875,7 +6062,7 @@ export function AgentTab() {
               </button>
             )}
 
-            {isUserStartsRoleplayEmpty && selectedScenario?.suggestedFirstLine && (
+            {isUserStartsRoleplayEmpty && selectedScenario?.suggestedFirstLine && zhScaffoldPolicy(parseZhPlayMode(selectedScenario.playMode)).showFirstLine && (
               <div
                 style={{
                   width: '100%',
@@ -6171,6 +6358,15 @@ export function AgentTab() {
                     ))}
                   </ul>
                 </div>
+              )}
+              {learningLanguage === 'zh' && selectedScenario && (
+                <ZhAfterSessionReview
+                  playMode={parseZhPlayMode(selectedScenario.playMode)}
+                  review={zhListenReview}
+                  rewindUsed={zhRewindUsed}
+                  onRewind={handleZhRewind}
+                  onNextMode={nextZhPlayMode(parseZhPlayMode(selectedScenario.playMode)) ? handleZhNextMode : undefined}
+                />
               )}
             </div>
           </div>

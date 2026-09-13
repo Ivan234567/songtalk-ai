@@ -8,6 +8,13 @@ import { getDebateStepsByDifficulty, normalizeDebateTopic } from '@/lib/debate';
 import { getCriteriaLabel, type AssessmentFeedback, type CriteriaScores } from '@/lib/speaking-assessment';
 import { ZH_CRITERIA_KEYS, getZhCriteriaLabel, isZhCriteriaScores } from '@/lib/zh-speaking-assessment';
 import {
+  emptyMasteredModes,
+  isZhAttemptMastered,
+  parseZhPlayMode,
+  ZH_PLAY_MODE_LABELS,
+} from '@/lib/zh-play-mode';
+import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
+import {
   zhChecklistCoveragePct,
   zhVoiceTaskVerdictLabel,
   type ZhChecklistItemStatus,
@@ -53,6 +60,7 @@ type FocusAttempt = {
   fallbackUserMessages: string[];
   verdict?: ZhVoiceTaskVerdict | null;
   coveragePct?: number | null;
+  playMode?: 'rehearsal' | 'life' | 'stress' | null;
 };
 
 type FocusModel = {
@@ -63,6 +71,7 @@ type FocusModel = {
   avgScore: number | null;
   bestScore: number | null;
   avgStepPct: number | null;
+  masteredModes?: ReturnType<typeof emptyMasteredModes>;
 };
 
 function isPeriodValue(value: string | null): value is PeriodValue {
@@ -271,22 +280,29 @@ export default function ProgressFocusPage() {
           }
         } else if (modeFromPath === 'roleplay') {
           const scenarioId = objectKey.slice(3);
-          const [cRes, aRes] = await Promise.all([
+          const fetchRoleplayCompletions = (columns: string) =>
             supabase
               .from('roleplay_completions')
-              .select('id, scenario_id, scenario_title, scenario_level, completed_at, feedback, completed_step_ids')
+              .select(columns)
               .eq('user_id', userId)
               .eq('scenario_id', scenarioId)
               .order('completed_at', { ascending: false })
-              .limit(500),
-            supabase
+              .limit(500);
+          let cRes = await fetchRoleplayCompletions(
+            'id, scenario_id, scenario_title, scenario_level, completed_at, feedback, completed_step_ids, play_mode'
+          );
+          if (cRes.error && /play_mode/i.test(cRes.error.message || '')) {
+            cRes = await fetchRoleplayCompletions(
+              'id, scenario_id, scenario_title, scenario_level, completed_at, feedback, completed_step_ids'
+            );
+          }
+          const aRes = await supabase
               .from('speaking_assessments')
               .select('id, scenario_id, overall_score, criteria_scores, feedback, user_messages, agent_session_id, created_at')
               .eq('user_id', userId)
               .eq('scenario_id', scenarioId)
               .order('created_at', { ascending: false })
-              .limit(500),
-          ]);
+              .limit(500);
           if (cRes.error) throw new Error(cRes.error.message);
           if (aRes.error) throw new Error(aRes.error.message);
           const scenario = getRoleplayScenarioById(scenarioId);
@@ -304,6 +320,7 @@ export default function ProgressFocusPage() {
               : [];
             const strengths = toFeedbackList(assessment?.feedback?.strengths);
             const improvements = toFeedbackList(assessment?.feedback?.improvements);
+            const playMode = parseZhPlayMode(row.play_mode);
             return {
               attemptId: row.id,
               completedAt: row.completed_at,
@@ -318,10 +335,17 @@ export default function ProgressFocusPage() {
               debateSessionId: null,
               agentSessionId: assessment?.agent_session_id ?? null,
               fallbackUserMessages: Array.isArray(assessment?.user_messages) ? assessment!.user_messages! : [],
+              playMode,
             };
           });
           const scores = attempts.map((a) => a.overallScore).filter((v): v is number => typeof v === 'number');
           const stepPcts = attempts.map((a) => a.stepCompletionPct).filter((v): v is number => typeof v === 'number');
+          const masteredModes = emptyMasteredModes();
+          for (const attempt of attempts) {
+            if (attempt.playMode && isZhAttemptMastered(attempt.overallScore)) {
+              masteredModes[attempt.playMode] = true;
+            }
+          }
           if (!cancelled) {
             setModel({
               mode: 'roleplay',
@@ -331,6 +355,7 @@ export default function ProgressFocusPage() {
               avgScore: scores.length ? round1(scores.reduce((s, v) => s + v, 0) / scores.length) : null,
               bestScore: scores.length ? Math.max(...scores) : null,
               avgStepPct: stepPcts.length ? Math.round(stepPcts.reduce((s, v) => s + v, 0) / stepPcts.length) : null,
+              masteredModes,
             });
           }
         } else {
@@ -567,12 +592,25 @@ export default function ProgressFocusPage() {
         goalsTotal={goalsTotal}
         bestScore={model.bestScore}
         scoreMaxLabel={model.mode === 'voice' ? '%' : '/10'}
+        extra={
+          model.mode === 'roleplay' && model.masteredModes ? (
+            <div style={{ marginTop: '0.65rem' }}>
+              <ZhPlayModeDots mastered={model.masteredModes} />
+            </div>
+          ) : null
+        }
       />
 
       {model.mode !== 'voice' && <FocusCriteria criteria={focusCriteria} />}
 
       <FocusAttemptSelector
-        attempts={model.attempts}
+        attempts={model.attempts.map((attempt) => ({
+          attemptId: attempt.attemptId,
+          completedAt: attempt.completedAt,
+          overallScore: model.mode === 'voice' ? attempt.coveragePct ?? attempt.overallScore : attempt.overallScore,
+          stepCompletionPct: attempt.stepCompletionPct,
+          playModeLabel: attempt.playMode ? ZH_PLAY_MODE_LABELS[attempt.playMode] : undefined,
+        }))}
         selectedAttemptId={selectedAttempt?.attemptId ?? null}
         onSelect={setSelectedAttemptId}
       />
