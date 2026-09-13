@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import styles from './landing.module.css';
+import { useLandingPreviewLang } from './preview-lang';
 
 const STEPS = [
   {
@@ -28,6 +29,21 @@ const STEPS = [
 ] as const;
 
 export function HowItWorksSection() {
+  const { previewLang } = useLandingPreviewLang();
+  const isZh = previewLang === 'zh';
+  const steps = [
+    STEPS[0],
+    STEPS[1],
+    {
+      num: 3,
+      title: 'Выбери, что тренировать',
+      text: isZh
+        ? 'Собеседник со сценариями HSK и голосовыми заданиями, караоке для лексики, словарь с пиньинем, аналитика — для прогресса.'
+        : 'Собеседник для речи и дебатов, караоке для лексики из песен, словарь с идиомами, аналитика — для прогресса.',
+    },
+    STEPS[3],
+  ];
+
   return (
     <section id="how-it-works" className={styles.howItWorksSection} aria-labelledby="how-it-works-title">
       <div className={styles.howItWorksInner}>
@@ -36,11 +52,13 @@ export function HowItWorksSection() {
           Как это работает
         </h2>
         <p className={styles.howItWorksSubtitle}>
-          От регистрации и выбора тарифа до уверенной практики
+          {isZh
+            ? 'От регистрации до уверенной практики китайского'
+            : 'От регистрации и выбора тарифа до уверенной практики'}
         </p>
 
         <div className={styles.howItWorksSteps}>
-          {STEPS.map((step, i) => (
+          {steps.map((step, i) => (
             <React.Fragment key={step.num}>
               <div className={styles.howItWorksStep}>
                 <div className={styles.howItWorksStepNum}>
@@ -49,7 +67,7 @@ export function HowItWorksSection() {
                 <h3 className={styles.howItWorksStepTitle}>{step.title}</h3>
                 <p className={styles.howItWorksStepText}>{step.text}</p>
               </div>
-              {i < STEPS.length - 1 && (
+              {i < steps.length - 1 && (
                 <div className={styles.howItWorksConnector} aria-hidden>
                   <span className={styles.howItWorksArrow}>→</span>
                 </div>

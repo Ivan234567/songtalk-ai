@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './landing.module.css';
+import { useLandingPreviewLang } from './preview-lang';
 
 const FEATURE_IDS = {
   agent: 'feature-slide-agent',
@@ -17,6 +18,8 @@ interface ProblemAgitationSectionProps {
 }
 
 export function ProblemAgitationSection({ onScrollToFeature }: ProblemAgitationSectionProps) {
+  const { previewLang } = useLandingPreviewLang();
+  const isZh = previewLang === 'zh';
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
 
@@ -55,10 +58,12 @@ export function ProblemAgitationSection({ onScrollToFeature }: ProblemAgitationS
           <div className={`${styles.problemCard} ${inView ? styles.problemCardRevealed : ''}`}>
             <div className={styles.problemCardGlow} aria-hidden />
             <p className={styles.problemCardQuestion}>
-              Понимаю всё, но молчу?
+              {isZh ? 'Иероглифы узнаю, а сказать — ступор?' : 'Понимаю всё, но молчу?'}
             </p>
             <p className={styles.problemCardText}>
-              Понимание и говорение — это два разных навыка. Вы отлично научились слушать, а разговорная «мышца» пока не натренирована. Ей нужна не критика, а спокойная практика, где ошибки — это нормально.
+              {isZh
+                ? 'Чтение и говорение — разные навыки. Пиньинь и HSK в голове есть, а разговорная «мышца» ещё нет. Ей нужна спокойная практика, где ошибки — это нормально.'
+                : 'Понимание и говорение — это два разных навыка. Вы отлично научились слушать, а разговорная «мышца» пока не натренирована. Ей нужна не критика, а спокойная практика, где ошибки — это нормально.'}
             </p>
             <button
               type="button"
@@ -74,10 +79,14 @@ export function ProblemAgitationSection({ onScrollToFeature }: ProblemAgitationS
           <div className={`${styles.problemCard} ${inView ? styles.problemCardRevealed : ''}`} style={{ animationDelay: '0.12s' }}>
             <div className={styles.problemCardGlow} aria-hidden />
             <p className={styles.problemCardQuestion}>
-              Учите слова по песням и сериалам, но они вылетают из головы? Не видите, растёте ли вы вообще?
+              {isZh
+                ? 'Учите слова к HSK, но они вылетают из головы? Не видите, растёте ли вы вообще?'
+                : 'Учите слова по песням и сериалам, но они вылетают из головы? Не видите, растёте ли вы вообще?'}
             </p>
             <p className={styles.problemCardText}>
-              Нет системы повторений, контекста и понятного прогресса. Хочется собирать лексику из любимого контента и видеть результат в цифрах.
+              {isZh
+                ? 'Нет системы повторений, пиньиня в контексте и понятного прогресса. Хочется собирать иероглифы из любимого контента и видеть результат в цифрах.'
+                : 'Нет системы повторений, контекста и понятного прогресса. Хочется собирать лексику из любимого контента и видеть результат в цифрах.'}
             </p>
             <div className={styles.problemCardCtaGroup}>
               <button type="button" onClick={() => handleScrollTo('karaoke')} className={styles.problemCardCtaSmall}>

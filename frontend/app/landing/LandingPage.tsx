@@ -275,6 +275,7 @@ function LandingPageInner() {
         <Link href="/" className={styles.logoLink} aria-label="Speakeasy — на главную">
           <Logo />
         </Link>
+        <LangPreviewToggle variant="header" />
         <nav className={styles.nav} aria-label="Основная навигация">
           {userEmail ? (
             <UserAvatar email={userEmail} />
@@ -302,7 +303,7 @@ function LandingPageInner() {
               ? 'Хватит молчать — тренируй речь в сценариях HSK и голосовых заданиях. Пиньинь и темп под тебя. Без осуждающих взглядов.'
               : 'Хватит молчать — тренируй речь в живых сценариях с ИИ. От заказа кофе до дебатов. Без осуждающих взглядов. Только ты и твой темп.'}
           </p>
-          <p className={styles.heroLangHint}>Английский и китайский — переключите превью.</p>
+          <p className={styles.heroLangHint}>Переключатель действует на всю страницу — слайды, отзывы и FAQ тоже меняются.</p>
           <div className={styles.heroCtaWrap}>
             <Link href="/auth/register" className={styles.heroCtaGlass}>
               Начать

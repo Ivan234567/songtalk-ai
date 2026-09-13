@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import styles from './landing.module.css';
+import { useLandingPreviewLang } from './preview-lang';
 
 export function FinalCtaSection() {
+  const { previewLang } = useLandingPreviewLang();
+  const isZh = previewLang === 'zh';
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -25,8 +28,12 @@ export function FinalCtaSection() {
         </h2>
         <p className={styles.finalCtaSubtitle}>
           {user
-            ? 'Пополни баланс и занимайся в своём темпе — собеседник, караоке, словарь и аналитика уже ждут.'
-            : 'Зарегистрируйся, пополни баланс на любую сумму и плати только за то, что реально потратил на занятия. Никакой ежемесячной подписки.'}
+            ? isZh
+              ? 'Пополни баланс и занимайся в своём темпе — сценарии HSK, голосовые задания, караоке и словарь уже ждут.'
+              : 'Пополни баланс и занимайся в своём темпе — собеседник, дебаты, караоке, словарь и аналитика уже ждут.'
+            : isZh
+              ? 'Зарегистрируйся и тренируй китайский: сценарии HSK, пиньинь, голосовые задания. Плати только за то, что реально потратил.'
+              : 'Зарегистрируйся, пополни баланс на любую сумму и плати только за то, что реально потратил на занятия. Никакой ежемесячной подписки.'}
         </p>
         <div className={styles.finalCtaWrap}>
           <Link

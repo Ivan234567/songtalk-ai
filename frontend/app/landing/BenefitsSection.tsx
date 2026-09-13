@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './landing.module.css';
+import { useLandingPreviewLang } from './preview-lang';
 
 const BENEFITS = [
   {
@@ -69,7 +70,46 @@ const BENEFITS = [
   },
 ] as const;
 
+const BENEFIT_COPY = {
+  en: [
+    {
+      before: 'На созвоне понимаю всё, но сказать не решаюсь.',
+      after: 'Отвечаю и уточняю — практика дала уверенность.',
+      viaText: 'Диалоги с ИИ, сценарии и дебаты — практикуй в своём темпе, без страха ошибиться.',
+    },
+    {
+      before: 'Песни и сериалы смотрю впустую — слова не оседают.',
+      after: 'Лексика из любимого контента в словаре и в речи.',
+      viaText: 'Слова из видео в коллекцию, озвучка и повторение в словаре.',
+    },
+    {
+      before: 'Занимаюсь вроде бы, но расту ли — непонятно.',
+      after: 'Баллы и тренды показывают, где я вырос.',
+      viaText: 'Оценка по критериям, разбор диалогов, графики и рекомендации.',
+    },
+  ],
+  zh: [
+    {
+      before: 'Иероглифы узнаю, а вслух сказать не решаюсь.',
+      after: 'Отвечаю в сценариях HSK — практика дала уверенность.',
+      viaText: 'Диалоги с ИИ, замок HSK и голосовые задания — практикуй в своём темпе.',
+    },
+    {
+      before: 'Дорамы смотрю впустую — слова и 成语 не оседают.',
+      after: 'Иероглифы и пиньинь из любимого контента в словаре и в речи.',
+      viaText: 'Слова из видео в коллекцию, озвучка, пиньинь и повторение.',
+    },
+    {
+      before: 'Учу HSK вроде бы, но расту ли — непонятно.',
+      after: 'Баллы и тренды показывают, где я вырос.',
+      viaText: 'Оценка по критериям, разбор диалогов, графики и рекомендации.',
+    },
+  ],
+} as const;
+
 export function BenefitsSection() {
+  const { previewLang } = useLandingPreviewLang();
+  const copy = BENEFIT_COPY[previewLang];
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
   const [hoverCard, setHoverCard] = useState<number | null>(null);
@@ -129,7 +169,7 @@ export function BenefitsSection() {
                   <span className={styles.benefitsCardTagIcon}>{item.iconBefore}</span>
                   До
                 </span>
-                <p className={styles.benefitsCardText}>{item.before}</p>
+                <p className={styles.benefitsCardText}>{copy[i].before}</p>
               </div>
               <div className={styles.benefitsCardBridge} aria-hidden>
                 <span className={styles.benefitsCardBridgeLine} />
@@ -147,13 +187,13 @@ export function BenefitsSection() {
                   <span className={styles.benefitsCardTagIcon}>{item.iconAfter}</span>
                   После
                 </span>
-                <p className={styles.benefitsCardText}>{item.after}</p>
+                <p className={styles.benefitsCardText}>{copy[i].after}</p>
                 <p className={styles.benefitsCardVia}>
                   <span className={styles.benefitsCardViaLabel}>Благодаря:</span>{' '}
                   <span className={styles.benefitsCardViaPills}>
                     {item.via.join(' + ')}
                   </span>
-                  — {item.viaText}
+                  — {copy[i].viaText}
                 </p>
               </div>
             </article>

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import styles from './landing.module.css';
+import { useLandingPreviewLang } from './preview-lang';
 
 const FAQ_ITEMS = [
   {
@@ -12,7 +13,7 @@ const FAQ_ITEMS = [
   {
     id: 'languages',
     question: 'Какие языки можно учить?',
-    answer: 'Английский и китайский. Для английского — сценарии, дебаты и словарь с идиомами и фразовыми глаголами. Для китайского — сценарии HSK, голосовые задания, пиньинь и иероглифы. Язык выбирается в аккаунте; на этой странице переключатель только показывает, как выглядит каждый режим.',
+    answer: 'Английский и китайский. Для английского — сценарии, дебаты и словарь с идиомами и фразовыми глаголами. Для китайского — сценарии HSK, голосовые задания, пиньинь и иероглифы. Язык обучения выбирается в аккаунте. Переключатель English / 中文 на этой странице только показывает, как выглядит каждый режим.',
   },
   {
     id: 'how-start',
@@ -37,7 +38,29 @@ const FAQ_ITEMS = [
 ];
 
 export function FaqSection() {
-  const [openId, setOpenId] = useState<string | null>(FAQ_ITEMS[0]?.id ?? null);
+  const { previewLang } = useLandingPreviewLang();
+  const isZh = previewLang === 'zh';
+  const items = [
+    {
+      id: 'what-is',
+      question: 'Что такое Speakeasy?',
+      answer: isZh
+        ? 'Это платформа для практики китайского: ты говоришь или печатаешь с ИИ-собеседником в сценариях HSK, делаешь голосовые задания, учишь слова из песен через караоке, ведёшь словарь с пиньинем и смотришь прогресс. Английский тоже есть — переключи превью наверху.'
+        : 'Это платформа для практики английского: ты говоришь или печатаешь с ИИ-собеседником, тренируешь сценарии и дебаты, учишь слова из песен через караоке, ведёшь словарь с идиомами и смотришь прогресс. Китайский тоже есть — переключи превью наверху.',
+    },
+    FAQ_ITEMS[1],
+    {
+      id: 'how-start',
+      question: 'Как начать заниматься?',
+      answer: isZh
+        ? 'Зарегистрируйся, пополни баланс (от 300 ₽) — подписки нет. Дальше выбирай китайский в аккаунте: диалоги и сценарии HSK, голосовые задания, караоке, словарь, аналитика. Баланс один на все разделы.'
+        : FAQ_ITEMS[2].answer,
+    },
+    FAQ_ITEMS[3],
+    FAQ_ITEMS[4],
+    FAQ_ITEMS[5],
+  ];
+  const [openId, setOpenId] = useState<string | null>(items[0]?.id ?? null);
 
   return (
     <section id="faq" className={styles.faqSection} aria-labelledby="faq-title">
@@ -48,7 +71,7 @@ export function FaqSection() {
         </h2>
 
         <ul className={styles.faqList} role="list">
-          {FAQ_ITEMS.map((item) => (
+          {items.map((item) => (
             <li key={item.id} className={styles.faqItem}>
               <button
                 type="button"

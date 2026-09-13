@@ -36,14 +36,17 @@ const OPTIONS: { id: LandingPreviewLang; label: string }[] = [
 ];
 
 type LangPreviewToggleProps = {
-  variant?: 'hero' | 'slide';
+  variant?: 'hero' | 'slide' | 'header';
 };
 
 export function LangPreviewToggle({ variant = 'slide' }: LangPreviewToggleProps) {
   const { previewLang, setPreviewLang } = useLandingPreviewLang();
-  const wrapClass = variant === 'hero'
-    ? `${styles.langToggle} ${styles.langToggleHero}`
-    : `${styles.langToggle} ${styles.langToggleSlide}`;
+  const wrapClass = [
+    styles.langToggle,
+    variant === 'hero' ? styles.langToggleHero : '',
+    variant === 'slide' ? styles.langToggleSlide : '',
+    variant === 'header' ? styles.langToggleHeader : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <div

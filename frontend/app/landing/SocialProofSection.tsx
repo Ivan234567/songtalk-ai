@@ -2,24 +2,44 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import styles from './landing.module.css';
+import { useLandingPreviewLang } from './preview-lang';
 
-const TESTIMONIALS = [
-  {
-    quote: 'Наконец перестала молчать на созвонах. Тренировала ответы с ИИ — теперь формулирую мысли без паники.',
-    name: 'Мария',
-    role: 'менеджер в IT',
-  },
-  {
-    quote: 'Караоке по любимым трекам плюс словарь — слова из песен реально осели. Говорю увереннее.',
-    name: 'Дмитрий',
-    role: 'изучает английский',
-  },
-  {
-    quote: 'Сценарии HSK и пиньинь в чате — наконец не боюсь говорить. Вижу, какие иероглифы уже свои.',
-    name: 'Анна',
-    role: 'готовится к HSK',
-  },
-] as const;
+const TESTIMONIALS = {
+  en: [
+    {
+      quote: 'Наконец перестала молчать на созвонах. Тренировала ответы с ИИ — теперь формулирую мысли без паники.',
+      name: 'Мария',
+      role: 'менеджер в IT',
+    },
+    {
+      quote: 'Караоке по любимым трекам плюс словарь — слова из песен реально осели. Говорю увереннее.',
+      name: 'Дмитрий',
+      role: 'изучает английский',
+    },
+    {
+      quote: 'Удобно, что вижу прогресс в цифрах. Понимаю, где подтянуть, а не просто «занимаюсь вроде бы».',
+      name: 'Анна',
+      role: 'готовится к собеседованию',
+    },
+  ],
+  zh: [
+    {
+      quote: 'Сценарии HSK и пиньинь в чате — наконец не боюсь говорить. Вижу, какие иероглифы уже свои.',
+      name: 'Анна',
+      role: 'готовится к HSK',
+    },
+    {
+      quote: 'Голосовые задания короткие, но по делу. После недели проще заказать еду вслух.',
+      name: 'Кирилл',
+      role: 'учит китайский',
+    },
+    {
+      quote: 'Слова из клипов сохраняю с пиньинем. Больше не зубрю список — вспоминаю из песни.',
+      name: 'Лена',
+      role: 'смотрит дорамы',
+    },
+  ],
+} as const;
 
 const STAT = {
   value: '500+',
@@ -27,6 +47,8 @@ const STAT = {
 };
 
 export function SocialProofSection() {
+  const { previewLang } = useLandingPreviewLang();
+  const testimonials = TESTIMONIALS[previewLang];
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
 
@@ -49,7 +71,7 @@ export function SocialProofSection() {
           Им уже проще говорить
         </h2>
         <p className={styles.socialProofSubtitle}>
-          Опыт тех, кто тренирует речь и лексику с Speakeasy
+          Опыт тех, кто тренирует {previewLang === 'zh' ? 'китайский' : 'английский'} с Speakeasy
         </p>
 
         <div className={styles.socialProofStat}>
@@ -58,7 +80,7 @@ export function SocialProofSection() {
         </div>
 
         <ul className={styles.socialProofList} role="list">
-          {TESTIMONIALS.map((item, i) => (
+          {testimonials.map((item, i) => (
             <li
               key={i}
               className={`${styles.socialProofCard} ${inView ? styles.socialProofCardRevealed : ''}`}

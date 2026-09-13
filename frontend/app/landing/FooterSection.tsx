@@ -4,6 +4,7 @@ import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
 import styles from './landing.module.css';
+import { useLandingPreviewLang } from './preview-lang';
 
 const TELEGRAM_SUPPORT = 'https://t.me/SPEAKEASY_SUPPORT';
 
@@ -43,6 +44,7 @@ function LinkColumn({ title, items }: { title: string; items: typeof LINKS_ABOUT
 }
 
 export function FooterSection() {
+  const { previewLang } = useLandingPreviewLang();
   return (
     <footer className={styles.ft} role="contentinfo">
       {/* Mesh-фон */}
@@ -59,7 +61,9 @@ export function FooterSection() {
                 <span>Speakeasy</span>
               </Link>
               <p className={styles.ftTagline}>
-                Практика английского и китайского с ИИ — говори, пой, учи слова в своём темпе.
+                {previewLang === 'zh'
+                  ? 'Практика китайского с ИИ — сценарии HSK, пиньинь, голосовые задания в своём темпе.'
+                  : 'Практика английского с ИИ — сценарии, дебаты, караоке и словарь в своём темпе.'}
               </p>
             </div>
 
