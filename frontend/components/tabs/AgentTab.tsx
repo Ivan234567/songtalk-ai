@@ -4757,53 +4757,18 @@ export function AgentTab() {
                         </section>
                       )}
                       {agentMode === 'roleplay' && selectedScenario && (
-                        <>
-                          <RoleplayScenarioProgress
-                            scenario={selectedScenario}
-                            completedStepIds={roleplayStepsCompletedIds}
-                            saidMustSayHanzi={zhSaidMustSay}
-                            selectedSessionId={selectedSessionId}
-                            learningLanguage={learningLanguage}
-                            stepsOpen={roleplaySidebarStepsOpen}
-                            onToggleSteps={() => setRoleplaySidebarStepsOpen((v) => !v)}
-                            onSaveProgress={saveRoleplayProgress}
-                            vocabPeeked={zhVocabPeeked}
-                            onPeekVocab={() => setZhVocabPeeked(true)}
-                          />
-                          {(selectedScenario.goalRu || selectedScenario.goal) && (
-                            <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
-                              <button
-                                type="button"
-                                onClick={() => setRoleplaySidebarGoalOpen((v) => !v)}
-                                aria-expanded={roleplaySidebarGoalOpen}
-                                style={{
-                                  width: '100%',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  border: 'none',
-                                  background: 'transparent',
-                                  color: 'var(--sidebar-text)',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.04em',
-                                  cursor: 'pointer',
-                                  padding: 0,
-                                  marginBottom: roleplaySidebarGoalOpen ? '0.5rem' : 0,
-                                }}
-                              >
-                                Цель задания
-                                <span style={{ opacity: 0.7 }}>{roleplaySidebarGoalOpen ? '▼' : '▶'}</span>
-                              </button>
-                              {roleplaySidebarGoalOpen && (
-                                <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, color: 'var(--sidebar-text)', opacity: 0.95 }}>
-                                  {selectedScenario.goalRu ?? selectedScenario.goal}
-                                </p>
-                              )}
-                            </section>
-                          )}
-                        </>
+                        <RoleplayScenarioProgress
+                          scenario={selectedScenario}
+                          completedStepIds={roleplayStepsCompletedIds}
+                          saidMustSayHanzi={zhSaidMustSay}
+                          selectedSessionId={selectedSessionId}
+                          learningLanguage={learningLanguage}
+                          stepsOpen={roleplaySidebarStepsOpen}
+                          onToggleSteps={() => setRoleplaySidebarStepsOpen((v) => !v)}
+                          onSaveProgress={saveRoleplayProgress}
+                          vocabPeeked={zhVocabPeeked}
+                          onPeekVocab={() => setZhVocabPeeked(true)}
+                        />
                       )}
                       {/* --- Уровень HSK --- */}
                       <div

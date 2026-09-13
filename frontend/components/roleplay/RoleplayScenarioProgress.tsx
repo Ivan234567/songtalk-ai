@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { RoleplayScenario } from '@/lib/roleplay';
 import {
   getLessonTrackerState,
@@ -83,6 +83,11 @@ export function RoleplayScenarioProgress({
   const showZhVocab = mustSay.length > 0 && !hideVocab;
   const canMarkGoal = !selectedSessionId && tracker.plotReady;
   const isZh = learningLanguage === 'zh';
+  const [goalOpen, setGoalOpen] = useState(true);
+  const goalText =
+    (typeof scenario.goalRu === 'string' && scenario.goalRu.trim()) ||
+    (typeof scenario.goal === 'string' && scenario.goal.trim()) ||
+    '';
 
   const sectionStyle: React.CSSProperties = boxed
     ? {
@@ -98,7 +103,7 @@ export function RoleplayScenarioProgress({
 
   return (
     <section style={sectionStyle}>
-      {!hasSteps && !showZhVocab ? (
+      {!hasSteps && !showZhVocab && !goalText ? (
         <span style={{ ...headerBtn, cursor: 'default' }}>Задание</span>
       ) : null}
       {hasSteps && (
@@ -198,6 +203,34 @@ export function RoleplayScenarioProgress({
           </div>
         </div>
       )}
+
+      {isZh && goalText ? (
+        <section
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.35rem',
+            marginTop: hasSteps || showZhVocab || canPeekVocab ? '0.65rem' : 0,
+            paddingTop: hasSteps || showZhVocab || canPeekVocab ? '0.65rem' : 0,
+            borderTop: hasSteps || showZhVocab || canPeekVocab ? '1px solid var(--sidebar-border)' : 'none',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setGoalOpen((v) => !v)}
+            aria-expanded={goalOpen}
+            style={{ ...headerBtn, marginBottom: goalOpen ? '0.5rem' : 0 }}
+          >
+            Цель задания
+            <span style={{ opacity: 0.7 }}>{goalOpen ? '▼' : '▶'}</span>
+          </button>
+          {goalOpen && (
+            <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, color: 'var(--sidebar-text)', opacity: 0.95 }}>
+              {goalText}
+            </p>
+          )}
+        </section>
+      ) : null}
 
       {selectedSessionId ? (
         <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>

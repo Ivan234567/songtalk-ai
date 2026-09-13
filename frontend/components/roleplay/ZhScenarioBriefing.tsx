@@ -92,12 +92,10 @@ export function ZhScenarioBriefing({
   );
   const effectiveStarter = isPreview ? scenario.starter || 'ai' : starter;
   const dense = isPreview || playMode === 'rehearsal';
-  const lifeMode = !isPreview && playMode === 'life';
   const stressMode = !isPreview && playMode === 'stress';
   const goalItems = (Array.isArray(scenario.goals) ? scenario.goals : []).filter(
     (g): g is string => typeof g === 'string' && Boolean(g.trim())
   );
-  const goalLine = goalItems.join(' · ');
   const grammarFocus = typeof scenario.grammar_focus === 'string' ? scenario.grammar_focus.trim() : '';
   const twist =
     (typeof scenario.stress_twist_ru === 'string' && scenario.stress_twist_ru.trim()) ||
@@ -191,21 +189,10 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {lifeMode && (
-        <Card title="Цель сцены">
-          <div>{goalLine || scenario.scenario_text_ru || scenario.description || scenario.title}</div>
-        </Card>
-      )}
-
       {stressMode && (
-        <>
-          <Card title="Цель сцены">
-            <div>{goalLine || scenario.title}</div>
-          </Card>
-          <Card title="Осложнение">
-            <div>{twist}</div>
-          </Card>
-        </>
+        <Card title="Осложнение">
+          <div>{twist}</div>
+        </Card>
       )}
 
       {dense && (scenario.user_role || scenario.ai_role) && (
@@ -220,7 +207,7 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {dense && goalItems.length > 0 && (
+      {goalItems.length > 0 && (
         <Card title="Цели">
           <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
             {goalItems.map((g, i) => (
