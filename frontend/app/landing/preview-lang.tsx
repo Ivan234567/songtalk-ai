@@ -68,7 +68,7 @@ const OPTIONS: { id: LandingPreviewLang; label: string; Flag: () => React.ReactE
 ];
 
 type LangPreviewToggleProps = {
-  variant?: 'hero' | 'slide' | 'header';
+  variant?: 'hero' | 'slide';
 };
 
 export function LangPreviewToggle({ variant = 'slide' }: LangPreviewToggleProps) {
@@ -77,7 +77,6 @@ export function LangPreviewToggle({ variant = 'slide' }: LangPreviewToggleProps)
     styles.langToggle,
     variant === 'hero' ? styles.langToggleHero : '',
     variant === 'slide' ? styles.langToggleSlide : '',
-    variant === 'header' ? styles.langToggleHeader : '',
   ].filter(Boolean).join(' ');
 
   return (

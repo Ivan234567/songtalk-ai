@@ -277,7 +277,6 @@ function LandingPageInner() {
         <Link href="/" className={styles.logoLink} aria-label="Speakeasy — на главную">
           <Logo />
         </Link>
-        <LangPreviewToggle variant="header" />
         <nav className={styles.nav} aria-label="Основная навигация">
           {userEmail ? (
             <UserAvatar email={userEmail} />
