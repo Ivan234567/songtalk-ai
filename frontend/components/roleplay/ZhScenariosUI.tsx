@@ -20,6 +20,7 @@ import {
 } from '@/lib/zh-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
+import { ZhScenarioCatalog } from '@/components/roleplay/ZhScenarioCatalog';
 import { ZhScenarioConstructor } from '@/components/roleplay/ZhScenarioConstructor';
 import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
