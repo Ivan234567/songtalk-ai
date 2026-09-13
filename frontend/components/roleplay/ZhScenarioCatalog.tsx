@@ -300,11 +300,20 @@ export function ZhScenarioCatalog({
   }, [scenarios, searchQuery]);
 
   return (
-    <>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       {copyMessage && (
         <div
           role="status"
           style={{
+            flexShrink: 0,
             padding: '0.75rem 1.25rem',
             background: 'rgba(34, 197, 94, 0.12)',
             borderBottom: '1px solid rgba(34, 197, 94, 0.3)',
@@ -318,6 +327,7 @@ export function ZhScenarioCatalog({
       )}
       <div
         style={{
+          flexShrink: 0,
           padding: '1.5rem 1.75rem 1rem',
           borderBottom: '1px solid var(--sidebar-border)',
           display: 'flex',
@@ -399,7 +409,14 @@ export function ZhScenarioCatalog({
           ))}
         </div>
       </div>
-      <div style={{ overflowY: 'auto', padding: '1.5rem 1.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          padding: '1.5rem 1.75rem',
+        }}
+      >
         {loading ? (
           <p style={{ margin: 0, fontSize: '0.9375rem', opacity: 0.7 }}>Загрузка…</p>
         ) : sections.length === 0 ? (
@@ -407,13 +424,15 @@ export function ZhScenarioCatalog({
             {scenarios.length === 0 ? 'В каталоге пока нет сценариев.' : 'Ничего не найдено. Измените запрос.'}
           </p>
         ) : (
-          sections.map(({ themeId, label, bar, scenarios: list }) => {
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {sections.map(({ themeId, label, bar, scenarios: list }) => {
             const isExpanded = expanded.has(themeId);
             return (
               <section
                 key={themeId}
                 aria-labelledby={`zh-theme-${themeId}`}
                 style={{
+                  flexShrink: 0,
                   borderRadius: 12,
                   border: '1px solid var(--sidebar-border)',
                   overflow: 'hidden',
@@ -509,9 +528,10 @@ export function ZhScenarioCatalog({
                 )}
               </section>
             );
-          })
+          })}
+          </div>
         )}
       </div>
-    </>
+    </div>
   );
 }

@@ -531,7 +531,7 @@ export function ZhScenariosUI({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ flexShrink: 0, padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
             style={{
               display: 'inline-flex',
