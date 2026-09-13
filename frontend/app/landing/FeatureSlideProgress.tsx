@@ -5,42 +5,57 @@ import { ProgressIcon } from '@/components/sidebar/Sidebar';
 import { LangPreviewToggle, useLandingPreviewLang, type LandingPreviewLang } from './preview-lang';
 import styles from './landing.module.css';
 
-/** Мини-кольцо балла 7.2/10 + подпись */
 function ScoreRingMock() {
   return (
-    <div className={styles.progressScoreWrap} role="img" aria-label="Средний балл">
-      <div className={styles.progressScoreRing}>
-        <span className={styles.progressScoreValue}>7.2</span>
-        <span className={styles.progressScoreMax}>/10</span>
+    <div className={styles.prodKpi} role="img" aria-label="Средний балл">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div
+          className={styles.prodRing}
+          style={{ background: 'conic-gradient(rgba(34,197,94,0.92) 72%, rgba(255,255,255,0.14) 72% 100%)' }}
+        >
+          <div className={styles.prodRingInner}>
+            <strong style={{ fontSize: '0.95rem', lineHeight: 1 }}>7.2</strong>
+            <span style={{ fontSize: '0.58rem', opacity: 0.7 }}>из 10</span>
+          </div>
+        </div>
+        <div>
+          <div className={styles.prodKpiLabel}>Средний балл</div>
+          <div className={styles.prodKpiValue}>7.2</div>
+          <div style={{ fontSize: '0.65rem', color: 'rgba(107, 240, 176, 0.9)' }}>↑ 0.4 за неделю</div>
+        </div>
       </div>
-      <span className={styles.progressScoreLabel}>средний балл</span>
     </div>
   );
 }
 
-/** Мини-бары критериев */
 function CriteriaBarsMock({ previewLang }: { previewLang: LandingPreviewLang }) {
   const bars = previewLang === 'zh'
     ? [
-        { label: 'Цель', value: 82 },
-        { label: 'Слова урока', value: 85 },
-        { label: 'Грамматика', value: 74 },
-        { label: 'Диалог', value: 80 },
-        { label: 'Связность', value: 76 },
+        { label: 'Цель и шаги', value: 8.2 },
+        { label: 'Слова урока', value: 8.5 },
+        { label: 'Грамматика', value: 7.4 },
+        { label: 'Диалог', value: 8.0 },
+        { label: 'Связность', value: 7.6 },
       ]
     : [
-        { label: 'Беглость', value: 78 },
-        { label: 'Лексика', value: 85 },
-        { label: 'Произн.', value: 72 },
-        { label: 'Логика', value: 80 },
+        { label: 'Беглость', value: 7.8 },
+        { label: 'Лексика и грамматика', value: 8.5 },
+        { label: 'Произношение', value: 7.2 },
+        { label: 'Полнота и логика', value: 8.0 },
+        { label: 'Диалог', value: 7.6 },
       ];
+  const color = (v: number) => (v >= 7.5 ? 'var(--accent, rgba(107,240,176,0.95))' : v >= 5 ? 'rgba(245, 158, 11, 0.9)' : 'rgba(239, 68, 68, 0.9)');
   return (
-    <div className={styles.progressCriteriaWrap} role="img" aria-label="Критерии">
-      {bars.map((b, i) => (
-        <div key={i} className={styles.progressCriteriaRow}>
-          <span className={styles.progressCriteriaLabel}>{b.label}</span>
-          <div className={styles.progressCriteriaBarBg}>
-            <div className={styles.progressCriteriaBarFill} style={{ width: `${b.value}%` }} />
+    <div className={styles.prodPanel} role="img" aria-label="Критерии">
+      <span className={styles.prodPanelLabel}>Критерии оценки</span>
+      {bars.map((b) => (
+        <div key={b.label} className={styles.prodCriteriaRow}>
+          <div className={styles.prodCriteriaTop}>
+            <span>{b.label}</span>
+            <span>{b.value.toFixed(1)}</span>
+          </div>
+          <div className={styles.prodCriteriaTrack}>
+            <div className={styles.prodCriteriaFill} style={{ width: `${b.value * 10}%`, background: color(b.value) }} />
           </div>
         </div>
       ))}
@@ -48,68 +63,50 @@ function CriteriaBarsMock({ previewLang }: { previewLang: LandingPreviewLang }) 
   );
 }
 
-/** Одна рекомендация — «Практиковать: Сценарий X» */
 function RecommendationMock({ previewLang }: { previewLang: LandingPreviewLang }) {
-  const [hovered, setHovered] = useState(false);
+  const isZh = previewLang === 'zh';
   return (
-    <div
-      className={`${styles.progressRecCard} ${hovered ? styles.progressRecCardHover : ''}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      role="img"
-      aria-label="Рекомендация"
-    >
-      <span className={styles.progressRecBadge}>
-        {previewLang === 'zh' ? 'Повторить минутку' : 'Подтянуть беглость'}
-      </span>
-      <span className={styles.progressRecTitle}>
-        {previewLang === 'zh' ? 'Голосовая минутка «Кафе»' : 'Сценарий «Отель»'}
-      </span>
-      <span className={styles.progressRecCta}>{hovered ? 'Открыть →' : 'Практиковать'}</span>
+    <div className={styles.prodPanel} role="img" aria-label="Рекомендация">
+      <span className={styles.prodPanelLabel}>Сценарии для повторения</span>
+      <p style={{ margin: 0, fontSize: '0.7rem', opacity: 0.75 }}>
+        Слабый критерий: <strong>{isZh ? 'слова урока' : 'беглость'}</strong>
+      </p>
+      <div className={styles.prodWordCard} style={{ padding: '0.5rem 0.65rem' }}>
+        <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'rgba(245, 158, 11, 0.95)' }}>Высокий приоритет</span>
+        <span style={{ fontSize: '0.82rem', fontWeight: 700 }}>{isZh ? 'Голосовая минутка «Кафе»' : 'Сценарий «Отель»'}</span>
+        <button type="button" className={`${styles.prodBtn} ${styles.prodBtnGreen}`} style={{ alignSelf: 'flex-start' }}>
+          Практиковать
+        </button>
+      </div>
     </div>
   );
 }
 
-/** Три строки фидбека: сильные стороны, зоны роста, полезные фразы */
 function FeedbackMock({ previewLang }: { previewLang: LandingPreviewLang }) {
+  const isZh = previewLang === 'zh';
   return (
-    <div className={styles.progressFeedbackWrap} role="img" aria-label="Фидбек">
-      <div className={styles.progressFeedbackRow}>
-        <span className={styles.progressFeedbackTag}>Сильные:</span>
-        <span className={styles.progressFeedbackText}>
-          {previewLang === 'zh' ? 'цель сценария, слова урока' : 'чёткие ответы, хорошая лексика'}
-        </span>
+    <div className={styles.prodPanel} role="img" aria-label="Фидбек">
+      <span className={styles.prodPanelLabel}>Разбор</span>
+      <div className={styles.prodCheckItem} style={{ border: '1px solid rgba(34,197,94,0.25)', background: 'rgba(34,197,94,0.08)' }}>
+        <span><strong>Сильные: </strong>{isZh ? 'цель сценария, слова урока' : 'чёткие ответы, хорошая лексика'}</span>
       </div>
-      <div className={styles.progressFeedbackRow}>
-        <span className={styles.progressFeedbackTag}>Рост:</span>
-        <span className={styles.progressFeedbackText}>
-          {previewLang === 'zh' ? 'грамматика, связность реплик' : 'темп, связки между фразами'}
-        </span>
+      <div className={styles.prodCheckItem} style={{ border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.08)' }}>
+        <span><strong>Рост: </strong>{isZh ? 'грамматика, связность реплик' : 'темп, связки между фразами'}</span>
       </div>
-      <div className={styles.progressFeedbackRow}>
-        <span className={styles.progressFeedbackTag}>Фразы:</span>
-        <span className={styles.progressFeedbackText}>
-          {previewLang === 'zh' ? '我想… / wǒ xiǎng' : 'I’d like to…, Could you…?'}
-        </span>
+      <div style={{ fontSize: '0.72rem' }}>
+        <strong>Фразы: </strong>{isZh ? '我想… / wǒ xiǎng' : 'I’d like to…, Could you…?'}
       </div>
     </div>
   );
 }
 
-/** Тренд-спарклайн + streak «5 дней» */
 function TrendStreakMock() {
-  const [hovered, setHovered] = useState(false);
   const points = [4, 5, 5.5, 6, 6.5, 7, 6.8, 7.2];
   return (
-    <div
-      className={`${styles.progressTrendWrap} ${hovered ? styles.progressTrendWrapHover : ''}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      role="img"
-      aria-label="Тренд и серия"
-    >
-      <div className={styles.progressTrendChart}>
-        <svg viewBox="0 0 80 28" className={styles.progressTrendSvg}>
+    <div className={styles.prodKpi} role="img" aria-label="Тренд и серия">
+      <div className={styles.prodKpiLabel}>Балл по дням</div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
+        <svg viewBox="0 0 80 28" width="88" height="28" style={{ color: 'rgba(107, 240, 176, 0.95)' }}>
           <polyline
             fill="none"
             stroke="currentColor"
@@ -119,11 +116,7 @@ function TrendStreakMock() {
             points={points.map((y, i) => `${(i / (points.length - 1)) * 76 + 2},${26 - (y / 10) * 22}`).join(' ')}
           />
         </svg>
-        <span className={styles.progressTrendLabel}>Балл по дням</span>
-      </div>
-      <div className={styles.progressStreakBadge}>
-        <span className={styles.progressStreakFire}>🔥</span>
-        <span className={styles.progressStreakDays}>5 дней</span>
+        <span style={{ fontSize: '0.75rem' }}>🔥 5 дней</span>
       </div>
     </div>
   );
@@ -150,7 +143,7 @@ export function FeatureSlideProgress({ sectionId, highlight }: FeatureSlideProgr
         ? 'Узнай свой средний балл по 10-балльной шкале и разбор по китайским критериям: цель и шаги, слова урока, грамматика, диалог, связность.'
         : 'Узнай свой средний балл по 10-балльной шкале и детальный разбор навыков: беглость, лексика, произношение, логика.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Критерии и балл">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Критерии и балл">
           <ScoreRingMock />
           <CriteriaBarsMock previewLang={previewLang} />
         </div>
@@ -164,7 +157,7 @@ export function FeatureSlideProgress({ sectionId, highlight }: FeatureSlideProgr
         ? 'Система сама подскажет, какой сценарий или голосовую минутку лучше пройти, чтобы подтянуть самый слабый навык.'
         : 'Система сама подскажет, какой сценарий или дебат лучше всего пройти, чтобы «подтянуть» самый слабый навык.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Рекомендация">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Рекомендация">
           <RecommendationMock previewLang={previewLang} />
         </div>
       ),
@@ -177,7 +170,7 @@ export function FeatureSlideProgress({ sectionId, highlight }: FeatureSlideProgr
         ? 'После сценария и голосовой минутки — сильные стороны, зоны роста и полезная фраза с пиньинем.'
         : 'После каждой тренировки ты получаешь фидбек с сильными сторонами, зонами роста и списком полезных фраз из разговора.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Фидбек">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Фидбек">
           <FeedbackMock previewLang={previewLang} />
         </div>
       ),
@@ -188,7 +181,7 @@ export function FeatureSlideProgress({ sectionId, highlight }: FeatureSlideProgr
       title: 'Тренды и серия дней',
       text: 'График среднего балла по времени и счётчик дней подряд с практикой — видишь прогресс и не теряешь мотивацию.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Тренд и streak">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Тренд и streak">
           <TrendStreakMock />
         </div>
       ),

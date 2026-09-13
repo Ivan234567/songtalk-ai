@@ -5,188 +5,166 @@ import { AgentIcon } from '@/components/sidebar/Sidebar';
 import { LangPreviewToggle, useLandingPreviewLang, type LandingPreviewLang } from './preview-lang';
 import styles from './landing.module.css';
 
-/** Макет кнопки записи (орб) — интерактивный: при hover «слушает» */
-function RecordOrbMock() {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      className={styles.featureOrbWrap}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      role="img"
-      aria-label="Кнопка записи голоса"
-    >
-      <div
-        className={`${styles.featureOrb} ${hovered ? styles.featureOrbListening : ''}`}
-        style={{
-          background: hovered
-            ? 'radial-gradient(120% 120% at 35% 25%, rgba(165, 180, 252, 0.95), rgba(99, 102, 241, 0.9) 45%, rgba(79, 70, 229, 0.85))'
-            : 'radial-gradient(120% 120% at 35% 25%, rgba(203, 213, 225, 0.5), rgba(148, 163, 184, 0.35) 50%, rgba(100, 116, 139, 0.4))',
-          boxShadow: hovered
-            ? '0 0 0 4px rgba(99, 102, 241, 0.35), 0 0 50px 20px rgba(99, 102, 241, 0.25)'
-            : '0 0 30px 0 rgba(99, 102, 241, 0.12), 0 16px 40px -12px rgba(0, 0, 0, 0.35)',
-        }}
-      />
-      <span className={styles.featureOrbLabel}>{hovered ? 'Говорите…' : 'Нажмите'}</span>
-    </div>
-  );
-}
-
-/** Макет кнопки «Подсказка ответа» */
-function HintButtonMock() {
-  return (
-    <div className={styles.featureHintMock} role="img" aria-label="Кнопка подсказки">
-      <div className={styles.featureHintInner}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-        <span>Подсказка ответа</span>
-      </div>
-    </div>
-  );
-}
-
-/** Макет вкладок режимов — как в продукте */
-function ModeTabsMock({ previewLang }: { previewLang: LandingPreviewLang }) {
-  const tabs = previewLang === 'zh'
-    ? ['Свободный диалог', 'Ситуативный диалог']
-    : ['Freestyle Mode', 'Roleplays', 'Debate'];
-  return (
-    <div
-      className={styles.featureModeTabs}
-      role="img"
-      aria-label={previewLang === 'zh' ? 'Режимы: свободный разговор и ситуативный диалог' : 'Modes: freestyle, roleplays, debate'}
-    >
-      {tabs.map((label, i) => (
-        <span
-          key={label}
-          className={`${styles.featureModeTab} ${i === 1 ? styles.featureModeTabActive : ''}`}
-        >
-          {label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-const plusIcon = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <circle cx="12" cy="12" r="10" />
-    <line x1="12" y1="8" x2="12" y2="16" />
-    <line x1="8" y1="12" x2="16" y2="12" />
-  </svg>
-);
-
-function CreateButtonMock({ label }: { label: string }) {
-  return (
-    <div className={styles.featureCreateBtn} role="img" aria-label={label}>
-      <span className={styles.featureCreateBtnIcon}>{plusIcon}</span>
-      <span>{label}</span>
-    </div>
-  );
-}
-
-const mockPanelStyle: React.CSSProperties = {
-  padding: '0.65rem 0.9rem',
-  borderRadius: 16,
-  border: '1px solid rgba(255, 255, 255, 0.2)',
-  background: 'rgba(255, 255, 255, 0.06)',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.6rem',
-  width: 200,
-  minWidth: 0,
-  boxSizing: 'border-box',
-  overflow: 'hidden',
+const ICO = {
+  chat: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  ),
+  people: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  ),
+  chevron: (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  ),
 };
 
-/** Макет настроек стиля — как в AgentTab (фристайл) */
-function StyleSettingsMock() {
+function RecordOrbMock({ placeholder }: { placeholder: string }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <div role="img" aria-label="Style settings" style={mockPanelStyle}>
-      <span
-        style={{
-          fontSize: '0.7rem',
-          fontWeight: 700,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          opacity: 0.8,
-          color: '#fff',
-        }}
-      >
-        Style
-      </span>
-      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-        {['Neutral', 'Light slang', 'Heavy slang'].map((label, i) => (
-          <span
-            key={label}
-            style={{
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              background: i === 1 ? 'rgba(107, 240, 176, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-              color: i === 1 ? 'rgba(107, 240, 176, 0.95)' : 'rgba(255, 255, 255, 0.85)',
-              borderRadius: 999,
-              padding: '0.2rem 0.5rem',
-              fontSize: '0.7rem',
-              fontWeight: 600,
-            }}
+    <div className={styles.featureOrbWrap} style={{ width: '100%' }} role="img" aria-label="Запись голоса и чат">
+      <div className={styles.prodOrbRing}>
+        <div
+          className={`${styles.featureOrb} ${hovered ? styles.featureOrbListening : ''}`}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{
+            width: 72,
+            height: 72,
+            background: hovered
+              ? 'radial-gradient(120% 120% at 35% 25%, rgba(165, 180, 252, 0.95), rgba(99, 102, 241, 0.9) 45%, rgba(79, 70, 229, 0.85))'
+              : 'radial-gradient(120% 120% at 32% 28%, rgba(203, 213, 225, 0.55), rgba(148, 163, 184, 0.35) 50%, rgba(100, 116, 139, 0.45))',
+            boxShadow: hovered
+              ? '0 0 0 3px rgba(99, 102, 241, 0.35), 0 0 28px 8px rgba(99, 102, 241, 0.22)'
+              : '0 8px 20px rgba(0,0,0,0.3)',
+          }}
+        />
+      </div>
+      <span className={styles.featureOrbLabel}>{hovered ? 'Слушаю…' : 'Нажмите и говорите'}</span>
+      <div className={styles.prodComposer}>
+        <span className={styles.prodComposerInput}>{placeholder}</span>
+        <span className={styles.prodMic} aria-hidden />
+      </div>
+    </div>
+  );
+}
+
+function HintPanelMock({ isZh }: { isZh: boolean }) {
+  const modes = isZh
+    ? ['Базовый', 'С лексикой', 'Вежливый', 'Разговорный']
+    : ['Проще', 'Обычно', 'Живее'];
+  const [active, setActive] = useState(isZh ? 'Базовый' : 'Обычно');
+  return (
+    <div className={styles.prodHintPanel} role="img" aria-label="Подсказка ответа">
+      <span className={styles.prodHintLabel}>Подсказка ответа</span>
+      <div className={styles.prodChipRow}>
+        {modes.map((m) => (
+          <button
+            key={m}
+            type="button"
+            className={`${styles.prodChip} ${active === m ? styles.prodChipActive : ''}`}
+            onClick={() => setActive(m)}
           >
-            {label}
-          </span>
+            {m}
+          </button>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.85)' }}>Slang</span>
-        <div
-          style={{
-            borderRadius: 12,
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            background: 'rgba(255, 255, 255, 0.06)',
-            color: 'rgba(255, 255, 255, 0.9)',
-            padding: '0.2rem 1.5rem 0.2rem 0.45rem',
-            fontSize: '0.75rem',
-            position: 'relative',
-          }}
+      <button type="button" className={styles.prodBtn}>Получить подсказку</button>
+    </div>
+  );
+}
+
+function ModeTabsMock({ previewLang }: { previewLang: LandingPreviewLang }) {
+  const isZh = previewLang === 'zh';
+  const [mode, setMode] = useState<'chat' | 'roleplay' | 'debate'>('roleplay');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const roleplayLabel = isZh ? 'Ситуативный диалог' : 'Roleplays';
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }} role="img" aria-label="Режимы собеседника">
+      <div className={styles.prodSeg}>
+        <button
+          type="button"
+          className={`${styles.prodSegBtn} ${mode === 'chat' ? styles.prodSegBtnActive : ''}`}
+          onClick={() => { setMode('chat'); setMenuOpen(false); }}
         >
-          light
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', opacity: 0.7 }}
+          {ICO.chat}
+          {isZh ? 'Свободный диалог' : 'Freestyle Mode'}
+        </button>
+        <button
+          type="button"
+          className={`${styles.prodSegBtn} ${mode === 'roleplay' ? styles.prodSegBtnActive : ''}`}
+          onClick={() => { setMode('roleplay'); setMenuOpen((v) => !v); }}
+        >
+          {ICO.people}
+          {roleplayLabel}
+          {ICO.chevron}
+        </button>
+        {!isZh && (
+          <button
+            type="button"
+            className={`${styles.prodSegBtn} ${mode === 'debate' ? styles.prodSegBtnActive : ''}`}
+            onClick={() => { setMode('debate'); setMenuOpen(false); }}
           >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+            {ICO.chat}
+            Дебаты
+            {ICO.chevron}
+          </button>
+        )}
+      </div>
+      {menuOpen && (
+        <div className={styles.prodSegMenu}>
+          <div className={styles.prodSegMenuHead}>{isZh ? 'Сценарии' : 'Сценарии'}</div>
+          {['Каталог сценариев', 'Создать сценарий', 'Мои сценарии'].map((item) => (
+            <button key={item} type="button" className={styles.prodSegMenuItem} onClick={() => setMenuOpen(false)}>
+              {item}
+            </button>
+          ))}
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+      )}
+    </div>
+  );
+}
+
+function StyleSettingsMock() {
+  const [preset, setPreset] = useState('Light slang');
+  return (
+    <div className={styles.prodPanel} role="img" aria-label="Настройки стиля">
+      <span className={styles.prodPanelLabel}>Style</span>
+      <div className={styles.prodChipRow}>
+        {['Neutral', 'Light slang', 'Heavy slang'].map((label) => (
+          <button
+            key={label}
+            type="button"
+            className={`${styles.prodChip} ${preset === label ? styles.prodChipAccent : ''}`}
+            onClick={() => setPreset(label)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className={styles.prodChipRow} style={{ alignItems: 'center' }}>
+        <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Slang</span>
+        <span className={styles.prodSelect} style={{ width: 'auto', padding: '0.2rem 1.4rem 0.2rem 0.45rem', position: 'relative' }}>
+          light
+          <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', opacity: 0.7 }}>{ICO.chevron}</span>
+        </span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.7rem', opacity: 0.8 }}>
           <input type="checkbox" disabled style={{ width: 12, height: 12 }} />
           18+
         </label>
       </div>
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          fontSize: '0.75rem',
-          color: 'rgba(255, 255, 255, 0.85)',
-          minWidth: 0,
-        }}
-      >
-        <span style={{ flexShrink: 0, opacity: 0.85 }}>Formality</span>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          defaultValue={35}
-          disabled
-          style={{ flex: '1 1 40px', minWidth: 0, maxWidth: '100%', accentColor: 'rgba(107, 240, 176, 0.8)' }}
-        />
-        <span style={{ flexShrink: 0, width: 18, textAlign: 'right', opacity: 0.7, fontSize: '0.7rem' }}>4</span>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem' }}>
+        <span style={{ opacity: 0.8 }}>Formality</span>
+        <input type="range" min={0} max={100} defaultValue={35} disabled style={{ flex: 1, minWidth: 0, accentColor: 'rgba(107, 240, 176, 0.8)' }} />
+        <span style={{ opacity: 0.7, width: 14, textAlign: 'right' }}>4</span>
       </label>
     </div>
   );
@@ -194,28 +172,27 @@ function StyleSettingsMock() {
 
 function HskSettingsMock() {
   return (
-    <div role="img" aria-label="HSK settings" style={mockPanelStyle}>
-      <span
-        style={{
-          fontSize: '0.7rem',
-          fontWeight: 700,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          opacity: 0.8,
-          color: '#fff',
-        }}
-      >
-        Chinese
-      </span>
-      <span className={styles.hskBadge}>HSK 3</span>
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.85)' }}>
-        пиньинь
-        <input type="checkbox" defaultChecked disabled style={{ width: 12, height: 12, accentColor: 'rgba(107, 240, 176, 0.8)' }} />
-      </label>
-      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.85)' }}>
-        перевод
-        <input type="checkbox" defaultChecked disabled style={{ width: 12, height: 12, accentColor: 'rgba(107, 240, 176, 0.8)' }} />
-      </label>
+    <div className={styles.prodPanel} role="img" aria-label="Настройки HSK">
+      <span className={styles.prodPanelLabel}>Уровень сложности</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.75rem' }}>
+        <span style={{ opacity: 0.85 }}>Уровень HSK</span>
+        <span className={styles.prodSelect} style={{ width: 'auto', maxWidth: '58%' }}>HSK 3 — средний</span>
+      </div>
+      <span className={styles.prodPanelLabel}>Отображение</span>
+      <div className={`${styles.prodToggleRow} ${styles.prodToggleRowOn}`}>
+        <input type="checkbox" defaultChecked disabled style={{ accentColor: 'rgb(99, 102, 241)', width: 14, height: 14 }} />
+        <div>
+          <div style={{ fontSize: '0.75rem', fontWeight: 500 }}>Пиньинь</div>
+          <div style={{ fontSize: '0.62rem', opacity: 0.5 }}>Транскрипция с тонами</div>
+        </div>
+      </div>
+      <div className={`${styles.prodToggleRow} ${styles.prodToggleRowOn}`}>
+        <input type="checkbox" defaultChecked disabled style={{ accentColor: 'rgb(99, 102, 241)', width: 14, height: 14 }} />
+        <div>
+          <div style={{ fontSize: '0.75rem', fontWeight: 500 }}>Перевод</div>
+          <div style={{ fontSize: '0.62rem', opacity: 0.5 }}>Русский поверх реплик</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -243,11 +220,7 @@ export function FeatureSlideAgent({ sectionId, highlight }: FeatureSlideAgentPro
         ? 'Болтай свободно или проходи ситуативный диалог: каталог HSK, свои сценарии, генерация. Замок HSK держит ИИ на выбранном уровне — не выше и не ниже. Не нашёл тему? Опиши её своими словами — ИИ соберёт сценарий.'
         : 'Болтай свободно, оттачивай фразы в реалистичных ситуациях (собеседование, свидание) или тренируй аргументы в дебатах. Не нашел подходящую тему? Опиши её своими словами, и ИИ сам сгенерирует для тебя уникальный сценарий с учетом твоего уровня и целей.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Режимы и создание сценариев">
-          <div className={styles.featureBlockIlloRow}>
-            <CreateButtonMock label={isZh ? 'Создать сценарий' : 'Create Scenario'} />
-            {!isZh && <CreateButtonMock label="Create Debate" />}
-          </div>
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Режимы и создание сценариев">
           <ModeTabsMock previewLang={previewLang} />
         </div>
       ),
@@ -258,11 +231,8 @@ export function FeatureSlideAgent({ sectionId, highlight }: FeatureSlideAgentPro
       title: 'Говори или печатай',
       text: 'Практикуй устную речь с голосовым ИИ-партнером или общайся в чате, если пока стесняешься.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Голос или чат">
-          <RecordOrbMock />
-          <div className={styles.featureChatHint}>
-            <span className={styles.featureChatHintPlaceholder}>{isZh ? '你好…' : 'Type your message…'}</span>
-          </div>
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Голос или чат">
+          <RecordOrbMock placeholder={isZh ? '你好…' : 'Type your message…'} />
         </div>
       ),
     },
@@ -271,16 +241,11 @@ export function FeatureSlideAgent({ sectionId, highlight }: FeatureSlideAgentPro
       hero: false,
       title: 'Умные подсказки',
       text: isZh
-        ? 'Если забыл слово или не знаешь, как построить фразу, нажми «Подсказка» — ИИ предложит варианты проще, вежливее или строго на твоём HSK.'
-        : 'Если забыл слово или не знаешь, как построить фразу, нажми «Подсказка» — ИИ предложит варианты: проще, вежливее, с использованием сленга.',
+        ? 'Если забыл слово или не знаешь, как построить фразу, нажми «Подсказка» — режимы Базовый, С лексикой, Вежливый или Разговорный на твоём HSK.'
+        : 'Если забыл слово или не знаешь, как построить фразу, нажми «Подсказка» — ИИ предложит варианты: Проще, Обычно или Живее.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Подсказка и варианты">
-          <HintButtonMock />
-          <div className={styles.featureHintVariants}>
-            <span>проще</span>
-            <span>вежливее</span>
-            <span>{isZh ? 'HSK' : 'сленг'}</span>
-          </div>
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Подсказка и варианты">
+          <HintPanelMock key={previewLang} isZh={isZh} />
         </div>
       ),
     },
@@ -292,7 +257,7 @@ export function FeatureSlideAgent({ sectionId, highlight }: FeatureSlideAgentPro
         ? 'Замок HSK не даёт ИИ уехать выше твоего уровня. Включи пиньинь и перевод — читай и слушай в своём темпе.'
         : 'Хочешь освоить деловой стиль или живую разговорную речь? Настрой уровень формальности, разреши или запрети нецензурную лексику — ИИ подстроится под тебя.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label={isZh ? 'Настройки HSK' : 'Настройки стиля'}>
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label={isZh ? 'Настройки HSK' : 'Настройки стиля'}>
           {isZh ? <HskSettingsMock /> : <StyleSettingsMock />}
         </div>
       ),

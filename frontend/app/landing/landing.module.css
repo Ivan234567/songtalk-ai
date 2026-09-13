@@ -4222,3 +4222,536 @@
     font-size: 0.9rem;
   }
 }
+
+/* ----- Мини-UI как в продукте (в границах карточки слайда) ----- */
+.prodIllo {
+  align-items: stretch;
+  padding: 0.7rem;
+  overflow: visible;
+}
+
+.prodSeg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  min-height: 36px;
+  height: auto;
+  padding: 3px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  max-width: 100%;
+}
+
+.prodSegBtn {
+  height: auto;
+  min-height: 28px;
+  padding: 0 0.55rem;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.prodSegBtnActive {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.prodSegMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(18, 20, 22, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prodSegMenuHead {
+  padding: 4px 10px 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.prodSegMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.prodSegMenuItem:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.prodPanel {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 14, 16, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  box-sizing: border-box;
+}
+
+.prodPanelLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.prodHintPanel {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  box-sizing: border-box;
+}
+
+.prodHintLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgb(251, 191, 36);
+  opacity: 0.85;
+}
+
+.prodChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.prodChip {
+  padding: 0.22rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 8, 8, 0.45);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.prodChipActive {
+  border-color: rgb(251, 191, 36);
+  background: rgba(251, 191, 36, 0.2);
+  color: rgb(251, 191, 36);
+  font-weight: 600;
+}
+
+.prodChipAccent {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: rgba(99, 102, 241, 0.18);
+  color: rgb(165, 180, 252);
+  font-weight: 600;
+}
+
+.prodBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.15);
+  color: rgb(251, 191, 36);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.prodBtnGreen {
+  border: none;
+  background: rgba(79, 168, 134, 0.9);
+  color: #fff;
+  border-radius: 10px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.prodToggleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.prodToggleRowOn {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.prodSelect {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.72rem;
+  text-align: left;
+  font-family: inherit;
+}
+
+.prodComposer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  box-sizing: border-box;
+}
+
+.prodComposerInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.78rem;
+}
+
+.prodMic {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  flex-shrink: 0;
+  background: radial-gradient(120% 120% at 35% 25%, rgba(165, 180, 252, 0.95), rgba(99, 102, 241, 0.9) 45%, rgba(79, 70, 229, 0.85));
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+}
+
+.prodOrbRing {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.prodOrbRing::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.prodDictSeg {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.18);
+}
+
+.prodDictSegBtn {
+  flex: 1;
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.5rem;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.72rem;
+  font-weight: 400;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.prodDictSegBtnActive {
+  background: rgba(107, 240, 176, 0.92);
+  color: #08110c;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(107, 240, 176, 0.25);
+}
+
+.prodSearch {
+  width: 100%;
+  padding: 0.4rem 0.65rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.75rem;
+  box-sizing: border-box;
+}
+
+.prodWordCard {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(17, 98, 47, 0.28);
+  background: linear-gradient(135deg, rgba(18, 24, 22, 0.9), rgba(12, 16, 14, 0.95));
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.prodWordMeta {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.prodSpeakBtn {
+  align-self: flex-start;
+  padding: 0.3rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(107, 240, 176, 0.35);
+  background: rgba(107, 240, 176, 0.1);
+  color: rgba(107, 240, 176, 0.95);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.prodKaraokeBar {
+  width: 100%;
+  display: flex;
+  gap: 0.45rem;
+  align-items: stretch;
+}
+
+.prodKaraokeInput {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.6rem 0.5rem 2rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(82, 82, 91, 0.85);
+  background: rgba(39, 39, 42, 0.95);
+  color: rgba(249, 250, 251, 0.45);
+  font-size: 0.7rem;
+  box-sizing: border-box;
+}
+
+.prodKaraokeInputWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.prodKaraokeLinkIcon {
+  position: absolute;
+  left: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.8rem;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.prodKaraokeLoad {
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(139, 92, 246, 0.6);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(236, 72, 153, 0.95));
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.prodYtThumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.75rem;
+  background: #111;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.prodYtPlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 1.4rem;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.prodKaraokeLine {
+  width: 100%;
+  padding: 0.65rem 0.7rem;
+  border-radius: 12px;
+  background: rgba(18, 18, 24, 0.9);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.45rem;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.prodKaraokeWordActive {
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.35), rgba(236, 72, 153, 0.35));
+  color: #fff;
+  border-radius: 6px;
+  padding: 0 0.15rem;
+}
+
+.prodKaraokeWordClick {
+  cursor: pointer;
+  border-bottom: 1px dashed rgba(236, 72, 153, 0.6);
+}
+
+.prodCheckItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.72rem;
+}
+
+.prodCheckDone {
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.prodCheckAlmost {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.prodCheckMissed {
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.prodKpi {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 24, 22, 0.7);
+  text-align: left;
+}
+
+.prodKpiLabel {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.prodKpiValue {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.prodRing {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.3);
+  margin: 0 auto;
+}
+
+.prodRingInner {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(18, 18, 18, 0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.prodCriteriaRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.prodCriteriaTop {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.prodCriteriaTrack {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.prodCriteriaFill {
+  height: 100%;
+  border-radius: inherit;
+}

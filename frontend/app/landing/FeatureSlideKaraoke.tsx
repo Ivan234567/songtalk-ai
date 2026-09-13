@@ -2,38 +2,22 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { KaraokeIcon } from '@/components/sidebar/Sidebar';
-import { LangPreviewToggle } from './preview-lang';
+import { LangPreviewToggle, useLandingPreviewLang } from './preview-lang';
 import styles from './landing.module.css';
 
 /** Поле ввода ссылки YouTube — интерактив при фокусе и hover */
 function YouTubeUrlMock() {
-  const [focused, setFocused] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const showHint = focused || hovered;
   return (
-    <div
-      className={`${styles.featureKaraokeUrlWrap} ${showHint ? styles.featureKaraokeUrlWrapReveal : ''}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <input
-        type="text"
-        readOnly
-        value=""
-        placeholder="https://youtube.com/watch?v=..."
-        className={`${styles.featureKaraokeUrlInput} ${showHint ? styles.featureKaraokeUrlFocused : ''}`}
-        aria-label="Ссылка на YouTube"
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-      />
-      <span className={styles.featureKaraokeUrlHint}>
-        {showHint ? 'Субтитры подгрузятся автоматически' : 'Вставьте ссылку'}
-      </span>
+    <div className={styles.prodKaraokeBar} role="img" aria-label="Ссылка YouTube">
+      <div className={styles.prodKaraokeInputWrap}>
+        <span className={styles.prodKaraokeLinkIcon} aria-hidden>🔗</span>
+        <div className={styles.prodKaraokeInput}>Вставьте ссылку на YouTube видео...</div>
+      </div>
+      <button type="button" className={styles.prodKaraokeLoad}>▶ Загрузить</button>
     </div>
   );
 }
 
-/** Строка караоке с подсветкой текущего слова и кликабельным словом */
 function KaraokeLineMock() {
   const [activeWord, setActiveWord] = useState<string | null>(null);
   const tokens = [
@@ -45,12 +29,12 @@ function KaraokeLineMock() {
   ];
 
   return (
-    <div className={styles.featureKaraokeLineWrap} role="img" aria-label="Строка караоке">
-      <div className={styles.featureKaraokeLine}>
+    <div role="img" aria-label="Строка караоке">
+      <div className={styles.prodKaraokeLine}>
         {tokens.map((token, i) => (
           <span
             key={`${token.text}-${i}`}
-            className={`${styles.featureKaraokeWord} ${token.active ? styles.featureKaraokeWordActive : ''} ${token.clickable ? styles.featureKaraokeWordClickable : ''}`}
+            className={`${token.active ? styles.prodKaraokeWordActive : ''} ${token.clickable ? styles.prodKaraokeWordClick : ''}`}
             onClick={() => token.clickable && setActiveWord(activeWord ? null : token.text)}
             onMouseEnter={() => token.clickable && setActiveWord(token.text)}
             onMouseLeave={() => setActiveWord(null)}
@@ -60,59 +44,38 @@ function KaraokeLineMock() {
         ))}
       </div>
       {activeWord && (
-        <div className={styles.featureKaraokeTooltip}>
+        <div className={styles.featureKaraokeTooltip} style={{ marginTop: 8 }}>
           <span className={styles.featureKaraokeTooltipTranslation}>
             that — тот самый; that way — таким образом
           </span>
-          <span className={styles.featureKaraokeTooltipBtn}>+ В словарь</span>
+          <span className={styles.featureKaraokeTooltipBtn}>Добавить в словарь</span>
         </div>
       )}
     </div>
   );
 }
 
-/** Переключатель режимов: видео+субтитры / только текст */
 function ViewModeToggleMock() {
-  const [mode, setMode] = useState<'full' | 'text'>('full');
   return (
-    <div className={styles.featureKaraokeViewModes} role="img" aria-label="Режимы просмотра">
-      <button
-        type="button"
-        className={`${styles.featureKaraokeViewBtn} ${mode === 'full' ? styles.featureKaraokeViewBtnActive : ''}`}
-        onClick={() => setMode('full')}
-        aria-pressed={mode === 'full'}
-      >
-        Видео + субтитры
-      </button>
-      <button
-        type="button"
-        className={`${styles.featureKaraokeViewBtn} ${mode === 'text' ? styles.featureKaraokeViewBtnActive : ''}`}
-        onClick={() => setMode('text')}
-        aria-pressed={mode === 'text'}
-      >
-        Только текст
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }} role="img" aria-label="Режимы просмотра">
+      <div className={styles.prodYtThumb}>
+        <span className={styles.prodYtPlay}>▶</span>
+      </div>
+      <button type="button" className={styles.prodKaraokeLoad} style={{ alignSelf: 'flex-start' }}>
+        📝 Открыть текст
       </button>
     </div>
   );
 }
 
-/** Маленькая карточка песни из коллекции под стиль слайда */
 function SavedSongCardMini() {
-  const [hovered, setHovered] = useState(false);
   return (
-    <div
-      className={`${styles.karaokeCardMini} ${hovered ? styles.karaokeCardMiniHover : ''}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      role="img"
-      aria-label="Песня из коллекции"
-    >
-      <div className={styles.karaokeCardMiniThumb}>
-        <span className={styles.karaokeCardMiniPlay}>▶</span>
+    <div style={{ width: '100%', textAlign: 'left' }} role="img" aria-label="Песня из коллекции">
+      <div className={styles.prodYtThumb}>
+        <span className={styles.prodYtPlay}>▶</span>
       </div>
-      <div className={styles.karaokeCardMiniTitle}>
-        I Want It That Way
-      </div>
+      <div style={{ marginTop: 6, fontSize: '0.75rem', fontWeight: 600 }}>I Want It That Way</div>
+      <div style={{ fontSize: '0.65rem', opacity: 0.55 }}>YouTube · караоке</div>
     </div>
   );
 }
@@ -123,56 +86,10 @@ interface FeatureSlideKaraokeProps {
 }
 
 export function FeatureSlideKaraoke({ sectionId, highlight }: FeatureSlideKaraokeProps) {
+  const { previewLang } = useLandingPreviewLang();
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
-  const highlightPills = ['YouTube', 'Словарь', 'Два режима', 'Коллекция'];
-
-  const featureBlocks = [
-    {
-      key: 'sync',
-      hero: true,
-      title: 'Синхронизация слов и видео',
-      text: 'Вставь ссылку на YouTube, и субтитры автоматически подгрузятся. Текст подсвечивается в такт речи — как в караоке.',
-      illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Ссылка YouTube и субтитры">
-          <YouTubeUrlMock />
-        </div>
-      ),
-    },
-    {
-      key: 'modes',
-      hero: false,
-      title: 'Два режима просмотра',
-      text: 'Смотри клип с субтитрами или переключись в режим «только текст», чтобы сосредоточиться на разборе сложных фраз.',
-      illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Режимы видео и текст">
-          <ViewModeToggleMock />
-        </div>
-      ),
-    },
-    {
-      key: 'dictionary',
-      hero: false,
-      title: 'Кликни — добавь в словарь',
-      text: 'Увидел незнакомое слово или классную идиому? Кликни на него — получи перевод и сохрани в свой словарь вместе с контекстом из песни.',
-      illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Клик по слову в караоке">
-          <KaraokeLineMock />
-        </div>
-      ),
-    },
-    {
-      key: 'collection',
-      hero: false,
-      title: 'Твоя коллекция песен',
-      text: 'Все загруженные видео в одном месте. Запускай караоке одной кнопкой и возвращайся к любимым трекам когда угодно.',
-      illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Коллекция">
-          <SavedSongCardMini />
-        </div>
-      ),
-    },
-  ];
+  const highlightPills = ['YouTube', 'Словарь', 'Текст', 'Коллекция'];
 
   useEffect(() => {
     const el = sectionRef.current;
@@ -184,6 +101,55 @@ export function FeatureSlideKaraoke({ sectionId, highlight }: FeatureSlideKaraok
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
+
+  if (previewLang === 'zh') return null;
+
+  const featureBlocks = [
+    {
+      key: 'sync',
+      hero: true,
+      title: 'Синхронизация слов и видео',
+      text: 'Вставь ссылку на YouTube, и субтитры автоматически подгрузятся. Текст подсвечивается в такт речи — как в караоке.',
+      illo: (
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Ссылка YouTube и субтитры">
+          <YouTubeUrlMock />
+        </div>
+      ),
+    },
+    {
+      key: 'modes',
+      hero: false,
+      title: 'Клип и полноэкранный текст',
+      text: 'Видео можно свернуть и открыть текст песни на весь экран — слова подсвечиваются в такт, как в Spotify.',
+      illo: (
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Режимы видео и текст">
+          <ViewModeToggleMock />
+        </div>
+      ),
+    },
+    {
+      key: 'dictionary',
+      hero: false,
+      title: 'Кликни — добавь в словарь',
+      text: 'Увидел незнакомое слово или классную идиому? Кликни на него — получи перевод и сохрани в свой словарь вместе с контекстом из песни.',
+      illo: (
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Клик по слову в караоке">
+          <KaraokeLineMock />
+        </div>
+      ),
+    },
+    {
+      key: 'collection',
+      hero: false,
+      title: 'Твоя коллекция песен',
+      text: 'Все загруженные видео в одном месте. Запускай караоке одной кнопкой и возвращайся к любимым трекам когда угодно.',
+      illo: (
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Коллекция">
+          <SavedSongCardMini />
+        </div>
+      ),
+    },
+  ];
 
   return (
     <section ref={sectionRef} id={sectionId} className={`${styles.featureSlide} ${highlight ? styles.featureSlideHighlight : ''}`} aria-labelledby="feature-karaoke-title">

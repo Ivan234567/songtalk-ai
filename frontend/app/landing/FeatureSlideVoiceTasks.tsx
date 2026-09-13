@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AgentIcon } from '@/components/sidebar/Sidebar';
-import { LangPreviewToggle } from './preview-lang';
+import { LangPreviewToggle, useLandingPreviewLang } from './preview-lang';
 import styles from './landing.module.css';
 
 function VoiceTypeMock() {
@@ -12,57 +12,59 @@ function VoiceTypeMock() {
     { key: 'explain' as const, label: 'Объяснение' },
     { key: 'retell' as const, label: 'Пересказ' },
   ];
-  const examples = {
-    voicemail: 'Одно сообщение адресату — без ответа собеседника.',
-    explain: 'Факт и просьба одним высказыванием.',
-    retell: 'Своими словами после короткого стимула.',
-  };
   return (
-    <div className={styles.dictTypesWrap} role="img" aria-label="Типы голосовой минутки">
-      <div className={styles.dictTypesTabs}>
+    <div className={styles.prodPanel} role="img" aria-label="Типы голосовой минутки">
+      <span className={styles.prodPanelLabel}>Тип</span>
+      <div className={styles.prodChipRow}>
         {types.map((tab) => (
           <button
             key={tab.key}
             type="button"
-            className={`${styles.dictTypesTab} ${active === tab.key ? styles.dictTypesTabActive : ''}`}
+            className={`${styles.prodChip} ${active === tab.key ? styles.prodChipAccent : ''}`}
             onClick={() => setActive(tab.key)}
           >
             {tab.label}
           </button>
         ))}
       </div>
-      <div className={styles.dictTypesExample}>
-        <span className={styles.dictTypesPhrase}>{examples[active]}</span>
-      </div>
+      <span className={styles.prodPanelLabel}>HSK</span>
+      <span className={styles.prodSelect}>HSK 3 — средний</span>
     </div>
   );
 }
 
 function UtteranceMock() {
   return (
-    <div className={styles.dictContextWrap} role="img" aria-label="Одно высказывание">
-      <span className={styles.hskBadge}>HSK 3 · ~20 сек</span>
-      <div className={`${styles.dictContextWord} ${styles.mockHanzi}`}>我想点一杯咖啡。</div>
-      <div className={styles.mockPinyin}>wǒ xiǎng diǎn yì bēi kāfēi</div>
-      <div className={styles.dictContextLine}>Одна реплика, не диалог</div>
+    <div className={styles.prodPanel} role="img" aria-label="Одно высказывание">
+      <div style={{ fontSize: '0.95rem', fontWeight: 700 }}>Кафе</div>
+      <div className={styles.prodChipRow}>
+        <span className={styles.prodChipAccent} style={{ cursor: 'default' }}>Объяснение</span>
+        <span className={styles.prodChip} style={{ cursor: 'default' }}>HSK 3</span>
+        <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>ориентир 20 сек</span>
+      </div>
+      <div>
+        <div className={styles.prodPanelLabel}>Что сказать</div>
+        <div style={{ fontSize: '0.75rem', marginTop: 4 }}>Закажи кофе одним высказыванием.</div>
+      </div>
     </div>
   );
 }
 
 function ChecklistMock() {
   const items = [
-    { label: 'Назвал напиток', status: 'done' },
-    { label: 'Вежливая просьба', status: 'almost' },
-    { label: 'Сказал количество', status: 'missed' },
+    { label: 'Назвал напиток', status: 'done' as const },
+    { label: 'Вежливая просьба', status: 'almost' as const },
+    { label: 'Сказал количество', status: 'missed' as const },
   ];
+  const cls = { done: styles.prodCheckDone, almost: styles.prodCheckAlmost, missed: styles.prodCheckMissed };
+  const tag = { done: 'Сделано', almost: 'Почти', missed: 'Мало' };
   return (
-    <div className={styles.progressFeedbackWrap} role="img" aria-label="Чеклист">
+    <div className={styles.prodPanel} role="img" aria-label="Чеклист">
+      <span className={styles.prodPanelLabel}>Чеклист</span>
       {items.map((item) => (
-        <div key={item.label} className={styles.progressFeedbackRow}>
-          <span className={styles.progressFeedbackTag}>
-            {item.status === 'done' ? 'сделано' : item.status === 'almost' ? 'почти' : 'мало'}
-          </span>
-          <span className={styles.progressFeedbackText}>{item.label}</span>
+        <div key={item.label} className={`${styles.prodCheckItem} ${cls[item.status]}`}>
+          <span>{item.label}</span>
+          <span style={{ fontWeight: 600 }}>{tag[item.status]}</span>
         </div>
       ))}
     </div>
@@ -71,10 +73,13 @@ function ChecklistMock() {
 
 function VerdictMock() {
   return (
-    <div className={styles.progressRecCard} role="img" aria-label="Оценка минутки">
-      <span className={styles.progressRecBadge}>Почти</span>
-      <span className={styles.progressRecTitle}>Голосовая минутка «Кафе»</span>
-      <span className={styles.progressRecCta}>Повторить →</span>
+    <div className={styles.prodPanel} role="img" aria-label="Оценка минутки">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>Кафе</span>
+        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'rgba(245, 158, 11, 0.95)' }}>Почти</span>
+      </div>
+      <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>Объяснение · HSK 3</span>
+      <button type="button" className={`${styles.prodBtn} ${styles.prodBtnGreen}`}>Повторить</button>
     </div>
   );
 }
@@ -85,6 +90,7 @@ interface FeatureSlideVoiceTasksProps {
 }
 
 export function FeatureSlideVoiceTasks({ sectionId, highlight }: FeatureSlideVoiceTasksProps) {
+  const { previewLang } = useLandingPreviewLang();
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
   const highlightPills = ['Одно высказывание', 'Чеклист', 'HSK', 'Оценка'];
@@ -96,7 +102,7 @@ export function FeatureSlideVoiceTasks({ sectionId, highlight }: FeatureSlideVoi
       title: 'Три типа минутки',
       text: 'Голосовое сообщение, короткое объяснение или пересказ стимула. Одна реплика — ИИ проверяет, что прозвучало.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Типы минутки">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Типы минутки">
           <VoiceTypeMock />
         </div>
       ),
@@ -107,7 +113,7 @@ export function FeatureSlideVoiceTasks({ sectionId, highlight }: FeatureSlideVoi
       title: 'Одна реплика, не диалог',
       text: 'Нет ролей, шагов и «кто начинает». Говоришь одно высказывание на своём HSK — ИИ проверяет, что сказано.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Пример высказывания">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Пример высказывания">
           <UtteranceMock />
         </div>
       ),
@@ -118,7 +124,7 @@ export function FeatureSlideVoiceTasks({ sectionId, highlight }: FeatureSlideVoi
       title: 'Чеклист по делу',
       text: 'Перед записью видно, что должно прозвучать. После — пункты: сделано, почти или мало.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Чеклист">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Чеклист">
           <ChecklistMock />
         </div>
       ),
@@ -129,7 +135,7 @@ export function FeatureSlideVoiceTasks({ sectionId, highlight }: FeatureSlideVoi
       title: 'Оценка сразу',
       text: 'Вердикт «сделано / почти / мало» — и можно повторить ту же минутку, не уходя в длинный диалог.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Вердикт">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Вердикт">
           <VerdictMock />
         </div>
       ),
@@ -146,6 +152,8 @@ export function FeatureSlideVoiceTasks({ sectionId, highlight }: FeatureSlideVoi
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
+
+  if (previewLang !== 'zh') return null;
 
   return (
     <section ref={sectionRef} id={sectionId} className={`${styles.featureSlide} ${highlight ? styles.featureSlideHighlight : ''}`} aria-labelledby="feature-voice-title">

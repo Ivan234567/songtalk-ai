@@ -15,8 +15,8 @@ function CardTypesMock({ previewLang }: { previewLang: LandingPreviewLang }) {
 
   if (isZh) {
     return (
-      <div className={styles.dictTypesWrap} role="img" aria-label="Типы карточек">
-        <div className={styles.dictTypesTabs}>
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }} role="img" aria-label="Типы карточек">
+        <div className={styles.prodDictSeg}>
           {([
             { key: 'words', label: '词语' },
             { key: 'characters', label: '汉字' },
@@ -24,26 +24,30 @@ function CardTypesMock({ previewLang }: { previewLang: LandingPreviewLang }) {
             <button
               key={tab.key}
               type="button"
-              className={`${styles.dictTypesTab} ${zhActive === tab.key ? styles.dictTypesTabActive : ''}`}
+              className={`${styles.prodDictSegBtn} ${zhActive === tab.key ? styles.prodDictSegBtnActive : ''}`}
               onClick={() => setZhActive(tab.key)}
             >
               {tab.label}
             </button>
           ))}
         </div>
-        <div className={styles.dictTypesExample}>
-          {zhActive === 'words' && (
-            <span className={`${styles.dictTypesPhrase} ${styles.dictTypesPhraseStack}`}>
-              <span className={styles.mockHanzi}>你好</span>
-              <span className={styles.mockPinyin}>nǐ hǎo — привет</span>
-            </span>
-          )}
-          {zhActive === 'characters' && (
-            <span className={`${styles.dictTypesPhrase} ${styles.dictTypesPhraseStack}`}>
-              <span className={styles.mockHanzi}>你</span>
-              <span className={styles.mockPinyin}>nǐ</span>
+        <div className={styles.prodSearch}>{zhActive === 'words' ? 'Поиск по слову или pinyin...' : 'Поиск по иероглифу, pinyin или переводу...'}</div>
+        <div className={styles.prodWordCard}>
+          <span className={styles.prodWordMeta}>Разбор слова</span>
+          {zhActive === 'words' ? (
+            <>
+              <span className={styles.mockHanzi} style={{ fontSize: '1.35rem' }}>你好</span>
+              <span className={styles.mockPinyin}>nǐ hǎo</span>
+              <span style={{ fontSize: '0.78rem' }}>привет</span>
               <span className={styles.hskBadge}>HSK 1</span>
-            </span>
+            </>
+          ) : (
+            <>
+              <span className={styles.mockHanzi} style={{ fontSize: '1.6rem' }}>你</span>
+              <span className={styles.mockPinyin}>nǐ</span>
+              <span style={{ fontSize: '0.78rem' }}>ты</span>
+              <span className={styles.hskBadge}>HSK 1</span>
+            </>
           )}
         </div>
       </div>
@@ -51,84 +55,79 @@ function CardTypesMock({ previewLang }: { previewLang: LandingPreviewLang }) {
   }
 
   return (
-    <div className={styles.dictTypesWrap} role="img" aria-label="Типы карточек">
-      <div className={styles.dictTypesTabs}>
-        {(['words', 'idioms', 'phrasal'] as const).map((key) => (
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }} role="img" aria-label="Типы карточек">
+      <div className={styles.prodDictSeg}>
+        {([
+          { key: 'words', label: 'Слова' },
+          { key: 'idioms', label: 'Идиомы' },
+          { key: 'phrasal', label: 'Фразовые глаголы' },
+        ] as const).map((tab) => (
           <button
-            key={key}
+            key={tab.key}
             type="button"
-            className={`${styles.dictTypesTab} ${enActive === key ? styles.dictTypesTabActive : ''}`}
-            onClick={() => setEnActive(key)}
+            className={`${styles.prodDictSegBtn} ${enActive === tab.key ? styles.prodDictSegBtnActive : ''}`}
+            onClick={() => setEnActive(tab.key)}
           >
-            {key === 'words' && 'Слова'}
-            {key === 'idioms' && 'Идиомы'}
-            {key === 'phrasal' && 'Фраз. глаголы'}
+            {tab.label}
           </button>
         ))}
       </div>
-      <div className={styles.dictTypesExample}>
-        {enActive === 'words' && <span className={styles.dictTypesPhrase}>give up — сдаваться</span>}
-        {enActive === 'idioms' && <span className={styles.dictTypesPhrase}>it's raining cats and dogs</span>}
-        {enActive === 'phrasal' && <span className={styles.dictTypesPhrase}>give up — бросать, сдаваться</span>}
+      <div className={styles.prodSearch}>
+        {enActive === 'words' && 'Поиск по слову...'}
+        {enActive === 'idioms' && 'Поиск по идиомам...'}
+        {enActive === 'phrasal' && 'Поиск по фразовым глаголам...'}
+      </div>
+      <div className={styles.prodWordCard}>
+        <span className={styles.prodWordMeta}>Карточка</span>
+        {enActive === 'words' && <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>give up — сдаваться</span>}
+        {enActive === 'idioms' && <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>it&apos;s raining cats and dogs</span>}
+        {enActive === 'phrasal' && <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>give up — бросать, сдаваться</span>}
       </div>
     </div>
   );
 }
 
-/** Озвучка слова — нажми и услышишь */
 function TtsMock({ previewLang }: { previewLang: LandingPreviewLang }) {
-  const [hovered, setHovered] = useState(false);
   const isZh = previewLang === 'zh';
   return (
-    <div
-      className={`${styles.dictTtsWrap} ${hovered ? styles.dictTtsWrapHover : ''}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      role="img"
-      aria-label="Озвучка слова"
-    >
-      <span className={styles.dictTtsStack}>
-        <span className={`${styles.dictTtsWord} ${isZh ? styles.mockHanzi : ''}`}>{isZh ? '你好' : 'give up'}</span>
-        {isZh && <span className={styles.mockPinyin}>nǐ hǎo</span>}
+    <div className={styles.prodWordCard} role="img" aria-label="Озвучка слова">
+      <span className={styles.prodWordMeta}>Разбор слова</span>
+      <span className={`${styles.dictTtsWord} ${isZh ? styles.mockHanzi : ''}`} style={{ fontSize: isZh ? '1.35rem' : '1rem' }}>
+        {isZh ? '你好' : 'give up'}
       </span>
-      <span className={styles.dictTtsBtn} aria-hidden>🔊</span>
-      <span className={styles.dictTtsHint}>{hovered ? 'Нажми — услышишь' : 'Озвучка'}</span>
+      {isZh && <span className={styles.mockPinyin}>nǐ hǎo</span>}
+      <button type="button" className={styles.prodSpeakBtn}>🔊 Произношение</button>
     </div>
   );
 }
 
-/** Контекст из видео/диалога */
 function ContextMock({ previewLang }: { previewLang: LandingPreviewLang }) {
   const isZh = previewLang === 'zh';
   return (
-    <div className={styles.dictContextWrap} role="img" aria-label="Контекст">
-      <div className={`${styles.dictContextWord} ${isZh ? styles.mockHanzi : ''}`}>{isZh ? '咖啡' : 'give up'}</div>
-      {isZh && <div className={styles.mockPinyin}>kāfēi</div>}
-      <div className={styles.dictContextLine}>
+    <div className={styles.prodWordCard} role="img" aria-label="Контекст">
+      <span className={styles.prodWordMeta}>Пример</span>
+      <span className={`${isZh ? styles.mockHanzi : ''}`} style={{ fontSize: isZh ? '1.15rem' : '0.95rem', fontWeight: 700 }}>
+        {isZh ? '咖啡' : 'give up'}
+      </span>
+      {isZh && <span className={styles.mockPinyin}>kāfēi</span>}
+      <span style={{ fontSize: '0.72rem', opacity: 0.8, lineHeight: 1.4 }}>
         {isZh ? '«我想点一杯咖啡» — из сценария «Кафе»' : '«…I won\'t give up on us…» — из клипа'}
-      </div>
+      </span>
     </div>
   );
 }
 
-/** Категории + экспорт */
 function CategoriesMock({ previewLang }: { previewLang: LandingPreviewLang }) {
-  const [hovered, setHovered] = useState(false);
   const tags = previewLang === 'zh' ? ['咖啡', '旅行', '日常'] : ['Бизнес', 'Еда', 'Сериалы'];
   return (
-    <div className={styles.dictCategoriesWrap} role="img" aria-label="Категории">
-      <div className={styles.dictCategoriesTags}>
+    <div className={styles.prodPanel} role="img" aria-label="Категории">
+      <span className={styles.prodPanelLabel}>Категории</span>
+      <div className={styles.prodChipRow}>
         {tags.map((t) => (
-          <span key={t} className={styles.dictCategoriesTag}>{t}</span>
+          <span key={t} className={styles.prodChip} style={{ cursor: 'default' }}>{t}</span>
         ))}
       </div>
-      <span
-        className={`${styles.dictCategoriesExport} ${hovered ? styles.dictCategoriesExportHover : ''}`}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-      >
-        Экспорт CSV / Anki
-      </span>
+      <button type="button" className={styles.prodSpeakBtn}>Экспорт CSV / Anki</button>
     </div>
   );
 }
@@ -156,7 +155,7 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
         ? 'Две вкладки: слова с пиньинем и тонами и отдельные иероглифы с уровнем HSK. Кликни по иероглифу — увидишь перевод.'
         : 'Сохраняй не только отдельные слова, но и целые идиомы («it\'s raining cats and dogs») и фразовые глаголы («give up»).',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Типы карточек">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Типы карточек">
           <CardTypesMock previewLang={previewLang} />
         </div>
       ),
@@ -165,9 +164,11 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
       key: 'tts',
       hero: false,
       title: 'Озвучка слова',
-      text: 'Нажми на кнопку — и услышишь правильное произношение. Так проще запомнить и не путать похожие слова.',
+      text: isZh
+        ? 'Нажми на кнопку — услышишь слово с пиньинем и тонами. Так проще запомнить и не путать похожие иероглифы.'
+        : 'Нажми на кнопку — и услышишь правильное произношение. Так проще запомнить и не путать похожие слова.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Озвучка">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Озвучка">
           <TtsMock previewLang={previewLang} />
         </div>
       ),
@@ -180,7 +181,7 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
         ? 'Каждое слово хранится с примером из сценария, где ты его встретил. Так его легче вспомнить и правильно использовать.'
         : 'Каждое слово хранится с примером из видео или диалога, где ты его встретил. Так его легче вспомнить и правильно использовать.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Контекст">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Контекст">
           <ContextMock previewLang={previewLang} />
         </div>
       ),
@@ -193,7 +194,7 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
         ? 'Раскладывай слова по папкам («咖啡», «旅行», «日常»), ищи по фильтрам и экспортируй в любом формате.'
         : 'Раскладывай слова по папкам («Бизнес», «Еда», «Сериалы»), ищи по фильтрам и экспортируй в любом формате.',
       illo: (
-        <div className={styles.featureBlockIllo} role="img" aria-label="Категории">
+        <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Категории">
           <CategoriesMock previewLang={previewLang} />
         </div>
       ),

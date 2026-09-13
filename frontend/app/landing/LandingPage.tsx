@@ -298,13 +298,12 @@ function LandingPageInner() {
           <h1 id="hero-title" className={styles.heroTitle}>
             Speakeasy — говори легко, даже если ошибаешься.
           </h1>
-          <LangPreviewToggle variant="hero" />
           <p className={styles.heroSubtitle}>
             {previewLang === 'zh'
               ? 'Хватит молчать — тренируй упрощённый китайский: ситуативные диалоги HSK, голосовые минутки, словарь с пиньинем. Без осуждающих взглядов.'
               : 'Хватит молчать — тренируй речь в живых сценариях с ИИ. От заказа кофе до дебатов. Без осуждающих взглядов. Только ты и твой темп.'}
           </p>
-          <p className={styles.heroLangHint}>Переключатель действует на всю страницу — слайды, отзывы и FAQ тоже меняются.</p>
+          <p className={styles.heroLangHint}>Язык превью — English / 中文 — переключается в шапке. Меняются слайды, отзывы и FAQ.</p>
           <div className={styles.heroCtaWrap}>
             <Link href="/auth/register" className={styles.heroCtaGlass}>
               Начать
@@ -326,11 +325,13 @@ function LandingPageInner() {
         />
         {previewLang === 'zh' ? (
           <FeatureSlideVoiceTasks
+            key="zh-voice"
             sectionId="feature-slide-voice-tasks"
             highlight={highlightSection === 'feature-slide-voice-tasks'}
           />
         ) : (
           <FeatureSlideKaraoke
+            key="en-karaoke"
             sectionId="feature-slide-karaoke"
             highlight={highlightSection === 'feature-slide-karaoke'}
           />
