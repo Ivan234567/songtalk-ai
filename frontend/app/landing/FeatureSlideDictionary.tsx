@@ -6,7 +6,7 @@ import { LangPreviewToggle, useLandingPreviewLang, type LandingPreviewLang } fro
 import styles from './landing.module.css';
 
 type EnCardKey = 'words' | 'idioms' | 'phrasal';
-type ZhCardKey = 'words' | 'characters' | 'chengyu';
+type ZhCardKey = 'words' | 'characters';
 
 function CardTypesMock({ previewLang }: { previewLang: LandingPreviewLang }) {
   const isZh = previewLang === 'zh';
@@ -18,9 +18,8 @@ function CardTypesMock({ previewLang }: { previewLang: LandingPreviewLang }) {
       <div className={styles.dictTypesWrap} role="img" aria-label="Типы карточек">
         <div className={styles.dictTypesTabs}>
           {([
-            { key: 'words', label: 'Слова' },
-            { key: 'characters', label: 'Иероглифы' },
-            { key: 'chengyu', label: '成语' },
+            { key: 'words', label: '词语' },
+            { key: 'characters', label: '汉字' },
           ] as const).map((tab) => (
             <button
               key={tab.key}
@@ -44,12 +43,6 @@ function CardTypesMock({ previewLang }: { previewLang: LandingPreviewLang }) {
               <span className={styles.mockHanzi}>你</span>
               <span className={styles.mockPinyin}>nǐ</span>
               <span className={styles.hskBadge}>HSK 1</span>
-            </span>
-          )}
-          {zhActive === 'chengyu' && (
-            <span className={`${styles.dictTypesPhrase} ${styles.dictTypesPhraseStack}`}>
-              <span className={styles.mockHanzi}>马马虎虎</span>
-              <span className={styles.mockPinyin}>mǎmǎhūhū — так себе</span>
             </span>
           )}
         </div>
@@ -109,19 +102,19 @@ function ContextMock({ previewLang }: { previewLang: LandingPreviewLang }) {
   const isZh = previewLang === 'zh';
   return (
     <div className={styles.dictContextWrap} role="img" aria-label="Контекст">
-      <div className={`${styles.dictContextWord} ${isZh ? styles.mockHanzi : ''}`}>{isZh ? '月亮' : 'give up'}</div>
-      {isZh && <div className={styles.mockPinyin}>yuèliang</div>}
+      <div className={`${styles.dictContextWord} ${isZh ? styles.mockHanzi : ''}`}>{isZh ? '咖啡' : 'give up'}</div>
+      {isZh && <div className={styles.mockPinyin}>kāfēi</div>}
       <div className={styles.dictContextLine}>
-        {isZh ? '«…月亮代表我的心…» — из клипа' : '«…I won\'t give up on us…» — из клипа'}
+        {isZh ? '«我想点一杯咖啡» — из сценария «Кафе»' : '«…I won\'t give up on us…» — из клипа'}
       </div>
     </div>
   );
 }
 
 /** Категории + экспорт */
-function CategoriesMock() {
+function CategoriesMock({ previewLang }: { previewLang: LandingPreviewLang }) {
   const [hovered, setHovered] = useState(false);
-  const tags = ['Бизнес', 'Еда', 'Сериалы'];
+  const tags = previewLang === 'zh' ? ['咖啡', '旅行', '日常'] : ['Бизнес', 'Еда', 'Сериалы'];
   return (
     <div className={styles.dictCategoriesWrap} role="img" aria-label="Категории">
       <div className={styles.dictCategoriesTags}>
@@ -151,16 +144,16 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
   const highlightPills = isZh
-    ? ['Слова', 'Иероглифы', '成语', 'Озвучка']
+    ? ['词语', '汉字', 'Пиньинь', 'Озвучка']
     : ['Слова', 'Идиомы', 'Озвучка', 'Категории'];
 
   const featureBlocks = [
     {
       key: 'types',
       hero: true,
-      title: isZh ? 'Слова, иероглифы, 成语' : 'Три типа карточек',
+      title: isZh ? '词语 и 汉字' : 'Три типа карточек',
       text: isZh
-        ? 'Сохраняй слова с пиньинем, отдельные иероглифы с уровнем HSK и 成语 — в одном словаре.'
+        ? 'Две вкладки: слова с пиньинем и тонами и отдельные иероглифы с уровнем HSK. Кликни по иероглифу — увидишь перевод.'
         : 'Сохраняй не только отдельные слова, но и целые идиомы («it\'s raining cats and dogs») и фразовые глаголы («give up»).',
       illo: (
         <div className={styles.featureBlockIllo} role="img" aria-label="Типы карточек">
@@ -183,7 +176,9 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
       key: 'context',
       hero: false,
       title: 'Контекст — всему голова',
-      text: 'Каждое слово хранится с примером из видео или диалога, где ты его встретил. Так его легче вспомнить и правильно использовать.',
+      text: isZh
+        ? 'Каждое слово хранится с примером из сценария, где ты его встретил. Так его легче вспомнить и правильно использовать.'
+        : 'Каждое слово хранится с примером из видео или диалога, где ты его встретил. Так его легче вспомнить и правильно использовать.',
       illo: (
         <div className={styles.featureBlockIllo} role="img" aria-label="Контекст">
           <ContextMock previewLang={previewLang} />
@@ -194,10 +189,12 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
       key: 'categories',
       hero: false,
       title: 'Категории и порядок',
-      text: 'Раскладывай слова по папкам («Бизнес», «Еда», «Сериалы»), ищи по фильтрам и экспортируй в любом формате.',
+      text: isZh
+        ? 'Раскладывай слова по папкам («咖啡», «旅行», «日常»), ищи по фильтрам и экспортируй в любом формате.'
+        : 'Раскладывай слова по папкам («Бизнес», «Еда», «Сериалы»), ищи по фильтрам и экспортируй в любом формате.',
       illo: (
         <div className={styles.featureBlockIllo} role="img" aria-label="Категории">
-          <CategoriesMock />
+          <CategoriesMock previewLang={previewLang} />
         </div>
       ),
     },
@@ -242,7 +239,7 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
             </h2>
             <p className={styles.featureTagline}>
               {isZh
-                ? 'Собирай и повторяй слова, иероглифы и 成语 в одном месте.'
+                ? 'Собирай и повторяй 词语 и 汉字 с пиньинем в одном месте.'
                 : 'Собирай и повторяй слова, идиомы и фразовые глаголы в одном месте.'}
             </p>
             <div className={styles.featureBlocksGrid}>

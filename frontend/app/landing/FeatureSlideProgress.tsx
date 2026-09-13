@@ -18,14 +18,22 @@ function ScoreRingMock() {
   );
 }
 
-/** Мини-бары критериев (беглость, лексика, произношение, логика) */
+/** Мини-бары критериев */
 function CriteriaBarsMock({ previewLang }: { previewLang: LandingPreviewLang }) {
-  const bars = [
-    { label: 'Беглость', value: 78 },
-    { label: previewLang === 'zh' ? 'HSK' : 'Лексика', value: 85 },
-    { label: 'Произн.', value: 72 },
-    { label: 'Логика', value: 80 },
-  ];
+  const bars = previewLang === 'zh'
+    ? [
+        { label: 'Цель', value: 82 },
+        { label: 'Слова урока', value: 85 },
+        { label: 'Грамматика', value: 74 },
+        { label: 'Диалог', value: 80 },
+        { label: 'Связность', value: 76 },
+      ]
+    : [
+        { label: 'Беглость', value: 78 },
+        { label: 'Лексика', value: 85 },
+        { label: 'Произн.', value: 72 },
+        { label: 'Логика', value: 80 },
+      ];
   return (
     <div className={styles.progressCriteriaWrap} role="img" aria-label="Критерии">
       {bars.map((b, i) => (
@@ -51,9 +59,11 @@ function RecommendationMock({ previewLang }: { previewLang: LandingPreviewLang }
       role="img"
       aria-label="Рекомендация"
     >
-      <span className={styles.progressRecBadge}>Подтянуть беглость</span>
+      <span className={styles.progressRecBadge}>
+        {previewLang === 'zh' ? 'Повторить минутку' : 'Подтянуть беглость'}
+      </span>
       <span className={styles.progressRecTitle}>
-        {previewLang === 'zh' ? 'Сценарий «Кафе»' : 'Сценарий «Отель»'}
+        {previewLang === 'zh' ? 'Голосовая минутка «Кафе»' : 'Сценарий «Отель»'}
       </span>
       <span className={styles.progressRecCta}>{hovered ? 'Открыть →' : 'Практиковать'}</span>
     </div>
@@ -66,11 +76,15 @@ function FeedbackMock({ previewLang }: { previewLang: LandingPreviewLang }) {
     <div className={styles.progressFeedbackWrap} role="img" aria-label="Фидбек">
       <div className={styles.progressFeedbackRow}>
         <span className={styles.progressFeedbackTag}>Сильные:</span>
-        <span className={styles.progressFeedbackText}>чёткие ответы, хорошая лексика</span>
+        <span className={styles.progressFeedbackText}>
+          {previewLang === 'zh' ? 'цель сценария, слова урока' : 'чёткие ответы, хорошая лексика'}
+        </span>
       </div>
       <div className={styles.progressFeedbackRow}>
         <span className={styles.progressFeedbackTag}>Рост:</span>
-        <span className={styles.progressFeedbackText}>темп, связки между фразами</span>
+        <span className={styles.progressFeedbackText}>
+          {previewLang === 'zh' ? 'грамматика, связность реплик' : 'темп, связки между фразами'}
+        </span>
       </div>
       <div className={styles.progressFeedbackRow}>
         <span className={styles.progressFeedbackTag}>Фразы:</span>
@@ -133,7 +147,7 @@ export function FeatureSlideProgress({ sectionId, highlight }: FeatureSlideProgr
       hero: true,
       title: 'Понятные критерии оценки',
       text: isZh
-        ? 'Узнай свой средний балл по 10-балльной шкале и детальный разбор навыков: беглость, лексика HSK, произношение, логика.'
+        ? 'Узнай свой средний балл по 10-балльной шкале и разбор по китайским критериям: цель и шаги, слова урока, грамматика, диалог, связность.'
         : 'Узнай свой средний балл по 10-балльной шкале и детальный разбор навыков: беглость, лексика, произношение, логика.',
       illo: (
         <div className={styles.featureBlockIllo} role="img" aria-label="Критерии и балл">
@@ -147,7 +161,7 @@ export function FeatureSlideProgress({ sectionId, highlight }: FeatureSlideProgr
       hero: false,
       title: 'Умные рекомендации',
       text: isZh
-        ? 'Система сама подскажет, какой сценарий или голосовое задание лучше пройти, чтобы «подтянуть» самый слабый навык.'
+        ? 'Система сама подскажет, какой сценарий или голосовую минутку лучше пройти, чтобы подтянуть самый слабый навык.'
         : 'Система сама подскажет, какой сценарий или дебат лучше всего пройти, чтобы «подтянуть» самый слабый навык.',
       illo: (
         <div className={styles.featureBlockIllo} role="img" aria-label="Рекомендация">
@@ -158,8 +172,10 @@ export function FeatureSlideProgress({ sectionId, highlight }: FeatureSlideProgr
     {
       key: 'feedback',
       hero: false,
-      title: 'Разбор каждого диалога',
-      text: 'После каждой тренировки ты получаешь фидбек с сильными сторонами, зонами роста и списком полезных фраз из разговора.',
+      title: isZh ? 'Разбор сценария и минутки' : 'Разбор каждого диалога',
+      text: isZh
+        ? 'После сценария и голосовой минутки — сильные стороны, зоны роста и полезная фраза с пиньинем.'
+        : 'После каждой тренировки ты получаешь фидбек с сильными сторонами, зонами роста и списком полезных фраз из разговора.',
       illo: (
         <div className={styles.featureBlockIllo} role="img" aria-label="Фидбек">
           <FeedbackMock previewLang={previewLang} />

@@ -7,6 +7,7 @@ import { useLandingPreviewLang } from './preview-lang';
 const FEATURE_IDS = {
   agent: 'feature-slide-agent',
   karaoke: 'feature-slide-karaoke',
+  voiceTasks: 'feature-slide-voice-tasks',
   progress: 'feature-slide-progress',
   dictionary: 'feature-slide-dictionary',
 } as const;
@@ -65,14 +66,30 @@ export function ProblemAgitationSection({ onScrollToFeature }: ProblemAgitationS
                 ? 'Чтение и говорение — разные навыки. Пиньинь и HSK в голове есть, а разговорная «мышца» ещё нет. Ей нужна спокойная практика, где ошибки — это нормально.'
                 : 'Понимание и говорение — это два разных навыка. Вы отлично научились слушать, а разговорная «мышца» пока не натренирована. Ей нужна не критика, а спокойная практика, где ошибки — это нормально.'}
             </p>
-            <button
-              type="button"
-              onClick={() => handleScrollTo('agent')}
-              className={styles.problemCardCta}
-            >
-              <span className={styles.problemCardCtaText}>Собеседник</span>
-              <span className={styles.problemCardCtaArrow} aria-hidden>→</span>
-            </button>
+            {isZh ? (
+              <div className={styles.problemCardCtaGroup}>
+                <button
+                  type="button"
+                  onClick={() => handleScrollTo('agent')}
+                  className={styles.problemCardCta}
+                >
+                  <span className={styles.problemCardCtaText}>Собеседник</span>
+                  <span className={styles.problemCardCtaArrow} aria-hidden>→</span>
+                </button>
+                <button type="button" onClick={() => handleScrollTo('voiceTasks')} className={styles.problemCardCtaSmall}>
+                  Голосовая минутка
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleScrollTo('agent')}
+                className={styles.problemCardCta}
+              >
+                <span className={styles.problemCardCtaText}>Собеседник</span>
+                <span className={styles.problemCardCtaArrow} aria-hidden>→</span>
+              </button>
+            )}
           </div>
 
           {/* Блок 2: Агитация — слова, прогресс, контекст */}
@@ -85,13 +102,15 @@ export function ProblemAgitationSection({ onScrollToFeature }: ProblemAgitationS
             </p>
             <p className={styles.problemCardText}>
               {isZh
-                ? 'Нет системы повторений, пиньиня в контексте и понятного прогресса. Хочется собирать иероглифы из любимого контента и видеть результат в цифрах.'
+                ? 'Нет системы повторений, пиньиня в контексте и понятного прогресса. Хочется собирать иероглифы в словаре и видеть результат в цифрах.'
                 : 'Нет системы повторений, контекста и понятного прогресса. Хочется собирать лексику из любимого контента и видеть результат в цифрах.'}
             </p>
             <div className={styles.problemCardCtaGroup}>
-              <button type="button" onClick={() => handleScrollTo('karaoke')} className={styles.problemCardCtaSmall}>
-                Караоке
-              </button>
+              {!isZh && (
+                <button type="button" onClick={() => handleScrollTo('karaoke')} className={styles.problemCardCtaSmall}>
+                  Караоке
+                </button>
+              )}
               <button type="button" onClick={() => handleScrollTo('dictionary')} className={styles.problemCardCtaSmall}>
                 Словарь
               </button>

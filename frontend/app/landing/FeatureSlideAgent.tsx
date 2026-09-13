@@ -48,16 +48,16 @@ function HintButtonMock() {
   );
 }
 
-/** Макет вкладок режимов */
+/** Макет вкладок режимов — как в продукте */
 function ModeTabsMock({ previewLang }: { previewLang: LandingPreviewLang }) {
   const tabs = previewLang === 'zh'
-    ? ['Freestyle Mode', 'Roleplays', 'Voice tasks']
+    ? ['Свободный диалог', 'Ситуативный диалог']
     : ['Freestyle Mode', 'Roleplays', 'Debate'];
   return (
     <div
       className={styles.featureModeTabs}
       role="img"
-      aria-label={previewLang === 'zh' ? 'Modes: freestyle, roleplays, voice tasks' : 'Modes: freestyle, roleplays, debate'}
+      aria-label={previewLang === 'zh' ? 'Режимы: свободный разговор и ситуативный диалог' : 'Modes: freestyle, roleplays, debate'}
     >
       {tabs.map((label, i) => (
         <span
@@ -231,22 +231,22 @@ export function FeatureSlideAgent({ sectionId, highlight }: FeatureSlideAgentPro
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
   const highlightPills = isZh
-    ? ['Голос + чат', 'HSK-замок', 'Голосовые задания']
+    ? ['Голос + чат', 'HSK-замок', 'Пиньинь']
     : ['Голос + чат', 'Подсказки на лету', 'Без расписаний'];
 
   const featureBlocks = [
     {
       key: 'modes',
       hero: false,
-      title: isZh ? 'Три режима + сценарии HSK' : 'Три режима + твои сценарии',
+      title: isZh ? 'Два режима + сценарии HSK' : 'Три режима + твои сценарии',
       text: isZh
-        ? 'Болтай свободно, проходи ролевые сценарии с замком HSK или тренируй одно высказывание в голосовых заданиях. Не нашёл тему? Опиши её своими словами — ИИ соберёт сценарий под твой уровень.'
+        ? 'Болтай свободно или проходи ситуативный диалог: каталог HSK, свои сценарии, генерация. Замок HSK держит ИИ на выбранном уровне — не выше и не ниже. Не нашёл тему? Опиши её своими словами — ИИ соберёт сценарий.'
         : 'Болтай свободно, оттачивай фразы в реалистичных ситуациях (собеседование, свидание) или тренируй аргументы в дебатах. Не нашел подходящую тему? Опиши её своими словами, и ИИ сам сгенерирует для тебя уникальный сценарий с учетом твоего уровня и целей.',
       illo: (
         <div className={styles.featureBlockIllo} role="img" aria-label="Режимы и создание сценариев">
           <div className={styles.featureBlockIlloRow}>
-            <CreateButtonMock label="Create Scenario" />
-            <CreateButtonMock label={isZh ? 'Voice task' : 'Create Debate'} />
+            <CreateButtonMock label={isZh ? 'Создать сценарий' : 'Create Scenario'} />
+            {!isZh && <CreateButtonMock label="Create Debate" />}
           </div>
           <ModeTabsMock previewLang={previewLang} />
         </div>

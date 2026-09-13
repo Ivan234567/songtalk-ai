@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { FeatureSlideAgent } from './FeatureSlideAgent';
 import { FeatureSlideKaraoke } from './FeatureSlideKaraoke';
+import { FeatureSlideVoiceTasks } from './FeatureSlideVoiceTasks';
 import { FeatureSlideProgress } from './FeatureSlideProgress';
 import { FeatureSlideDictionary } from './FeatureSlideDictionary';
 import { ProblemAgitationSection } from './ProblemAgitationSection';
@@ -300,7 +301,7 @@ function LandingPageInner() {
           <LangPreviewToggle variant="hero" />
           <p className={styles.heroSubtitle}>
             {previewLang === 'zh'
-              ? 'Хватит молчать — тренируй речь в сценариях HSK и голосовых заданиях. Пиньинь и темп под тебя. Без осуждающих взглядов.'
+              ? 'Хватит молчать — тренируй упрощённый китайский: ситуативные диалоги HSK, голосовые минутки, словарь с пиньинем. Без осуждающих взглядов.'
               : 'Хватит молчать — тренируй речь в живых сценариях с ИИ. От заказа кофе до дебатов. Без осуждающих взглядов. Только ты и твой темп.'}
           </p>
           <p className={styles.heroLangHint}>Переключатель действует на всю страницу — слайды, отзывы и FAQ тоже меняются.</p>
@@ -323,10 +324,17 @@ function LandingPageInner() {
           sectionId="feature-slide-agent"
           highlight={highlightSection === 'feature-slide-agent'}
         />
-        <FeatureSlideKaraoke
-          sectionId="feature-slide-karaoke"
-          highlight={highlightSection === 'feature-slide-karaoke'}
-        />
+        {previewLang === 'zh' ? (
+          <FeatureSlideVoiceTasks
+            sectionId="feature-slide-voice-tasks"
+            highlight={highlightSection === 'feature-slide-voice-tasks'}
+          />
+        ) : (
+          <FeatureSlideKaraoke
+            sectionId="feature-slide-karaoke"
+            highlight={highlightSection === 'feature-slide-karaoke'}
+          />
+        )}
         <FeatureSlideProgress
           sectionId="feature-slide-progress"
           highlight={highlightSection === 'feature-slide-progress'}
