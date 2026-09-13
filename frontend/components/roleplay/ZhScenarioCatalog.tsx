@@ -288,23 +288,28 @@ export function ZhScenarioCatalog({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const sections = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const grouped = new Map<ThemeId, ZhScenario[]>();
-    const items = Array.isArray(scenarios) ? scenarios : [];
-    for (const s of items) {
-      if (!s) continue;
-      const hay = `${s.title || ''} ${typeof s.description === 'string' ? s.description : ''} ${s.textbook?.title || ''} ${typeof s.user_role === 'string' ? s.user_role : ''}`.toLowerCase();
-      if (q && !hay.includes(q)) continue;
-      const id = themeIdFor(s);
-      const list = grouped.get(id) || [];
-      list.push(s);
-      grouped.set(id, list);
+    try {
+      const q = String(searchQuery || '').trim().toLowerCase();
+      const grouped = new Map<ThemeId, ZhScenario[]>();
+      const items = Array.isArray(scenarios) ? scenarios : [];
+      for (const s of items) {
+        if (!s || typeof s !== 'object') continue;
+        const hay = `${s.title || ''} ${typeof s.description === 'string' ? s.description : ''} ${s.textbook?.title || ''} ${typeof s.user_role === 'string' ? s.user_role : ''}`.toLowerCase();
+        if (q && !hay.includes(q)) continue;
+        const id = themeIdFor(s);
+        const list = grouped.get(id) || [];
+        list.push(s);
+        grouped.set(id, list);
+      }
+      return THEME_ORDER.map((themeId) => ({
+        themeId,
+        ...THEME_META[themeId],
+        scenarios: grouped.get(themeId) || [],
+      })).filter((section) => section.scenarios.length > 0);
+    } catch (err) {
+      console.error('[ZhScenarioCatalog] group', err);
+      return [];
     }
-    return THEME_ORDER.map((themeId) => ({
-      themeId,
-      ...THEME_META[themeId],
-      scenarios: grouped.get(themeId) || [],
-    })).filter((section) => section.scenarios.length > 0);
   }, [scenarios, searchQuery]);
 
   return (

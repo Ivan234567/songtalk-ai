@@ -182,25 +182,29 @@ export async function listZhScenarios(options?: ListZhScenariosOptions): Promise
   if (options?.source) q.set('source', options.source);
   if (options?.sort) q.set('sort', options.sort);
   const query = q.toString();
-  const { scenarios } = await fetchApi<{ scenarios: ZhScenario[] }>(
-    `/api/zh-scenarios${query ? `?${query}` : ''}`
-  );
-  return Array.isArray(scenarios) ? scenarios : [];
+  const data = await fetchApi<unknown>(`/api/zh-scenarios${query ? `?${query}` : ''}`);
+  return scenariosFromResponse(data);
 }
 
 export async function getZhScenario(id: string): Promise<ZhScenario | null> {
   try {
-    return await fetchApi<ZhScenario>(`/api/zh-scenarios/${encodeURIComponent(id)}`);
+    const data = await fetchApi<unknown>(`/api/zh-scenarios/${encodeURIComponent(id)}`);
+    try {
+      return requireScenario(data);
+    } catch {
+      return null;
+    }
   } catch {
     return null;
   }
 }
 
 export async function createZhScenario(input: ZhScenarioWritePayload & { title: string }): Promise<ZhScenario> {
-  return fetchApi<ZhScenario>('/api/zh-scenarios', {
+  const data = await fetchApi<unknown>('/api/zh-scenarios', {
     method: 'POST',
     body: JSON.stringify(input),
   });
+  return requireScenario(data);
 }
 
 export type GenerateZhScenarioParams = {
@@ -263,92 +267,177 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
-export function draftFromGenerateResult(result: GenerateZhScenarioResult): ZhScenario {
-  const p = result.payload || {};
-  const textbook = p.textbook && typeof p.textbook === 'object' ? (p.textbook as ZhScenarioTextbook) : {};
-  const vocabulary = Array.isArray(p.vocabulary)
-    ? (p.vocabulary as ZhScenarioVocabItem[]).map((v) => ({
-        ...v,
+function asText(value: unknown, max = 2000): string {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function asHskLevel(value: unknown): ZhHskLevel | null {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 6) return null;
+  return n as ZhHskLevel;
+}
+
+function asStringList(value: unknown, maxItems = 8, maxLen = 200): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => asText(item, maxLen)).filter(Boolean).slice(0, maxItems);
+}
+
+function asSteps(value: unknown): ZhScenarioStep[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 12).map((step, index) => {
+    const s = step && typeof step === 'object' && !Array.isArray(step) ? (step as Record<string, unknown>) : {};
+    return {
+      id: asText(s.id, 80) || `step-${index + 1}`,
+      order: typeof s.order === 'number' && Number.isInteger(s.order) ? s.order : index + 1,
+      title_ru: asText(s.title_ru ?? s.titleRu, 200),
+      expected_user_action: asText(s.expected_user_action ?? s.expectedUserAction, 500),
+      ai_context: asText(s.ai_context ?? s.aiContext, 1000) || undefined,
+      keywords: asStringList(s.keywords, 8, 80),
+      example_zh: asText(s.example_zh ?? s.exampleZh, 300) || undefined,
+    };
+  });
+}
+
+function asVocabList(value: unknown): ZhScenarioVocabItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const v = item && typeof item === 'object' && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
+      return {
+        hanzi: asText(v.hanzi, 40),
+        pinyin: asText(v.pinyin, 80),
+        translation_ru: asText(v.translation_ru, 200),
+        hsk_level: asHskLevel(v.hsk_level) ?? undefined,
         usage: asUsage(v.usage),
-      }))
-    : [];
+      };
+    })
+    .filter((v) => v.hanzi)
+    .slice(0, 40);
+}
+
+function asMasteredModes(value: unknown): ZhMasteredModes {
+  const src = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   return {
-    id: '',
-    source: 'user',
-    language: 'zh',
-    status: 'draft',
-    archived: false,
-    title: result.title,
-    description: typeof p.description === 'string' ? p.description : '',
-    goals: Array.isArray(p.goals) ? (p.goals as string[]) : [],
-    hsk_level: result.hsk_level ?? (typeof p.hsk_level === 'number' ? (p.hsk_level as ZhHskLevel) : null),
-    textbook,
-    starter: p.starter === 'user' ? 'user' : 'ai',
-    formality: p.formality === 'ni' || p.formality === 'mixed' ? p.formality : 'nin',
-    slang_mode: p.slang_mode === 'light' ? 'light' : 'off',
-    user_role: asString(p.user_role),
-    ai_role: asString(p.ai_role),
-    ai_personality: asPersonality(p.ai_personality),
-    ai_personality_note: asString(p.ai_personality_note),
-    grammar_focus: asString(p.grammar_focus) || '',
-    setting_ru: asString(p.setting_ru),
-    scenario_text_ru: asString(p.scenario_text_ru),
-    character_opening: asString(p.character_opening),
-    suggested_first_line: asString(p.suggested_first_line),
-    suggested_first_line_pinyin: asString(p.suggested_first_line_pinyin),
-    max_score_tips_ru: asString(p.max_score_tips_ru),
-    stress_twist_ru: asString(p.stress_twist_ru),
-    from_life: p.from_life === true,
-    life_when: asString(p.life_when),
-    steps: Array.isArray(p.steps) ? (p.steps as ZhScenario['steps']) : [],
-    vocabulary,
+    rehearsal: Boolean(src.rehearsal),
+    life: Boolean(src.life),
+    stress: Boolean(src.stress),
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+/** Не доверяем форме API: любой кривой jsonb не должен ронять каталог/брифинг. */
+export function normalizeZhScenario(raw: unknown): ZhScenario | null {
+  const s = asRecord(raw);
+  if (!s) return null;
+  const textbookSrc = asRecord(s.textbook) || {};
+  const starter = s.starter === 'user' || s.starter === 'ai' ? s.starter : 'ai';
+  const formality = s.formality === 'ni' || s.formality === 'nin' || s.formality === 'mixed' ? s.formality : 'nin';
+  const slangMode = s.slang_mode === 'light' || s.slang_mode === 'off' ? s.slang_mode : 'off';
+  const status = s.status === 'ready' || s.status === 'draft' ? s.status : 'draft';
+  const count = Number(s.completions_count);
+  return {
+    id: asText(s.id, 80),
+    source: s.source === 'system' ? 'system' : 'user',
+    language: 'zh',
+    status,
+    archived: Boolean(s.archived),
+    title: asText(s.title, 200) || 'Без названия',
+    description: asText(s.description, 500),
+    goals: asStringList(s.goals, 6, 200),
+    hsk_level: asHskLevel(s.hsk_level),
+    textbook: {
+      title: asText(textbookSrc.title, 200) || undefined,
+      lesson_no: asText(textbookSrc.lesson_no, 80) || undefined,
+    },
+    starter,
+    formality,
+    slang_mode: slangMode,
+    user_role: asText(s.user_role, 120) || undefined,
+    ai_role: asText(s.ai_role, 120) || undefined,
+    ai_personality: asPersonality(s.ai_personality),
+    ai_personality_note: asText(s.ai_personality_note, 240) || undefined,
+    grammar_focus: asText(s.grammar_focus, 200),
+    setting_ru: asText(s.setting_ru, 300) || undefined,
+    scenario_text_ru: asText(s.scenario_text_ru, 500) || undefined,
+    character_opening: asText(s.character_opening, 300) || undefined,
+    suggested_first_line: asText(s.suggested_first_line, 300) || undefined,
+    suggested_first_line_pinyin: asText(s.suggested_first_line_pinyin, 300) || undefined,
+    max_score_tips_ru: asText(s.max_score_tips_ru, 800) || undefined,
+    stress_twist_ru: asText(s.stress_twist_ru, 300) || undefined,
+    from_life: s.from_life === true,
+    life_when: asText(s.life_when, 40) || undefined,
+    steps: asSteps(s.steps),
+    vocabulary: asVocabList(s.vocabulary),
+    created_at: asText(s.created_at, 40) || undefined,
+    updated_at: asText(s.updated_at, 40) || undefined,
+    completions_count: Number.isFinite(count) ? count : 0,
+    last_completed_at: asText(s.last_completed_at, 40) || null,
+    mastered_modes: asMasteredModes(s.mastered_modes),
+  };
+}
+
+function requireScenario(data: unknown): ZhScenario {
+  const direct = normalizeZhScenario(data);
+  if (direct) return direct;
+  const nested = asRecord(data)?.scenario;
+  const fromNested = nested ? normalizeZhScenario(nested) : null;
+  if (fromNested) return fromNested;
+  throw new Error('Некорректный ответ сервера со сценарием');
+}
+
+function scenariosFromResponse(data: unknown): ZhScenario[] {
+  const raw = Array.isArray(data)
+    ? data
+    : asRecord(data) && Array.isArray(asRecord(data)!.scenarios)
+      ? (asRecord(data)!.scenarios as unknown[])
+      : [];
+  return raw.map(normalizeZhScenario).filter((s): s is ZhScenario => Boolean(s));
+}
+
+export function draftFromGenerateResult(result: GenerateZhScenarioResult): ZhScenario {
+  const p = asRecord(result?.payload) || {};
+  return (
+    normalizeZhScenario({
+      ...p,
+      id: '',
+      source: 'user',
+      language: 'zh',
+      status: 'draft',
+      archived: false,
+      title: result?.title || p.title,
+      hsk_level: result?.hsk_level ?? p.hsk_level,
+    }) || emptyManualZhScenario(asHskLevel(result?.hsk_level) ?? 3)
+  );
 }
 
 export function applyGeneratePartPatch(draft: ZhScenario, part: ZhGeneratePart, patch: Record<string, unknown>): ZhScenario {
   if (part === 'vocabulary' && Array.isArray(patch.vocabulary)) {
-    return {
-      ...draft,
-      vocabulary: (patch.vocabulary as ZhScenarioVocabItem[]).map((v) => ({
-        hanzi: v.hanzi || '',
-        pinyin: v.pinyin || '',
-        translation_ru: v.translation_ru || '',
-        hsk_level: v.hsk_level,
-        usage: asUsage(v.usage),
-      })),
-    };
+    return normalizeZhScenario({ ...draft, vocabulary: patch.vocabulary }) || draft;
   }
   if (part === 'steps' && Array.isArray(patch.steps)) {
-    return {
-      ...draft,
-      steps: (patch.steps as ZhScenarioStep[]).map((s, i) => ({
-        id: s.id || `step-${i + 1}`,
-        order: s.order || i + 1,
-        title_ru: s.title_ru || '',
-        expected_user_action: s.expected_user_action || '',
-        ai_context: s.ai_context,
-        keywords: Array.isArray(s.keywords) ? s.keywords : [],
-        example_zh: s.example_zh,
-      })),
-    };
+    return normalizeZhScenario({ ...draft, steps: patch.steps }) || draft;
   }
   if (part === 'openings') {
-    return {
+    return normalizeZhScenario({
       ...draft,
       character_opening: asString(patch.character_opening) || draft.character_opening,
       suggested_first_line: asString(patch.suggested_first_line) || draft.suggested_first_line,
       suggested_first_line_pinyin:
         asString(patch.suggested_first_line_pinyin) || draft.suggested_first_line_pinyin,
-    };
+    }) || draft;
   }
   return draft;
 }
 
 export async function updateZhScenario(id: string, updates: ZhScenarioWritePayload): Promise<ZhScenario> {
-  return fetchApi<ZhScenario>(`/api/zh-scenarios/${encodeURIComponent(id)}`, {
+  const data = await fetchApi<unknown>(`/api/zh-scenarios/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify(updates),
   });
+  return requireScenario(data);
 }
 
 export async function deleteZhScenario(id: string): Promise<void> {
@@ -358,9 +447,10 @@ export async function deleteZhScenario(id: string): Promise<void> {
 }
 
 export async function duplicateZhScenario(id: string): Promise<ZhScenario> {
-  return fetchApi<ZhScenario>(`/api/zh-scenarios/${encodeURIComponent(id)}/duplicate`, {
+  const data = await fetchApi<unknown>(`/api/zh-scenarios/${encodeURIComponent(id)}/duplicate`, {
     method: 'POST',
   });
+  return requireScenario(data);
 }
 
 export async function addZhScenarioVocabToDictionary(

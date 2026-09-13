@@ -52,8 +52,8 @@ export class ZhScenariosErrorBoundary extends React.Component<
     return { error };
   }
 
-  componentDidCatch(error: Error) {
-    console.error('[ZhScenariosUI]', error);
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[ZhScenariosUI]', error, info?.componentStack);
   }
 
   render() {
@@ -73,12 +73,31 @@ export class ZhScenariosErrorBoundary extends React.Component<
         >
           <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600 }}>Не получилось открыть сценарии</h2>
           <p style={{ margin: 0, fontSize: '0.9375rem', opacity: 0.8, lineHeight: 1.45 }}>
-            Данные пришли в неожиданном виде. Обновите страницу. Если ошибка останется — колонка play_mode в
-            roleplay_completions могла не примениться в Supabase.
+            Попробуйте ещё раз. Если ошибка повторится — пришлите текст ниже.
           </p>
-          <button type="button" onClick={this.props.onClose} style={btnSecondary}>
-            Закрыть
-          </button>
+          <pre
+            style={{
+              margin: 0,
+              padding: '0.75rem',
+              borderRadius: 10,
+              background: 'var(--sidebar-hover)',
+              fontSize: '0.75rem',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              maxHeight: 160,
+              overflow: 'auto',
+            }}
+          >
+            {this.state.error.message}
+          </pre>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => this.setState({ error: null })} style={btnPrimary}>
+              Ещё раз
+            </button>
+            <button type="button" onClick={this.props.onClose} style={btnSecondary}>
+              Закрыть
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -411,8 +430,8 @@ export function ZhScenariosUI({
   }, [briefing, draft, onClose]);
 
   const filtered = useMemo(() => {
-    const list = Array.isArray(scenarios) ? scenarios : [];
-    const q = searchQuery.trim().toLowerCase();
+    const list = Array.isArray(scenarios) ? scenarios.filter((s) => s && typeof s === 'object') : [];
+    const q = String(searchQuery || '').trim().toLowerCase();
     if (!q) return list;
     return list.filter((s) => {
       const hay = `${s?.title || ''} ${s?.textbook?.title || ''} ${typeof s?.description === 'string' ? s.description : ''}`.toLowerCase();
@@ -421,15 +440,15 @@ export function ZhScenariosUI({
   }, [scenarios, searchQuery]);
 
   const recentlyPlayed = useMemo(
-    () => filtered.filter((s) => s.last_completed_at && !showArchived).slice(0, 5),
+    () => filtered.filter((s) => Boolean(s?.last_completed_at) && !showArchived).slice(0, 5),
     [filtered, showArchived]
   );
   const fromLifeList = useMemo(
-    () => filtered.filter((s) => s.from_life && !recentlyPlayed.some((r) => r.id === s.id)),
+    () => filtered.filter((s) => Boolean(s?.from_life) && !recentlyPlayed.some((r) => r?.id === s?.id)),
     [filtered, recentlyPlayed]
   );
   const mainList = recentlyPlayed.length || fromLifeList.length
-    ? filtered.filter((s) => !recentlyPlayed.some((r) => r.id === s.id) && !s.from_life)
+    ? filtered.filter((s) => !recentlyPlayed.some((r) => r?.id === s?.id) && !s?.from_life)
     : filtered;
 
   const handleSaveDraft = async (andPlay: boolean) => {

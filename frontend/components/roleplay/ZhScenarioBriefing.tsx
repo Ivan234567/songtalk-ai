@@ -82,8 +82,8 @@ export function ZhScenarioBriefing({
   const [playMode, setPlayMode] = useState<ZhPlayMode>(parseZhPlayMode(initialPlayMode));
   const [starting, setStarting] = useState(false);
   const vocab = Array.isArray(scenario.vocabulary) ? scenario.vocabulary : [];
-  const mustSay = vocab.filter((v) => v.usage === 'must_say');
-  const modelVocab = vocab.filter((v) => v.usage !== 'must_say');
+  const mustSay = vocab.filter((v) => v && v.usage === 'must_say');
+  const modelVocab = vocab.filter((v) => v && v.usage !== 'must_say');
   const userLine = [scenario.suggested_first_line, scenario.suggested_first_line_pinyin]
     .filter((v) => typeof v === 'string' && v.trim())
     .join('  ·  ');
@@ -94,9 +94,11 @@ export function ZhScenarioBriefing({
   const dense = isPreview || playMode === 'rehearsal';
   const lifeMode = !isPreview && playMode === 'life';
   const stressMode = !isPreview && playMode === 'stress';
-  const goalLine = (Array.isArray(scenario.goals) ? scenario.goals : [])
-    .filter((g): g is string => typeof g === 'string' && Boolean(g.trim()))
-    .join(' · ');
+  const goalItems = (Array.isArray(scenario.goals) ? scenario.goals : []).filter(
+    (g): g is string => typeof g === 'string' && Boolean(g.trim())
+  );
+  const goalLine = goalItems.join(' · ');
+  const grammarFocus = typeof scenario.grammar_focus === 'string' ? scenario.grammar_focus.trim() : '';
   const twist =
     (typeof scenario.stress_twist_ru === 'string' && scenario.stress_twist_ru.trim()) ||
     defaultStressTwist(typeof scenario.setting_ru === 'string' ? scenario.setting_ru : undefined);
@@ -208,27 +210,29 @@ export function ZhScenarioBriefing({
 
       {dense && (scenario.user_role || scenario.ai_role) && (
         <Card title="Роли">
-          {scenario.user_role && <div>Вы — {scenario.user_role}</div>}
-          {scenario.ai_role && <div style={{ marginTop: scenario.user_role ? 4 : 0 }}>ИИ — {scenario.ai_role}</div>}
-          {scenario.ai_personality_note && (
+          {scenario.user_role && typeof scenario.user_role === 'string' && <div>Вы — {scenario.user_role}</div>}
+          {scenario.ai_role && typeof scenario.ai_role === 'string' && (
+            <div style={{ marginTop: scenario.user_role ? 4 : 0 }}>ИИ — {scenario.ai_role}</div>
+          )}
+          {typeof scenario.ai_personality_note === 'string' && scenario.ai_personality_note && (
             <div style={{ marginTop: 6, fontSize: '0.875rem', opacity: 0.8 }}>{scenario.ai_personality_note}</div>
           )}
         </Card>
       )}
 
-      {dense && scenario.goals?.filter(Boolean).length > 0 && (
+      {dense && goalItems.length > 0 && (
         <Card title="Цели">
           <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-            {scenario.goals.filter(Boolean).map((g) => (
-              <li key={g} style={{ marginBottom: 4 }}>{g}</li>
+            {goalItems.map((g, i) => (
+              <li key={`${i}-${g}`} style={{ marginBottom: 4 }}>{g}</li>
             ))}
           </ul>
         </Card>
       )}
 
-      {dense && scenario.grammar_focus?.trim() && (
+      {dense && grammarFocus && (
         <Card title="Грамматика урока">
-          <div>{scenario.grammar_focus}</div>
+          <div>{grammarFocus}</div>
         </Card>
       )}
 
@@ -288,7 +292,7 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {dense && scenario.max_score_tips_ru && (
+      {dense && typeof scenario.max_score_tips_ru === 'string' && scenario.max_score_tips_ru && (
         <Card title="Как набрать максимум">
           <div style={{ fontSize: '0.9375rem', lineHeight: 1.45 }}>{scenario.max_score_tips_ru}</div>
         </Card>
@@ -327,7 +331,7 @@ export function ZhScenarioBriefing({
               : 'Вы подходите и говорите первым. Только для этой попытки.'}
           </p>
         )}
-        {dense && effectiveStarter === 'ai' && scenario.character_opening && (
+        {dense && effectiveStarter === 'ai' && typeof scenario.character_opening === 'string' && scenario.character_opening && (
           <p style={{ margin: '0.75rem 0 0', fontSize: '1rem', fontStyle: 'italic' }}>
             «{scenario.character_opening}»
           </p>

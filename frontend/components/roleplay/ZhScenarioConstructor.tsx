@@ -63,6 +63,10 @@ const labelStyle: React.CSSProperties = {
   opacity: 0.7,
 };
 
+function field(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 type Props = {
   draft: ZhScenario;
   onChange: (next: ZhScenario) => void;
@@ -123,7 +127,7 @@ export function ZhScenarioConstructor({
   const [showPreview, setShowPreview] = useState(true);
   const [regenPart, setRegenPart] = useState<ZhGeneratePart | null>(null);
   const [regenError, setRegenError] = useState<string | null>(null);
-  const steps = draft.steps?.length ? draft.steps : [];
+  const steps = Array.isArray(draft.steps) ? draft.steps : [];
   const safeIndex = steps.length ? Math.min(stepIndex, steps.length - 1) : 0;
   const selected = steps[safeIndex];
   const canSave = canSaveZhScenario(draft);
@@ -176,7 +180,7 @@ export function ZhScenarioConstructor({
   };
 
   const toggleGrammarChip = (chip: string) => {
-    const current = draft.grammar_focus || '';
+    const current = field(draft.grammar_focus);
     if (current.includes(chip)) {
       patch({
         grammar_focus: current
@@ -207,7 +211,9 @@ export function ZhScenarioConstructor({
     }
   };
 
-  const goals = draft.goals?.length ? draft.goals : [''];
+  const goals = Array.isArray(draft.goals) && draft.goals.length
+    ? draft.goals.map((g) => (typeof g === 'string' ? g : ''))
+    : [''];
   const regenBusy = Boolean(regenPart);
 
   return (
@@ -216,12 +222,12 @@ export function ZhScenarioConstructor({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
             <span style={labelStyle}>Название</span>
-            <input value={draft.title} onChange={(e) => patch({ title: e.target.value })} style={inputStyle} placeholder="Название сценария" />
+            <input value={typeof draft.title === 'string' ? draft.title : ''} onChange={(e) => patch({ title: e.target.value })} style={inputStyle} placeholder="Название сценария" />
           </label>
           <label>
             <span style={labelStyle}>Учебник</span>
             <input
-              value={draft.textbook?.title || ''}
+              value={typeof draft.textbook?.title === 'string' ? draft.textbook.title : ''}
               onChange={(e) => patch({ textbook: { ...draft.textbook, title: e.target.value } })}
               style={inputStyle}
               placeholder="необязательно"
@@ -239,24 +245,24 @@ export function ZhScenarioConstructor({
           <label>
             <span style={labelStyle}>Урок</span>
             <input
-              value={draft.textbook?.lesson_no || ''}
+              value={field(draft.textbook?.lesson_no)}
               onChange={(e) => patch({ textbook: { ...draft.textbook, lesson_no: e.target.value } })}
               style={inputStyle}
             />
           </label>
           <label>
             <span style={labelStyle}>Описание</span>
-            <input value={draft.description || ''} onChange={(e) => patch({ description: e.target.value })} style={inputStyle} />
+            <input value={typeof draft.description === 'string' ? draft.description : ''} onChange={(e) => patch({ description: e.target.value })} style={inputStyle} />
           </label>
         </div>
         <label>
           <span style={labelStyle}>Место</span>
-          <input value={draft.setting_ru || ''} onChange={(e) => patch({ setting_ru: e.target.value })} style={inputStyle} placeholder="магазин одежды, клиника…" />
+          <input value={typeof draft.setting_ru === 'string' ? draft.setting_ru : ''} onChange={(e) => patch({ setting_ru: e.target.value })} style={inputStyle} placeholder="магазин одежды, клиника…" />
         </label>
         <label>
           <span style={labelStyle}>Ситуация</span>
           <textarea
-            value={draft.scenario_text_ru || ''}
+            value={field(draft.scenario_text_ru)}
             onChange={(e) => patch({ scenario_text_ru: e.target.value })}
             rows={2}
             style={{ ...inputStyle, resize: 'vertical' }}
@@ -269,11 +275,11 @@ export function ZhScenarioConstructor({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
             <span style={labelStyle}>Ваша роль</span>
-            <input value={draft.user_role || ''} onChange={(e) => patch({ user_role: e.target.value })} style={inputStyle} />
+            <input value={field(draft.user_role)} onChange={(e) => patch({ user_role: e.target.value })} style={inputStyle} />
           </label>
           <label>
             <span style={labelStyle}>Роль ИИ</span>
-            <input value={draft.ai_role || ''} onChange={(e) => patch({ ai_role: e.target.value })} style={inputStyle} />
+            <input value={field(draft.ai_role)} onChange={(e) => patch({ ai_role: e.target.value })} style={inputStyle} />
           </label>
         </div>
         <div>
@@ -301,7 +307,7 @@ export function ZhScenarioConstructor({
         <label>
           <span style={labelStyle}>Уточнение характера</span>
           <input
-            value={draft.ai_personality_note || ''}
+            value={field(draft.ai_personality_note)}
             onChange={(e) => patch({ ai_personality_note: e.target.value })}
             style={inputStyle}
             placeholder="необязательно: слегка ворчливый, очень вежливый…"
@@ -354,17 +360,17 @@ export function ZhScenarioConstructor({
         </div>
         <label>
           <span style={labelStyle}>Первая реплика собеседника</span>
-          <input value={draft.character_opening || ''} onChange={(e) => patch({ character_opening: e.target.value })} style={inputStyle} />
+          <input value={field(draft.character_opening)} onChange={(e) => patch({ character_opening: e.target.value })} style={inputStyle} />
         </label>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <label>
             <span style={labelStyle}>Подсказка первой фразы ученику</span>
-            <input value={draft.suggested_first_line || ''} onChange={(e) => patch({ suggested_first_line: e.target.value })} style={inputStyle} />
+            <input value={field(draft.suggested_first_line)} onChange={(e) => patch({ suggested_first_line: e.target.value })} style={inputStyle} />
           </label>
           <label>
             <span style={labelStyle}>Пиньинь первой фразы</span>
             <input
-              value={draft.suggested_first_line_pinyin || ''}
+              value={field(draft.suggested_first_line_pinyin)}
               onChange={(e) => patch({ suggested_first_line_pinyin: e.target.value })}
               style={inputStyle}
             />
@@ -415,7 +421,7 @@ export function ZhScenarioConstructor({
         <div>
           <span style={labelStyle}>Грамматический фокус</span>
           <input
-            value={draft.grammar_focus || ''}
+            value={field(draft.grammar_focus)}
             onChange={(e) => patch({ grammar_focus: e.target.value })}
             style={inputStyle}
             placeholder="например: 了 для завершённого действия"
@@ -460,7 +466,7 @@ export function ZhScenarioConstructor({
                     background: i === stepIndex ? 'var(--sidebar-active)' : 'transparent',
                   }}
                 >
-                  {i + 1}. {s.title_ru || 'Без названия'}
+                  {i + 1}. {field(s.title_ru) || 'Без названия'}
                 </button>
               ))}
             </div>
@@ -471,7 +477,7 @@ export function ZhScenarioConstructor({
                 <label>
                   <span style={labelStyle}>Название шага</span>
                   <input
-                    value={selected.title_ru}
+                    value={field(selected?.title_ru)}
                     onChange={(e) => updateStep(safeIndex, { title_ru: e.target.value })}
                     style={inputStyle}
                   />
@@ -479,7 +485,7 @@ export function ZhScenarioConstructor({
                 <label style={{ display: 'block', marginTop: 10 }}>
                   <span style={labelStyle}>Ожидаемое действие ученика</span>
                   <textarea
-                    value={selected.expected_user_action}
+                    value={field(selected?.expected_user_action)}
                     onChange={(e) => updateStep(safeIndex, { expected_user_action: e.target.value })}
                     rows={2}
                     style={{ ...inputStyle, resize: 'vertical' }}
@@ -504,7 +510,7 @@ export function ZhScenarioConstructor({
                     <label>
                       <span style={labelStyle}>Контекст для ИИ</span>
                       <textarea
-                        value={selected.ai_context || ''}
+                        value={field(selected?.ai_context)}
                         onChange={(e) => updateStep(safeIndex, { ai_context: e.target.value })}
                         rows={2}
                         style={{ ...inputStyle, resize: 'vertical' }}
@@ -513,7 +519,7 @@ export function ZhScenarioConstructor({
                     <label>
                       <span style={labelStyle}>Ключевые слова (через запятую)</span>
                       <input
-                        value={(selected.keywords || []).join(', ')}
+                        value={(Array.isArray(selected?.keywords) ? selected.keywords : []).join(', ')}
                         onChange={(e) =>
                           updateStep(safeIndex, {
                             keywords: e.target.value.split(',').map((k) => k.trim()).filter(Boolean),
@@ -525,7 +531,7 @@ export function ZhScenarioConstructor({
                     <label>
                       <span style={labelStyle}>Пример фразы (ZH)</span>
                       <input
-                        value={selected.example_zh || ''}
+                        value={field(selected?.example_zh)}
                         onChange={(e) => updateStep(safeIndex, { example_zh: e.target.value })}
                         style={inputStyle}
                       />
@@ -554,9 +560,9 @@ export function ZhScenarioConstructor({
           </p>
           {(draft.vocabulary || []).map((v, i) => (
             <div key={`v-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 132px auto', gap: 6, marginBottom: 6 }}>
-              <input value={v.hanzi} onChange={(e) => updateVocab(i, 'hanzi', e.target.value)} placeholder="汉字" style={inputStyle} />
-              <input value={v.pinyin} onChange={(e) => updateVocab(i, 'pinyin', e.target.value)} placeholder="pinyin" style={inputStyle} />
-              <input value={v.translation_ru} onChange={(e) => updateVocab(i, 'translation_ru', e.target.value)} placeholder="перевод" style={inputStyle} />
+              <input value={field(v?.hanzi)} onChange={(e) => updateVocab(i, 'hanzi', e.target.value)} placeholder="汉字" style={inputStyle} />
+              <input value={field(v?.pinyin)} onChange={(e) => updateVocab(i, 'pinyin', e.target.value)} placeholder="pinyin" style={inputStyle} />
+              <input value={field(v?.translation_ru)} onChange={(e) => updateVocab(i, 'translation_ru', e.target.value)} placeholder="перевод" style={inputStyle} />
               <select
                 className="roleplay-modern-select"
                 value={v.usage === 'must_say' ? 'must_say' : 'model'}
@@ -582,7 +588,7 @@ export function ZhScenarioConstructor({
         <label>
           <span style={labelStyle}>Как набрать максимум</span>
           <textarea
-            value={draft.max_score_tips_ru || ''}
+            value={field(draft.max_score_tips_ru)}
             onChange={(e) => patch({ max_score_tips_ru: e.target.value })}
             rows={3}
             style={{ ...inputStyle, resize: 'vertical' }}
@@ -592,7 +598,7 @@ export function ZhScenarioConstructor({
         <label>
           <span style={labelStyle}>Осложнение для режима «Стресс»</span>
           <textarea
-            value={draft.stress_twist_ru || ''}
+            value={field(draft.stress_twist_ru)}
             onChange={(e) => patch({ stress_twist_ru: e.target.value })}
             rows={2}
             style={{ ...inputStyle, resize: 'vertical' }}
