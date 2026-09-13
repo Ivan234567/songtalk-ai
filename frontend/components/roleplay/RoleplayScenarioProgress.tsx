@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import type { RoleplayScenario } from '@/lib/roleplay';
 import {
   getLessonTrackerState,
@@ -83,11 +83,11 @@ export function RoleplayScenarioProgress({
   const showZhVocab = mustSay.length > 0 && !hideVocab;
   const canMarkGoal = !selectedSessionId && tracker.plotReady;
   const isZh = learningLanguage === 'zh';
-  const [goalOpen, setGoalOpen] = useState(true);
-  const goalText =
-    (typeof scenario.goalRu === 'string' && scenario.goalRu.trim()) ||
-    (typeof scenario.goal === 'string' && scenario.goal.trim()) ||
-    '';
+  const goalLabels = String(scenario.goalRu || scenario.goal || '')
+    .split(/\s*·\s*|\s*;\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const showGoalChecklist = Boolean(isZh && hideSteps && (steps.length > 0 || goalLabels.length > 0));
 
   const sectionStyle: React.CSSProperties = boxed
     ? {
@@ -103,22 +103,23 @@ export function RoleplayScenarioProgress({
 
   return (
     <section style={sectionStyle}>
-      {!hasSteps && !showZhVocab && !goalText ? (
+      {!hasSteps && !showZhVocab && !showGoalChecklist ? (
         <span style={{ ...headerBtn, cursor: 'default' }}>Задание</span>
       ) : null}
       {hasSteps && (
-        <>
-          <button
-            type="button"
-            onClick={onToggleSteps}
-            aria-expanded={stepsOpen}
-            style={{ ...headerBtn, marginBottom: stepsOpen ? '0.5rem' : 0 }}
-          >
-            {isZh ? `Сцена ${tracker.stepsDone}/${tracker.stepsTotal}` : 'Задание'}
-            <span style={{ opacity: 0.7 }}>{stepsOpen ? '▼' : '▶'}</span>
-          </button>
-          {stepsOpen &&
-            steps.map((step) => {
+        <button
+          type="button"
+          onClick={onToggleSteps}
+          aria-expanded={stepsOpen}
+          style={{ ...headerBtn, marginBottom: stepsOpen || showGoalChecklist ? '0.5rem' : 0 }}
+        >
+          {isZh ? `Сцена ${tracker.stepsDone}/${tracker.stepsTotal}` : 'Задание'}
+          <span style={{ opacity: 0.7 }}>{stepsOpen ? '▼' : '▶'}</span>
+        </button>
+      )}
+      {((hasSteps && stepsOpen) || showGoalChecklist) &&
+        (steps.length > 0
+          ? steps.map((step) => {
               const done = completedStepIds.includes(step.id);
               const current = !done && tracker.currentStepId === step.id;
               return (
@@ -140,9 +141,25 @@ export function RoleplayScenarioProgress({
                   <span>{step.titleRu}</span>
                 </div>
               );
-            })}
-        </>
-      )}
+            })
+          : goalLabels.map((label) => (
+              <div
+                key={label}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.875rem',
+                  lineHeight: 1.4,
+                  color: 'var(--sidebar-text)',
+                  opacity: 0.88,
+                  marginTop: '0.35rem',
+                }}
+              >
+                <OpenDot />
+                <span>{label}</span>
+              </div>
+            )))}
 
       {canPeekVocab && (
         <button
@@ -203,34 +220,6 @@ export function RoleplayScenarioProgress({
           </div>
         </div>
       )}
-
-      {isZh && goalText ? (
-        <section
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.35rem',
-            marginTop: hasSteps || showZhVocab || canPeekVocab ? '0.65rem' : 0,
-            paddingTop: hasSteps || showZhVocab || canPeekVocab ? '0.65rem' : 0,
-            borderTop: hasSteps || showZhVocab || canPeekVocab ? '1px solid var(--sidebar-border)' : 'none',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setGoalOpen((v) => !v)}
-            aria-expanded={goalOpen}
-            style={{ ...headerBtn, marginBottom: goalOpen ? '0.5rem' : 0 }}
-          >
-            Цель задания
-            <span style={{ opacity: 0.7 }}>{goalOpen ? '▼' : '▶'}</span>
-          </button>
-          {goalOpen && (
-            <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, color: 'var(--sidebar-text)', opacity: 0.95 }}>
-              {goalText}
-            </p>
-          )}
-        </section>
-      ) : null}
 
       {selectedSessionId ? (
         <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>

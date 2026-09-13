@@ -56,6 +56,31 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
+function OpenDot() {
+  return (
+    <span
+      style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid var(--sidebar-border)', flexShrink: 0, marginTop: 2 }}
+      aria-hidden
+    />
+  );
+}
+
+function Checklist({ items }: { items: string[] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {items.map((item, i) => (
+        <div
+          key={`${i}-${item}`}
+          style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.9375rem', lineHeight: 1.4 }}
+        >
+          <OpenDot />
+          <span>{item}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type ZhScenarioBriefingProps = {
   scenario: ZhScenario;
   variant?: 'play' | 'preview';
@@ -209,11 +234,7 @@ export function ZhScenarioBriefing({
 
       {goalItems.length > 0 && (
         <Card title="Цели">
-          <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
-            {goalItems.map((g, i) => (
-              <li key={`${i}-${g}`} style={{ marginBottom: 4 }}>{g}</li>
-            ))}
-          </ul>
+          <Checklist items={goalItems} />
         </Card>
       )}
 
@@ -223,19 +244,17 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {dense && steps.length > 0 && (
+      {steps.length > 0 && (
         <Card title="Шаги">
-          <ol style={{ margin: 0, paddingLeft: '1.15rem' }}>
-            {steps.map((s) => (
-              <li key={s.id || s.order} style={{ marginBottom: 4 }}>
-                {typeof s.title_ru === 'string' && s.title_ru
-                  ? s.title_ru
-                  : typeof s.expected_user_action === 'string'
-                    ? s.expected_user_action
-                    : 'Шаг'}
-              </li>
-            ))}
-          </ol>
+          <Checklist
+            items={steps.map((s) =>
+              typeof s.title_ru === 'string' && s.title_ru
+                ? s.title_ru
+                : typeof s.expected_user_action === 'string'
+                  ? s.expected_user_action
+                  : 'Шаг'
+            )}
+          />
         </Card>
       )}
 
