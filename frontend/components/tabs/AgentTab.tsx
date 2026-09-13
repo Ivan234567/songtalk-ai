@@ -51,7 +51,7 @@ import {
 import { DEBATE_TOPICS, getTopicById } from '@/lib/debate-topics';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
-import { hasEnglishSystemCatalog } from '@/lib/learning-language';
+import { hasRoleplaySystemCatalog } from '@/lib/learning-language';
 import {
   buildAgentAuthHeaders,
   buildAgentJsonHeaders,
@@ -232,7 +232,7 @@ function formatSessionDate(ts: number): string {
 
 export function AgentTab() {
   const { learningLanguage } = useLearningLanguage();
-  const showSystemCatalog = hasEnglishSystemCatalog(learningLanguage);
+  const showSystemCatalog = hasRoleplaySystemCatalog(learningLanguage);
   const systemCatalogView = showSystemCatalog ? 'catalog' as const : 'create' as const;
   const router = useRouter();
   const pathname = usePathname();
@@ -3584,15 +3584,19 @@ export function AgentTab() {
                   debateView={debateView}
                   onDebateViewChange={handleDebateViewChange}
                 />
-                {learningLanguage === 'zh' && scenarioModalOpen && (scenarioView === 'create' || scenarioView === 'my') && (
+                {learningLanguage === 'zh' && scenarioModalOpen && (
                   <ZhScenariosUI
-                    initialView={scenarioView === 'create' ? 'create' : 'my'}
+                    initialView={scenarioView}
                     defaultHsk={chineseHskLevel}
                     onSelectScenario={(s) => {
                       handleSelectScenario(s);
                       setScenarioModalOpen(false);
                     }}
                     onClose={() => setScenarioModalOpen(false)}
+                    onCopyToMineSuccess={(id) => {
+                      setScenarioView('my');
+                      setHighlightedUserScenarioId(id);
+                    }}
                   />
                 )}
                 {learningLanguage !== 'zh' && scenarioModalOpen && (scenarioView === 'create' || scenarioView === 'my') && (

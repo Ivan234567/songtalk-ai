@@ -17,7 +17,6 @@ import {
   updateZhScenario,
   type ZhHskLevel,
   type ZhScenario,
-  type ZhSource,
 } from '@/lib/zh-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
@@ -27,8 +26,9 @@ import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
 type ZhScenariosUIProps = {
   onSelectScenario: (scenario: RoleplayScenario) => void;
   onClose: () => void;
-  initialView: 'create' | 'my';
+  initialView: 'catalog' | 'create' | 'my';
   defaultHsk?: ZhHskLevel;
+  onCopyToMineSuccess?: (newScenarioId: string) => void;
 };
 
 const overlayStyle: React.CSSProperties = {
@@ -205,14 +205,21 @@ function ZhIntentForm({
   );
 }
 
-export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultHsk = 3 }: ZhScenariosUIProps) {
-  const [view, setView] = useState<'create' | 'my'>(initialView === 'create' ? 'create' : 'my');
+export function ZhScenariosUI({
+  onSelectScenario,
+  onClose,
+  initialView,
+  defaultHsk = 3,
+  onCopyToMineSuccess,
+}: ZhScenariosUIProps) {
+  const [view, setView] = useState<'catalog' | 'create' | 'my'>(
+    initialView === 'create' || initialView === 'catalog' ? initialView : 'my'
+  );
   const [scenarios, setScenarios] = useState<ZhScenario[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [hskFilter, setHskFilter] = useState('all');
-  const [sourceFilter, setSourceFilter] = useState<ZhSource | 'all'>('all');
   const [sortBy, setSortBy] = useState<'last_used' | 'updated'>('last_used');
   const [briefing, setBriefing] = useState<ZhScenario | null>(null);
   const [draft, setDraft] = useState<ZhScenario | null>(null);
@@ -229,21 +236,37 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
     setListLoading(true);
     try {
       const list = await listZhScenarios({
-        archived: showArchived,
-        source: sourceFilter,
+        archived: view === 'catalog' ? false : showArchived,
+        source: view === 'catalog' ? 'system' : 'user',
         sort: sortBy,
         hsk: hskFilter === 'all' ? undefined : (Number(hskFilter) as ZhHskLevel),
       });
+      if (view === 'catalog') {
+        list.sort((a, b) =>
+          String(a.textbook?.lesson_no || a.title).localeCompare(
+            String(b.textbook?.lesson_no || b.title),
+            'ru',
+            { numeric: true }
+          )
+        );
+      }
       setScenarios(list);
     } catch {
       setScenarios([]);
     } finally {
       setListLoading(false);
     }
-  }, [showArchived, sourceFilter, sortBy, hskFilter]);
+  }, [view, showArchived, sortBy, hskFilter]);
 
   useEffect(() => {
-    if (view === 'my') loadList();
+    const next = initialView === 'create' || initialView === 'catalog' ? initialView : 'my';
+    setView(next);
+    setBriefing(null);
+    setDraft(null);
+  }, [initialView]);
+
+  useEffect(() => {
+    if (view === 'my' || view === 'catalog') loadList();
   }, [view, loadList]);
 
   useEffect(() => {
@@ -322,9 +345,11 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
   const handleDuplicate = async (id: string) => {
     setDuplicatingId(id);
     try {
-      await duplicateZhScenario(id);
+      const copy = await duplicateZhScenario(id);
+      setShowArchived(false);
       setView('my');
-      await loadList();
+      onCopyToMineSuccess?.(copy.id);
+      setVocabMessage({ id: copy.id, text: 'Сохранено в «Мои сценарии»' });
     } catch (err) {
       setVocabMessage({
         id,
@@ -408,9 +433,6 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
                 HSK {s.hsk_level}
               </span>
             )}
-            {s.source === 'system' && (
-              <span style={{ fontSize: '0.6875rem', fontWeight: 600, opacity: 0.65 }}>из приложения</span>
-            )}
           </div>
           {(textbookLine(s) || goal) && (
             <div style={{ fontSize: '0.8125rem', opacity: 0.75, marginTop: 4 }}>
@@ -448,7 +470,7 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
             onClick={() => handleDuplicate(s.id)}
             style={{ ...btnSecondary, padding: '0.5rem 0.75rem', fontSize: '0.8125rem' }}
           >
-            {duplicatingId === s.id ? 'Копируем…' : 'Копия'}
+            {duplicatingId === s.id ? 'Копируем…' : view === 'catalog' ? 'В мои' : 'Копия'}
           </button>
           <button
             type="button"
@@ -502,6 +524,22 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
           >
             <button
               type="button"
+              onClick={() => { setView('catalog'); setBriefing(null); setDraft(null); }}
+              style={{
+                padding: '0.5rem 0.875rem',
+                borderRadius: 10,
+                border: 'none',
+                background: view === 'catalog' && !briefing && !draft ? 'var(--sidebar-active)' : 'transparent',
+                color: 'var(--sidebar-text)',
+                fontSize: '0.8125rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              Каталог
+            </button>
+            <button
+              type="button"
               onClick={() => { setView('create'); setBriefing(null); setDraft(null); }}
               style={{
                 padding: '0.5rem 0.875rem',
@@ -534,7 +572,7 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
             </button>
           </div>
           <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600, color: 'var(--sidebar-text)' }}>
-            {briefing ? 'Брифинг' : draft ? 'Конструктор' : view === 'create' ? 'Создать сценарий' : 'Мои сценарии'}
+            {briefing ? 'Брифинг' : draft ? 'Конструктор' : view === 'create' ? 'Создать сценарий' : view === 'catalog' ? 'Каталог сценариев' : 'Мои сценарии'}
           </h2>
           <button type="button" onClick={onClose} aria-label="Закрыть" style={{ ...btnSecondary, padding: '0.4rem' }}>
             <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -577,23 +615,16 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
         ) : (
           <>
             <div style={{ padding: '0.85rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button type="button" onClick={() => setShowArchived(false)} style={{ ...btnSecondary, background: !showArchived ? 'var(--sidebar-active)' : 'transparent' }}>
-                  Активные
-                </button>
-                <button type="button" onClick={() => setShowArchived(true)} style={{ ...btnSecondary, background: showArchived ? 'var(--sidebar-active)' : 'transparent' }}>
-                  Архив
-                </button>
-                <button type="button" onClick={() => setSourceFilter('all')} style={{ ...btnSecondary, background: sourceFilter === 'all' ? 'var(--sidebar-active)' : 'transparent' }}>
-                  Все
-                </button>
-                <button type="button" onClick={() => setSourceFilter('user')} style={{ ...btnSecondary, background: sourceFilter === 'user' ? 'var(--sidebar-active)' : 'transparent' }}>
-                  Мои
-                </button>
-                <button type="button" onClick={() => setSourceFilter('system')} style={{ ...btnSecondary, background: sourceFilter === 'system' ? 'var(--sidebar-active)' : 'transparent' }}>
-                  Из приложения
-                </button>
-              </div>
+                {view === 'my' && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={() => setShowArchived(false)} style={{ ...btnSecondary, background: !showArchived ? 'var(--sidebar-active)' : 'transparent' }}>
+                      Активные
+                    </button>
+                    <button type="button" onClick={() => setShowArchived(true)} style={{ ...btnSecondary, background: showArchived ? 'var(--sidebar-active)' : 'transparent' }}>
+                      Архив
+                    </button>
+                  </div>
+                )}
               <input
                 type="search"
                 placeholder="Поиск по названию или учебнику…"
@@ -605,12 +636,16 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
                 <div style={{ minWidth: 120 }}>
                   <LevelDropdown value={hskFilter} onChange={setHskFilter} options={HSK_FILTERS} openUpward={false} ariaLabel="Фильтр HSK" />
                 </div>
-                <button type="button" onClick={() => setSortBy('last_used')} style={{ ...btnSecondary, background: sortBy === 'last_used' ? 'var(--sidebar-active)' : 'transparent' }}>
-                  По использованию
-                </button>
-                <button type="button" onClick={() => setSortBy('updated')} style={{ ...btnSecondary, background: sortBy === 'updated' ? 'var(--sidebar-active)' : 'transparent' }}>
-                  По обновлению
-                </button>
+                {view === 'my' && (
+                  <>
+                    <button type="button" onClick={() => setSortBy('last_used')} style={{ ...btnSecondary, background: sortBy === 'last_used' ? 'var(--sidebar-active)' : 'transparent' }}>
+                      По использованию
+                    </button>
+                    <button type="button" onClick={() => setSortBy('updated')} style={{ ...btnSecondary, background: sortBy === 'updated' ? 'var(--sidebar-active)' : 'transparent' }}>
+                      По обновлению
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <div style={{ padding: '0 1.25rem 1.25rem', overflowY: 'auto', flex: 1 }}>
@@ -619,7 +654,11 @@ export function ZhScenariosUI({ onSelectScenario, onClose, initialView, defaultH
               ) : filtered.length === 0 ? (
                 <p style={{ opacity: 0.75, lineHeight: 1.5 }}>
                   {scenarios.length === 0
-                    ? (showArchived ? 'В архиве пока ничего нет.' : 'Пока нет сценариев. Создайте через «Опишите урок».')
+                    ? (view === 'catalog'
+                      ? 'В каталоге пока нет сценариев.'
+                      : showArchived
+                        ? 'В архиве пока ничего нет.'
+                        : 'У вас пока нет своих сценариев. Создайте через «Создать» или скопируйте из каталога.')
                     : 'По запросу ничего не найдено.'}
                 </p>
               ) : (

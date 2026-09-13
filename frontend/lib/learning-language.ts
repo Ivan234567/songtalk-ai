@@ -13,9 +13,14 @@ export function isLearningLanguage(value: string | null | undefined): value is L
   return value === 'en' || value === 'zh';
 }
 
-/** Системный каталог (англ. сценарии / дебаты) — только в режиме English */
+/** Системный каталог английских сценариев и дебатов — только в режиме English */
 export function hasEnglishSystemCatalog(lang: LearningLanguage): boolean {
   return lang === 'en';
+}
+
+/** Каталог ролевых сценариев: English JSON и китайские системные карточки HSK */
+export function hasRoleplaySystemCatalog(lang: LearningLanguage): boolean {
+  return lang === 'en' || lang === 'zh';
 }
 
 export async function fetchUserLearningLanguage(userId: string): Promise<LearningLanguage> {

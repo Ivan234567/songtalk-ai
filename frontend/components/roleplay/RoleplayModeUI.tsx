@@ -8,7 +8,7 @@ import {
 } from '@/lib/roleplay';
 import { createUserScenario, type UserScenarioLevel } from '@/lib/user-scenarios';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
-import { hasEnglishSystemCatalog, type LearningLanguage } from '@/lib/learning-language';
+import { hasRoleplaySystemCatalog, type LearningLanguage } from '@/lib/learning-language';
 
 /** Значение фильтра сложности в модалке сценариев */
 type DifficultyFilter = 'all' | 'easy' | 'medium' | 'hard';
@@ -463,7 +463,7 @@ export function RoleplayModeUI({
   debateView = 'catalog',
   onDebateViewChange,
 }: RoleplayModeUIProps) {
-  const showSystemCatalog = showSystemCatalogProp ?? hasEnglishSystemCatalog(learningLanguage);
+  const showSystemCatalog = showSystemCatalogProp ?? hasRoleplaySystemCatalog(learningLanguage);
   const showDebate = learningLanguage !== 'zh';
   const roleplayTabLabel = learningLanguage === 'zh' ? 'Ситуативный диалог' : 'Roleplays';
   const [hintVisible, setHintVisible] = useState(false);
@@ -685,7 +685,7 @@ export function RoleplayModeUI({
             )}
           </div>
         </div>
-        {showSystemCatalog && scenarioModalOpen && onScenarioModalOpenChange && scenarioView === 'catalog' && (
+        {showSystemCatalog && learningLanguage !== 'zh' && scenarioModalOpen && onScenarioModalOpenChange && scenarioView === 'catalog' && (
           <ScenarioModal
             learningLanguage={learningLanguage}
             onSelect={(s) => {
