@@ -66,9 +66,9 @@ export function RoleplayScenarioProgress({
   const hideSteps = Boolean(policy && !policy.showSteps);
   const hideVocab = Boolean(policy && !policy.showVocab && !(policy.vocabPeekOnce && vocabPeeked));
   const canPeekVocab = Boolean(policy?.vocabPeekOnce && !vocabPeeked && onPeekVocab);
-  const steps = (scenario.steps || [])
+  const steps = (Array.isArray(scenario.steps) ? scenario.steps : [])
     .slice()
-    .sort((a, b) => a.order - b.order);
+    .sort((a, b) => (Number(a?.order) || 0) - (Number(b?.order) || 0));
   const mustSay: ZhTrackerVocabItem[] =
     learningLanguage === 'zh' && !selectedSessionId
       ? getMustSayVocab(scenario.scenarioVocabulary)

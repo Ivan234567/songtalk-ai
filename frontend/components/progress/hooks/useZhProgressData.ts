@@ -114,7 +114,7 @@ export function useZhProgressData() {
         .limit(500);
 
     let completionsRes = await fetchCompletions(completionsSelect);
-    if (completionsRes.error && /play_mode/i.test(completionsRes.error.message || '')) {
+    if (completionsRes.error) {
       completionsRes = await fetchCompletions(completionsSelectLegacy);
     }
 

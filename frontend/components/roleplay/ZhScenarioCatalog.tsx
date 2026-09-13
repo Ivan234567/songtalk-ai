@@ -106,7 +106,7 @@ const THEME_ICONS: Record<ThemeId, React.ReactNode> = {
 };
 
 function themeIdFor(s: ZhScenario): ThemeId {
-  const title = s.title.trim();
+  const title = typeof s?.title === 'string' ? s.title.trim() : String(s?.title || '').trim();
   if (title === 'Знакомство' || title === 'Страна и учёба') return 'meet';
   if (title === 'Моя семья' || title === 'Сколько тебе лет') return 'family';
   if (title === 'Который час') return 'time';
@@ -139,9 +139,11 @@ function CatalogCard({
   saving?: boolean;
 }) {
   const [hover, setHover] = useState(false);
-  const badge = hskBadge(scenario.hsk_level);
-  const role = scenario.user_role;
-  const shortInfo = scenario.description || scenario.goals?.[0] || null;
+  const badge = hskBadge(typeof scenario.hsk_level === 'number' ? scenario.hsk_level : null);
+  const role = typeof scenario.user_role === 'string' ? scenario.user_role : '';
+  const shortInfo = [scenario.description, scenario.goals?.[0]].find(
+    (v): v is string => typeof v === 'string' && Boolean(v.trim())
+  );
 
   return (
     <button
@@ -170,7 +172,7 @@ function CatalogCard({
       }}
     >
       <span style={{ display: 'block', fontSize: '1rem', fontWeight: 600, lineHeight: 1.3 }}>
-        {scenario.title}
+        {typeof scenario.title === 'string' && scenario.title.trim() ? scenario.title : 'Без названия'}
       </span>
       {scenario.mastered_modes && (scenario.completions_count ?? 0) > 0 && (
         <ZhPlayModeDots mastered={scenario.mastered_modes} compact />
@@ -207,7 +209,7 @@ function CatalogCard({
         </span>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 'auto', width: '100%', flexWrap: 'wrap' }}>
-        {badge && scenario.hsk_level && (
+        {badge && typeof scenario.hsk_level === 'number' && (
           <span
             style={{
               fontSize: '0.6875rem',
@@ -288,8 +290,10 @@ export function ZhScenarioCatalog({
   const sections = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const grouped = new Map<ThemeId, ZhScenario[]>();
-    for (const s of scenarios) {
-      const hay = `${s.title} ${s.description || ''} ${s.textbook?.title || ''} ${s.user_role || ''}`.toLowerCase();
+    const items = Array.isArray(scenarios) ? scenarios : [];
+    for (const s of items) {
+      if (!s) continue;
+      const hay = `${s.title || ''} ${typeof s.description === 'string' ? s.description : ''} ${s.textbook?.title || ''} ${typeof s.user_role === 'string' ? s.user_role : ''}`.toLowerCase();
       if (q && !hay.includes(q)) continue;
       const id = themeIdFor(s);
       const list = grouped.get(id) || [];

@@ -291,7 +291,7 @@ export default function ProgressFocusPage() {
           let cRes = await fetchRoleplayCompletions(
             'id, scenario_id, scenario_title, scenario_level, completed_at, feedback, completed_step_ids, play_mode'
           );
-          if (cRes.error && /play_mode/i.test(cRes.error.message || '')) {
+          if (cRes.error) {
             cRes = await fetchRoleplayCompletions(
               'id, scenario_id, scenario_title, scenario_level, completed_at, feedback, completed_step_ids'
             );

@@ -8,7 +8,7 @@ import { buildMessagesForAgentChat, type RoleplayScenario } from '@/lib/roleplay
 import { getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
 import { PersonalScenariosUI } from '@/components/roleplay/PersonalScenariosUI';
-import { ZhScenariosUI } from '@/components/roleplay/ZhScenariosUI';
+import { ZhScenariosErrorBoundary, ZhScenariosUI } from '@/components/roleplay/ZhScenariosUI';
 import { ZhVoiceTasksUI } from '@/components/voice-tasks/ZhVoiceTasksUI';
 import { ZhVoiceTaskResult } from '@/components/voice-tasks/ZhVoiceTaskResult';
 import {
@@ -3181,7 +3181,15 @@ export function AgentTab() {
     supabase
       .from('roleplay_completions')
       .insert(payload)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
+        if (error && payload.play_mode) {
+          const { play_mode: _ignored, ...withoutMode } = payload;
+          const retry = await supabase.from('roleplay_completions').insert(withoutMode);
+          if (!retry.error) return;
+          console.error('[roleplay_completions] INSERT error:', retry.error);
+          alert('Ошибка сохранения прогресса: ' + (retry.error.message || 'неизвестная ошибка'));
+          return;
+        }
         if (error) {
           console.error('[roleplay_completions] INSERT error:', error);
           alert('Ошибка сохранения прогресса: ' + (error.message || 'неизвестная ошибка'));
@@ -3751,27 +3759,35 @@ export function AgentTab() {
                   onDebateViewChange={handleDebateViewChange}
                 />
                 {learningLanguage === 'zh' && scenarioModalOpen && (
-                  <ZhScenariosUI
-                    initialView={scenarioView}
-                    defaultHsk={chineseHskLevel}
-                    initialScenarioId={progressDeepLink?.id}
-                    initialPlayMode={progressDeepLink?.playMode}
-                    onSelectScenario={(s) => {
-                      handleSelectScenario(s);
-                      setScenarioModalOpen(false);
-                      setProgressDeepLink(null);
-                      progressTargetHandledRef.current = null;
-                    }}
+                  <ZhScenariosErrorBoundary
                     onClose={() => {
                       setScenarioModalOpen(false);
                       setProgressDeepLink(null);
                       progressTargetHandledRef.current = null;
                     }}
-                    onCopyToMineSuccess={(id) => {
-                      setScenarioView('my');
-                      setHighlightedUserScenarioId(id);
-                    }}
-                  />
+                  >
+                    <ZhScenariosUI
+                      initialView={scenarioView}
+                      defaultHsk={chineseHskLevel}
+                      initialScenarioId={progressDeepLink?.id}
+                      initialPlayMode={progressDeepLink?.playMode}
+                      onSelectScenario={(s) => {
+                        handleSelectScenario(s);
+                        setScenarioModalOpen(false);
+                        setProgressDeepLink(null);
+                        progressTargetHandledRef.current = null;
+                      }}
+                      onClose={() => {
+                        setScenarioModalOpen(false);
+                        setProgressDeepLink(null);
+                        progressTargetHandledRef.current = null;
+                      }}
+                      onCopyToMineSuccess={(id) => {
+                        setScenarioView('my');
+                        setHighlightedUserScenarioId(id);
+                      }}
+                    />
+                  </ZhScenariosErrorBoundary>
                 )}
                 {learningLanguage !== 'zh' && scenarioModalOpen && (scenarioView === 'create' || scenarioView === 'my') && (
                   <PersonalScenariosUI
@@ -5426,11 +5442,11 @@ export function AgentTab() {
             )}
             {learningLanguage === 'zh' && (
               <ZhAfterSessionReview
-                playMode={parseZhPlayMode(selectedScenario.playMode)}
+                playMode={parseZhPlayMode(selectedScenario?.playMode)}
                 review={zhListenReview}
                 rewindUsed={zhRewindUsed}
                 onRewind={handleZhRewind}
-                onNextMode={nextZhPlayMode(parseZhPlayMode(selectedScenario.playMode)) ? handleZhNextMode : undefined}
+                onNextMode={nextZhPlayMode(parseZhPlayMode(selectedScenario?.playMode)) ? handleZhNextMode : undefined}
               />
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', paddingTop: '0.15rem' }}>

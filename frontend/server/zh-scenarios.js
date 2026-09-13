@@ -154,21 +154,22 @@ function inferStatus(title, payload, explicit) {
 }
 
 function toApiScenario(row, extras = {}) {
-  const payload = row.payload && typeof row.payload === 'object' ? row.payload : {}
-  const steps = extras.steps || payload.steps || []
-  const vocabulary = extras.vocabulary || payload.vocabulary || []
-  const textbookTitle = row.textbook_title || payload.textbook?.title
-  const lessonNo = row.lesson_no || payload.textbook?.lesson_no
+  const payload = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload) ? row.payload : {}
+  const textbookSrc = payload.textbook && typeof payload.textbook === 'object' && !Array.isArray(payload.textbook) ? payload.textbook : {}
+  const steps = Array.isArray(extras.steps) ? extras.steps : Array.isArray(payload.steps) ? payload.steps : []
+  const vocabulary = Array.isArray(extras.vocabulary) ? extras.vocabulary : Array.isArray(payload.vocabulary) ? payload.vocabulary : []
+  const textbookTitle = asTrimmed(row.textbook_title || textbookSrc.title, 200)
+  const lessonNo = asTrimmed(row.lesson_no || textbookSrc.lesson_no || textbookSrc.lessonNo, 80)
   return {
     id: row.id,
     source: row.source,
     language: 'zh',
     status: row.status,
     archived: Boolean(row.archived),
-    title: row.title,
-    description: row.description || payload.description || '',
-    goals: Array.isArray(payload.goals) ? payload.goals : [],
-    hsk_level: row.hsk_level ?? null,
+    title: asTrimmed(row.title || payload.title, 200) || 'Без названия',
+    description: asTrimmed(row.description || payload.description, 500) || '',
+    goals: normalizeGoals(payload.goals),
+    hsk_level: asHsk(row.hsk_level),
     textbook: {
       title: textbookTitle || undefined,
       lesson_no: lessonNo || undefined,
@@ -176,27 +177,29 @@ function toApiScenario(row, extras = {}) {
     starter: row.starter,
     formality: row.formality,
     slang_mode: row.slang_mode,
-    user_role: payload.user_role,
-    ai_role: payload.ai_role,
+    user_role: asTrimmed(payload.user_role, 120) || undefined,
+    ai_role: asTrimmed(payload.ai_role, 120) || undefined,
     ai_personality: asPersonality(payload.ai_personality),
-    ai_personality_note: payload.ai_personality_note,
-    grammar_focus: payload.grammar_focus || '',
-    setting_ru: payload.setting_ru,
-    scenario_text_ru: payload.scenario_text_ru,
-    character_opening: payload.character_opening,
-    suggested_first_line: payload.suggested_first_line,
-    suggested_first_line_pinyin: payload.suggested_first_line_pinyin,
-    max_score_tips_ru: payload.max_score_tips_ru,
-    stress_twist_ru: payload.stress_twist_ru,
+    ai_personality_note: asTrimmed(payload.ai_personality_note, 240) || undefined,
+    grammar_focus: asTrimmed(payload.grammar_focus, 200) || '',
+    setting_ru: asTrimmed(payload.setting_ru, 300) || undefined,
+    scenario_text_ru: asTrimmed(payload.scenario_text_ru, 500) || undefined,
+    character_opening: asTrimmed(payload.character_opening, 300) || undefined,
+    suggested_first_line: asTrimmed(payload.suggested_first_line, 300) || undefined,
+    suggested_first_line_pinyin: asTrimmed(payload.suggested_first_line_pinyin, 300) || undefined,
+    max_score_tips_ru: asTrimmed(payload.max_score_tips_ru, 800) || undefined,
+    stress_twist_ru: asTrimmed(payload.stress_twist_ru, 300) || undefined,
     from_life: payload.from_life === true,
-    life_when: payload.life_when,
+    life_when: asTrimmed(payload.life_when, 40) || undefined,
     steps,
     vocabulary,
     created_at: row.created_at,
     updated_at: row.updated_at,
     completions_count: extras.completions_count ?? 0,
     last_completed_at: extras.last_completed_at ?? null,
-    mastered_modes: extras.mastered_modes || { rehearsal: false, life: false, stress: false },
+    mastered_modes: extras.mastered_modes && typeof extras.mastered_modes === 'object'
+      ? extras.mastered_modes
+      : { rehearsal: false, life: false, stress: false },
   }
 }
 
@@ -225,42 +228,51 @@ function vocabFromPayload(payload) {
 async function attachCompletionStats(supabase, userId, list) {
   const ids = list.map((s) => s.id).filter(Boolean)
   if (!ids.length) return list
-  let { data: completions, error } = await supabase
-    .from('roleplay_completions')
-    .select('scenario_id, completed_at, play_mode')
-    .eq('user_id', userId)
-    .in('scenario_id', ids)
-  if (error && /play_mode/i.test(error.message || '')) {
-    const retry = await supabase
+  try {
+    let { data: completions, error } = await supabase
       .from('roleplay_completions')
-      .select('scenario_id, completed_at')
+      .select('scenario_id, completed_at, play_mode')
       .eq('user_id', userId)
       .in('scenario_id', ids)
-    completions = retry.data
-  }
-  const byScenario = {}
-  for (const c of completions || []) {
-    const id = c.scenario_id
-    if (!byScenario[id]) {
-      byScenario[id] = {
-        count: 0,
-        lastCompletedAt: null,
-        mastered_modes: { rehearsal: false, life: false, stress: false },
+    if (error) {
+      const retry = await supabase
+        .from('roleplay_completions')
+        .select('scenario_id, completed_at')
+        .eq('user_id', userId)
+        .in('scenario_id', ids)
+      completions = retry.data
+      if (retry.error) return list
+    }
+    const byScenario = {}
+    for (const c of completions || []) {
+      const id = c.scenario_id
+      if (!byScenario[id]) {
+        byScenario[id] = {
+          count: 0,
+          lastCompletedAt: null,
+          mastered_modes: { rehearsal: false, life: false, stress: false },
+        }
+      }
+      byScenario[id].count += 1
+      const mode = c.play_mode === 'life' || c.play_mode === 'stress' ? c.play_mode : 'rehearsal'
+      byScenario[id].mastered_modes[mode] = true
+      let at = null
+      if (c.completed_at) {
+        const d = new Date(c.completed_at)
+        if (!Number.isNaN(d.getTime())) at = d.toISOString()
+      }
+      if (at && (!byScenario[id].lastCompletedAt || at > byScenario[id].lastCompletedAt)) {
+        byScenario[id].lastCompletedAt = at
       }
     }
-    byScenario[id].count += 1
-    const mode = c.play_mode === 'life' || c.play_mode === 'stress' ? c.play_mode : 'rehearsal'
-    byScenario[id].mastered_modes[mode] = true
-    const at = c.completed_at ? new Date(c.completed_at).toISOString() : null
-    if (at && (!byScenario[id].lastCompletedAt || at > byScenario[id].lastCompletedAt)) {
-      byScenario[id].lastCompletedAt = at
+    for (const s of list) {
+      const stats = byScenario[s.id]
+      s.completions_count = stats ? stats.count : 0
+      s.last_completed_at = stats?.lastCompletedAt ?? null
+      s.mastered_modes = stats?.mastered_modes || { rehearsal: false, life: false, stress: false }
     }
-  }
-  for (const s of list) {
-    const stats = byScenario[s.id]
-    s.completions_count = stats ? stats.count : 0
-    s.last_completed_at = stats?.lastCompletedAt ?? null
-    s.mastered_modes = stats?.mastered_modes || { rehearsal: false, life: false, stress: false }
+  } catch (err) {
+    console.error('[zh-scenarios] attachCompletionStats:', err?.message || err)
   }
   return list
 }
@@ -300,8 +312,8 @@ function columnsFromBody(body, payload) {
     title: asTrimmed(body.title ?? payload.title, 200) || 'Новый сценарий',
     description: asTrimmed(body.description ?? payload.description, 500) || null,
     hsk_level: asHsk(body.hsk_level ?? body.hskLevel ?? payload.hsk_level),
-    textbook_title: payload.textbook?.title || asTrimmed(body.textbook_title, 200) || null,
-    lesson_no: payload.textbook?.lesson_no || asTrimmed(body.lesson_no, 80) || null,
+    textbook_title: asTrimmed(payload.textbook?.title, 200) || asTrimmed(body.textbook_title, 200) || null,
+    lesson_no: asTrimmed(payload.textbook?.lesson_no, 80) || asTrimmed(body.lesson_no, 80) || null,
     starter: asStarter(body.starter ?? payload.starter),
     formality: asFormality(body.formality ?? payload.formality),
     slang_mode: asSlang(body.slang_mode ?? body.slangMode ?? payload.slang_mode),
@@ -743,7 +755,14 @@ export function registerZhScenarioRoutes(app, {
         return res.status(500).json({ error: error.message || 'Failed to list scenarios' })
       }
 
-      let list = (data || []).map((row) => toApiScenario(row))
+      let list = []
+      for (const row of data || []) {
+        try {
+          list.push(toApiScenario(row))
+        } catch (mapErr) {
+          console.error('[api/zh-scenarios] skip row', row?.id, mapErr?.message || mapErr)
+        }
+      }
       if (q) {
         list = list.filter((s) => {
           const hay = `${s.title} ${s.textbook?.title || ''} ${s.description || ''}`.toLowerCase()

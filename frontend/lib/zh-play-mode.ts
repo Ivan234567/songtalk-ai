@@ -114,12 +114,12 @@ export function masteredModesFromCompletions(
 
 export function masteredModesList(map: ZhMasteredModes | ZhPlayMode[] | undefined): ZhPlayMode[] {
   if (Array.isArray(map)) return ZH_PLAY_MODES.filter((m) => map.includes(m));
-  if (!map) return [];
-  return ZH_PLAY_MODES.filter((m) => map[m]);
+  if (!map || typeof map !== 'object') return [];
+  return ZH_PLAY_MODES.filter((m) => Boolean((map as ZhMasteredModes)[m]));
 }
 
-export function nextModeFromMastery(map: ZhMasteredModes): ZhPlayMode {
-  if (!map.rehearsal) return 'rehearsal';
+export function nextModeFromMastery(map: ZhMasteredModes | undefined): ZhPlayMode {
+  if (!map?.rehearsal) return 'rehearsal';
   if (!map.life) return 'life';
   if (!map.stress) return 'stress';
   return 'life';
@@ -132,7 +132,8 @@ export function isZhAttemptMastered(overallScore: number | null | undefined): bo
 }
 
 /** Следующий слой вперёд. Не возвращает назад, если ученик сразу играл «жизнь» или «стресс». */
-export function recommendedNextPlayMode(map: ZhMasteredModes): ZhPlayMode | null {
+export function recommendedNextPlayMode(map: ZhMasteredModes | undefined): ZhPlayMode | null {
+  if (!map) return null;
   if (map.rehearsal && !map.life) return 'life';
   if (map.life && !map.stress) return 'stress';
   return null;
@@ -275,7 +276,7 @@ export function resolveRewindIndex(
 }
 
 export function defaultStressTwist(settingRu?: string): string {
-  const place = settingRu?.trim();
+  const place = typeof settingRu === 'string' ? settingRu.trim() : '';
   if (place) return `В «${place}» собеседник один раз не расслышал и просит повторить. Цель сцены та же.`;
   return 'Собеседник один раз не расслышал и просит повторить. Цель сцены не меняется.';
 }
@@ -306,7 +307,10 @@ export function zhPlayModePromptOverlay(options: {
       'If they freeze, offer a binary choice in Chinese at the same HSK, still in character.'
     );
   }
-  const facts = (memoryFacts || []).map((f) => f.trim()).filter(Boolean).slice(0, 3);
+  const facts = (memoryFacts || [])
+    .map((f) => (typeof f === 'string' ? f.trim() : ''))
+    .filter(Boolean)
+    .slice(0, 3);
   if (facts.length) {
     lines.push(
       'MEMORY from a previous attempt at THIS scene (use at most one of these if it fits naturally): ' +

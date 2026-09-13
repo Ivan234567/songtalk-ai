@@ -40,7 +40,9 @@ const btnSecondary: React.CSSProperties = {
 };
 
 function textbookLine(s: ZhScenario): string {
-  return [s.textbook?.title, s.textbook?.lesson_no].filter(Boolean).join(' · ');
+  const title = typeof s.textbook?.title === 'string' ? s.textbook.title : '';
+  const lesson = typeof s.textbook?.lesson_no === 'string' ? s.textbook.lesson_no : '';
+  return [title, lesson].filter(Boolean).join(' · ');
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -79,19 +81,25 @@ export function ZhScenarioBriefing({
   const [starter, setStarter] = useState<ZhStarter>(scenario.starter || 'ai');
   const [playMode, setPlayMode] = useState<ZhPlayMode>(parseZhPlayMode(initialPlayMode));
   const [starting, setStarting] = useState(false);
-  const vocab = scenario.vocabulary || [];
+  const vocab = Array.isArray(scenario.vocabulary) ? scenario.vocabulary : [];
   const mustSay = vocab.filter((v) => v.usage === 'must_say');
   const modelVocab = vocab.filter((v) => v.usage !== 'must_say');
   const userLine = [scenario.suggested_first_line, scenario.suggested_first_line_pinyin]
-    .filter(Boolean)
+    .filter((v) => typeof v === 'string' && v.trim())
     .join('  ·  ');
-  const steps = [...(scenario.steps || [])].sort((a, b) => a.order - b.order);
+  const steps = (Array.isArray(scenario.steps) ? [...scenario.steps] : []).sort(
+    (a, b) => (Number(a?.order) || 0) - (Number(b?.order) || 0)
+  );
   const effectiveStarter = isPreview ? scenario.starter || 'ai' : starter;
   const dense = isPreview || playMode === 'rehearsal';
   const lifeMode = !isPreview && playMode === 'life';
   const stressMode = !isPreview && playMode === 'stress';
-  const goalLine = (scenario.goals || []).filter(Boolean).join(' · ');
-  const twist = scenario.stress_twist_ru?.trim() || defaultStressTwist(scenario.setting_ru);
+  const goalLine = (Array.isArray(scenario.goals) ? scenario.goals : [])
+    .filter((g): g is string => typeof g === 'string' && Boolean(g.trim()))
+    .join(' · ');
+  const twist =
+    (typeof scenario.stress_twist_ru === 'string' && scenario.stress_twist_ru.trim()) ||
+    defaultStressTwist(typeof scenario.setting_ru === 'string' ? scenario.setting_ru : undefined);
 
   const handleStart = async () => {
     if (!onStart) return;
@@ -169,13 +177,13 @@ export function ZhScenarioBriefing({
         </div>
       )}
 
-      {dense && scenario.setting_ru && (
+      {dense && typeof scenario.setting_ru === 'string' && scenario.setting_ru && (
         <Card title="Место">
           <div>{scenario.setting_ru}</div>
         </Card>
       )}
 
-      {dense && (scenario.scenario_text_ru || scenario.description) && (
+      {dense && typeof (scenario.scenario_text_ru || scenario.description) === 'string' && (scenario.scenario_text_ru || scenario.description) && (
         <Card title="Ситуация">
           <div>{scenario.scenario_text_ru || scenario.description}</div>
         </Card>
@@ -229,7 +237,11 @@ export function ZhScenarioBriefing({
           <ol style={{ margin: 0, paddingLeft: '1.15rem' }}>
             {steps.map((s) => (
               <li key={s.id || s.order} style={{ marginBottom: 4 }}>
-                {s.title_ru || s.expected_user_action}
+                {typeof s.title_ru === 'string' && s.title_ru
+                  ? s.title_ru
+                  : typeof s.expected_user_action === 'string'
+                    ? s.expected_user_action
+                    : 'Шаг'}
               </li>
             ))}
           </ol>

@@ -35,6 +35,56 @@ type ZhScenariosUIProps = {
   initialPlayMode?: ZhPlayMode;
 };
 
+type ZhScenariosErrorBoundaryProps = {
+  onClose: () => void;
+  children: React.ReactNode;
+};
+
+type ZhScenariosErrorBoundaryState = { error: Error | null };
+
+export class ZhScenariosErrorBoundary extends React.Component<
+  ZhScenariosErrorBoundaryProps,
+  ZhScenariosErrorBoundaryState
+> {
+  state: ZhScenariosErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ZhScenariosErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('[ZhScenariosUI]', error);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div role="dialog" aria-modal="true" aria-label="Ошибка сценариев" style={overlayStyle} onClick={this.props.onClose}>
+        <div
+          style={{
+            ...panelStyle,
+            maxWidth: 480,
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.85rem',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 600 }}>Не получилось открыть сценарии</h2>
+          <p style={{ margin: 0, fontSize: '0.9375rem', opacity: 0.8, lineHeight: 1.45 }}>
+            Данные пришли в неожиданном виде. Обновите страницу. Если ошибка останется — колонка play_mode в
+            roleplay_completions могла не примениться в Supabase.
+          </p>
+          <button type="button" onClick={this.props.onClose} style={btnSecondary}>
+            Закрыть
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
 const overlayStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
@@ -103,7 +153,9 @@ const HSK_FILTERS: { value: string; label: string }[] = [
 ];
 
 function textbookLine(s: ZhScenario): string {
-  return [s.textbook?.title, s.textbook?.lesson_no].filter(Boolean).join(' · ');
+  const title = typeof s.textbook?.title === 'string' ? s.textbook.title : '';
+  const lesson = typeof s.textbook?.lesson_no === 'string' ? s.textbook.lesson_no : '';
+  return [title, lesson].filter(Boolean).join(' · ');
 }
 
 const labelStyle: React.CSSProperties = {
@@ -301,16 +353,17 @@ export function ZhScenariosUI({
         sort: sortBy,
         hsk: hskFilter === 'all' ? undefined : (Number(hskFilter) as ZhHskLevel),
       });
+      const items = Array.isArray(list) ? list : [];
       if (view === 'catalog') {
-        list.sort((a, b) =>
-          String(a.textbook?.lesson_no || a.title).localeCompare(
-            String(b.textbook?.lesson_no || b.title),
+        items.sort((a, b) =>
+          String(a?.textbook?.lesson_no || a?.title || '').localeCompare(
+            String(b?.textbook?.lesson_no || b?.title || ''),
             'ru',
             { numeric: true }
           )
         );
       }
-      setScenarios(list);
+      setScenarios(items);
     } catch {
       setScenarios([]);
     } finally {
@@ -358,10 +411,11 @@ export function ZhScenariosUI({
   }, [briefing, draft, onClose]);
 
   const filtered = useMemo(() => {
+    const list = Array.isArray(scenarios) ? scenarios : [];
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return scenarios;
-    return scenarios.filter((s) => {
-      const hay = `${s.title} ${s.textbook?.title || ''} ${s.description || ''}`.toLowerCase();
+    if (!q) return list;
+    return list.filter((s) => {
+      const hay = `${s?.title || ''} ${s?.textbook?.title || ''} ${typeof s?.description === 'string' ? s.description : ''}`.toLowerCase();
       return hay.includes(q);
     });
   }, [scenarios, searchQuery]);
@@ -407,8 +461,12 @@ export function ZhScenariosUI({
   };
 
   const handlePlay = async (s: ZhScenario) => {
-    const full = (await getZhScenario(s.id)) ?? s;
-    setBriefing(full);
+    try {
+      const full = (await getZhScenario(s.id)) ?? s;
+      setBriefing(full);
+    } catch {
+      setBriefing(s);
+    }
   };
 
   const handleEdit = async (s: ZhScenario) => {
@@ -498,7 +556,7 @@ export function ZhScenariosUI({
     const lastAt = s.last_completed_at
       ? new Date(s.last_completed_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
       : null;
-    const goal = s.goals?.[0];
+    const goal = typeof s.goals?.[0] === 'string' ? s.goals[0] : '';
     const stepsCount = s.steps?.length ?? 0;
     const canMutate = s.source === 'user';
 
@@ -518,7 +576,9 @@ export function ZhScenariosUI({
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, fontSize: '0.9375rem' }}>{s.title}</span>
+            <span style={{ fontWeight: 600, fontSize: '0.9375rem' }}>
+              {typeof s.title === 'string' && s.title.trim() ? s.title : 'Без названия'}
+            </span>
             {s.hsk_level && (
               <span style={{ fontSize: '0.6875rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: 6, background: 'var(--sidebar-active)' }}>
                 HSK {s.hsk_level}

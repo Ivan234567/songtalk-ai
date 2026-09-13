@@ -185,7 +185,7 @@ export async function listZhScenarios(options?: ListZhScenariosOptions): Promise
   const { scenarios } = await fetchApi<{ scenarios: ZhScenario[] }>(
     `/api/zh-scenarios${query ? `?${query}` : ''}`
   );
-  return scenarios ?? [];
+  return Array.isArray(scenarios) ? scenarios : [];
 }
 
 export async function getZhScenario(id: string): Promise<ZhScenario | null> {
@@ -407,17 +407,21 @@ export function emptyManualZhScenario(hsk: ZhHskLevel = 3): ZhScenario {
 }
 
 export function canSaveZhScenario(s: ZhScenario): boolean {
-  const title = s.title?.trim();
-  const goals = (s.goals || []).map((g) => g.trim()).filter(Boolean);
-  const hasStep = (s.steps || []).some((step) => step.expected_user_action?.trim());
+  const title = typeof s.title === 'string' ? s.title.trim() : '';
+  const goals = (Array.isArray(s.goals) ? s.goals : [])
+    .map((g) => (typeof g === 'string' ? g.trim() : ''))
+    .filter(Boolean);
+  const hasStep = (Array.isArray(s.steps) ? s.steps : []).some(
+    (step) => typeof step?.expected_user_action === 'string' && Boolean(step.expected_user_action.trim())
+  );
   return Boolean(title && goals.length && hasStep);
 }
 
 export function toZhWritePayload(s: ZhScenario): ZhScenarioWritePayload & { title: string } {
   return {
-    title: s.title.trim(),
-    description: s.description,
-    goals: (s.goals || []).map((g) => g.trim()).filter(Boolean),
+    title: (typeof s.title === 'string' ? s.title.trim() : '') || 'Без названия',
+    description: typeof s.description === 'string' ? s.description : '',
+    goals: (Array.isArray(s.goals) ? s.goals : []).map((g) => (typeof g === 'string' ? g.trim() : '')).filter(Boolean),
     hsk_level: s.hsk_level ?? undefined,
     textbook: s.textbook,
     starter: s.starter,
@@ -438,7 +442,7 @@ export function toZhWritePayload(s: ZhScenario): ZhScenarioWritePayload & { titl
     from_life: s.from_life,
     life_when: s.life_when,
     steps: s.steps,
-    vocabulary: (s.vocabulary || []).filter((v) => v.hanzi?.trim()),
+    vocabulary: (Array.isArray(s.vocabulary) ? s.vocabulary : []).filter((v) => v.hanzi?.trim()),
     status: canSaveZhScenario(s) ? 'ready' : 'draft',
   };
 }
@@ -500,7 +504,9 @@ export function zhScenarioToRoleplay(
   const textbookLine = [scenario.textbook?.title, scenario.textbook?.lesson_no].filter(Boolean).join(' · ');
   const mustSay = vocab.filter((v) => v.usage === 'must_say' && v.hanzi?.trim());
   const modelVocab = vocab.filter((v) => v.usage !== 'must_say' && v.hanzi?.trim());
-  const stressTwist = scenario.stress_twist_ru?.trim() || defaultStressTwist(scenario.setting_ru);
+  const stressTwist =
+    (typeof scenario.stress_twist_ru === 'string' && scenario.stress_twist_ru.trim()) ||
+    defaultStressTwist(scenario.setting_ru);
 
   const stepsBlock = steps.length
     ? [
@@ -641,7 +647,7 @@ export async function upsertZhScenarioMemory(scenarioId: string, facts: string[]
   const { data: userData } = await supabase.auth.getUser();
   const uid = userData.user?.id;
   if (!uid) return;
-  const clean = facts.map((f) => f.trim()).filter(Boolean).slice(0, 3);
+  const clean = facts.map((f) => (typeof f === 'string' ? f.trim() : '')).filter(Boolean).slice(0, 3);
   if (!clean.length) return;
   await supabase.from('zh_scenario_memories').upsert(
     {
