@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AgentIcon } from '@/components/sidebar/Sidebar';
+import { LangPreviewToggle, useLandingPreviewLang, type LandingPreviewLang } from './preview-lang';
 import styles from './landing.module.css';
 
 /** Макет кнопки записи (орб) — интерактивный: при hover «слушает» */
@@ -48,12 +49,24 @@ function HintButtonMock() {
 }
 
 /** Макет вкладок режимов */
-function ModeTabsMock() {
+function ModeTabsMock({ previewLang }: { previewLang: LandingPreviewLang }) {
+  const tabs = previewLang === 'zh'
+    ? ['Freestyle Mode', 'Roleplays', 'Voice tasks']
+    : ['Freestyle Mode', 'Roleplays', 'Debate'];
   return (
-    <div className={styles.featureModeTabs} role="img" aria-label="Modes: freestyle, roleplays, debate">
-      <span className={styles.featureModeTab}>Freestyle Mode</span>
-      <span className={`${styles.featureModeTab} ${styles.featureModeTabActive}`}>Roleplays</span>
-      <span className={styles.featureModeTab}>Debate</span>
+    <div
+      className={styles.featureModeTabs}
+      role="img"
+      aria-label={previewLang === 'zh' ? 'Modes: freestyle, roleplays, voice tasks' : 'Modes: freestyle, roleplays, debate'}
+    >
+      {tabs.map((label, i) => (
+        <span
+          key={label}
+          className={`${styles.featureModeTab} ${i === 1 ? styles.featureModeTabActive : ''}`}
+        >
+          {label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -66,46 +79,33 @@ const plusIcon = (
   </svg>
 );
 
-/** Макет кнопки создания сценария */
-function CreateScenarioButtonMock() {
+function CreateButtonMock({ label }: { label: string }) {
   return (
-    <div className={styles.featureCreateBtn} role="img" aria-label="Create scenario">
+    <div className={styles.featureCreateBtn} role="img" aria-label={label}>
       <span className={styles.featureCreateBtnIcon}>{plusIcon}</span>
-      <span>Create Scenario</span>
+      <span>{label}</span>
     </div>
   );
 }
 
-/** Макет кнопки создания дебата */
-function CreateDebateButtonMock() {
-  return (
-    <div className={styles.featureCreateBtn} role="img" aria-label="Create debate">
-      <span className={styles.featureCreateBtnIcon}>{plusIcon}</span>
-      <span>Create Debate</span>
-    </div>
-  );
-}
+const mockPanelStyle: React.CSSProperties = {
+  padding: '0.65rem 0.9rem',
+  borderRadius: 16,
+  border: '1px solid rgba(255, 255, 255, 0.2)',
+  background: 'rgba(255, 255, 255, 0.06)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.6rem',
+  width: 200,
+  minWidth: 0,
+  boxSizing: 'border-box',
+  overflow: 'hidden',
+};
 
 /** Макет настроек стиля — как в AgentTab (фристайл) */
 function StyleSettingsMock() {
   return (
-    <div
-      role="img"
-      aria-label="Style settings"
-      style={{
-        padding: '0.65rem 0.9rem',
-        borderRadius: 16,
-        border: '1px solid rgba(255, 255, 255, 0.2)',
-        background: 'rgba(255, 255, 255, 0.06)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.6rem',
-        width: 200,
-        minWidth: 0,
-        boxSizing: 'border-box',
-        overflow: 'hidden',
-      }}
-    >
+    <div role="img" aria-label="Style settings" style={mockPanelStyle}>
       <span
         style={{
           fontSize: '0.7rem',
@@ -192,74 +192,112 @@ function StyleSettingsMock() {
   );
 }
 
+function HskSettingsMock() {
+  return (
+    <div role="img" aria-label="HSK settings" style={mockPanelStyle}>
+      <span
+        style={{
+          fontSize: '0.7rem',
+          fontWeight: 700,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          opacity: 0.8,
+          color: '#fff',
+        }}
+      >
+        Chinese
+      </span>
+      <span className={styles.hskBadge}>HSK 3</span>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.85)' }}>
+        пиньинь
+        <input type="checkbox" defaultChecked disabled style={{ width: 12, height: 12, accentColor: 'rgba(107, 240, 176, 0.8)' }} />
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.85)' }}>
+        перевод
+        <input type="checkbox" defaultChecked disabled style={{ width: 12, height: 12, accentColor: 'rgba(107, 240, 176, 0.8)' }} />
+      </label>
+    </div>
+  );
+}
+
 interface FeatureSlideAgentProps {
   sectionId?: string;
   highlight?: boolean;
 }
 
 export function FeatureSlideAgent({ sectionId, highlight }: FeatureSlideAgentProps) {
+  const { previewLang } = useLandingPreviewLang();
+  const isZh = previewLang === 'zh';
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
-  const highlightPills = ['Голос + чат', 'Подсказки на лету', 'Без расписаний'];
+  const highlightPills = isZh
+    ? ['Голос + чат', 'HSK-замок', 'Голосовые задания']
+    : ['Голос + чат', 'Подсказки на лету', 'Без расписаний'];
 
-const featureBlocks = [
-  {
-    key: 'modes',
-    hero: false,
-    title: 'Три режима + твои сценарии',
-    text: 'Болтай свободно, оттачивай фразы в реалистичных ситуациях (собеседование, свидание) или тренируй аргументы в дебатах. Не нашел подходящую тему? Опиши её своими словами, и ИИ сам сгенерирует для тебя уникальный сценарий с учетом твоего уровня и целей.',
-    illo: (
-      <div className={styles.featureBlockIllo} role="img" aria-label="Режимы и создание сценариев">
-        <div className={styles.featureBlockIlloRow}>
-          <CreateScenarioButtonMock />
-          <CreateDebateButtonMock />
+  const featureBlocks = [
+    {
+      key: 'modes',
+      hero: false,
+      title: isZh ? 'Три режима + сценарии HSK' : 'Три режима + твои сценарии',
+      text: isZh
+        ? 'Болтай свободно, проходи ролевые сценарии с замком HSK или тренируй одно высказывание в голосовых заданиях. Не нашёл тему? Опиши её своими словами — ИИ соберёт сценарий под твой уровень.'
+        : 'Болтай свободно, оттачивай фразы в реалистичных ситуациях (собеседование, свидание) или тренируй аргументы в дебатах. Не нашел подходящую тему? Опиши её своими словами, и ИИ сам сгенерирует для тебя уникальный сценарий с учетом твоего уровня и целей.',
+      illo: (
+        <div className={styles.featureBlockIllo} role="img" aria-label="Режимы и создание сценариев">
+          <div className={styles.featureBlockIlloRow}>
+            <CreateButtonMock label="Create Scenario" />
+            <CreateButtonMock label={isZh ? 'Voice task' : 'Create Debate'} />
+          </div>
+          <ModeTabsMock previewLang={previewLang} />
         </div>
-        <ModeTabsMock />
-      </div>
-    ),
-  },
-  {
-    key: 'voice',
-    hero: true,
-    title: 'Говори или печатай',
-    text: 'Практикуй устную речь с голосовым ИИ-партнером или общайся в чате, если пока стесняешься.',
-    illo: (
-      <div className={styles.featureBlockIllo} role="img" aria-label="Голос или чат">
-        <RecordOrbMock />
-        <div className={styles.featureChatHint}>
-          <span className={styles.featureChatHintPlaceholder}>Type your message…</span>
+      ),
+    },
+    {
+      key: 'voice',
+      hero: true,
+      title: 'Говори или печатай',
+      text: 'Практикуй устную речь с голосовым ИИ-партнером или общайся в чате, если пока стесняешься.',
+      illo: (
+        <div className={styles.featureBlockIllo} role="img" aria-label="Голос или чат">
+          <RecordOrbMock />
+          <div className={styles.featureChatHint}>
+            <span className={styles.featureChatHintPlaceholder}>{isZh ? '你好…' : 'Type your message…'}</span>
+          </div>
         </div>
-      </div>
-    ),
-  },
-  {
-    key: 'hints',
-    hero: false,
-    title: 'Умные подсказки',
-    text: 'Если забыл слово или не знаешь, как построить фразу, нажми «Подсказка» — ИИ предложит варианты: проще, вежливее, с использованием сленга.',
-    illo: (
-      <div className={styles.featureBlockIllo} role="img" aria-label="Подсказка и варианты">
-        <HintButtonMock />
-        <div className={styles.featureHintVariants}>
-          <span>проще</span>
-          <span>вежливее</span>
-          <span>сленг</span>
+      ),
+    },
+    {
+      key: 'hints',
+      hero: false,
+      title: 'Умные подсказки',
+      text: isZh
+        ? 'Если забыл слово или не знаешь, как построить фразу, нажми «Подсказка» — ИИ предложит варианты проще, вежливее или строго на твоём HSK.'
+        : 'Если забыл слово или не знаешь, как построить фразу, нажми «Подсказка» — ИИ предложит варианты: проще, вежливее, с использованием сленга.',
+      illo: (
+        <div className={styles.featureBlockIllo} role="img" aria-label="Подсказка и варианты">
+          <HintButtonMock />
+          <div className={styles.featureHintVariants}>
+            <span>проще</span>
+            <span>вежливее</span>
+            <span>{isZh ? 'HSK' : 'сленг'}</span>
+          </div>
         </div>
-      </div>
-    ),
-  },
-  {
-    key: 'style',
-    hero: false,
-    title: 'Гибкие настройки стиля',
-    text: 'Хочешь освоить деловой английский или научиться понимать сленг любимых рэперов? Настрой уровень формальности, разреши или запрети нецензурную лексику — ИИ подстроится под тебя.',
-    illo: (
-      <div className={styles.featureBlockIllo} role="img" aria-label="Настройки стиля">
-        <StyleSettingsMock />
-      </div>
-    ),
-  },
-];
+      ),
+    },
+    {
+      key: 'style',
+      hero: false,
+      title: isZh ? 'Уровень HSK и подсказки' : 'Гибкие настройки стиля',
+      text: isZh
+        ? 'Замок HSK не даёт ИИ уехать выше твоего уровня. Включи пиньинь и перевод — читай и слушай в своём темпе.'
+        : 'Хочешь освоить деловой стиль или живую разговорную речь? Настрой уровень формальности, разреши или запрети нецензурную лексику — ИИ подстроится под тебя.',
+      illo: (
+        <div className={styles.featureBlockIllo} role="img" aria-label={isZh ? 'Настройки HSK' : 'Настройки стиля'}>
+          {isZh ? <HskSettingsMock /> : <StyleSettingsMock />}
+        </div>
+      ),
+    },
+  ];
 
   useEffect(() => {
     const el = sectionRef.current;
@@ -281,13 +319,16 @@ const featureBlocks = [
       <div className={`${styles.featureSlideContent} ${styles.featureSlideContentGrid}`}>
         <div className={`${styles.featureSlideText} ${inView ? styles.featureSlideTextRevealed : ''}`}>
           <div className={styles.featureTextPanel}>
-            <div className={styles.featurePills}>
-              {highlightPills.map((pill, i) => (
-                <span key={pill} className={styles.featurePill} style={{ animationDelay: `${i * 0.06}s` }}>
-                  {i === 0 && <span className={styles.featurePillLive} aria-hidden />}
-                  {pill}
-                </span>
-              ))}
+            <div className={styles.featurePillsRow}>
+              <div className={styles.featurePills}>
+                {highlightPills.map((pill, i) => (
+                  <span key={pill} className={styles.featurePill} style={{ animationDelay: `${i * 0.06}s` }}>
+                    {i === 0 && <span className={styles.featurePillLive} aria-hidden />}
+                    {pill}
+                  </span>
+                ))}
+              </div>
+              <LangPreviewToggle />
             </div>
             <p className={styles.featureLabel}>Разговорный режим</p>
             <h2 id="feature-agent-title" className={styles.featureTitle}>

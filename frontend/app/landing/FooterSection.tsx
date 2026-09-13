@@ -59,7 +59,7 @@ export function FooterSection() {
                 <span>Speakeasy</span>
               </Link>
               <p className={styles.ftTagline}>
-                Практика английского с ИИ — говори, пой, учи слова в своём темпе.
+                Практика английского и китайского с ИИ — говори, пой, учи слова в своём темпе.
               </p>
             </div>
 

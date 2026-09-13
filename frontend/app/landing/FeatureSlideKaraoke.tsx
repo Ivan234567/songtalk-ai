@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { KaraokeIcon } from '@/components/sidebar/Sidebar';
+import { LangPreviewToggle, useLandingPreviewLang, type LandingPreviewLang } from './preview-lang';
 import styles from './landing.module.css';
 
 /** Поле ввода ссылки YouTube — интерактив при фокусе и hover */
@@ -33,27 +34,47 @@ function YouTubeUrlMock() {
 }
 
 /** Строка караоке с подсветкой текущего слова и кликабельным словом */
-function KaraokeLineMock() {
+function KaraokeLineMock({ previewLang }: { previewLang: LandingPreviewLang }) {
   const [activeWord, setActiveWord] = useState<string | null>(null);
-  const words = ['I', 'want', 'it', 'that', 'way'];
+  const isZh = previewLang === 'zh';
+  useEffect(() => {
+    setActiveWord(null);
+  }, [previewLang]);
+  const tokens = isZh
+    ? [
+        { text: '月亮', clickable: true, active: false },
+        { text: '代表', clickable: false, active: true },
+        { text: '我的', clickable: false, active: false },
+        { text: '心', clickable: false, active: false },
+      ]
+    : [
+        { text: 'I', clickable: false, active: false },
+        { text: 'want', clickable: false, active: false },
+        { text: 'it', clickable: false, active: true },
+        { text: 'that', clickable: true, active: false },
+        { text: 'way', clickable: false, active: false },
+      ];
+
   return (
     <div className={styles.featureKaraokeLineWrap} role="img" aria-label="Строка караоке">
       <div className={styles.featureKaraokeLine}>
-        {words.map((word, i) => (
+        {tokens.map((token, i) => (
           <span
-            key={i}
-            className={`${styles.featureKaraokeWord} ${i === 2 ? styles.featureKaraokeWordActive : ''} ${word === 'that' ? styles.featureKaraokeWordClickable : ''}`}
-            onClick={() => word === 'that' && setActiveWord(activeWord ? null : 'that')}
-            onMouseEnter={() => word === 'that' && setActiveWord('that')}
+            key={`${token.text}-${i}`}
+            className={`${styles.featureKaraokeWord} ${isZh ? styles.featureKaraokeWordHanzi : ''} ${token.active ? styles.featureKaraokeWordActive : ''} ${token.clickable ? styles.featureKaraokeWordClickable : ''}`}
+            onClick={() => token.clickable && setActiveWord(activeWord ? null : token.text)}
+            onMouseEnter={() => token.clickable && setActiveWord(token.text)}
             onMouseLeave={() => setActiveWord(null)}
           >
-            {word}
+            {token.text}
           </span>
         ))}
       </div>
       {activeWord && (
         <div className={styles.featureKaraokeTooltip}>
-          <span className={styles.featureKaraokeTooltipTranslation}>that — тот самый; that way — таким образом</span>
+          <span className={styles.featureKaraokeTooltipTranslation}>
+            {isZh ? '月亮 — yuèliang — луна' : 'that — тот самый; that way — таким образом'}
+          </span>
           <span className={styles.featureKaraokeTooltipBtn}>+ В словарь</span>
         </div>
       )}
@@ -87,7 +108,7 @@ function ViewModeToggleMock() {
 }
 
 /** Маленькая карточка песни из коллекции под стиль слайда */
-function SavedSongCardMini() {
+function SavedSongCardMini({ previewLang }: { previewLang: LandingPreviewLang }) {
   const [hovered, setHovered] = useState(false);
   return (
     <div
@@ -100,57 +121,12 @@ function SavedSongCardMini() {
       <div className={styles.karaokeCardMiniThumb}>
         <span className={styles.karaokeCardMiniPlay}>▶</span>
       </div>
-      <div className={styles.karaokeCardMiniTitle}>I Want It That Way</div>
+      <div className={styles.karaokeCardMiniTitle}>
+        {previewLang === 'zh' ? '月亮代表我的心' : 'I Want It That Way'}
+      </div>
     </div>
   );
 }
-
-const featureBlocks = [
-  {
-    key: 'sync',
-    hero: true,
-    title: 'Синхронизация слов и видео',
-    text: 'Вставь ссылку на YouTube, и субтитры автоматически подгрузятся. Текст подсвечивается в такт речи — как в караоке.',
-    illo: (
-      <div className={styles.featureBlockIllo} role="img" aria-label="Ссылка YouTube и субтитры">
-        <YouTubeUrlMock />
-      </div>
-    ),
-  },
-  {
-    key: 'modes',
-    hero: false,
-    title: 'Два режима просмотра',
-    text: 'Смотри клип с субтитрами или переключись в режим «только текст», чтобы сосредоточиться на разборе сложных фраз.',
-    illo: (
-      <div className={styles.featureBlockIllo} role="img" aria-label="Режимы видео и текст">
-        <ViewModeToggleMock />
-      </div>
-    ),
-  },
-  {
-    key: 'dictionary',
-    hero: false,
-    title: 'Кликни — добавь в словарь',
-    text: 'Увидел незнакомое слово или классную идиому? Кликни на него — получи перевод и сохрани в свой словарь вместе с контекстом из песни.',
-    illo: (
-      <div className={styles.featureBlockIllo} role="img" aria-label="Клик по слову в караоке">
-        <KaraokeLineMock />
-      </div>
-    ),
-  },
-  {
-    key: 'collection',
-    hero: false,
-    title: 'Твоя коллекция песен',
-    text: 'Все загруженные видео в одном месте. Запускай караоке одной кнопкой и возвращайся к любимым трекам когда угодно.',
-    illo: (
-      <div className={styles.featureBlockIllo} role="img" aria-label="Коллекция">
-        <SavedSongCardMini />
-      </div>
-    ),
-  },
-];
 
 interface FeatureSlideKaraokeProps {
   sectionId?: string;
@@ -158,9 +134,62 @@ interface FeatureSlideKaraokeProps {
 }
 
 export function FeatureSlideKaraoke({ sectionId, highlight }: FeatureSlideKaraokeProps) {
+  const { previewLang } = useLandingPreviewLang();
+  const isZh = previewLang === 'zh';
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
-  const highlightPills = ['YouTube', 'Словарь', 'Два режима', 'Коллекция'];
+  const highlightPills = isZh
+    ? ['YouTube', '成语', 'Два режима', 'Коллекция']
+    : ['YouTube', 'Словарь', 'Два режима', 'Коллекция'];
+
+  const featureBlocks = [
+    {
+      key: 'sync',
+      hero: true,
+      title: 'Синхронизация слов и видео',
+      text: 'Вставь ссылку на YouTube, и субтитры автоматически подгрузятся. Текст подсвечивается в такт речи — как в караоке.',
+      illo: (
+        <div className={styles.featureBlockIllo} role="img" aria-label="Ссылка YouTube и субтитры">
+          <YouTubeUrlMock />
+        </div>
+      ),
+    },
+    {
+      key: 'modes',
+      hero: false,
+      title: 'Два режима просмотра',
+      text: 'Смотри клип с субтитрами или переключись в режим «только текст», чтобы сосредоточиться на разборе сложных фраз.',
+      illo: (
+        <div className={styles.featureBlockIllo} role="img" aria-label="Режимы видео и текст">
+          <ViewModeToggleMock />
+        </div>
+      ),
+    },
+    {
+      key: 'dictionary',
+      hero: false,
+      title: 'Кликни — добавь в словарь',
+      text: isZh
+        ? 'Увидел незнакомый иероглиф или 成语? Кликни — получи пиньинь, перевод и сохрани в словарь вместе с контекстом из песни.'
+        : 'Увидел незнакомое слово или классную идиому? Кликни на него — получи перевод и сохрани в свой словарь вместе с контекстом из песни.',
+      illo: (
+        <div className={styles.featureBlockIllo} role="img" aria-label="Клик по слову в караоке">
+          <KaraokeLineMock previewLang={previewLang} />
+        </div>
+      ),
+    },
+    {
+      key: 'collection',
+      hero: false,
+      title: 'Твоя коллекция песен',
+      text: 'Все загруженные видео в одном месте. Запускай караоке одной кнопкой и возвращайся к любимым трекам когда угодно.',
+      illo: (
+        <div className={styles.featureBlockIllo} role="img" aria-label="Коллекция">
+          <SavedSongCardMini previewLang={previewLang} />
+        </div>
+      ),
+    },
+  ];
 
   useEffect(() => {
     const el = sectionRef.current;
@@ -182,12 +211,15 @@ export function FeatureSlideKaraoke({ sectionId, highlight }: FeatureSlideKaraok
       <div className={`${styles.featureSlideContent} ${styles.featureSlideContentGrid}`}>
         <div className={`${styles.featureSlideText} ${inView ? styles.featureSlideTextRevealed : ''}`}>
           <div className={styles.featureTextPanel}>
-            <div className={styles.featurePills}>
-              {highlightPills.map((pill, i) => (
-                <span key={pill} className={styles.featurePill} style={{ animationDelay: `${i * 0.06}s` }}>
-                  {pill}
-                </span>
-              ))}
+            <div className={styles.featurePillsRow}>
+              <div className={styles.featurePills}>
+                {highlightPills.map((pill, i) => (
+                  <span key={pill} className={styles.featurePill} style={{ animationDelay: `${i * 0.06}s` }}>
+                    {pill}
+                  </span>
+                ))}
+              </div>
+              <LangPreviewToggle />
             </div>
             <p className={styles.featureLabel}>Музыка и видео</p>
             <h2 id="feature-karaoke-title" className={styles.featureTitle}>
@@ -197,7 +229,7 @@ export function FeatureSlideKaraoke({ sectionId, highlight }: FeatureSlideKaraok
               </span>
             </h2>
             <p className={styles.featureTagline}>
-              Учи английский через музыку и YouTube, даже не замечая этого.
+              Учи язык через музыку и YouTube, даже не замечая этого.
             </p>
             <div className={styles.featureBlocksGrid}>
               {featureBlocks.map((block, i) => (

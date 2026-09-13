@@ -16,6 +16,7 @@ import { PricingSection } from './PricingSection';
 import { FinalCtaSection } from './FinalCtaSection';
 import { FaqSection } from './FaqSection';
 import { FooterSection } from './FooterSection';
+import { LandingPreviewLangProvider, LangPreviewToggle, useLandingPreviewLang } from './preview-lang';
 import styles from './landing.module.css';
 import { clearBackendToken } from '@/lib/backend-jwt';
 
@@ -228,6 +229,15 @@ function UserAvatar({ email }: { email: string }) {
 }
 
 export default function LandingPage() {
+  return (
+    <LandingPreviewLangProvider>
+      <LandingPageInner />
+    </LandingPreviewLangProvider>
+  );
+}
+
+function LandingPageInner() {
+  const { previewLang } = useLandingPreviewLang();
   const [highlightSection, setHighlightSection] = useState<string | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -286,9 +296,13 @@ export default function LandingPage() {
           <h1 id="hero-title" className={styles.heroTitle}>
             Speakeasy — говори легко, даже если ошибаешься.
           </h1>
+          <LangPreviewToggle variant="hero" />
           <p className={styles.heroSubtitle}>
-            Хватит молчать — тренируй речь в живых сценариях с ИИ. От заказа кофе до дебатов. Без осуждающих взглядов. Только ты и твой темп.
+            {previewLang === 'zh'
+              ? 'Хватит молчать — тренируй речь в сценариях HSK и голосовых заданиях. Пиньинь и темп под тебя. Без осуждающих взглядов.'
+              : 'Хватит молчать — тренируй речь в живых сценариях с ИИ. От заказа кофе до дебатов. Без осуждающих взглядов. Только ты и твой темп.'}
           </p>
+          <p className={styles.heroLangHint}>Английский и китайский — переключите превью.</p>
           <div className={styles.heroCtaWrap}>
             <Link href="/auth/register" className={styles.heroCtaGlass}>
               Начать

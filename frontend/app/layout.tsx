@@ -4,7 +4,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Speakeasy',
-  description: 'Speakeasy - платформа для общения и взаимодействия',
+  description: 'Практика английского и китайского с ИИ: диалоги, караоке, словарь и прогресс.',
 }
 
 export default function RootLayout({
