@@ -85,12 +85,8 @@ export interface SidebarProps {
 }
 
 const PALETTE = {
-  accent: '#68c995',
-  accentStrong: '#46af7d',
-  accentSoft: 'rgba(104, 201, 149, 0.16)',
-  shadow: '0 12px 32px rgba(70, 175, 125, 0.18)',
-  buttonShadow: '0 6px 18px rgba(70, 175, 125, 0.12)',
-  hoverShadow: '0 4px 12px rgba(70, 175, 125, 0.1)',
+  accentSoft: 'var(--accent-soft)',
+  hoverShadow: '0 4px 12px color-mix(in srgb, var(--accent) 10%, transparent)',
 };
 
 const RADIUS = 16;
@@ -124,6 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { learningLanguage } = useLearningLanguage();
   const visibleTabs = tabs.filter((tab) => learningLanguage === 'en' || tab.key !== 'karaoke');
+  const qrFg = learningLanguage === 'zh' ? '#c9a48c' : '#6bf0b0';
   const emailInitial = (userEmail || '').trim().charAt(0).toUpperCase() || '?';
   const emailHue = getEmailHue((userEmail || 'guest').toLowerCase());
   const [expanded, setExpanded] = useState(false);
@@ -531,8 +528,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             style={{
               width: '100%',
               borderRadius: 10,
-              border: '1px solid rgba(107, 240, 176, 0.26)',
-              background: 'linear-gradient(145deg, rgba(107, 240, 176, 0.14), rgba(107, 240, 176, 0.06))',
+              border: '1px solid color-mix(in srgb, var(--accent) 26%, transparent)',
+              background: 'linear-gradient(145deg, color-mix(in srgb, var(--accent) 14%, transparent), color-mix(in srgb, var(--accent) 6%, transparent))',
               padding: '0.4rem',
               display: 'flex',
               flexDirection: 'column',
@@ -568,12 +565,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     width: 26,
                     height: 26,
                     borderRadius: 7,
-                    background: 'rgba(107, 240, 176, 0.16)',
-                    border: '1px solid rgba(107, 240, 176, 0.35)',
+                    background: 'color-mix(in srgb, var(--accent) 16%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: 'rgba(107, 240, 176, 0.95)',
+                    color: 'var(--accent)',
                     flexShrink: 0,
                   }}
                 >
@@ -651,8 +648,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     justifyContent: 'center',
                     flex: 1,
                     borderRadius: 8,
-                    border: '1px solid rgba(107, 240, 176, 0.35)',
-                    background: 'rgba(107, 240, 176, 0.12)',
+                    border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+                    background: 'var(--accent-soft)',
                     color: 'rgba(223, 255, 237, 0.98)',
                     fontSize: '0.66rem',
                     fontWeight: 600,
@@ -722,9 +719,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               padding: '0.65rem',
               padding: '0.5rem',
               borderRadius: 8,
-              border: '1px solid rgba(107, 240, 176, 0.3)',
-              background: 'rgba(107, 240, 176, 0.12)',
-              color: 'rgba(107, 240, 176, 0.95)',
+              border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+              background: 'var(--accent-soft)',
+              color: 'var(--accent)',
               textDecoration: 'none',
               transition: 'all 0.2s ease',
             }}
@@ -737,8 +734,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: 'rgba(107, 240, 176, 0.16)',
-                border: '1px solid rgba(107, 240, 176, 0.3)',
+                background: 'color-mix(in srgb, var(--accent) 16%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
               }}
             >
               <SupportIcon size={18} />
@@ -821,7 +818,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             style={{
               width: 'min(92vw, 420px)',
               borderRadius: 16,
-              border: '1px solid rgba(107, 240, 176, 0.35)',
+              border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
               background: 'linear-gradient(165deg, rgba(17, 24, 22, 0.96), rgba(10, 15, 14, 0.96))',
               padding: '1rem',
               boxShadow: '0 24px 80px rgba(0, 0, 0, 0.55)',
@@ -871,7 +868,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 width: 220,
                 height: 220,
                 borderRadius: 14,
-                border: '1px solid rgba(107, 240, 176, 0.35)',
+                border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
                 background: 'rgba(0, 0, 0, 0.24)',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -886,7 +883,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 size={200}
                 level="M"
                 marginSize={1}
-                fgColor="#6bf0b0"
+                fgColor={qrFg}
                 bgColor="transparent"
               />
             </a>
@@ -897,7 +894,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               rel="noopener noreferrer"
               style={{
                 fontSize: '0.82rem',
-                color: 'rgba(107, 240, 176, 0.95)',
+                color: 'var(--accent)',
                 textDecoration: 'none',
                 fontWeight: 600,
               }}

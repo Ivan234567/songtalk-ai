@@ -29,6 +29,7 @@ body {
   --accent: #7ad7a7;
   --accent-strong: #58c18f;
   --accent-soft: rgba(122, 215, 167, 0.16);
+  --accent-fg: #d4f3e4;
   --radius: 12px;
   --radius-lg: 16px;
   --shadow-soft: 0 10px 26px rgba(0, 0, 0, 0.18);
@@ -47,6 +48,13 @@ body {
   --sidebar-hover: rgba(255, 255, 255, 0.08);
   --sidebar-active: rgba(255, 255, 255, 0.12);
   --sidebar-accent: rgba(255, 255, 255, 0.15);
+}
+
+html[data-learning-language='zh'] {
+  --accent: #c9a48c;
+  --accent-strong: #b58d74;
+  --accent-soft: rgba(201, 164, 140, 0.13);
+  --accent-fg: #ead9cc;
 }
 
 body {

@@ -1135,11 +1135,6 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
   }, []);
 
   const panelBorder = '1px solid var(--sidebar-border)';
-  const accentBtn = {
-    '--accent': '#7ad7a7',
-    '--accent-strong': '#58c18f',
-    '--accent-soft': 'rgba(122, 215, 167, 0.16)',
-  } as React.CSSProperties;
 
   return (
     <div
@@ -1354,7 +1349,6 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                     onClick={runTranslation}
                     disabled={loading || !input.trim()}
                     style={{
-                      ...accentBtn,
                       padding: '0.45rem 0.85rem',
                       borderRadius: 8,
                       border: '1px solid var(--accent-strong)',
@@ -1480,7 +1474,6 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); addToDictionary(); }}
                       disabled={addingToDictionary || !selectedText || (isLearningLanguageSourceField(direction) ? !input.trim() : !structuredOutput)}
                       style={{
-                        ...accentBtn,
                         padding: '0.45rem 0.85rem',
                         borderRadius: 8,
                         border: '1px solid var(--accent-strong)',
@@ -1603,9 +1596,6 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
             onClick={runTranslation}
             disabled={loading || !input.trim()}
             style={{
-              '--accent': '#7ad7a7',
-              '--accent-strong': '#58c18f',
-              '--accent-soft': 'rgba(122, 215, 167, 0.16)',
               padding: '0.55rem 0.9rem',
               borderRadius: 10,
               border: '1px solid var(--accent-strong)',
@@ -1683,9 +1673,6 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
               }}
               disabled={addingToDictionary || !selectedText || (isLearningLanguageSourceField(direction) ? !input.trim() : !output.trim())}
               style={{
-                '--accent': '#7ad7a7',
-                '--accent-strong': '#58c18f',
-                '--accent-soft': 'rgba(122, 215, 167, 0.16)',
                 padding: '0.5rem 0.9rem',
                 borderRadius: 10,
                 border: '1px solid var(--accent-strong)',

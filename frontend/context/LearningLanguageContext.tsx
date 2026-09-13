@@ -122,6 +122,18 @@ export function LearningLanguageProvider({ children }: { children: React.ReactNo
     });
   }, [pushToast]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    if (learningLanguage === 'zh') {
+      root.dataset.learningLanguage = 'zh';
+    } else {
+      delete root.dataset.learningLanguage;
+    }
+    return () => {
+      delete root.dataset.learningLanguage;
+    };
+  }, [learningLanguage]);
+
   const value = useMemo(
     () => ({
       learningLanguage,

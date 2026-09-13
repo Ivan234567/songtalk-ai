@@ -6488,9 +6488,6 @@ export function AgentTab() {
                     onClick={runAiChat}
                     disabled={aiChatLoading || !aiChatInput.trim()}
                     style={{
-                      '--accent': '#7ad7a7',
-                      '--accent-strong': '#58c18f',
-                      '--accent-soft': 'rgba(122, 215, 167, 0.16)',
                       padding: '0.5rem 1rem',
                       borderRadius: 10,
                       border: '1px solid var(--accent-strong)',
