@@ -7,6 +7,7 @@ import {
   getMustSayVocab,
   type ZhTrackerVocabItem,
 } from '@/lib/zh-lesson-tracker';
+import { parsePlayMode, scaffoldPolicy } from '@/lib/play-mode';
 import { parseZhPlayMode, zhScaffoldPolicy } from '@/lib/zh-play-mode';
 
 const headerBtn: React.CSSProperties = {
@@ -62,10 +63,13 @@ export function RoleplayScenarioProgress({
   vocabPeeked?: boolean;
   onPeekVocab?: () => void;
 }) {
-  const policy = learningLanguage === 'zh' ? zhScaffoldPolicy(parseZhPlayMode(scenario.playMode)) : null;
+  const policy =
+    learningLanguage === 'zh'
+      ? zhScaffoldPolicy(parseZhPlayMode(scenario.playMode))
+      : scaffoldPolicy(parsePlayMode(scenario.playMode));
   const hideSteps = Boolean(policy && !policy.showSteps);
   const hideVocab = Boolean(policy && !policy.showVocab && !(policy.vocabPeekOnce && vocabPeeked));
-  const canPeekVocab = Boolean(policy?.vocabPeekOnce && !vocabPeeked && onPeekVocab);
+  const canPeekVocab = Boolean(learningLanguage === 'zh' && policy?.vocabPeekOnce && !vocabPeeked && onPeekVocab);
   const steps = (Array.isArray(scenario.steps) ? scenario.steps : [])
     .slice()
     .sort((a, b) => (Number(a?.order) || 0) - (Number(b?.order) || 0));
@@ -87,7 +91,7 @@ export function RoleplayScenarioProgress({
     .split(/\s*·\s*|\s*;\s*/)
     .map((part) => part.trim())
     .filter(Boolean);
-  const showGoalChecklist = Boolean(isZh && hideSteps && (steps.length > 0 || goalLabels.length > 0));
+  const showGoalChecklist = Boolean(hideSteps && (steps.length > 0 || goalLabels.length > 0));
 
   const sectionStyle: React.CSSProperties = boxed
     ? {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { CriteriaScores, AssessmentFeedback } from '@/lib/speaking-assessment';
+import { parsePlayMode, type PlayMode } from '@/lib/play-mode';
 
 export type CompletionRow = {
   id: string;
@@ -14,6 +15,7 @@ export type CompletionRow = {
   useful_phrase_en: string | null;
   useful_phrase_ru: string | null;
   completed_step_ids?: string[] | null;
+  play_mode?: PlayMode | null;
 };
 
 export type AssessmentRow = {
@@ -93,7 +95,7 @@ export function useProgressData() {
     ] = await Promise.all([
       supabase
         .from('roleplay_completions')
-        .select('id, scenario_id, scenario_title, scenario_level, completed_at, feedback, useful_phrase_en, useful_phrase_ru, completed_step_ids')
+        .select('id, scenario_id, scenario_title, scenario_level, completed_at, feedback, useful_phrase_en, useful_phrase_ru, completed_step_ids, play_mode')
         .eq('user_id', uid)
         .eq('language', 'en')
         .order('completed_at', { ascending: false })
@@ -139,12 +141,29 @@ export function useProgressData() {
     ]);
 
     if (completionsRes.error) {
-      setError(completionsRes.error.message);
-      setData((prev) => ({ ...prev, completions: [] }));
+      const retry = await supabase
+        .from('roleplay_completions')
+        .select('id, scenario_id, scenario_title, scenario_level, completed_at, feedback, useful_phrase_en, useful_phrase_ru, completed_step_ids')
+        .eq('user_id', uid)
+        .eq('language', 'en')
+        .order('completed_at', { ascending: false })
+        .limit(500);
+      if (retry.error) {
+        setError(retry.error.message);
+        setData((prev) => ({ ...prev, completions: [] }));
+      } else {
+        const rows = (retry.data ?? []).map((row: Record<string, unknown>) => ({
+          ...row,
+          completed_step_ids: Array.isArray(row.completed_step_ids) ? row.completed_step_ids : null,
+          play_mode: parsePlayMode(row.play_mode),
+        }));
+        setData((prev) => ({ ...prev, completions: rows as CompletionRow[] }));
+      }
     } else {
       const rows = (completionsRes.data ?? []).map((row: Record<string, unknown>) => ({
         ...row,
         completed_step_ids: Array.isArray(row.completed_step_ids) ? row.completed_step_ids : null,
+        play_mode: parsePlayMode(row.play_mode),
       }));
       setData((prev) => ({ ...prev, completions: rows as CompletionRow[] }));
     }

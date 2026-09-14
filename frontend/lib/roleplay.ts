@@ -8,11 +8,12 @@
 
 import scenariosData from '@/data/roleplay-scenarios.json';
 import { hasEnglishSystemCatalog, type LearningLanguage } from '@/lib/learning-language';
+import { parsePlayMode, type MasteredModes, type PlayMode } from '@/lib/play-mode';
+import { defaultEnStressTwist, enPlayModePromptOverlay } from '@/lib/en-play-mode';
 import {
   defaultStressTwist,
   parseZhPlayMode,
   zhPlayModePromptOverlay,
-  type ZhPlayMode,
 } from '@/lib/zh-play-mode';
 
 /** Категория сценария */
@@ -81,8 +82,10 @@ export interface RoleplayScenario {
   grammarFocus?: string;
   /** Характер ИИ-собеседника в китайском сценарии. */
   aiPersonality?: string;
-  /** Режим попытки китайского сценария: rehearsal / life / stress. */
-  playMode?: ZhPlayMode;
+  /** Режим попытки: rehearsal / life / stress. */
+  playMode?: PlayMode;
+  /** Какие слои попытки уже закрыты у текущего пользователя. */
+  masteredModes?: MasteredModes;
   /** Осложнение режима «Стресс» — не меняет цели карточки. */
   stressTwistRu?: string;
   /** Сценарий создан из реальной ситуации ученика. */
@@ -379,6 +382,14 @@ function buildScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioPro
     }
   }
   content += '\n\n' + RESPOND_TO_USER_INSTRUCTION + '\n\n' + scenario.systemPrompt;
+  const playMode = parsePlayMode(scenario.playMode);
+  const stressSetting = scenario.settingRu || scenario.setting;
+  content +=
+    '\n\n' +
+    enPlayModePromptOverlay({
+      mode: playMode,
+      stressTwist: defaultEnStressTwist(stressSetting),
+    });
   const conversationLive = Boolean(ctx.hasUserMessage);
   if (!conversationLive && scenario.openingInstruction?.trim()) {
     content += '\n\n' + 'First line instruction: ' + scenario.openingInstruction.trim();
@@ -390,13 +401,17 @@ function buildScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioPro
     content +=
       '\n\nThe learner already spoke. Do not use a pre-written opening. Reply to their last line and do not re-ask facts they already gave.';
   }
-  if (scenario.optionalTwist?.trim()) {
+  if (playMode !== 'stress' && scenario.optionalTwist?.trim()) {
     content += '\n\n' + 'Optional twist (use only if it fits naturally): ' + scenario.optionalTwist.trim();
   }
   if (scenario.goal?.trim()) {
     content += '\n\nGoal: ' + scenario.goal.trim() + '.' + GOAL_COMPLETION_INSTRUCTION;
   }
   return content;
+}
+
+export function withPlayMode(scenario: RoleplayScenario, playMode: PlayMode): RoleplayScenario {
+  return { ...scenario, playMode: parsePlayMode(playMode) };
 }
 
 export function buildMessagesForAgentChat(

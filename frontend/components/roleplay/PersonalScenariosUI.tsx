@@ -14,6 +14,8 @@ import {
 } from '@/lib/user-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { BriefingView } from './RoleplayModeUI';
+import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
+import { parsePlayMode, type PlayMode } from '@/lib/play-mode';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 
 type SlangMode = 'off' | 'light' | 'heavy';
@@ -334,6 +336,8 @@ export type PersonalScenariosUIProps = {
   initialView: 'create' | 'my';
   /** Id сценария, который нужно подсветить и проскроллить к (например после «Сохранить в мои» из каталога) */
   highlightedScenarioId?: string | null;
+  initialBriefingId?: string | null;
+  initialPlayMode?: PlayMode;
 };
 
 /** Превращает UserScenario в RoleplayScenario для передачи в AgentTab */
@@ -365,6 +369,7 @@ function toRoleplayScenario(s: UserScenario): RoleplayScenario {
     category: s.category ?? 'everyday',
     language: s.language ?? 'en',
     level: s.level,
+    masteredModes: s.mastered_modes,
   };
 }
 
@@ -458,6 +463,9 @@ const ScenarioCard = React.forwardRef(function ScenarioCard({
           >
             {s.level}
           </span>
+          {s.mastered_modes && (s.completions_count ?? 0) > 0 && (
+            <ZhPlayModeDots mastered={s.mastered_modes} compact />
+          )}
           {styleBadges.map((badge) => (
             <span
               key={badge.label}
@@ -643,6 +651,8 @@ export function PersonalScenariosUI({
   onClose,
   initialView,
   highlightedScenarioId,
+  initialBriefingId,
+  initialPlayMode,
 }: PersonalScenariosUIProps) {
   const [view, setView] = useState<'create' | 'my' | 'edit'>(initialView);
 
@@ -716,6 +726,15 @@ export function PersonalScenariosUI({
   useEffect(() => {
     if (view === 'my') loadList();
   }, [view, loadList]);
+
+  const openedBriefingRef = useRef(false);
+  useEffect(() => {
+    if (!initialBriefingId || openedBriefingRef.current || scenarios.length === 0) return;
+    const found = scenarios.find((s) => s.id === initialBriefingId);
+    if (!found) return;
+    openedBriefingRef.current = true;
+    setBriefingScenario(found);
+  }, [initialBriefingId, scenarios]);
 
   const query = mySearchQuery.trim().toLowerCase();
   const filteredAndSortedScenarios = React.useMemo(() => {
@@ -1950,6 +1969,7 @@ export function PersonalScenariosUI({
           scenario={toRoleplayScenario(briefingScenario)}
           onBack={() => setBriefingScenario(null)}
           onStart={handleStartFromBriefing}
+          initialPlayMode={parsePlayMode(initialPlayMode)}
         />
       </div>
     );

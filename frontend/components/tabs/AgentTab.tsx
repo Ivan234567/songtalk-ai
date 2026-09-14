@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { extractChineseCharacters } from '@/lib/vocabulary';
-import { buildMessagesForAgentChat, type RoleplayScenario } from '@/lib/roleplay';
+import { buildMessagesForAgentChat, withPlayMode, type RoleplayScenario } from '@/lib/roleplay';
 import { getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
 import { PersonalScenariosUI } from '@/components/roleplay/PersonalScenariosUI';
@@ -22,6 +22,7 @@ import {
 } from '@/lib/zh-voice-tasks';
 import { RoleplayScenarioProgress } from '@/components/roleplay/RoleplayScenarioProgress';
 import { ZhAfterSessionReview } from '@/components/roleplay/ZhAfterSessionReview';
+import { EnAfterSessionReview } from '@/components/roleplay/EnAfterSessionReview';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import {
   applyUserUtteranceToSaid,
@@ -37,20 +38,19 @@ import {
   isZhCriteriaScores,
   type ZhSpeakingAssessmentResult,
 } from '@/lib/zh-speaking-assessment';
+import { nextPlayMode, parsePlayMode, playModeSpeechRate, scaffoldPolicy, type PlayMode } from '@/lib/play-mode';
 import {
   fallbackRewindForks,
-  nextZhPlayMode,
   normalizeZhListenReview,
   parseZhPlayMode,
   resolveRewindIndex,
-  zhPlayModeSpeechRate,
   zhRepairUsed,
   zhScaffoldPolicy,
   type ZhListenReview,
-  type ZhPlayMode,
   type ZhRewindFork,
 } from '@/lib/zh-play-mode';
 import { upsertZhScenarioMemory, withZhPlayMode } from '@/lib/zh-scenarios';
+import { isUserScenarioId } from '@/lib/user-scenarios';
 import { TranslatorPanel } from '@/components/TranslatorPanel';
 import { DebateSetupUI } from '@/components/debate/DebateSetupUI';
 import {
@@ -88,9 +88,9 @@ const DEBATE_GOAL_RU = `Дебат успешно завершен, когда:
 • Вы защитили свою позицию хотя бы одним четким аргументом
 • Произошел естественный обмен мнениями`;
 
-function zhEffectiveSpeechRate(base: number, scenario: RoleplayScenario | null): number {
-  if (!scenario || scenario.language !== 'zh') return base;
-  return zhPlayModeSpeechRate(base, parseZhPlayMode(scenario.playMode));
+function effectiveSpeechRate(base: number, scenario: RoleplayScenario | null): number {
+  if (!scenario) return base;
+  return playModeSpeechRate(base, parsePlayMode(scenario.playMode));
 }
 
 const TTS_VOICE_OPTIONS: Array<{ value: 'onyx' | 'nova' | 'ballad'; label: string }> = [
@@ -309,7 +309,7 @@ export function AgentTab() {
 
   /** Id сценария, только что скопированного из каталога в «Мои» — для подсветки в списке */
   const [highlightedUserScenarioId, setHighlightedUserScenarioId] = useState<string | null>(null);
-  const [progressDeepLink, setProgressDeepLink] = useState<{ id: string; playMode: ZhPlayMode } | null>(null);
+  const [progressDeepLink, setProgressDeepLink] = useState<{ id: string; playMode: PlayMode } | null>(null);
   const progressTargetHandledRef = useRef<string | null>(null);
   const [translatorOpen, setTranslatorOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
@@ -546,7 +546,6 @@ export function AgentTab() {
   );
 
   useEffect(() => {
-    if (learningLanguage !== 'zh') return;
     const from = searchParams.get('from');
     const target = searchParams.get('target');
     if (from !== 'progress' || !target || !target.startsWith('rp:')) return;
@@ -554,9 +553,13 @@ export function AgentTab() {
     const scenarioId = target.slice(3).trim();
     if (!scenarioId) return;
     progressTargetHandledRef.current = target;
-    setProgressDeepLink({ id: scenarioId, playMode: parseZhPlayMode(searchParams.get('play_mode')) });
+    const playMode = parsePlayMode(searchParams.get('play_mode'));
+    setProgressDeepLink({ id: scenarioId, playMode });
     setAgentMode('roleplay');
     setScenarioModalOpen(true);
+    if (learningLanguage !== 'zh') {
+      setScenarioView(isUserScenarioId(scenarioId) ? 'my' : 'catalog');
+    }
     const next = new URLSearchParams(searchParams.toString());
     next.delete('from');
     next.delete('target');
@@ -944,7 +947,7 @@ export function AgentTab() {
       const blob = await ttsResp.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
+      audio.playbackRate = effectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
       audio.onended = () => URL.revokeObjectURL(url);
       await audio.play().catch(() => URL.revokeObjectURL(url));
     } catch {
@@ -1063,7 +1066,7 @@ export function AgentTab() {
       const blob = await ttsResp.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
+      audio.playbackRate = effectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
       audio.onended = () => URL.revokeObjectURL(url);
       await audio.play().catch(() => URL.revokeObjectURL(url));
     } catch {
@@ -1394,7 +1397,7 @@ export function AgentTab() {
           URL.revokeObjectURL(url);
           setState('idle');
         };
-        audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
+        audio.playbackRate = effectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
         await audio.play();
 
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -1642,7 +1645,7 @@ export function AgentTab() {
           setState('idle');
         };
 
-        audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
+        audio.playbackRate = effectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
         await audio.play();
 
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -2001,7 +2004,7 @@ export function AgentTab() {
           URL.revokeObjectURL(url);
           setState('idle');
         };
-        audio.playbackRate = zhEffectiveSpeechRate(chineseSpeechSpeed, scenario);
+        audio.playbackRate = effectiveSpeechRate(chineseSpeechSpeed, scenario);
         await audio.play();
         const TtsContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (TtsContextClass) {
@@ -2162,6 +2165,7 @@ export function AgentTab() {
       } else {
         setEnglishSettingsOpen(true);
       }
+      setProgressDeepLink(null);
       setSelectedScenario(scenario);
       setZhVocabPeeked(false);
       setZhRewindUsed(false);
@@ -2198,11 +2202,14 @@ export function AgentTab() {
     requestScenarioFirstMessage(selectedScenario);
   }, [selectedScenario, requestScenarioFirstMessage]);
 
-  const handleZhNextMode = useCallback(() => {
+  const handleNextPlayMode = useCallback(() => {
     if (!selectedScenario) return;
-    const next = nextZhPlayMode(parseZhPlayMode(selectedScenario.playMode));
+    const next = nextPlayMode(parsePlayMode(selectedScenario.playMode));
     if (!next) return;
-    const nextScenario = withZhPlayMode(selectedScenario, next);
+    const nextScenario =
+      selectedScenario.language === 'zh'
+        ? withZhPlayMode(selectedScenario, next)
+        : withPlayMode(selectedScenario, next);
     setGoalReached(false);
     setAssessmentResult(null);
     setSavedSessionAssessment(null);
@@ -2652,7 +2659,7 @@ export function AgentTab() {
           topic: agentMode === 'debate' ? debateTopic ?? undefined : undefined,
           user_position: agentMode === 'debate' ? debateUserPosition ?? undefined : undefined,
           roleplay_settings: roleplaySettingsPayload,
-          play_mode: selectedScenario?.language === 'zh' ? parseZhPlayMode(selectedScenario.playMode) : undefined,
+          play_mode: selectedScenario ? parsePlayMode(selectedScenario.playMode) : undefined,
           micro_goals:
             agentMode === 'debate'
               ? debateMicroGoals.map((id) => {
@@ -3164,7 +3171,7 @@ export function AgentTab() {
       scenario_level?: string | null;
       completed_step_ids?: string[];
       language?: string;
-      play_mode?: ZhPlayMode;
+      play_mode?: PlayMode;
     } = {
       user_id: userId,
       scenario_id: selectedScenario.id,
@@ -3172,9 +3179,7 @@ export function AgentTab() {
       scenario_level: selectedScenario.level ?? null,
       language: learningLanguage,
     };
-    if (selectedScenario.language === 'zh') {
-      payload.play_mode = parseZhPlayMode(selectedScenario.playMode);
-    }
+    payload.play_mode = parsePlayMode(selectedScenario.playMode);
     if (selectedScenario.steps?.length) {
       payload.completed_step_ids = roleplayCompletedStepIds;
     }
@@ -3753,6 +3758,8 @@ export function AgentTab() {
                     setScenarioView('my');
                     setHighlightedUserScenarioId(id);
                   }}
+                  initialScenarioId={learningLanguage !== 'zh' ? progressDeepLink?.id : undefined}
+                  initialPlayMode={learningLanguage !== 'zh' ? progressDeepLink?.playMode : undefined}
                   debateSetupOpen={debateSetupOpen}
                   onDebateSetupOpenChange={setDebateSetupOpen}
                   debateView={debateView}
@@ -3793,14 +3800,18 @@ export function AgentTab() {
                   <PersonalScenariosUI
                     initialView={scenarioView}
                     highlightedScenarioId={highlightedUserScenarioId}
+                    initialBriefingId={progressDeepLink?.id}
+                    initialPlayMode={progressDeepLink?.playMode}
                     onSelectScenario={(s) => {
                       setSelectedScenario(s);
                       setScenarioModalOpen(false);
                       setHighlightedUserScenarioId(null);
+                      setProgressDeepLink(null);
                     }}
                     onClose={() => {
                       setScenarioModalOpen(false);
                       setHighlightedUserScenarioId(null);
+                      setProgressDeepLink(null);
                     }}
                   />
                 )}
@@ -5411,7 +5422,13 @@ export function AgentTab() {
                 review={zhListenReview}
                 rewindUsed={zhRewindUsed}
                 onRewind={handleZhRewind}
-                onNextMode={nextZhPlayMode(parseZhPlayMode(selectedScenario?.playMode)) ? handleZhNextMode : undefined}
+                onNextMode={nextPlayMode(parsePlayMode(selectedScenario?.playMode)) ? handleNextPlayMode : undefined}
+              />
+            )}
+            {learningLanguage !== 'zh' && selectedScenario && (
+              <EnAfterSessionReview
+                playMode={parsePlayMode(selectedScenario.playMode)}
+                onNextMode={nextPlayMode(parsePlayMode(selectedScenario.playMode)) ? handleNextPlayMode : undefined}
               />
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', paddingTop: '0.15rem' }}>
@@ -6043,7 +6060,7 @@ export function AgentTab() {
               </button>
             )}
 
-            {isUserStartsRoleplayEmpty && selectedScenario?.suggestedFirstLine && zhScaffoldPolicy(parseZhPlayMode(selectedScenario.playMode)).showFirstLine && (
+            {isUserStartsRoleplayEmpty && selectedScenario?.suggestedFirstLine && scaffoldPolicy(parsePlayMode(selectedScenario.playMode)).showFirstLine && (
               <div
                 style={{
                   width: '100%',
@@ -6346,7 +6363,13 @@ export function AgentTab() {
                   review={zhListenReview}
                   rewindUsed={zhRewindUsed}
                   onRewind={handleZhRewind}
-                  onNextMode={nextZhPlayMode(parseZhPlayMode(selectedScenario.playMode)) ? handleZhNextMode : undefined}
+                  onNextMode={nextPlayMode(parsePlayMode(selectedScenario.playMode)) ? handleNextPlayMode : undefined}
+                />
+              )}
+              {learningLanguage !== 'zh' && selectedScenario && (
+                <EnAfterSessionReview
+                  playMode={parsePlayMode(selectedScenario.playMode)}
+                  onNextMode={nextPlayMode(parsePlayMode(selectedScenario.playMode)) ? handleNextPlayMode : undefined}
                 />
               )}
             </div>

@@ -2384,14 +2384,22 @@ app.get('/api/user-scenarios', async (req, res) => {
     if (scenarioIds.length > 0) {
       const { data: completions } = await supabase
         .from('roleplay_completions')
-        .select('scenario_id, completed_at')
+        .select('scenario_id, completed_at, play_mode')
         .eq('user_id', userId)
         .in('scenario_id', scenarioIds)
       const byScenario = {}
       for (const c of completions || []) {
         const id = c.scenario_id
-        if (!byScenario[id]) byScenario[id] = { count: 0, lastCompletedAt: null }
+        if (!byScenario[id]) {
+          byScenario[id] = {
+            count: 0,
+            lastCompletedAt: null,
+            mastered_modes: { rehearsal: false, life: false, stress: false },
+          }
+        }
         byScenario[id].count += 1
+        const mode = c.play_mode === 'life' || c.play_mode === 'stress' ? c.play_mode : 'rehearsal'
+        byScenario[id].mastered_modes[mode] = true
         const at = c.completed_at ? new Date(c.completed_at).toISOString() : null
         if (at && (!byScenario[id].lastCompletedAt || at > byScenario[id].lastCompletedAt)) {
           byScenario[id].lastCompletedAt = at
@@ -2401,6 +2409,7 @@ app.get('/api/user-scenarios', async (req, res) => {
         const stats = byScenario[s.id]
         s.completions_count = stats ? stats.count : 0
         s.last_completed_at = stats?.lastCompletedAt ?? null
+        s.mastered_modes = stats?.mastered_modes || { rehearsal: false, life: false, stress: false }
       }
     } else {
       for (const s of list) {
@@ -2931,7 +2940,7 @@ RUBRIC (1-10 each):
 2. vocabulary_grammar: variety of words, correct grammar, errors don't block understanding
 3. pronunciation: clarity (assume transcript reflects intended pronunciation; evaluate word choice/phonetic plausibility from spelling)
 4. completeness: topic coverage, logical structure, full answers (for roleplay: did they cover what the scenario required?)
-5. dialogue_skills: (for dialogues) listening, reacting, asking questions, turn-taking
+5. dialogue_skills: (for dialogues) listening, reacting, asking questions, turn-taking. In life/stress play modes, failing to repair after a mishear lowers this score.
 ${completenessGuidance}${debateGuidance}${slangGuidance}
 
 Return ONLY valid JSON, no markdown:
@@ -2956,7 +2965,9 @@ Return ONLY valid JSON, no markdown:
         "evidence": "short proof from transcript",
         "suggestion": "short next-step suggestion"
       }
-    ]
+    ],
+    "missed_listening": [{"said_en":"AI line","said_ru":"Russian","what_happened_ru":"what the learner did"}],
+    "repair_used": false
   }
 }${microGoalsGuidance}`
 
@@ -3020,7 +3031,25 @@ Evaluate and return JSON only.`
     }
 
     const scores = json.criteria_scores || {}
-    const vals = Object.values(scores).filter((v) => typeof v === 'number')
+    const scoresRaw = {
+      fluency: clampScore(scores.fluency),
+      vocabulary_grammar: clampScore(scores.vocabulary_grammar),
+      pronunciation: clampScore(scores.pronunciation),
+      completeness: clampScore(scores.completeness),
+      dialogue_skills: clampScore(scores.dialogue_skills),
+    }
+    const playMode =
+      req.body?.play_mode === 'life' || req.body?.play_mode === 'stress' ? req.body.play_mode : 'rehearsal'
+    const missedCount = Array.isArray(json?.feedback?.missed_listening) ? json.feedback.missed_listening.length : 0
+    const userSaidRepair =
+      /\b(sorry\??|pardon\??|come again|repeat that|say that again|didn't catch|did not catch|didn['’]t get that|speak (a bit )?slower|could you repeat|what did you say|excuse me\??)\b/i.test(
+        (userMessages || []).join('\n'),
+      )
+    const repairUsed = Boolean(json?.feedback?.repair_used) || userSaidRepair
+    if ((playMode === 'life' || playMode === 'stress') && !repairUsed && missedCount > 0) {
+      scoresRaw.dialogue_skills = clampScore(Math.min(scoresRaw.dialogue_skills, 5))
+    }
+    const vals = Object.values(scoresRaw).filter((v) => typeof v === 'number')
     const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
 
     const goalAttainment = Array.isArray(json?.feedback?.goal_attainment)
@@ -3041,13 +3070,7 @@ Evaluate and return JSON only.`
       : { strengths: [], improvements: [], summary: '' }
 
     const result = {
-      criteria_scores: {
-        fluency: clampScore(scores.fluency),
-        vocabulary_grammar: clampScore(scores.vocabulary_grammar),
-        pronunciation: clampScore(scores.pronunciation),
-        completeness: clampScore(scores.completeness),
-        dialogue_skills: clampScore(scores.dialogue_skills),
-      },
+      criteria_scores: scoresRaw,
       overall_score: Math.round(overall * 10) / 10,
       feedback: {
         ...feedbackObj,

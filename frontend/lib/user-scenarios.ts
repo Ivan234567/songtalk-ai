@@ -6,6 +6,7 @@
 
 import type { RoleplayScenario } from '@/lib/roleplay';
 import { getStoredBackendToken } from '@/lib/backend-jwt';
+import type { MasteredModes } from '@/lib/play-mode';
 
 export type UserScenarioLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'easy' | 'medium' | 'hard';
 
@@ -19,6 +20,7 @@ export type UserScenario = RoleplayScenario & {
   completions_count?: number;
   /** Время последнего завершения (ISO) — для сортировки «по последнему использованию» */
   last_completed_at?: string | null;
+  mastered_modes?: MasteredModes;
 };
 
 function getApiUrl(): string {

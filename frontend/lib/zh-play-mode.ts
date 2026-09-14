@@ -1,15 +1,46 @@
 /**
- * Контракт «Ситуативные диалоги 2.0»: три режима попытки на одной карточке.
- * Не учебная программа и не отдельная вкладка — свойство попытки.
+ * Китайский слой «Ситуативные диалоги 2.0»: те же три режима попытки,
+ * плюс пиньинь, repair по-китайски и overlay с HSK-lock.
  */
 
-export const ZH_PLAY_MODES = ['rehearsal', 'life', 'stress'] as const;
-export type ZhPlayMode = (typeof ZH_PLAY_MODES)[number];
+import {
+  PLAY_MODES,
+  PLAY_MODE_LABELS,
+  MASTERY_SCORE_THRESHOLD,
+  isPlayMode,
+  parsePlayMode,
+  nextPlayMode,
+  nextPlayModeCta,
+  playModeSpeechRate,
+  scaffoldPolicy,
+  emptyMasteredModes,
+  masteredModesFromCompletions,
+  masteredModesList,
+  nextModeFromMastery,
+  isAttemptMastered,
+  recommendedNextPlayMode,
+  type PlayMode,
+  type MasteredModes,
+  type ScaffoldPolicy,
+} from '@/lib/play-mode';
 
-export const ZH_PLAY_MODE_LABELS: Record<ZhPlayMode, string> = {
-  rehearsal: 'Репетиция',
-  life: 'Как в жизни',
-  stress: 'Стресс',
+export const ZH_PLAY_MODES = PLAY_MODES;
+export type ZhPlayMode = PlayMode;
+export const ZH_PLAY_MODE_LABELS = PLAY_MODE_LABELS;
+export const ZH_MASTERY_SCORE_THRESHOLD = MASTERY_SCORE_THRESHOLD;
+export const isZhPlayMode = isPlayMode;
+export const parseZhPlayMode = parsePlayMode;
+export const nextZhPlayMode = nextPlayMode;
+export const nextZhPlayModeCta = nextPlayModeCta;
+export const zhPlayModeSpeechRate = playModeSpeechRate;
+export const isZhAttemptMastered = isAttemptMastered;
+export type ZhMasteredModes = MasteredModes;
+export {
+  emptyMasteredModes,
+  masteredModesFromCompletions,
+  masteredModesList,
+  nextModeFromMastery,
+  recommendedNextPlayMode,
 };
 
 export const ZH_PLAY_MODE_HINTS: Record<ZhPlayMode, string> = {
@@ -24,119 +55,22 @@ export const ZH_DEFAULT_REPAIR_PHRASES: Array<{ zh: string; pinyin: string; ru: 
   { zh: '慢一点。', pinyin: 'màn yìdiǎn.', ru: 'Помедленнее.' },
 ];
 
-export const ZH_MASTERY_SCORE_THRESHOLD = 6;
-
 const REPAIR_RE =
   /请再说|再说一遍|再说一次|慢一点|慢一些|你是说|没听清|听不懂|什么意思|请再说一遍/;
 
-export function isZhPlayMode(value: unknown): value is ZhPlayMode {
-  return value === 'rehearsal' || value === 'life' || value === 'stress';
-}
-
-export function parseZhPlayMode(value: unknown): ZhPlayMode {
-  return isZhPlayMode(value) ? value : 'rehearsal';
-}
-
-export function nextZhPlayMode(mode: ZhPlayMode): ZhPlayMode | null {
-  if (mode === 'rehearsal') return 'life';
-  if (mode === 'life') return 'stress';
-  return null;
-}
-
-export function nextZhPlayModeCta(mode: ZhPlayMode): string | null {
-  if (mode === 'rehearsal') return 'Пройти это же как в жизни';
-  if (mode === 'life') return 'Тот же диалог, но собеседник будет занят';
-  return null;
-}
-
-export type ZhScaffoldPolicy = {
-  showSteps: boolean;
-  showVocab: boolean;
-  vocabPeekOnce: boolean;
-  showFirstLine: boolean;
+export type ZhScaffoldPolicy = ScaffoldPolicy & {
   pinyin: 'always' | 'tap' | 'after';
 };
 
 export function zhScaffoldPolicy(mode: ZhPlayMode): ZhScaffoldPolicy {
-  if (mode === 'life') {
-    return {
-      showSteps: false,
-      showVocab: false,
-      vocabPeekOnce: true,
-      showFirstLine: false,
-      pinyin: 'tap',
-    };
-  }
-  if (mode === 'stress') {
-    return {
-      showSteps: false,
-      showVocab: false,
-      vocabPeekOnce: false,
-      showFirstLine: false,
-      pinyin: 'after',
-    };
-  }
-  return {
-    showSteps: true,
-    showVocab: true,
-    vocabPeekOnce: false,
-    showFirstLine: true,
-    pinyin: 'always',
-  };
-}
-
-export function zhPlayModeSpeechRate(base: number, mode: ZhPlayMode): number {
-  const n = Number.isFinite(base) ? base : 1;
-  if (mode === 'life') return Math.min(1.2, Math.round((n + 0.08) * 100) / 100);
-  if (mode === 'stress') return Math.min(1.28, Math.round((n + 0.16) * 100) / 100);
-  return n;
+  const base = scaffoldPolicy(mode);
+  if (mode === 'life') return { ...base, pinyin: 'tap' };
+  if (mode === 'stress') return { ...base, pinyin: 'after' };
+  return { ...base, pinyin: 'always' };
 }
 
 export function zhRepairUsed(texts: string[]): boolean {
   return texts.some((t) => REPAIR_RE.test(String(t || '')));
-}
-
-export type ZhMasteredModes = Record<ZhPlayMode, boolean>;
-
-export function emptyMasteredModes(): ZhMasteredModes {
-  return { rehearsal: false, life: false, stress: false };
-}
-
-export function masteredModesFromCompletions(
-  rows: Array<{ play_mode?: string | null }>
-): ZhMasteredModes {
-  const out = emptyMasteredModes();
-  for (const row of rows) {
-    out[parseZhPlayMode(row.play_mode)] = true;
-  }
-  return out;
-}
-
-export function masteredModesList(map: ZhMasteredModes | ZhPlayMode[] | undefined): ZhPlayMode[] {
-  if (Array.isArray(map)) return ZH_PLAY_MODES.filter((m) => map.includes(m));
-  if (!map || typeof map !== 'object') return [];
-  return ZH_PLAY_MODES.filter((m) => Boolean((map as ZhMasteredModes)[m]));
-}
-
-export function nextModeFromMastery(map: ZhMasteredModes | undefined): ZhPlayMode {
-  if (!map?.rehearsal) return 'rehearsal';
-  if (!map.life) return 'life';
-  if (!map.stress) return 'stress';
-  return 'life';
-}
-
-/** Слой закрыт, если сцена доведена и балл ≥ порога. Без оценки — цель уже закрыта completion. */
-export function isZhAttemptMastered(overallScore: number | null | undefined): boolean {
-  if (typeof overallScore !== 'number') return true;
-  return overallScore >= ZH_MASTERY_SCORE_THRESHOLD;
-}
-
-/** Следующий слой вперёд. Не возвращает назад, если ученик сразу играл «жизнь» или «стресс». */
-export function recommendedNextPlayMode(map: ZhMasteredModes | undefined): ZhPlayMode | null {
-  if (!map) return null;
-  if (map.rehearsal && !map.life) return 'life';
-  if (map.life && !map.stress) return 'stress';
-  return null;
 }
 
 export type ZhMissedListeningItem = {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getRoleplayScenariosGroupedByTheme,
   ROLEPLAY_CATEGORY_COLORS,
@@ -9,6 +9,18 @@ import {
 import { createUserScenario, type UserScenarioLevel } from '@/lib/user-scenarios';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 import { hasRoleplaySystemCatalog, type LearningLanguage } from '@/lib/learning-language';
+import {
+  PLAY_MODES,
+  PLAY_MODE_LABELS,
+  masteredModesFromCompletions,
+  parsePlayMode,
+  scaffoldPolicy,
+  type MasteredModes,
+  type PlayMode,
+} from '@/lib/play-mode';
+import { EN_PLAY_MODE_HINTS, defaultEnStressTwistRu } from '@/lib/en-play-mode';
+import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
+import { supabase } from '@/lib/supabase';
 
 /** Значение фильтра сложности в модалке сценариев */
 type DifficultyFilter = 'all' | 'easy' | 'medium' | 'hard';
@@ -92,6 +104,8 @@ export type RoleplayModeUIProps = {
   onScenarioViewChange?: (view: 'catalog' | 'create' | 'my') => void;
   /** После копирования системного сценария в «Мои»: переключить на «Мои» и выделить новый сценарий */
   onCopyToMineSuccess?: (newScenarioId: string) => void;
+  initialScenarioId?: string | null;
+  initialPlayMode?: PlayMode;
   /** Открыт ли модал настройки дебата */
   debateSetupOpen?: boolean;
   onDebateSetupOpenChange?: (open: boolean) => void;
@@ -458,6 +472,8 @@ export function RoleplayModeUI({
   scenarioView = 'catalog',
   onScenarioViewChange,
   onCopyToMineSuccess,
+  initialScenarioId,
+  initialPlayMode,
   debateSetupOpen = false,
   onDebateSetupOpenChange,
   debateView = 'catalog',
@@ -695,6 +711,8 @@ export function RoleplayModeUI({
             onClose={() => onScenarioModalOpenChange(false)}
             onScenarioViewChange={onScenarioViewChange}
             onCopyToMineSuccess={onCopyToMineSuccess}
+            initialScenarioId={initialScenarioId}
+            initialPlayMode={initialPlayMode}
           />
         )}
       </>
@@ -704,7 +722,9 @@ export function RoleplayModeUI({
   // placement === 'hint': под орбом, в стиле учебного задания
   if (!selectedScenario) return null;
   const hasGoal = Boolean(selectedScenario.goalRu);
-  const hasFirstLine = Boolean(selectedScenario.suggestedFirstLine);
+  const hasFirstLine =
+    Boolean(selectedScenario.suggestedFirstLine) &&
+    scaffoldPolicy(parsePlayMode(selectedScenario.playMode)).showFirstLine;
   const hintBtnStyle = {
     padding: '0.4rem 0.75rem',
     borderRadius: 10,
@@ -908,6 +928,9 @@ function ScenarioCard({
       <span style={{ display: 'block', fontSize: '1rem', fontWeight: 600, lineHeight: 1.3 }}>
         {scenario.title}
       </span>
+      {scenario.masteredModes && (
+        <ZhPlayModeDots mastered={scenario.masteredModes} compact />
+      )}
       {shortInfo && (
         <span
           style={{
@@ -1065,28 +1088,37 @@ export function BriefingView({
   scenario,
   onBack,
   onStart,
+  initialPlayMode,
 }: {
   scenario: RoleplayScenario;
   onBack: () => void;
   onStart: (scenario: RoleplayScenario) => void;
+  initialPlayMode?: PlayMode;
 }) {
   const colors = ROLEPLAY_CATEGORY_COLORS[scenario.category];
   const setting = scenario.settingRu ?? scenario.setting;
   const scenarioText = scenario.scenarioTextRu ?? scenario.scenarioText;
   const yourRole = scenario.yourRoleRu ?? scenario.yourRole;
   const goalText = scenario.goalRu ?? scenario.goal;
-  const hasBriefing = setting || scenarioText || yourRole || goalText;
   const [slangMode, setSlangMode] = useState<SlangMode>(scenario.slangMode ?? 'light');
   const [allowProfanity, setAllowProfanity] = useState<boolean>(Boolean(scenario.allowProfanity));
   const [aiMayUseProfanity, setAiMayUseProfanity] = useState<boolean>(Boolean(scenario.aiMayUseProfanity));
   const [profanityIntensity, setProfanityIntensity] = useState<ProfanityIntensity>(scenario.profanityIntensity ?? 'light');
+  const [playMode, setPlayMode] = useState<PlayMode>(parsePlayMode(initialPlayMode ?? scenario.playMode));
+  const rehearsal = playMode === 'rehearsal';
+  const stressMode = playMode === 'stress';
+  const stressTwist =
+    (typeof scenario.stressTwistRu === 'string' && scenario.stressTwistRu.trim()) ||
+    defaultEnStressTwistRu(setting);
+  const hasBriefing = Boolean(goalText || (rehearsal && (setting || scenarioText || yourRole)));
 
   useEffect(() => {
     setSlangMode(scenario.slangMode ?? 'light');
     setAllowProfanity(Boolean(scenario.allowProfanity));
     setAiMayUseProfanity(Boolean(scenario.aiMayUseProfanity));
     setProfanityIntensity(scenario.profanityIntensity ?? 'light');
-  }, [scenario]);
+    setPlayMode(parsePlayMode(initialPlayMode ?? scenario.playMode));
+  }, [scenario, initialPlayMode]);
   const styleBadges = getScenarioStyleBadges({
     slangMode,
     allowProfanity,
@@ -1179,10 +1211,38 @@ export function BriefingView({
             ))}
           </div>
         )}
+        <div style={{ marginTop: 14, padding: '0.85rem 1rem', borderRadius: 12, border: '1px solid var(--sidebar-border)' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+            Режим этой попытки
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {PLAY_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setPlayMode(mode)}
+                style={{
+                  padding: '0.55rem 0.85rem',
+                  borderRadius: 12,
+                  border: '1px solid var(--sidebar-border)',
+                  background: playMode === mode ? 'var(--sidebar-active)' : 'transparent',
+                  color: 'var(--sidebar-text)',
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                }}
+              >
+                {PLAY_MODE_LABELS[mode]}
+              </button>
+            ))}
+          </div>
+          <p style={{ margin: '0.65rem 0 0', fontSize: '0.8125rem', opacity: 0.75, lineHeight: 1.4 }}>
+            {EN_PLAY_MODE_HINTS[playMode]} Только для этой попытки, карточка не меняется.
+          </p>
+        </div>
       </div>
 
       <div style={{ gridColumn: 2, gridRow: '2 / 4', display: 'flex', flexDirection: 'column', gap: '1.25rem', justifyContent: 'center', minHeight: 0 }}>
-        {scenario.suggestedFirstLine && (
+        {rehearsal && scenario.suggestedFirstLine && (
           <div
             style={{
               padding: '1.25rem 1.375rem',
@@ -1301,6 +1361,8 @@ export function BriefingView({
               allowProfanity,
               aiMayUseProfanity: allowProfanity ? aiMayUseProfanity : false,
               profanityIntensity,
+              playMode,
+              stressTwistRu: stressTwist,
             });
           }}
           className="roleplay-briefing-start"
@@ -1332,7 +1394,7 @@ export function BriefingView({
 
       {hasBriefing ? (
         <div style={{ gridColumn: 1, gridRow: 3, display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0, minHeight: 0, overflowY: 'auto' }}>
-          {setting && (
+          {rehearsal && setting && (
             <div style={cardBase}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ display: 'flex', color: colors.bar, opacity: 0.95 }}>{BRIEFING_ICONS.setting}</span>
@@ -1345,7 +1407,7 @@ export function BriefingView({
               </p>
             </div>
           )}
-          {scenarioText && (
+          {rehearsal && scenarioText && (
             <div style={cardBase}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ display: 'flex', color: colors.bar, opacity: 0.95 }}>{BRIEFING_ICONS.scenario}</span>
@@ -1358,7 +1420,7 @@ export function BriefingView({
               </p>
             </div>
           )}
-          {yourRole && (
+          {rehearsal && yourRole && (
             <div style={cardBase}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ display: 'flex', color: colors.bar, opacity: 0.95 }}>{BRIEFING_ICONS.yourRole}</span>
@@ -1368,6 +1430,18 @@ export function BriefingView({
               </div>
               <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.95 }}>
                 {yourRole}
+              </p>
+            </div>
+          )}
+          {stressMode && (
+            <div style={cardBase}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Осложнение
+                </span>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.95 }}>
+                {stressTwist}
               </p>
             </div>
           )}
@@ -1402,12 +1476,16 @@ function ScenarioModal({
   onClose,
   onScenarioViewChange,
   onCopyToMineSuccess,
+  initialScenarioId,
+  initialPlayMode,
 }: {
   learningLanguage: LearningLanguage;
   onSelect: (s: RoleplayScenario) => void;
   onClose: () => void;
   onScenarioViewChange?: (view: 'catalog' | 'create' | 'my') => void;
   onCopyToMineSuccess?: (newScenarioId: string) => void;
+  initialScenarioId?: string | null;
+  initialPlayMode?: PlayMode;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState<DifficultyFilter>('all');
@@ -1418,6 +1496,61 @@ function ScenarioModal({
   const [savingToMineId, setSavingToMineId] = useState<string | null>(null);
   /** Сообщение после успешного копирования в «Мои» */
   const [copySuccessMessage, setCopySuccessMessage] = useState<string | null>(null);
+  const [masteredById, setMasteredById] = useState<Record<string, MasteredModes>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData.session?.user?.id;
+      if (!uid) return;
+      let { data, error } = await supabase
+        .from('roleplay_completions')
+        .select('scenario_id, play_mode')
+        .eq('user_id', uid)
+        .eq('language', 'en')
+        .limit(500);
+      if (error) {
+        const retry = await supabase
+          .from('roleplay_completions')
+          .select('scenario_id')
+          .eq('user_id', uid)
+          .eq('language', 'en')
+          .limit(500);
+        data = retry.data;
+      }
+      if (cancelled || !data) return;
+      const byId: Record<string, Array<{ play_mode?: string | null }>> = {};
+      for (const row of data as Array<{ scenario_id: string; play_mode?: string | null }>) {
+        if (!row.scenario_id) continue;
+        if (!byId[row.scenario_id]) byId[row.scenario_id] = [];
+        byId[row.scenario_id].push({ play_mode: row.play_mode });
+      }
+      const next: Record<string, MasteredModes> = {};
+      for (const [id, rows] of Object.entries(byId)) {
+        next[id] = masteredModesFromCompletions(rows);
+      }
+      setMasteredById(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openedInitialRef = useRef(false);
+  useEffect(() => {
+    if (!initialScenarioId || openedInitialRef.current) return;
+    const groups = getRoleplayScenariosGroupedByTheme(learningLanguage);
+    const found = groups.flatMap((g) => g.scenarios).find((s) => s.id === initialScenarioId);
+    if (found) {
+      openedInitialRef.current = true;
+      setBriefingScenario({
+        ...found,
+        playMode: parsePlayMode(initialPlayMode),
+        masteredModes: masteredById[found.id],
+      });
+    }
+  }, [initialScenarioId, initialPlayMode, learningLanguage, masteredById]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1436,19 +1569,21 @@ function ScenarioModal({
       .map(({ themeId, label, scenarios: list }) => ({
         themeId,
         label,
-        scenarios: list.filter((s) => {
-          const matchesSearch =
-            !query ||
-            s.title.toLowerCase().includes(query) ||
-            (s.description && s.description.toLowerCase().includes(query)) ||
-            (s.yourRoleRu?.toLowerCase().includes(query) || s.yourRole?.toLowerCase().includes(query)) ||
-            label.toLowerCase().includes(query);
-          const matchesDifficulty = difficultyFilter === 'all' || s.difficulty === difficultyFilter;
-          return matchesSearch && matchesDifficulty;
-        }),
+        scenarios: list
+          .filter((s) => {
+            const matchesSearch =
+              !query ||
+              s.title.toLowerCase().includes(query) ||
+              (s.description && s.description.toLowerCase().includes(query)) ||
+              (s.yourRoleRu?.toLowerCase().includes(query) || s.yourRole?.toLowerCase().includes(query)) ||
+              label.toLowerCase().includes(query);
+            const matchesDifficulty = difficultyFilter === 'all' || s.difficulty === difficultyFilter;
+            return matchesSearch && matchesDifficulty;
+          })
+          .map((s) => (masteredById[s.id] ? { ...s, masteredModes: masteredById[s.id] } : s)),
       }))
       .filter((s) => s.scenarios.length > 0);
-  }, [query, difficultyFilter, learningLanguage]);
+  }, [query, difficultyFilter, learningLanguage, masteredById]);
 
   const handleCardSelect = (scenario: RoleplayScenario) => {
     setBriefingScenario(scenario);
@@ -1556,6 +1691,7 @@ function ScenarioModal({
               scenario={briefingScenario}
               onBack={() => setBriefingScenario(null)}
               onStart={handleStartDialog}
+              initialPlayMode={parsePlayMode(briefingScenario.playMode ?? initialPlayMode)}
             />
           </>
         ) : (
