@@ -174,6 +174,25 @@ export const DashboardTab: React.FC = () => {
                 <span className={styles.heroStatValue}>{metrics.streakDays}</span>
               </div>
             </div>
+            <button type="button" className={styles.heroCta} onClick={() => goToTab('agent')}>
+              <span className={styles.heroCtaIcon} aria-hidden="true">
+                <AgentIcon />
+              </span>
+              <span className={styles.heroCtaCopy}>
+                <span className={styles.heroCtaTitle}>
+                  {metrics.todayMinutes > 0 ? 'Продолжить практику' : 'Начать практику'}
+                </span>
+                <span className={styles.heroCtaHint}>
+                  {isChineseMode
+                    ? 'Диалог или голосовая минутка на вашем HSK'
+                    : 'Сценарий, свободный разговор или дебаты'}
+                </span>
+              </span>
+              <span className={styles.heroCtaMeta}>
+                <span className={styles.heroCtaTime}>10 мин</span>
+                <span className={styles.heroCtaGo} aria-hidden="true">→</span>
+              </span>
+            </button>
           </div>
           <div className={`${styles.card} ${styles.heroGoalCard}`}>
             <div className={styles.goalTitleWrap}>
