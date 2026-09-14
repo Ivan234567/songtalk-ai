@@ -160,20 +160,6 @@ export const DashboardTab: React.FC = () => {
                 ? 'Комбинируй диалоги с AI и словарь, чтобы быстрее закреплять иероглифы, pinyin и живые выражения.'
                 : 'Комбинируй диалоги с AI, словарь и караоке-практику, чтобы быстрее закреплять лексику и говорить свободнее.'}
             </p>
-            <div className={styles.heroStats}>
-              <div className={styles.heroStat}>
-                <span className={styles.heroStatLabel}>На этой неделе</span>
-                <span className={styles.heroStatValue}>{formatDuration(metrics.weekMinutes)}</span>
-              </div>
-              <div className={styles.heroStat}>
-                <span className={styles.heroStatLabel}>Сегодня</span>
-                <span className={styles.heroStatValue}>{formatDuration(metrics.todayMinutes)}</span>
-              </div>
-              <div className={styles.heroStat}>
-                <span className={styles.heroStatLabel}>Streak</span>
-                <span className={styles.heroStatValue}>{metrics.streakDays}</span>
-              </div>
-            </div>
             <button type="button" className={styles.heroCta} onClick={() => goToTab('agent')}>
               <span className={styles.heroCtaIcon} aria-hidden="true">
                 <AgentIcon />
@@ -193,6 +179,20 @@ export const DashboardTab: React.FC = () => {
                 <span className={styles.heroCtaGo} aria-hidden="true">→</span>
               </span>
             </button>
+            <div className={styles.heroStats}>
+              <div className={styles.heroStat}>
+                <span className={styles.heroStatLabel}>На этой неделе</span>
+                <span className={styles.heroStatValue}>{formatDuration(metrics.weekMinutes)}</span>
+              </div>
+              <div className={styles.heroStat}>
+                <span className={styles.heroStatLabel}>Сегодня</span>
+                <span className={styles.heroStatValue}>{formatDuration(metrics.todayMinutes)}</span>
+              </div>
+              <div className={styles.heroStat}>
+                <span className={styles.heroStatLabel}>Streak</span>
+                <span className={styles.heroStatValue}>{metrics.streakDays}</span>
+              </div>
+            </div>
           </div>
           <div className={`${styles.card} ${styles.heroGoalCard}`}>
             <div className={styles.goalTitleWrap}>
