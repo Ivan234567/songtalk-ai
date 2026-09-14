@@ -51,7 +51,7 @@ export const LanguageSwitch: React.FC = () => {
           <i className={styles.dotEn} />
           <i className={styles.dotZh} />
         </span>
-        <span className={styles.cueLabel}>две тетради</span>
+        <span className={styles.cueLabel}>два языка</span>
       </button>
 
       <div

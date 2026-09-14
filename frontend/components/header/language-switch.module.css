@@ -67,11 +67,9 @@
   width: min(252px, calc(100vw - 2.4rem));
   padding: 0.72rem 0.8rem 0.78rem;
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--stroke));
-  background:
-    radial-gradient(circle at 100% 0, var(--accent-soft), transparent 55%),
-    var(--card);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--stroke);
+  background: var(--sidebar-bg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   opacity: 0;
   transform: translateY(-4px);
   pointer-events: none;
@@ -91,7 +89,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--accent-fg);
+  color: var(--text-muted);
 }
 
 .cardText {
