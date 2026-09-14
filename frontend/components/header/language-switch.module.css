@@ -1,3 +1,106 @@
+.cluster {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.cue {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: help;
+  line-height: 1;
+}
+
+.cue:hover,
+.cue:focus-visible {
+  color: var(--text-primary);
+}
+
+.dots {
+  position: relative;
+  width: 18px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.dotEn,
+.dotZh {
+  position: absolute;
+  top: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+.dotEn {
+  left: 0;
+  background: #6bf0b0;
+  z-index: 1;
+}
+
+.dotZh {
+  left: 7px;
+  background: #c9a48c;
+}
+
+.cueLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.card {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  width: min(252px, calc(100vw - 2.4rem));
+  padding: 0.72rem 0.8rem 0.78rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--stroke));
+  background:
+    radial-gradient(circle at 100% 0, var(--accent-soft), transparent 55%),
+    var(--card);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.cardOpen {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.cardKicker {
+  display: block;
+  margin-bottom: 0.28rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-fg);
+}
+
+.cardText {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
 .switchRoot {
   display: inline-flex;
   align-items: center;
@@ -44,4 +147,10 @@
 .switchRoot[data-language='zh'] .switchBtnActive {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   color: var(--accent-fg);
+}
+
+@media (max-width: 720px) {
+  .cueLabel {
+    display: none;
+  }
 }
