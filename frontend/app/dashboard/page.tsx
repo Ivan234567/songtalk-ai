@@ -11,6 +11,7 @@ import { DictionaryTab } from '@/components/tabs/DictionaryTab';
 import { AgentTab } from '@/components/tabs/AgentTab';
 import { ProgressTab } from '@/components/tabs/ProgressTab';
 import { BalanceTab } from '@/components/tabs/BalanceTab';
+import { FaqTab } from '@/components/tabs/FaqTab';
 import { AccountTab } from '@/components/tabs/AccountTab';
 import { logSecurityEvent } from '@/lib/securityEvents';
 import { clearBackendToken } from '@/lib/backend-jwt';
@@ -18,10 +19,10 @@ import { LearningLanguageProvider, useLearningLanguage } from '@/context/Learnin
 import { LanguageSwitch } from '@/components/header/LanguageSwitch';
 import { LanguageToastStack } from '@/components/ui/LanguageToastStack';
 
-type TabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'account';
+type TabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
 
 function isTabKey(value: string | null): value is TabKey {
-  return value === 'dashboard' || value === 'karaoke' || value === 'dictionary' || value === 'agent' || value === 'progress' || value === 'balance' || value === 'account';
+  return value === 'dashboard' || value === 'karaoke' || value === 'dictionary' || value === 'agent' || value === 'progress' || value === 'balance' || value === 'faq' || value === 'account';
 }
 
 function DashboardPageContent() {
@@ -131,6 +132,8 @@ function DashboardPageContent() {
         return <ProgressTab />;
       case 'balance':
         return <BalanceTab notice={balanceNotice} />;
+      case 'faq':
+        return <FaqTab onGoToTab={(tab) => handleTabChange(tab)} />;
       case 'account':
         return <AccountTab userEmail={userEmail} onLogout={handleLogout} />;
       case 'dashboard':
@@ -139,7 +142,7 @@ function DashboardPageContent() {
     }
   };
 
-  const shouldEnableScroll = activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'account';
+  const shouldEnableScroll = activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account';
   const usernameFromEmail = userEmail?.split('@')[0];
   const displayName = usernameFromEmail
     ? usernameFromEmail.charAt(0).toUpperCase() + usernameFromEmail.slice(1).toLowerCase()

@@ -58,6 +58,14 @@ const BalanceIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   </svg>
 );
 
+const FaqIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.2-3 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M12 17.2h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
 const LogoutIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M9 21H5C4.47 21 3.96 20.79 3.59 20.41C3.21 20.04 3 19.53 3 19V5C3 4.47 3.21 3.96 3.59 3.59C3.96 3.21 4.47 3 5 3H9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -75,7 +83,7 @@ const SupportIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   </svg>
 );
 
-type SidebarTabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'account';
+type SidebarTabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
 
 export interface SidebarProps {
   activeTab: SidebarTabKey;
@@ -107,6 +115,7 @@ const tabs: { key: SidebarTabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'karaoke', label: 'Караоке', icon: <KaraokeIcon size={20} /> },
   { key: 'progress', label: 'Прогресс', icon: <ProgressIcon size={20} /> },
   { key: 'balance', label: 'Баланс', icon: <BalanceIcon size={20} /> },
+  { key: 'faq', label: 'FAQ', icon: <FaqIcon size={20} /> },
 ];
 
 const TELEGRAM_SUPPORT = 'https://t.me/SPEAKEASY_SUPPORT';
@@ -302,7 +311,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Навигация */}
-      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '0 0.6rem', position: 'relative', zIndex: 1, minHeight: 0 }}>
+      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '0 0.6rem', position: 'relative', zIndex: 1, minHeight: 0, overflowY: 'auto' }}>
         {expanded && (
           <div
             style={{
