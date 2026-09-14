@@ -14,6 +14,8 @@ export type RecentSessionRow = {
   completionId: string;
   scoreScale?: 10 | 100;
   scoreLabel?: string;
+  /** Режим попытки китайской сцены: Репетиция / Как в жизни / Стресс */
+  playModeLabel?: string;
 };
 
 type RecentSessionsProps = {
@@ -143,6 +145,9 @@ export function RecentSessions({
                   {row.rowMode === 'roleplay' ? '🎭' : row.rowMode === 'voice' ? '🎙️' : '⚔️'}
                 </span>
                 <div className={styles.sessionTitle}>{row.title}</div>
+                {row.playModeLabel ? (
+                  <span className={styles.sessionPlayMode}>{row.playModeLabel}</span>
+                ) : null}
               </div>
               <div className={styles.sessionMeta}>
                 {row.scoreLabel
@@ -169,9 +174,19 @@ export function RecentSessions({
             <div className={styles.sessionPreview} aria-hidden="true">
               <div className={styles.sessionPreviewTitle}>Быстрый просмотр</div>
               <div className={styles.sessionPreviewText}>
-                {row.rowMode === 'roleplay' ? 'Ролевой сценарий' : 'Дебаты'}
+                {row.playModeLabel
+                  ? row.playModeLabel
+                  : row.rowMode === 'roleplay'
+                    ? 'Ролевой сценарий'
+                    : row.rowMode === 'voice'
+                      ? 'Голосовая минутка'
+                      : 'Дебаты'}
                 {' · '}
-                {row.score != null ? `${row.score.toFixed(1)}/10` : 'без оценки'}
+                {row.score != null
+                  ? row.scoreScale === 100
+                    ? `${Math.round(row.score)}%`
+                    : `${row.score.toFixed(1)}/10`
+                  : 'без оценки'}
               </div>
               <div className={styles.sessionPreviewText}>Нажмите, чтобы открыть разбор</div>
             </div>

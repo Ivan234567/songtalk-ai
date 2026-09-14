@@ -269,6 +269,7 @@ export function ZhProgressDashboard() {
           score: typeof assessment?.overall_score === 'number' ? assessment.overall_score : null,
           objectKey: `rp:${row.scenario_id}`,
           completionId: row.id,
+          playModeLabel: ZH_PLAY_MODE_LABELS[parseZhPlayMode(row.play_mode)],
         };
       })
       .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
