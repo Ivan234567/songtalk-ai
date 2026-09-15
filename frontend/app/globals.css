@@ -186,8 +186,27 @@ button {
   box-shadow: 0 0 0 2px var(--sidebar-accent);
 }
 
-/* РљР°СЂС‚РѕС‡РєР° В«РџРµСЂРµРґ РЅР°С‡Р°Р»РѕРј РґРёР°Р»РѕРіР°В» вЂ” Р±СЂРёС„РёРЅРі */
-.roleplay-briefing button[aria-label="РќР°Р·Р°Рґ Рє СЃРїРёСЃРєСѓ"]:hover {
+/* Карточка «Перед началом диалога» — брифинг */
+.roleplay-briefing {
+  min-width: 0;
+}
+
+.roleplay-briefing-grid {
+  min-width: 0;
+}
+
+.roleplay-briefing p {
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 720px) {
+  .roleplay-briefing-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.roleplay-briefing button[aria-label="Назад к списку"]:hover {
   background: var(--sidebar-hover);
   border-color: var(--sidebar-accent);
 }

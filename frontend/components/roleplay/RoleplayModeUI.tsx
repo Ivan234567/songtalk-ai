@@ -1083,7 +1083,56 @@ const BRIEFING_ICONS = {
   ),
 };
 
-/** Уточняющее окно перед стартом диалога — ПК-версия: двухколоночный layout, без скролла. Экспортируется для брифинга личных сценариев. */
+const briefingInfoText: React.CSSProperties = {
+  margin: 0,
+  fontSize: '0.9375rem',
+  lineHeight: 1.65,
+  color: 'var(--sidebar-text)',
+  opacity: 0.95,
+  overflowWrap: 'break-word',
+  whiteSpace: 'pre-wrap',
+};
+
+function BriefingInfoCard({
+  icon,
+  iconColor,
+  title,
+  children,
+}: {
+  icon?: React.ReactNode;
+  iconColor?: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        padding: '0.9rem 1.1rem',
+        borderRadius: 12,
+        border: '1px solid var(--sidebar-border)',
+        background: 'var(--sidebar-hover)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        flexShrink: 0,
+        minWidth: 0,
+        overflow: 'visible',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {icon ? (
+          <span style={{ display: 'flex', color: iconColor, opacity: 0.95, flexShrink: 0 }}>{icon}</span>
+        ) : null}
+        <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {title}
+        </span>
+      </div>
+      <p style={briefingInfoText}>{children}</p>
+    </div>
+  );
+}
+
+/** Уточняющее окно перед стартом диалога. Экспортируется для брифинга личных сценариев. */
 export function BriefingView({
   scenario,
   onBack,
@@ -1126,31 +1175,22 @@ export function BriefingView({
     profanityIntensity,
   });
 
-  const cardBase = {
-    padding: '1rem 1.25rem',
-    textAlign: 'left' as const,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 8,
-    minHeight: 0,
-  };
-
   return (
     <div
       className="roleplay-briefing"
       style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 260px',
-        gridTemplateRows: 'auto auto 1fr',
-        gap: '1.5rem 2rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1.25rem',
         padding: '1.75rem 2rem',
-        alignContent: 'start',
-        maxHeight: '80vh',
         boxSizing: 'border-box',
-        overflow: 'auto',
+        flex: 1,
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
       }}
     >
-      <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexShrink: 0 }}>
         <button
           type="button"
           onClick={onBack}
@@ -1181,8 +1221,17 @@ export function BriefingView({
         </span>
       </div>
 
-      <div style={{ gridColumn: 1 }}>
-        <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--sidebar-text)', lineHeight: 1.2, letterSpacing: '-0.02em' }}>
+      <div
+        className="roleplay-briefing-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) minmax(220px, 260px)',
+          gap: '1.5rem 2rem',
+          alignItems: 'start',
+        }}
+      >
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--sidebar-text)', lineHeight: 1.3, letterSpacing: '-0.02em', overflowWrap: 'break-word' }}>
           {scenario.title}
         </h2>
         {scenario.language && (
@@ -1235,13 +1284,47 @@ export function BriefingView({
               </button>
             ))}
           </div>
-          <p style={{ margin: '0.65rem 0 0', fontSize: '0.8125rem', opacity: 0.75, lineHeight: 1.4 }}>
+          <p style={{ margin: '0.65rem 0 0', fontSize: '0.8125rem', opacity: 0.75, lineHeight: 1.5, overflowWrap: 'break-word' }}>
             {EN_PLAY_MODE_HINTS[playMode]} Только для этой попытки, карточка не меняется.
           </p>
         </div>
+
+        {hasBriefing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', minWidth: 0 }}>
+            {rehearsal && setting && (
+              <BriefingInfoCard icon={BRIEFING_ICONS.setting} iconColor={colors.bar} title="Место">
+                {setting}
+              </BriefingInfoCard>
+            )}
+            {rehearsal && scenarioText && (
+              <BriefingInfoCard icon={BRIEFING_ICONS.scenario} iconColor={colors.bar} title="Ситуация">
+                {scenarioText}
+              </BriefingInfoCard>
+            )}
+            {rehearsal && yourRole && (
+              <BriefingInfoCard icon={BRIEFING_ICONS.yourRole} iconColor={colors.bar} title="Ваша роль">
+                {yourRole}
+              </BriefingInfoCard>
+            )}
+            {stressMode && (
+              <BriefingInfoCard title="Осложнение">
+                {stressTwist}
+              </BriefingInfoCard>
+            )}
+            {goalText && (
+              <BriefingInfoCard icon={BRIEFING_ICONS.goal} iconColor="rgba(34, 197, 94, 0.9)" title="Цель">
+                {goalText}
+              </BriefingInfoCard>
+            )}
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: '1rem', lineHeight: 1.6, color: 'var(--sidebar-text)', opacity: 0.8, overflowWrap: 'break-word' }}>
+            Практикуйте диалог в этой ситуации. Говорите на выбранном языке.
+          </p>
+        )}
       </div>
 
-      <div style={{ gridColumn: 2, gridRow: '2 / 4', display: 'flex', flexDirection: 'column', gap: '1.25rem', justifyContent: 'center', minHeight: 0 }}>
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         {rehearsal && scenario.suggestedFirstLine && (
           <div
             style={{
@@ -1259,7 +1342,7 @@ export function BriefingView({
               <span style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: 'var(--sidebar-text)', opacity: 0.75, marginBottom: 8 }}>
                 Начните с фразы
               </span>
-              <p style={{ margin: 0, fontSize: '1.0625rem', fontWeight: 500, lineHeight: 1.4, color: 'var(--sidebar-text)' }}>
+              <p style={{ margin: 0, fontSize: '1.0625rem', fontWeight: 500, lineHeight: 1.5, color: 'var(--sidebar-text)', overflowWrap: 'break-word' }}>
                 «{scenario.suggestedFirstLine}»
               </p>
             </div>
@@ -1390,82 +1473,8 @@ export function BriefingView({
           {BRIEFING_ICONS.play}
           Начать диалог
         </button>
+        </div>
       </div>
-
-      {hasBriefing ? (
-        <div style={{ gridColumn: 1, gridRow: 3, display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0, minHeight: 0, overflowY: 'auto' }}>
-          {rehearsal && setting && (
-            <div style={cardBase}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ display: 'flex', color: colors.bar, opacity: 0.95 }}>{BRIEFING_ICONS.setting}</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Место
-                </span>
-              </div>
-              <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.95 }}>
-                {setting}
-              </p>
-            </div>
-          )}
-          {rehearsal && scenarioText && (
-            <div style={cardBase}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ display: 'flex', color: colors.bar, opacity: 0.95 }}>{BRIEFING_ICONS.scenario}</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Ситуация
-                </span>
-              </div>
-              <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.95 }}>
-                {scenarioText}
-              </p>
-            </div>
-          )}
-          {rehearsal && yourRole && (
-            <div style={cardBase}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ display: 'flex', color: colors.bar, opacity: 0.95 }}>{BRIEFING_ICONS.yourRole}</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Ваша роль
-                </span>
-              </div>
-              <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.95 }}>
-                {yourRole}
-              </p>
-            </div>
-          )}
-          {stressMode && (
-            <div style={cardBase}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Осложнение
-                </span>
-              </div>
-              <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.95 }}>
-                {stressTwist}
-              </p>
-            </div>
-          )}
-          {goalText && (
-            <div style={cardBase}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ display: 'flex', color: 'rgba(34, 197, 94, 0.9)' }}>{BRIEFING_ICONS.goal}</span>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Цель
-                </span>
-              </div>
-              <p style={{ margin: 0, fontSize: '0.9375rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.95 }}>
-                {goalText}
-              </p>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div style={{ gridColumn: 1, gridRow: 3 }}>
-          <p style={{ margin: 0, fontSize: '1rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.8 }}>
-            Практикуйте диалог в этой ситуации. Говорите на выбранном языке.
-          </p>
-        </div>
-      )}
     </div>
   );
 }
