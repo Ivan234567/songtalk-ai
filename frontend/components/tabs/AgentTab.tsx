@@ -3341,7 +3341,7 @@ export function AgentTab() {
     state === 'idle';
   const statusText =
     state === 'listening'
-      ? 'Говорите… Нажмите ещё раз — отправить'
+      ? 'Отправить запись'
       : state === 'thinking'
         ? voiceTaskEvaluating
           ? 'Проверяю чеклист…'
@@ -6008,7 +6008,7 @@ export function AgentTab() {
               </div>
             )}
 
-            {!isBareIdle && (canRecordClick ? (
+            {!isBareIdle && state !== 'listening' && (canRecordClick ? (
               <button
                 type="button"
                 onClick={handleRecordClick}
