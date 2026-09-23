@@ -2284,9 +2284,28 @@ export function AgentTab() {
     setScenarioModalOpen(true);
   }, [systemCatalogView]);
 
-  /** Сброс (выход) из диалога досрочно — во всех режимах */
+  const closeScenarioCatalog = useCallback(() => {
+    setScenarioModalOpen(false);
+    setProgressDeepLink(null);
+    progressTargetHandledRef.current = null;
+    setHighlightedUserScenarioId(null);
+    if (!selectedScenario) {
+      handleModeChange('chat');
+    }
+  }, [handleModeChange, selectedScenario]);
+
+  /** Сброс (выход) из диалога досрочно — возврат в свободный диалог */
   const handleExitDialogue = useCallback(() => {
     setExitDialogueConfirmOpen(false);
+    cancelRequestedRef.current = true;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    setState('idle');
     setMessages([]);
     setCurrentSessionId(null);
     setSelectedSessionId(null);
@@ -2306,34 +2325,12 @@ export function AgentTab() {
     setZhSaidMustSay([]);
     setSelectedScenario(null);
     setReplyHintText(null);
-    // Сброс состояний дебата
-    setDebateCompleted(false);
-    setDebateFeedback(null);
-    setDebateStrengthSbi(null);
-    setDebateImprovementSbi(null);
-    setDebateAnalysisOpen(false);
-    setDebateStrengthOpen(false);
-    setDebateGrowthOpen(false);
-    setDebateUsefulPhrase(null);
-    setDebateUsefulPhraseRu(null);
-    setDebateFeedbackError(null);
-    setDebateCompletedStepIds([]);
-    setDebateCompleted(false);
-    setDebateStarted(false);
-    setDebateTopic(null);
-    setDebateTopicSource('catalog');
-    setDebateTopicOriginal(null);
-    setDebateTopicNormalized(null);
-    setDebateTopicLanguage('unknown');
-    setDebateTopicValidationStatus('valid');
-    setDebateUserPosition(null);
-    setDebateAIPosition(null);
-    setDebateDifficulty(null);
-    setDebateMicroGoals([]);
-    setDebateSettings({ slangMode: 'off', allowProfanity: false, aiMayUseProfanity: false, profanityIntensity: 'light' });
-    setDebateCurrentSessionId(null);
-    setDebateCompletionId(null);
-  }, []);
+    setScenarioModalOpen(false);
+    setVoiceTaskModalOpen(false);
+    setProgressDeepLink(null);
+    progressTargetHandledRef.current = null;
+    handleModeChange('chat');
+  }, [handleModeChange]);
 
   useEffect(() => {
     if (!exitDialogueConfirmOpen) return;
@@ -3788,13 +3785,7 @@ export function AgentTab() {
                   onDebateViewChange={handleDebateViewChange}
                 />
                 {learningLanguage === 'zh' && scenarioModalOpen && (
-                  <ZhScenariosErrorBoundary
-                    onClose={() => {
-                      setScenarioModalOpen(false);
-                      setProgressDeepLink(null);
-                      progressTargetHandledRef.current = null;
-                    }}
-                  >
+                  <ZhScenariosErrorBoundary onClose={closeScenarioCatalog}>
                     <ZhScenariosUI
                       initialView={scenarioView}
                       defaultHsk={chineseHskLevel}
@@ -3806,11 +3797,7 @@ export function AgentTab() {
                         setProgressDeepLink(null);
                         progressTargetHandledRef.current = null;
                       }}
-                      onClose={() => {
-                        setScenarioModalOpen(false);
-                        setProgressDeepLink(null);
-                        progressTargetHandledRef.current = null;
-                      }}
+                      onClose={closeScenarioCatalog}
                       onCopyToMineSuccess={(id) => {
                         setScenarioView('my');
                         setHighlightedUserScenarioId(id);
@@ -3830,11 +3817,7 @@ export function AgentTab() {
                       setHighlightedUserScenarioId(null);
                       setProgressDeepLink(null);
                     }}
-                    onClose={() => {
-                      setScenarioModalOpen(false);
-                      setHighlightedUserScenarioId(null);
-                      setProgressDeepLink(null);
-                    }}
+                    onClose={closeScenarioCatalog}
                   />
                 )}
                 {learningLanguage === 'zh' && (
@@ -3922,10 +3905,7 @@ export function AgentTab() {
                       type="button"
                       className="agent-toolbar-btn"
                       style={{ height: 32, fontSize: '0.75rem' }}
-                      onClick={() => {
-                        setSelectedVoiceTask(null);
-                        resetVoiceTaskPlay();
-                      }}
+                      onClick={() => setExitDialogueConfirmOpen(true)}
                     >
                       Сбросить
                     </button>
@@ -5540,6 +5520,22 @@ export function AgentTab() {
                       ? 'Посмотреть оценку'
                       : 'Оценить речь'}
               </button>
+              <button
+                type="button"
+                onClick={() => setExitDialogueConfirmOpen(true)}
+                style={{
+                  padding: '0.55rem 1.1rem',
+                  borderRadius: 10,
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  color: '#fca5a5',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Выйти из диалога
+              </button>
             </div>
             {!savedSessionAssessment && (
               <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.55 }}>
@@ -5812,21 +5808,49 @@ export function AgentTab() {
             )}
           </div>
         ) : selectedVoiceTask && voiceTaskResult ? (
-          <ZhVoiceTaskResult
-            task={selectedVoiceTask}
-            result={voiceTaskResult}
-            showPinyin={chineseShowPinyin}
-            showTranslation={chineseShowTranslation}
-            onPlayModel={() => void playVoiceTaskChinese(voiceTaskResult.model_answer_zh || selectedVoiceTask.model_answer_zh)}
-            onPlayNextTry={() => void playVoiceTaskChinese(voiceTaskResult.next_try_zh)}
-            onRetry={() => beginVoiceTask(selectedVoiceTask)}
-            onList={() => {
-              setSelectedVoiceTask(null);
-              resetVoiceTaskPlay();
-              setVoiceTaskView('my');
-              setVoiceTaskModalOpen(true);
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.85rem',
+              width: 'min(540px, 100%)',
+              margin: '3.25rem auto 0',
             }}
-          />
+          >
+            <ZhVoiceTaskResult
+              task={selectedVoiceTask}
+              result={voiceTaskResult}
+              showPinyin={chineseShowPinyin}
+              showTranslation={chineseShowTranslation}
+              onPlayModel={() => void playVoiceTaskChinese(voiceTaskResult.model_answer_zh || selectedVoiceTask.model_answer_zh)}
+              onPlayNextTry={() => void playVoiceTaskChinese(voiceTaskResult.next_try_zh)}
+              onRetry={() => beginVoiceTask(selectedVoiceTask)}
+              onList={() => {
+                setSelectedVoiceTask(null);
+                resetVoiceTaskPlay();
+                setVoiceTaskView('my');
+                setVoiceTaskModalOpen(true);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setExitDialogueConfirmOpen(true)}
+              aria-label="Выйти в свободный диалог"
+              style={{
+                padding: '0.5rem 1.25rem',
+                borderRadius: 12,
+                border: '1px solid rgba(239, 68, 68, 0.5)',
+                background: 'rgba(239, 68, 68, 0.2)',
+                color: '#fca5a5',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              Выйти из диалога
+            </button>
+          </div>
         ) : (
           <div
             style={{
@@ -6128,12 +6152,12 @@ export function AgentTab() {
               </div>
             )}
 
-            {(messages.length > 0 || selectedScenario || selectedSessionId) && !selectedVoiceTask && (
+            {(messages.length > 0 || selectedScenario || selectedSessionId || selectedVoiceTask) && (
               <button
                 type="button"
                 onClick={() => setExitDialogueConfirmOpen(true)}
                 aria-label="Выйти из диалога"
-                title="Выйти из диалога (сбросить)"
+                title="Выйти в свободный диалог"
                 style={{
                   padding: '0.5rem 1.25rem',
                   borderRadius: 12,
@@ -6883,7 +6907,7 @@ export function AgentTab() {
                   opacity: 0.88,
                 }}
               >
-                Текущий разговор будет сброшен. Несохранённый прогресс диалога пропадёт — это действие нельзя отменить.
+                Текущий разговор будет сброшен, и вы вернётесь в свободный диалог. Несохранённый прогресс пропадёт.
               </p>
             </div>
             <div

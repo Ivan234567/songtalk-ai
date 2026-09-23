@@ -708,7 +708,10 @@ export function RoleplayModeUI({
               onSelectScenario(s);
               onScenarioModalOpenChange(false);
             }}
-            onClose={() => onScenarioModalOpenChange(false)}
+            onClose={() => {
+              onScenarioModalOpenChange(false);
+              if (!selectedScenario) onModeChange('chat');
+            }}
             onScenarioViewChange={onScenarioViewChange}
             onCopyToMineSuccess={onCopyToMineSuccess}
             initialScenarioId={initialScenarioId}
