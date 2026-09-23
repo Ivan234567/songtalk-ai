@@ -208,7 +208,7 @@ function UserAvatar({ email }: { email: string }) {
             onClick={() => setOpen(false)}
             role="menuitem"
           >
-            Перейти в dashboard
+            Перейти в дашборд
           </Link>
           <button
             className={styles.avatarDropdownItem}
@@ -309,7 +309,7 @@ function LandingPageInner() {
           </p>
           <div className={styles.heroCtaWrap}>
             <Link href={userEmail ? '/dashboard' : '/auth/register'} className={styles.heroCtaGlass}>
-              Начать
+              {userEmail ? 'Перейти в дашборд' : 'Начать'}
               <span className={styles.heroCtaArrow} aria-hidden>→</span>
             </Link>
           </div>
