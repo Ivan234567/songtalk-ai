@@ -5921,7 +5921,10 @@ export function AgentTab() {
             )}
             <div
               className="agent-orb-stage"
-              style={{ ['--orb-speak']: ttsLevel } as React.CSSProperties}
+              style={{
+                ['--orb-speak']: ttsLevel,
+                ['--orb-energy']: state === 'listening' ? volumeLevel : state === 'speaking' ? ttsLevel : 0,
+              } as React.CSSProperties}
             >
               {state === 'listening' && (
                 <>
@@ -6005,7 +6008,7 @@ export function AgentTab() {
                       height: '100%',
                       width: `${Math.min(100, (recordingElapsedMs / ((selectedVoiceTask ? selectedVoiceTask.time_target_sec : 60) * 1000)) * 100)}%`,
                       borderRadius: 2,
-                      background: 'rgba(99, 102, 241, 0.7)',
+                      background: 'rgba(var(--orb-glow), 0.8)',
                       transition: 'width 0.1s ease-out',
                     }}
                   />
