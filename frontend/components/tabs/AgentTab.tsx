@@ -5926,57 +5926,12 @@ export function AgentTab() {
                 ['--orb-energy']: state === 'listening' ? volumeLevel : state === 'speaking' ? ttsLevel : 0,
               } as React.CSSProperties}
             >
-              {state === 'listening' && (
-                <>
-                  {[0, 1, 2].map((i) => {
-                    const base = 14 + i * 12;
-                    const scale = 1 + volumeLevel * (0.1 + i * 0.05);
-                    const opacity = (0.45 - i * 0.1) * (0.45 + volumeLevel * 0.55);
-                    return (
-                      <span
-                        key={i}
-                        style={{
-                          position: 'absolute',
-                          left: '50%',
-                          top: '50%',
-                          width: 200 + base * 2,
-                          height: 200 + base * 2,
-                          borderRadius: '50%',
-                          border: `2px solid rgba(var(--orb-ring), ${opacity})`,
-                          transform: `translate(-50%, -50%) scale(${scale})`,
-                          pointerEvents: 'none',
-                          zIndex: 0,
-                          transition: 'transform 0.06s ease-out, border-color 0.06s ease-out',
-                        }}
-                      />
-                    );
-                  })}
-                  <span
-                    style={{
-                      position: 'absolute',
-                      inset: -14,
-                      borderRadius: '50%',
-                      border: '3px solid rgba(var(--orb-ring-hot), 0.5)',
-                      animation: 'agent-orb-pulse 1.2s ease-in-out infinite',
-                      pointerEvents: 'none',
-                      zIndex: 2,
-                    }}
-                  />
-                </>
-              )}
               <button
                 type="button"
                 className={`agent-orb agent-orb--${state}`}
                 aria-label={statusText}
                 onClick={handleRecordClick}
                 disabled={state === 'thinking' || state === 'speaking' || Boolean(selectedVoiceTask && (voiceTaskRewriteUsed || voiceTaskResult))}
-                style={
-                  state === 'listening'
-                    ? { transform: 'scale(1.06)' }
-                    : state === 'speaking'
-                      ? { transform: `scale(${1 + ttsLevel * 0.045})` }
-                      : undefined
-                }
               >
                 <AgentOrbFace />
               </button>
