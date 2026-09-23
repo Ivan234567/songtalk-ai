@@ -250,6 +250,23 @@ function formatSessionDate(ts: number): string {
   return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function AgentOrbFace() {
+  return (
+    <>
+      <span className="agent-orb__field" aria-hidden>
+        <span className="agent-orb__blob agent-orb__blob--cyan" />
+        <span className="agent-orb__blob agent-orb__blob--indigo" />
+        <span className="agent-orb__blob agent-orb__blob--pink" />
+        <span className="agent-orb__blob agent-orb__blob--amber" />
+        <span className="agent-orb__ribbon" />
+        <span className="agent-orb__ribbon agent-orb__ribbon--rev" />
+      </span>
+      <span className="agent-orb__core" aria-hidden />
+      <span className="agent-orb__glass" aria-hidden />
+    </>
+  );
+}
+
 export function AgentTab() {
   const { learningLanguage } = useLearningLanguage();
   const showSystemCatalog = hasRoleplaySystemCatalog(learningLanguage);
@@ -3260,15 +3277,11 @@ export function AgentTab() {
           borderRadius: 24,
         }}
       >
-        <div
-          style={{
-            width: 100,
-            height: 100,
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.2))',
-            animation: 'agent-orb-breathe 2s ease-in-out infinite',
-          }}
-        />
+        <div className="agent-orb-stage" style={{ width: 100, height: 100 }} aria-hidden>
+          <div className="agent-orb agent-orb--thinking">
+            <AgentOrbFace />
+          </div>
+        </div>
         <p style={{ margin: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.8 }}>
           Подключение…
         </p>
@@ -3351,26 +3364,6 @@ export function AgentTab() {
   const canRecordClick =
     (state === 'idle' || state === 'listening') &&
     !(selectedVoiceTask && (voiceTaskRewriteUsed || voiceTaskResult));
-
-  const speakingGlow = 0.22 + ttsLevel * 0.12;
-  const speakingBlur = 18 + ttsLevel * 8;
-  const orbShadow =
-    state === 'listening'
-      ? '0 0 0 4px rgba(99, 102, 241, 0.35), 0 0 70px 24px rgba(99, 102, 241, 0.3)'
-      : state === 'thinking'
-        ? '0 0 50px 16px rgba(139, 92, 246, 0.25), 0 0 0 2px rgba(139, 92, 246, 0.2)'
-        : state === 'speaking'
-          ? `0 0 ${speakingBlur}px ${Math.round(speakingBlur * 0.6)}px rgba(34, 197, 94, ${speakingGlow}), 0 0 0 2px rgba(34, 197, 94, ${0.15 + ttsLevel * 0.08})`
-          : '0 0 40px 0 rgba(99, 102, 241, 0.12), 0 24px 56px -16px rgba(0, 0, 0, 0.4)';
-
-  const orbGradient =
-    state === 'listening'
-      ? 'radial-gradient(120% 120% at 35% 25%, rgba(165, 180, 252, 0.95), rgba(99, 102, 241, 0.9) 45%, rgba(79, 70, 229, 0.85))'
-      : state === 'thinking'
-        ? 'radial-gradient(120% 120% at 35% 25%, rgba(196, 181, 253, 0.9), rgba(139, 92, 246, 0.85) 45%, rgba(124, 58, 237, 0.8))'
-        : state === 'speaking'
-          ? 'radial-gradient(120% 120% at 35% 25%, rgba(134, 239, 172, 0.85), rgba(34, 197, 94, 0.8) 45%, rgba(22, 163, 74, 0.75))'
-          : 'radial-gradient(120% 120% at 35% 25%, rgba(203, 213, 225, 0.5), rgba(148, 163, 184, 0.35) 50%, rgba(100, 116, 139, 0.4))';
 
   return (
     <div style={{ display: 'flex', width: '100%', flex: 1, minHeight: 0, gap: 0, position: 'relative' }}>
@@ -5926,25 +5919,16 @@ export function AgentTab() {
                 )}
               </div>
             )}
-            <div style={{ position: 'relative', width: 200, height: 200 }}>
-              {/* Декоративное кольцо за орбом */}
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: -20,
-                  borderRadius: '50%',
-                  border: '1px solid var(--sidebar-border)',
-                  opacity: 0.4,
-                  pointerEvents: 'none',
-                }}
-              />
-              {/* Визуализация голоса — концентрические кольца по уровню громкости */}
+            <div
+              className="agent-orb-stage"
+              style={{ ['--orb-speak']: ttsLevel } as React.CSSProperties}
+            >
               {state === 'listening' && (
                 <>
                   {[0, 1, 2].map((i) => {
                     const base = 14 + i * 12;
                     const scale = 1 + volumeLevel * (0.1 + i * 0.05);
-                    const opacity = (0.4 - i * 0.1) * (0.5 + volumeLevel * 0.5);
+                    const opacity = (0.45 - i * 0.1) * (0.45 + volumeLevel * 0.55);
                     return (
                       <span
                         key={i}
@@ -5955,64 +5939,43 @@ export function AgentTab() {
                           width: 200 + base * 2,
                           height: 200 + base * 2,
                           borderRadius: '50%',
-                          border: `2px solid rgba(99, 102, 241, ${opacity})`,
+                          border: `2px solid rgba(125, 211, 252, ${opacity})`,
                           transform: `translate(-50%, -50%) scale(${scale})`,
                           pointerEvents: 'none',
+                          zIndex: 0,
                           transition: 'transform 0.06s ease-out, border-color 0.06s ease-out',
                         }}
                       />
                     );
                   })}
+                  <span
+                    style={{
+                      position: 'absolute',
+                      inset: -14,
+                      borderRadius: '50%',
+                      border: '3px solid rgba(186, 230, 253, 0.45)',
+                      animation: 'agent-orb-pulse 1.2s ease-in-out infinite',
+                      pointerEvents: 'none',
+                      zIndex: 2,
+                    }}
+                  />
                 </>
               )}
               <button
                 type="button"
+                className={`agent-orb agent-orb--${state}`}
                 aria-label={statusText}
                 onClick={handleRecordClick}
                 disabled={state === 'thinking' || state === 'speaking' || Boolean(selectedVoiceTask && (voiceTaskRewriteUsed || voiceTaskResult))}
-                style={{
-                  width: 200,
-                  height: 200,
-                  borderRadius: '50%',
-                  border: 'none',
-                  cursor: (state === 'idle' || state === 'listening') && !(selectedVoiceTask && (voiceTaskRewriteUsed || voiceTaskResult)) ? 'pointer' : 'default',
-                  padding: 0,
-                  position: 'relative',
-                  overflow: 'hidden',
-                  boxShadow: orbShadow,
-                  background: orbGradient,
-                  animation: state === 'idle' ? 'agent-orb-breathe 3s ease-in-out infinite' : 'none',
-                  transition: state === 'speaking' ? 'box-shadow 0.06s ease-out, transform 0.06s ease-out' : 'box-shadow 0.4s ease, transform 0.25s ease',
-                  transform:
-                    state === 'listening'
-                      ? 'scale(1.06)'
-                      : state === 'speaking'
-                        ? `scale(${1 + ttsLevel * 0.04})`
-                        : 'scale(1)',
-                }}
+                style={
+                  state === 'listening'
+                    ? { transform: 'scale(1.06)' }
+                    : state === 'speaking'
+                      ? { transform: `scale(${1 + ttsLevel * 0.045})` }
+                      : undefined
+                }
               >
-                {/* Блик на сфере */}
-                <span
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: '50%',
-                    background: 'radial-gradient(circle at 32% 28%, rgba(255,255,255,0.35), transparent 45%)',
-                    pointerEvents: 'none',
-                  }}
-                />
-                {state === 'listening' && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      inset: -12,
-                      borderRadius: '50%',
-                      border: '3px solid rgba(99, 102, 241, 0.45)',
-                      animation: 'agent-orb-pulse 1.2s ease-in-out infinite',
-                      pointerEvents: 'none',
-                    }}
-                  />
-                )}
+                <AgentOrbFace />
               </button>
             </div>
 
