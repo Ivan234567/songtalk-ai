@@ -3361,6 +3361,11 @@ export function AgentTab() {
             : isUserStartsRoleplayEmpty
               ? 'Ваша очередь — начните диалог!'
               : 'Нажмите, чтобы начать запись';
+  const isBareIdle =
+    state === 'idle' &&
+    !selectedVoiceTask &&
+    !isUserStartsDebateEmpty &&
+    !isUserStartsRoleplayEmpty;
   const canRecordClick =
     (state === 'idle' || state === 'listening') &&
     !(selectedVoiceTask && (voiceTaskRewriteUsed || voiceTaskResult));
@@ -6003,7 +6008,7 @@ export function AgentTab() {
               </div>
             )}
 
-            {canRecordClick ? (
+            {!isBareIdle && (canRecordClick ? (
               <button
                 type="button"
                 onClick={handleRecordClick}
@@ -6063,7 +6068,7 @@ export function AgentTab() {
                   </span>
                 )}
               </div>
-            )}
+            ))}
 
             {selectedVoiceTask && isVoiceTaskTakeDone && !voiceTaskResult && (
               <button
