@@ -3348,6 +3348,9 @@ export function AgentTab() {
             : isUserStartsRoleplayEmpty
               ? 'Ваша очередь — начните диалог!'
               : 'Нажмите, чтобы начать запись';
+  const canRecordClick =
+    (state === 'idle' || state === 'listening') &&
+    !(selectedVoiceTask && (voiceTaskRewriteUsed || voiceTaskResult));
 
   const speakingGlow = 0.22 + ttsLevel * 0.12;
   const speakingBlur = 18 + ttsLevel * 8;
@@ -6079,24 +6082,23 @@ export function AgentTab() {
               </div>
             )}
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.5rem 1.25rem',
-                borderRadius: 999,
-                background: 'var(--sidebar-hover)',
-                border: '1px solid var(--sidebar-border)',
-              }}
-            >
-              {state === 'thinking' ? (
-                <>
-                  <span style={{ fontSize: '1.25rem', lineHeight: 1, color: 'var(--sidebar-text)', animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '0ms' }}>·</span>
-                  <span style={{ fontSize: '1.25rem', lineHeight: 1, color: 'var(--sidebar-text)', animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '150ms' }}>·</span>
-                  <span style={{ fontSize: '1.25rem', lineHeight: 1, color: 'var(--sidebar-text)', animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '300ms' }}>·</span>
-                </>
-              ) : (
+            {canRecordClick ? (
+              <button
+                type="button"
+                onClick={handleRecordClick}
+                className="agent-record-hint"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: 999,
+                  background: 'var(--sidebar-hover)',
+                  border: '1px solid var(--sidebar-border)',
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                }}
+              >
                 <span
                   style={{
                     margin: 0,
@@ -6108,8 +6110,39 @@ export function AgentTab() {
                 >
                   {statusText}
                 </span>
-              )}
-            </div>
+              </button>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: 999,
+                  background: 'var(--sidebar-hover)',
+                  border: '1px solid var(--sidebar-border)',
+                }}
+              >
+                {state === 'thinking' ? (
+                  <>
+                    <span style={{ fontSize: '1.25rem', lineHeight: 1, color: 'var(--sidebar-text)', animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '0ms' }}>·</span>
+                    <span style={{ fontSize: '1.25rem', lineHeight: 1, color: 'var(--sidebar-text)', animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '150ms' }}>·</span>
+                    <span style={{ fontSize: '1.25rem', lineHeight: 1, color: 'var(--sidebar-text)', animation: 'agent-dots 1.2s ease-in-out infinite', animationDelay: '300ms' }}>·</span>
+                  </>
+                ) : (
+                  <span
+                    style={{
+                      margin: 0,
+                      fontSize: '0.9375rem',
+                      fontWeight: 500,
+                      color: 'var(--sidebar-text)',
+                    }}
+                  >
+                    {statusText}
+                  </span>
+                )}
+              </div>
+            )}
 
             {selectedVoiceTask && isVoiceTaskTakeDone && !voiceTaskResult && (
               <button

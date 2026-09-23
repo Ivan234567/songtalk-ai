@@ -547,6 +547,19 @@ textarea {
   }
 }
 
+.agent-record-hint {
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.agent-record-hint:hover {
+  background: var(--sidebar-active);
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+.agent-record-hint:active {
+  transform: scale(0.98);
+}
+
 @keyframes agent-dots {
 
   0%,
