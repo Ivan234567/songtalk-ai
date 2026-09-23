@@ -562,7 +562,7 @@ textarea {
 .agent-orb-stage::before {
   content: '';
   position: absolute;
-  inset: calc(-16% - var(--orb-energy, 0) * 18%);
+  inset: calc(-16% - var(--orb-energy, 0) * 18% + var(--orb-limit, 0) * 12%);
   border-radius: 50%;
   background: conic-gradient(
     from 80deg,
@@ -572,7 +572,7 @@ textarea {
     rgba(16, 185, 129, 0.5),
     rgba(52, 211, 153, 0.58)
   );
-  filter: blur(calc(22px + var(--orb-energy, 0) * 20px));
+  filter: blur(calc(22px + var(--orb-energy, 0) * 20px - var(--orb-limit, 0) * 12px));
   opacity: calc(0.36 + var(--orb-energy, 0) * 0.2);
   animation: agent-orb-spin 18s linear infinite;
   transition: opacity 0.1s linear, filter 0.08s linear, inset 0.08s linear;
@@ -646,8 +646,8 @@ textarea {
   --orb-core: 3.4s;
   transform: scale(calc(1.04 + var(--orb-energy) * 0.06));
   box-shadow:
-    0 0 calc(42px + var(--orb-energy) * 52px) calc(8px + var(--orb-energy) * 24px) rgba(var(--orb-glow), calc(0.24 + var(--orb-energy) * 0.4)),
-    0 0 calc(84px + var(--orb-energy) * 40px) rgba(var(--orb-glow-soft), calc(0.1 + var(--orb-energy) * 0.24));
+    0 0 calc(42px + var(--orb-energy) * 52px - var(--orb-limit, 0) * 30px) calc(8px + var(--orb-energy) * 24px - var(--orb-limit, 0) * 16px) rgba(var(--orb-glow), calc(0.24 + var(--orb-energy) * 0.4)),
+    0 0 calc(84px + var(--orb-energy) * 40px - var(--orb-limit, 0) * 36px) rgba(var(--orb-glow-soft), calc(0.1 + var(--orb-energy) * 0.24));
   transition: box-shadow 0.08s linear, transform 0.08s linear;
 }
 
@@ -675,6 +675,42 @@ textarea {
     0 0 calc(28px + var(--orb-energy) * 56px) calc(6px + var(--orb-energy) * 26px) rgba(var(--orb-glow), calc(0.22 + var(--orb-energy) * 0.46)),
     0 0 calc(70px + var(--orb-energy) * 48px) rgba(var(--orb-glow-soft), calc(0.12 + var(--orb-energy) * 0.32));
   transition: box-shadow 0.06s linear, transform 0.06s linear;
+}
+
+.agent-orb-limit {
+  position: absolute;
+  inset: -8px;
+  z-index: 2;
+  pointer-events: none;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+
+.agent-orb-limit circle {
+  fill: none;
+  stroke: rgba(var(--orb-glow), 0.92);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+
+.agent-orb-cancel {
+  position: absolute;
+  top: calc(100% + 1.35rem);
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  border: none;
+  background: transparent;
+  color: var(--sidebar-text);
+  opacity: 0.45;
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.agent-orb-cancel:hover {
+  opacity: 0.88;
 }
 
 .agent-orb__field {

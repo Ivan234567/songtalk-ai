@@ -3143,10 +3143,9 @@ export function AgentTab() {
   }, [state]);
 
   useEffect(() => {
-    if (state !== 'listening' || !selectedVoiceTask) return;
-    if (recordingElapsedMs >= ZH_VOICE_TASK_MAX_SEC * 1000) {
-      stopRecording();
-    }
+    if (state !== 'listening') return;
+    const cap = selectedVoiceTask ? ZH_VOICE_TASK_MAX_SEC * 1000 : 60000;
+    if (recordingElapsedMs >= cap) stopRecording();
   }, [state, recordingElapsedMs, selectedVoiceTask, stopRecording]);
 
   const cancelRecording = useCallback(() => {
@@ -3369,6 +3368,11 @@ export function AgentTab() {
   const canRecordClick =
     (state === 'idle' || state === 'listening') &&
     !(selectedVoiceTask && (voiceTaskRewriteUsed || voiceTaskResult));
+  const recordCapMs = selectedVoiceTask ? ZH_VOICE_TASK_MAX_SEC * 1000 : 60000;
+  const recordLimit = state === 'listening'
+    ? Math.min(1, Math.max(0, (10000 - (recordCapMs - recordingElapsedMs)) / 10000))
+    : 0;
+  const limitCircumference = 2 * Math.PI * 56;
 
   return (
     <div style={{ display: 'flex', width: '100%', flex: 1, minHeight: 0, gap: 0, position: 'relative' }}>
@@ -5929,8 +5933,19 @@ export function AgentTab() {
               style={{
                 ['--orb-speak']: ttsLevel,
                 ['--orb-energy']: state === 'listening' ? volumeLevel : state === 'speaking' ? ttsLevel : 0,
+                ['--orb-limit']: recordLimit,
               } as React.CSSProperties}
             >
+              {recordLimit > 0 && (
+                <svg className="agent-orb-limit" viewBox="0 0 120 120" aria-hidden>
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="56"
+                    strokeDasharray={`${recordLimit * limitCircumference} ${limitCircumference}`}
+                  />
+                </svg>
+              )}
               <button
                 type="button"
                 className={`agent-orb agent-orb--${state}`}
@@ -5940,73 +5955,16 @@ export function AgentTab() {
               >
                 <AgentOrbFace />
               </button>
-            </div>
-
-            {state === 'listening' && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.75rem',
-                  width: '100%',
-                  maxWidth: 260,
-                }}
-              >
-                <div
-                  style={{
-                    width: '100%',
-                    height: 4,
-                    borderRadius: 2,
-                    background: 'var(--sidebar-hover)',
-                    border: '1px solid var(--sidebar-border)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      height: '100%',
-                      width: `${Math.min(100, (recordingElapsedMs / ((selectedVoiceTask ? selectedVoiceTask.time_target_sec : 60) * 1000)) * 100)}%`,
-                      borderRadius: 2,
-                      background: 'rgba(var(--orb-glow), 0.8)',
-                      transition: 'width 0.1s ease-out',
-                    }}
-                  />
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    fontSize: '0.8125rem',
-                    color: 'var(--sidebar-text)',
-                    opacity: 0.9,
-                  }}
-                >
-                  <span>
-                    {recordingElapsedMs < 1000
-                      ? `${(recordingElapsedMs / 1000).toFixed(1).replace('.', ',')} с`
-                      : `${Math.floor(recordingElapsedMs / 1000)} с`}
-                  </span>
-                </div>
+              {state === 'listening' && (
                 <button
                   type="button"
+                  className="agent-orb-cancel"
                   onClick={(e) => { e.stopPropagation(); cancelRecording(); }}
-                  style={{
-                    padding: '0.5rem 1.25rem',
-                    borderRadius: 12,
-                    border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-hover)',
-                    color: 'var(--sidebar-text)',
-                    fontSize: '0.875rem',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                  }}
                 >
                   Отмена
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
             {!isBareIdle && state !== 'listening' && (canRecordClick ? (
               <button
