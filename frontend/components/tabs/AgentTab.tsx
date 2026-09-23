@@ -1185,7 +1185,8 @@ export function AgentTab() {
             chinese_settings: learningLanguage === 'zh'
               ? {
                 ...chineseSettingsPayload,
-                grammar_focus: agentMode === 'roleplay' ? selectedScenario?.grammarFocus : undefined,
+                grammar_focus: agentMode === 'roleplay' && !selectedScenario?.fromLife ? selectedScenario?.grammarFocus : undefined,
+                from_life: agentMode === 'roleplay' && selectedScenario?.fromLife === true,
               }
               : undefined,
             english_settings: learningLanguage !== 'zh' ? englishSettingsPayload : undefined,
@@ -2784,12 +2785,13 @@ export function AgentTab() {
           chinese_settings: learningLanguage === 'zh'
             ? {
               ...chineseSettingsPayload,
-              grammar_focus: selectedScenario?.grammarFocus,
+              grammar_focus: selectedScenario?.fromLife ? undefined : selectedScenario?.grammarFocus,
+              from_life: selectedScenario?.fromLife === true,
             }
             : undefined,
           english_settings: learningLanguage !== 'zh' ? englishSettingsPayload : undefined,
           hint_mode: freestyleHintMode,
-          scenario_vocabulary: missingMustSay.length
+          scenario_vocabulary: !selectedScenario.fromLife && missingMustSay.length
             ? missingMustSay
             : undefined,
           ...stepsPayload,
@@ -3220,10 +3222,11 @@ export function AgentTab() {
       completedStepIds: roleplayStepsCompletedIds,
       mustSay,
       saidHanzi: zhSaidMustSay,
+      countVocab: !selectedScenario.fromLife,
     });
     const parts: string[] = [];
     if (tracker.stepsTotal) parts.push(`сцена ${tracker.stepsDone}/${tracker.stepsTotal}`);
-    if (tracker.vocabTotal) parts.push(`слова ${tracker.vocabDone}/${tracker.vocabTotal}`);
+    if (!selectedScenario.fromLife && tracker.vocabTotal) parts.push(`слова ${tracker.vocabDone}/${tracker.vocabTotal}`);
     return parts.join(' · ');
   })();
 
@@ -5303,7 +5306,32 @@ export function AgentTab() {
                 Прогресс сохранён!
               </h2>
             </div>
-            {learningLanguage === 'zh' && selectedScenario.scenarioVocabulary?.some((v) => v.usage === 'must_say') ? (() => {
+            {learningLanguage === 'zh' && selectedScenario.fromLife ? (() => {
+              const tracker = getLessonTrackerState({
+                steps: selectedScenario.steps,
+                completedStepIds: roleplayCompletedStepIds,
+                mustSay: [],
+                saidHanzi: [],
+                countVocab: false,
+              });
+              if (tracker.plotReady) {
+                return (
+                  <p style={{ margin: 0, fontSize: '0.8125rem', color: 'rgba(34, 197, 94, 0.95)', fontWeight: 600 }}>
+                    Цель закрыта
+                  </p>
+                );
+              }
+              const open = (selectedScenario.steps || [])
+                .filter((step) => !roleplayCompletedStepIds.includes(step.id))
+                .map((step) => step.titleRu || 'шаг');
+              if (!open.length) return null;
+              return (
+                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.8 }}>
+                  Ещё не сделано: {open.join(', ')}
+                </p>
+              );
+            })() : null}
+            {learningLanguage === 'zh' && !selectedScenario.fromLife && selectedScenario.scenarioVocabulary?.some((v) => v.usage === 'must_say') ? (() => {
               const mustSay = getMustSayVocab(selectedScenario.scenarioVocabulary);
               const tracker = getLessonTrackerState({
                 steps: selectedScenario.steps,

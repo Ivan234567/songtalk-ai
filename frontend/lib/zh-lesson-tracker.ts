@@ -4,7 +4,7 @@ export type ZhTrackerVocabItem = {
   hanzi: string;
   pinyin?: string;
   translation_ru?: string;
-  usage?: 'must_say' | 'model';
+  usage?: 'must_say' | 'model' | 'pocket';
 };
 
 const FUNCTION_HANZI = new Set(['的', '了', '吗', '呢', '吧', '啊', '呀', '么', '嘛']);
@@ -98,11 +98,14 @@ export function getLessonTrackerState({
   completedStepIds,
   mustSay,
   saidHanzi,
+  countVocab = true,
 }: {
   steps?: Array<{ id: string }> | null;
   completedStepIds: string[];
   mustSay: ZhTrackerVocabItem[];
   saidHanzi: string[];
+  /** «Моя ситуация»: успех — это шаги-исходы, слова урока в зачёт не идут. */
+  countVocab?: boolean;
 }) {
   const list = Array.isArray(steps) ? steps : [];
   const stepsTotal = list.length;
@@ -110,8 +113,9 @@ export function getLessonTrackerState({
   const stepsDone = list.filter((s) => completed.has(s.id)).length;
   const plotReady = stepsTotal === 0 || stepsDone === stepsTotal;
   const said = new Set(saidHanzi);
-  const missingMustSay = mustSay.filter((v) => !said.has(v.hanzi));
-  const vocabTotal = mustSay.length;
+  const requiredVocab = countVocab ? mustSay : [];
+  const missingMustSay = requiredVocab.filter((v) => !said.has(v.hanzi));
+  const vocabTotal = requiredVocab.length;
   const vocabDone = Math.max(0, vocabTotal - missingMustSay.length);
   const lessonReady = plotReady && (vocabTotal === 0 || missingMustSay.length === 0);
   const currentStepId = list.find((s) => !completed.has(s.id))?.id ?? null;

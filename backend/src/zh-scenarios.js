@@ -70,7 +70,7 @@ function normalizeSteps(raw) {
 }
 
 const PERSONALITIES = ['warm', 'patient', 'hurried', 'chatty', 'strict', 'professional']
-const VOCAB_USAGES = ['must_say', 'model']
+const VOCAB_USAGES = ['must_say', 'model', 'pocket']
 
 function asPersonality(value, fallback = 'warm') {
   return PERSONALITIES.includes(value) ? value : fallback
@@ -343,6 +343,46 @@ function inferFormality(formality, hsk) {
   return 'mixed'
 }
 
+const LIFE_WHEN_RU = {
+  today: 'Это сегодня.',
+  week: 'Это на этой неделе.',
+  practice: 'Это тренировка перед похожим разговором.',
+}
+
+function lifeWhenSentence(lifeWhen) {
+  const key = asTrimmed(lifeWhen, 40)
+  return LIFE_WHEN_RU[key] || ''
+}
+
+/** «Моя ситуация»: не урок. Учебник и грамматика снимаются, слова — только карманные фразы. */
+export function applyLifeScenarioContract(payload, { lifeWhen } = {}) {
+  const src = payload && typeof payload === 'object' ? payload : {}
+  const when = asTrimmed(lifeWhen || src.life_when, 40)
+  const sentence = lifeWhenSentence(when)
+  let text = asTrimmed(src.scenario_text_ru, 500)
+  if (sentence && !text.includes(sentence)) {
+    text = asTrimmed(text ? `${text} ${sentence}` : sentence, 500)
+  }
+  const steps = (Array.isArray(src.steps) ? src.steps : []).slice(0, 5).map((step, index) => ({
+    ...step,
+    order: index + 1,
+  }))
+  const vocabulary = (Array.isArray(src.vocabulary) ? src.vocabulary : []).slice(0, 8).map((item) => ({
+    ...item,
+    usage: 'pocket',
+  }))
+  return {
+    ...src,
+    from_life: true,
+    life_when: when || undefined,
+    textbook: {},
+    grammar_focus: undefined,
+    scenario_text_ru: text || undefined,
+    steps,
+    vocabulary,
+  }
+}
+
 const ZH_GENERATE_SYSTEM = `You are an expert designer of Simplified Chinese (简体中文) roleplay scenarios for Russian-speaking learners (HSK 1–6).
 The AI plays one character; the learner plays the other. Output ONE complete scenario.
 
@@ -399,6 +439,63 @@ Rules:
 - If the user did not specify a role, choose a natural learner role and a complementary AI role.
 - Playable in 2–4 minutes. No profanity. No English spoken lines.
 - Always include stress_twist_ru: one realistic snag that does NOT change the scene goal (e.g. item unavailable, they misheard a name, they are in a hurry).`
+
+const ZH_GENERATE_LIFE_SYSTEM = `You are an expert designer of ONE short Simplified Chinese (简体中文) roleplay for a real upcoming situation in a Russian-speaking learner's life (HSK 1–6).
+This is NOT a textbook lesson. Do not teach a grammar point. Do not assign words the learner must produce.
+The AI plays one character; the learner plays the other. Success is the outcome of this one conversation. Output ONE complete scenario.
+
+Output ONLY valid JSON, no markdown, no code fence. Schema:
+{
+  "title": "short title in Russian",
+  "description": "one sentence in Russian",
+  "goals": ["one practical outcome in Russian"],
+  "hsk_level": 1,
+  "textbook": { "title": "", "lesson_no": "" },
+  "starter": "ai" | "user",
+  "formality": "ni" | "nin" | "mixed",
+  "slang_mode": "off" | "light",
+  "user_role": "learner's role in Russian",
+  "ai_role": "AI character role in Russian",
+  "ai_personality": "warm" | "patient" | "hurried" | "chatty" | "strict" | "professional",
+  "ai_personality_note": "optional extra trait in Russian, short",
+  "grammar_focus": "",
+  "setting_ru": "place in Russian",
+  "scenario_text_ru": "the concrete situation in Russian, including when it happens",
+  "character_opening": "AI first line in Simplified Chinese",
+  "suggested_first_line": "a natural learner line for this situation, Simplified Chinese",
+  "suggested_first_line_pinyin": "pinyin with tone marks",
+  "max_score_tips_ru": "short Russian tips: how to reach the outcome, not how to recite vocabulary",
+  "stress_twist_ru": "one Russian sentence: a snag that stays inside the same outcome",
+  "steps": [
+    {
+      "id": "step1",
+      "order": 1,
+      "title_ru": "outcome in Russian, e.g. назвал симптом",
+      "expected_user_action": "what result the learner achieves on this turn, Russian",
+      "ai_context": "short cue for the AI on this step, Russian",
+      "keywords": ["汉字"],
+      "example_zh": "example learner phrase in Chinese"
+    }
+  ],
+  "vocabulary": [
+    { "hanzi": "嗓子", "pinyin": "sǎngzi", "translation_ru": "горло", "hsk_level": 1, "usage": "pocket" }
+  ]
+}
+
+Rules:
+- 3–5 steps. Each step is ONE outcome of the conversation (name the problem, ask what to do, confirm the next step). Not a vocabulary drill and not a quest that spans days.
+- goals: 1–3 practical outcomes in Russian, the same results as the steps.
+- vocabulary: 4–8 pocket phrases the learner might need if they freeze. Every item usage MUST be "pocket". Never "must_say". Never "model".
+- grammar_focus: empty string. textbook.title and textbook.lesson_no: empty strings.
+- scenario_text_ru: the concrete situation in Russian. If When is provided, include that timing in this text.
+- suggested_first_line is a natural line for this situation. It does not have to contain specific target words.
+- Pick ai_personality that fits the other person (doctor patient, clerk hurried, friend chatty).
+- Stay at or below the given HSK. Playable in 2–4 minutes.
+- Dialogue content (character_opening, suggested_first_line, example_zh, hanzi) MUST be Simplified Chinese. No English in those fields.
+- UI strings in Russian. Pinyin WITH tone marks.
+- Always include BOTH character_opening and suggested_first_line.
+- Always include stress_twist_ru: one realistic snag that does NOT change the outcome (they misheard, they are in a hurry, the slot is taken).
+- No profanity. No English spoken lines.`
 
 const ZH_GENERATE_PART_SYSTEM = `You update ONE part of an existing Simplified Chinese roleplay scenario for Russian-speaking learners (HSK 1–6).
 Output ONLY valid JSON, no markdown, no code fence.
@@ -480,11 +577,12 @@ export function registerZhScenarioRoutes(app, {
     const parts = []
     if (prompt) parts.push(`Learner request (Russian): ${prompt}`)
     if (fromLife) {
-      parts.push('This is a REAL upcoming situation in the learner\'s life. Keep 3–5 steps, practical, not a week-long quest.')
-      if (lifeWhen) parts.push(`When: ${lifeWhen}`)
+      parts.push('REAL upcoming conversation, not a textbook lesson. Steps are outcomes. Vocabulary usage is pocket only.')
+      if (lifeWhen) parts.push(`When: ${lifeWhen}. ${lifeWhenSentence(lifeWhen)}`)
+    } else {
+      if (textbookTitle) parts.push(`Textbook: ${textbookTitle}`)
+      if (lessonNo) parts.push(`Lesson: ${lessonNo}`)
     }
-    if (textbookTitle) parts.push(`Textbook: ${textbookTitle}`)
-    if (lessonNo) parts.push(`Lesson: ${lessonNo}`)
     if (goal) parts.push(`Practice goal: ${goal}`)
     parts.push(`HSK level: ${hsk}`)
     if (roleMode === 'user' && userRole) {
@@ -501,7 +599,7 @@ export function registerZhScenarioRoutes(app, {
       return llm.chat.completions.create({
         model,
         messages: [
-          { role: 'system', content: ZH_GENERATE_SYSTEM },
+          { role: 'system', content: fromLife ? ZH_GENERATE_LIFE_SYSTEM : ZH_GENERATE_SYSTEM },
           { role: 'user', content: userPrompt },
         ],
         max_tokens: 2500,
@@ -526,7 +624,7 @@ export function registerZhScenarioRoutes(app, {
         }
       }
 
-      const payload = buildPayload(
+      let payload = buildPayload(
         {
           ...parsed,
           starter: asStarter(parsed.starter, starterHint),
@@ -534,22 +632,26 @@ export function registerZhScenarioRoutes(app, {
           slang_mode: asSlang(parsed.slang_mode, 'off'),
           from_life: fromLife,
           life_when: lifeWhen,
-          textbook: {
-            title: parsed.textbook?.title || textbookTitle,
-            lesson_no: parsed.textbook?.lesson_no || lessonNo,
-          },
+          textbook: fromLife
+            ? {}
+            : {
+                title: parsed.textbook?.title || textbookTitle,
+                lesson_no: parsed.textbook?.lesson_no || lessonNo,
+              },
+          grammar_focus: fromLife ? '' : parsed.grammar_focus,
           user_role: roleMode === 'user' && userRole ? userRole : parsed.user_role,
         },
         {
           starter: starterHint,
           formality: formalityHint,
           slang_mode: 'off',
-          textbook_title: textbookTitle,
-          lesson_no: lessonNo,
+          textbook_title: fromLife ? '' : textbookTitle,
+          lesson_no: fromLife ? '' : lessonNo,
           from_life: fromLife,
           life_when: lifeWhen,
         }
       )
+      if (fromLife) payload = applyLifeScenarioContract(payload, { lifeWhen })
 
       if (!payload.goals.length && goal) payload.goals = [goal]
       if (!payload.goals.length && prompt) payload.goals = [asTrimmed(prompt, 200)]
@@ -634,19 +736,26 @@ export function registerZhScenarioRoutes(app, {
       vocabulary: payload.vocabulary,
     }
 
+    const fromLife = payload.from_life === true
     let want = ''
     if (part === 'vocabulary') {
-      want =
-        'Regenerate ONLY vocabulary (4–12 items). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1,"usage":"must_say"}]}. ' +
-        'Mark 3–6 core lesson words usage=must_say; the rest usage=model. Stay at or below the HSK.'
+      want = fromLife
+        ? 'Regenerate ONLY vocabulary (4–8 pocket phrases). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1,"usage":"pocket"}]}. ' +
+          'Every item usage=pocket. These are phrases the learner might need if they freeze, not lesson words and not lines for you to teach. Stay at or below the HSK.'
+        : 'Regenerate ONLY vocabulary (4–12 items). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1,"usage":"must_say"}]}. ' +
+          'Mark 3–6 core lesson words usage=must_say; the rest usage=model. Stay at or below the HSK.'
     } else if (part === 'steps') {
-      want =
-        'Regenerate ONLY steps (2–6). JSON: {"steps":[{"id":"step1","order":1,"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}]}. ' +
-        'Each step is one learner action. Keep the same scene.'
+      want = fromLife
+        ? 'Regenerate ONLY steps (3–5). JSON: {"steps":[{"id":"step1","order":1,"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}]}. ' +
+          'Each step is one outcome of this conversation, not a vocabulary drill. Keep the same real-life scene.'
+        : 'Regenerate ONLY steps (2–6). JSON: {"steps":[{"id":"step1","order":1,"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}]}. ' +
+          'Each step is one learner action. Keep the same scene.'
     } else {
-      want =
-        'Regenerate ONLY opening lines. JSON: {"character_opening":"","suggested_first_line":"","suggested_first_line_pinyin":""}. ' +
-        'Both lines Simplified Chinese. suggested_first_line must use 1–2 must_say words if vocabulary exists. Pinyin with tone marks.'
+      want = fromLife
+        ? 'Regenerate ONLY opening lines. JSON: {"character_opening":"","suggested_first_line":"","suggested_first_line_pinyin":""}. ' +
+          'Both lines Simplified Chinese. suggested_first_line is a natural line for this situation, not a lesson-word drill. Pinyin with tone marks.'
+        : 'Regenerate ONLY opening lines. JSON: {"character_opening":"","suggested_first_line":"","suggested_first_line_pinyin":""}. ' +
+          'Both lines Simplified Chinese. suggested_first_line must use 1–2 must_say words if vocabulary exists. Pinyin with tone marks.'
     }
 
     const userPrompt = [
@@ -684,13 +793,15 @@ export function registerZhScenarioRoutes(app, {
 
       let patch = {}
       if (part === 'vocabulary') {
-        const vocabulary = normalizeVocab(parsed.vocabulary)
+        let vocabulary = normalizeVocab(parsed.vocabulary)
+        if (fromLife) vocabulary = vocabulary.slice(0, 8).map((item) => ({ ...item, usage: 'pocket' }))
         if (!vocabulary.length) {
           return res.status(422).json({ error: 'ИИ не вернул словарь, попробуйте ещё раз' })
         }
         patch = { vocabulary }
       } else if (part === 'steps') {
-        const steps = normalizeSteps(parsed.steps)
+        let steps = normalizeSteps(parsed.steps)
+        if (fromLife) steps = steps.slice(0, 5).map((step, index) => ({ ...step, order: index + 1 }))
         if (!steps.length) {
           return res.status(422).json({ error: 'ИИ не вернул шаги, попробуйте ещё раз' })
         }

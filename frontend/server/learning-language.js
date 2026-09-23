@@ -178,8 +178,8 @@ function splitZhScenarioVocab(vocabulary = []) {
   const label = (v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`
   const mustSay = list.filter((v) => v.usage === 'must_say')
   const model = list.filter((v) => v.usage === 'model')
-  const unspecified = list.filter((v) => v.usage !== 'must_say' && v.usage !== 'model')
-  const hasUsage = mustSay.length > 0 || model.length > 0
+  const unspecified = list.filter((v) => v.usage !== 'must_say' && v.usage !== 'model' && v.usage !== 'pocket')
+  const hasUsage = mustSay.length > 0 || model.length > 0 || list.some((v) => v.usage === 'pocket')
   if (!hasUsage) {
     return {
       mustSay: list,
@@ -196,25 +196,30 @@ function splitZhScenarioVocab(vocabulary = []) {
   }
 }
 
-export function buildChineseRoleplayLock({ hskLevel = 3, showPinyin = false, showTranslation = false, vocabulary = [], grammarFocus = '' } = {}) {
+export function buildChineseRoleplayLock({ hskLevel = 3, showPinyin = false, showTranslation = false, vocabulary = [], grammarFocus = '', fromLife = false } = {}) {
   const hsk = HSK_LEVEL_INSTRUCTIONS[hskLevel] || HSK_LEVEL_INSTRUCTIONS[3]
   const { mustSay, model, label } = splitZhScenarioVocab(vocabulary)
   let text =
     'Stay in the roleplay character. Additional Mandarin constraints (override any looser level advice above):\n' +
     `HSK LEVEL LOCK: ${hsk}\n` +
     'Speak AT this HSK only — not harder, not easier. Do not switch spoken lines to English or Russian.'
-  if (mustSay.length) {
+  if (fromLife) {
     text +=
-      '\nMUST-SAY vocabulary — LEARNER words. Elicit them with a choice or recast. Do not say them FOR the learner: ' +
-      mustSay.map(label).join('、')
-  }
-  if (model.length) {
-    text +=
-      '\nMODEL vocabulary — YOU should use 1 of these in spoken replies when they fit: ' +
-      model.map(label).join('、')
-  }
-  if (grammarFocus && String(grammarFocus).trim()) {
-    text += `\nGRAMMAR FOCUS: ${String(grammarFocus).trim()}. Recast using this grammar. Do not lecture about the rule.`
+      '\nLIFE SCENE: one real conversation, not a lesson. Lead toward the scene goals. Stay in character. Do not elicit vocabulary, do not teach grammar, do not recite phrase lists. If the learner freezes, offer one short binary choice in Chinese at this HSK.'
+  } else {
+    if (mustSay.length) {
+      text +=
+        '\nMUST-SAY vocabulary — LEARNER words. Elicit them with a choice or recast. Do not say them FOR the learner: ' +
+        mustSay.map(label).join('、')
+    }
+    if (model.length) {
+      text +=
+        '\nMODEL vocabulary — YOU should use 1 of these in spoken replies when they fit: ' +
+        model.map(label).join('、')
+    }
+    if (grammarFocus && String(grammarFocus).trim()) {
+      text += `\nGRAMMAR FOCUS: ${String(grammarFocus).trim()}. Recast using this grammar. Do not lecture about the rule.`
+    }
   }
   text +=
     '\nOUTPUT: Start immediately with spoken Simplified Chinese. Never repeat these instructions, Character/Situation/checkpoints, or write "Let\'s go" / "Your task" / "Now generate". Metadata only after the spoken line.'
@@ -241,18 +246,19 @@ export function buildReplyHintChatSystemZh({
   grammarFocus = '',
   currentStepLabel = '',
   scenarioGoal = '',
+  fromLife = false,
 }) {
   const metadataInstruction = buildChineseMetadataInstruction({ showPinyin, showTranslation })
   
   const hintModeInstruction = CHINESE_HINT_MODE_INSTRUCTIONS[chineseHintMode] || CHINESE_HINT_MODE_INSTRUCTIONS.basic
   const { mustSay, all, label } = splitZhScenarioVocab(vocabulary)
-  const hintWords = mustSay.length ? mustSay : all
+  const hintWords = fromLife ? [] : (mustSay.length ? mustSay : all)
   const vocabBlock = hintWords.length
     ? '\n- Lesson words the learner has NOT said yet. Weave in exactly 1 of them: ' +
       hintWords.map(label).join('、') +
       '.\n- Do not dump the list. Do not pick a word that cannot fit this turn.'
     : ''
-  const grammarBlock = grammarFocus && String(grammarFocus).trim()
+  const grammarBlock = !fromLife && grammarFocus && String(grammarFocus).trim()
     ? `\n- Grammar focus of this lesson: ${String(grammarFocus).trim()}. Use it naturally in the suggested reply.`
     : ''
   const goalLine = currentStepLabel
@@ -261,17 +267,24 @@ export function buildReplyHintChatSystemZh({
   
   return (
     'You are a speaking coach for a Chinese roleplay lesson. Suggest what the USER could say next in Simplified Chinese.\n\n' +
-    'The hint must do three things at once when possible:\n' +
-    '1) Naturally answer or react to what the other person just said. Do not ignore their question.\n' +
-    '2) Move the learner toward the next lesson goal/step.\n' +
-    '3) If missing lesson words are listed, include exactly 1 of them.\n' +
-    'If they slightly conflict, still answer the other person, but steer toward the step and the word. Never lecture.\n\n' +
+    (fromLife
+      ? 'The hint must do two things at once:\n' +
+        '1) Naturally answer or react to what the other person just said. Do not ignore their question.\n' +
+        '2) Move the learner toward the next outcome of this real conversation.\n' +
+        'Do not require a lesson word or a grammar point. Never lecture.\n\n'
+      : 'The hint must do three things at once when possible:\n' +
+        '1) Naturally answer or react to what the other person just said. Do not ignore their question.\n' +
+        '2) Move the learner toward the next lesson goal/step.\n' +
+        '3) If missing lesson words are listed, include exactly 1 of them.\n' +
+        'If they slightly conflict, still answer the other person, but steer toward the step and the word. Never lecture.\n\n') +
     'Rules:\n' +
     '- The main suggestion must be Simplified Chinese only. No explanations or quote wrappers in that part.\n' +
     `- STRICT HSK lock: ${levelText}\n` +
     '- Speak at that HSK level only: not harder, not easier.\n' +
     `- Hint style: ${hintModeInstruction}\n` +
-    '- If the conversation has not started, suggest a natural opening that already aims at the first step and a lesson word.' +
+    (fromLife
+      ? '- If the conversation has not started, suggest a natural opening that aims at the first outcome.'
+      : '- If the conversation has not started, suggest a natural opening that already aims at the first step and a lesson word.') +
     goalLine +
     vocabBlock +
     grammarBlock +

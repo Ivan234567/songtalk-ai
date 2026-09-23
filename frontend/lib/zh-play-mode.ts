@@ -220,12 +220,15 @@ export function zhPlayModePromptOverlay(options: {
   stressTwist?: string;
   memoryFacts?: string[];
   rewindHint?: string;
+  fromLife?: boolean;
 }): string {
-  const { mode, stressTwist, memoryFacts, rewindHint } = options;
+  const { mode, stressTwist, memoryFacts, rewindHint, fromLife } = options;
   const lines: string[] = ['PLAY MODE (attempt wrapper — do NOT change the scene goals, steps, or HSK lock):'];
   if (mode === 'rehearsal') {
     lines.push(
-      'Mode: REHEARSAL. Be patient. Elicit must-say words with a choice or recast. You may speak a bit slower. Do not lecture.'
+      fromLife
+        ? 'Mode: REHEARSAL. Be patient. Help them reach the scene outcome. You may speak a bit slower. Do not lecture. Do not drill words or grammar.'
+        : 'Mode: REHEARSAL. Be patient. Elicit must-say words with a choice or recast. You may speak a bit slower. Do not lecture.'
     );
   } else if (mode === 'life') {
     lines.push(

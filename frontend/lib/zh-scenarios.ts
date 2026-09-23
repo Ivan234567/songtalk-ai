@@ -19,7 +19,7 @@ export type ZhSlangMode = 'off' | 'light';
 export type ZhSource = 'user' | 'system';
 export type ZhStatus = 'draft' | 'ready';
 export type ZhHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
-export type ZhVocabUsage = 'must_say' | 'model';
+export type ZhVocabUsage = 'must_say' | 'model' | 'pocket';
 export type ZhAiPersonality = 'warm' | 'patient' | 'hurried' | 'chatty' | 'strict' | 'professional';
 export type ZhGeneratePart = 'vocabulary' | 'steps' | 'openings';
 
@@ -260,7 +260,8 @@ function asPersonality(value: unknown): ZhAiPersonality {
 }
 
 function asUsage(value: unknown): ZhVocabUsage {
-  return value === 'must_say' ? 'must_say' : 'model';
+  if (value === 'must_say' || value === 'pocket') return value;
+  return 'model';
 }
 
 function asString(value: unknown): string | undefined {
@@ -592,8 +593,9 @@ export function zhScenarioToRoleplay(
   const steps = Array.isArray(scenario.steps) ? [...scenario.steps].sort((a, b) => a.order - b.order) : [];
   const vocab = Array.isArray(scenario.vocabulary) ? scenario.vocabulary : [];
   const textbookLine = [scenario.textbook?.title, scenario.textbook?.lesson_no].filter(Boolean).join(' · ');
+  const fromLife = scenario.from_life === true;
   const mustSay = vocab.filter((v) => v.usage === 'must_say' && v.hanzi?.trim());
-  const modelVocab = vocab.filter((v) => v.usage !== 'must_say' && v.hanzi?.trim());
+  const modelVocab = vocab.filter((v) => v.usage !== 'must_say' && v.usage !== 'pocket' && v.hanzi?.trim());
   const stressTwist =
     (typeof scenario.stress_twist_ru === 'string' && scenario.stress_twist_ru.trim()) ||
     defaultStressTwist(scenario.setting_ru);
@@ -633,8 +635,16 @@ export function zhScenarioToRoleplay(
     .filter(Boolean)
     .join('\n\n');
 
-  const grammarBlock = scenario.grammar_focus?.trim()
+  const grammarBlock = !fromLife && scenario.grammar_focus?.trim()
     ? `GRAMMAR FOCUS of this lesson: ${scenario.grammar_focus.trim()}. Recast errors using this grammar. Do not lecture about the rule.`
+    : '';
+  const lifeBlock = fromLife
+    ? [
+        'This is one real conversation the learner is about to have, not a textbook lesson.',
+        'Lead toward the scene goals. Stay in character.',
+        'Do not elicit vocabulary, do not teach grammar, do not dump or recite phrase lists.',
+        'If the learner freezes, offer one short binary choice in Chinese at this HSK, still in character.',
+      ].join('\n')
     : '';
 
   const systemPrompt = [
@@ -644,15 +654,16 @@ export function zhScenarioToRoleplay(
     scenario.setting_ru ? `Place: ${scenario.setting_ru}` : '',
     scenario.user_role ? `The learner's role: ${scenario.user_role}` : '',
     goals.length ? `Goals of this scene: ${goals.join('; ')}` : '',
-    textbookLine ? `Textbook context: ${textbookLine}` : '',
+    !fromLife && textbookLine ? `Textbook context: ${textbookLine}` : '',
     scenario.hsk_level
       ? `HSK LEVEL LOCK: Speak at HSK ${scenario.hsk_level} only. Same difficulty, not harder, not easier. No words or grammar from a higher HSK.`
       : '',
+    lifeBlock,
     grammarBlock,
     formalityInstruction(scenario.formality ?? 'nin'),
     slangInstruction(scenario.slang_mode ?? 'off'),
     stepsBlock,
-    vocabBlock,
+    fromLife ? '' : vocabBlock,
     'Spoken character lines must be Simplified Chinese only. After each spoken line add ««PINYIN»» JSON and ««TRANSLATION»» Russian — metadata is not spoken.',
     'If the learner hesitates, recast naturally in Chinese at the same HSK level and offer a simple choice. Do not lecture or give meta-commentary.',
     starter === 'ai' && scenario.character_opening
@@ -698,7 +709,7 @@ export function zhScenarioToRoleplay(
     aiMayUseProfanity: false,
     difficulty: hskToDifficulty(scenario.hsk_level),
     level: scenario.hsk_level ? `HSK ${scenario.hsk_level}` : undefined,
-    grammarFocus: scenario.grammar_focus?.trim() || undefined,
+    grammarFocus: fromLife ? undefined : scenario.grammar_focus?.trim() || undefined,
     aiPersonality: scenario.ai_personality,
     playMode,
     stressTwistRu: stressTwist,

@@ -76,7 +76,7 @@ export interface RoleplayScenario {
     hanzi: string;
     pinyin: string;
     translation_ru: string;
-    usage?: 'must_say' | 'model';
+    usage?: 'must_say' | 'model' | 'pocket';
   }>;
   /** Грамматический фокус китайского сценария (для подсказки и лок-промпта). */
   grammarFocus?: string;
@@ -324,6 +324,7 @@ function buildZhScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioP
       stressTwist: scenario.stressTwistRu || defaultStressTwist(scenario.settingRu),
       memoryFacts: scenario.memoryFacts,
       rewindHint: ctx.rewindHint,
+      fromLife: scenario.fromLife === true,
     });
   const conversationLive = Boolean(ctx.hasUserMessage);
   if (!conversationLive && scenario.openingInstruction?.trim()) {

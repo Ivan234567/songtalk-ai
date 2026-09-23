@@ -1295,6 +1295,7 @@ app.post('/api/agent/chat', async (req, res) => {
   const chineseToneFocus = Boolean(chineseSettings?.tone_focus)
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings?.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
   const chineseGrammarFocus = typeof chineseSettings?.grammar_focus === 'string' ? chineseSettings.grammar_focus.trim() : ''
+  const chineseFromLife = chineseSettings?.from_life === true || chineseSettings?.fromLife === true
   const englishSettings = english_settings && typeof english_settings === 'object' ? english_settings : null
   const englishShowTranslation = englishSettings ? Boolean(englishSettings.show_translation) : false
   const englishCorrectionMode = ['gentle', 'active'].includes(englishSettings?.correction_mode) ? englishSettings.correction_mode : 'gentle'
@@ -1373,7 +1374,8 @@ app.post('/api/agent/chat', async (req, res) => {
           showPinyin: chineseShowPinyin,
           showTranslation: chineseShowTranslation,
           vocabulary: scenario_vocabulary,
-          grammarFocus: chineseGrammarFocus,
+          grammarFocus: chineseFromLife ? '' : chineseGrammarFocus,
+          fromLife: chineseFromLife,
         })
         : getFreestyleChatSystemPrompt('zh', {
           showPinyin: chineseShowPinyin,
@@ -2079,6 +2081,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
   const chineseHintMode = ['basic', 'vocabulary', 'formal', 'colloquial'].includes(chineseSettings.hint_mode) ? chineseSettings.hint_mode : 'basic'
   const chineseGrammarFocus = typeof chineseSettings.grammar_focus === 'string' ? chineseSettings.grammar_focus.trim() : ''
+  const chineseFromLife = chineseSettings.from_life === true || chineseSettings.fromLife === true
   const englishSettings = english_settings && typeof english_settings === 'object' ? english_settings : {}
   const englishShowTranslation = Boolean(englishSettings.show_translation)
   const slangMode = ['off', 'light', 'heavy'].includes(settings.slang_mode) ? settings.slang_mode : 'off'
@@ -2149,7 +2152,9 @@ app.post('/api/agent/reply-hint', async (req, res) => {
         (currentStepExample ? `\nExample learner phrase (not required verbatim): ${currentStepExample}.` : '') +
         `\nAlready done: ${[...completedSet].join(', ') || 'none'}.` +
         `\nThe hint must still sound like a reply to the other person, AND push this next step.`
-        : `\nAll plot steps are done. Keep a natural reply to the other person. If missing lesson words remain, use 1 of them.`
+        : (chineseFromLife
+          ? `\nAll outcomes are done. Keep a natural reply to the other person.`
+          : `\nAll plot steps are done. Keep a natural reply to the other person. If missing lesson words remain, use 1 of them.`)
       : ''
   const historyList = Array.isArray(history)
     ? history
@@ -2163,7 +2168,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   const vocabList = Array.isArray(scenario_vocabulary)
     ? scenario_vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 20)
     : []
-  const vocabHintBlock = vocabList.length
+  const vocabHintBlock = !chineseFromLife && vocabList.length
     ? `\nLesson words the user has not said yet — the hint MUST use 1 of them: ${vocabList.map((v) => `${v.hanzi || v.word}${v.pinyin ? ` (${v.pinyin})` : ''}`).join('、')}`
     : ''
 
@@ -2195,7 +2200,9 @@ Rules:
     historyBlock +
     stepsBlock +
     vocabHintBlock +
-    `\n\nWhat the other person (agent) just said:\n${agentMessage || '(the learner starts; no agent line yet)'}\n\nSuggest a reply that answers them, moves the next lesson step, and uses a missing lesson word if any remain.`
+    `\n\nWhat the other person (agent) just said:\n${agentMessage || '(the learner starts; no agent line yet)'}\n\n${chineseFromLife
+      ? 'Suggest a reply that answers them and moves the next outcome. Do not require a lesson word.'
+      : 'Suggest a reply that answers them, moves the next lesson step, and uses a missing lesson word if any remain.'}`
 
   const debateTopic = typeof topic === 'string' ? topic.trim() : ''
   const userPosition = typeof user_position === 'string' ? user_position.trim() : ''
@@ -2280,10 +2287,11 @@ Rules:
         showPinyin: chineseShowPinyin,
         showTranslation: chineseShowTranslation,
         chineseHintMode,
-        vocabulary: vocabList,
-        grammarFocus: chineseGrammarFocus,
+        vocabulary: chineseFromLife ? [] : vocabList,
+        grammarFocus: chineseFromLife ? '' : chineseGrammarFocus,
         currentStepLabel,
         scenarioGoal,
+        fromLife: chineseFromLife,
       })
       : null
     const englishHintMeta = req.learningLanguage === 'en'

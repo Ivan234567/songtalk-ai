@@ -108,7 +108,8 @@ export function ZhScenarioBriefing({
   const [starting, setStarting] = useState(false);
   const vocab = Array.isArray(scenario.vocabulary) ? scenario.vocabulary : [];
   const mustSay = vocab.filter((v) => v && v.usage === 'must_say');
-  const modelVocab = vocab.filter((v) => v && v.usage !== 'must_say');
+  const pocketVocab = vocab.filter((v) => v && v.usage === 'pocket');
+  const modelVocab = vocab.filter((v) => v && v.usage !== 'must_say' && v.usage !== 'pocket');
   const userLine = [scenario.suggested_first_line, scenario.suggested_first_line_pinyin]
     .filter((v) => typeof v === 'string' && v.trim())
     .join('  ·  ');
@@ -258,13 +259,25 @@ export function ZhScenarioBriefing({
         </Card>
       )}
 
-      {dense && (mustSay.length > 0 || modelVocab.length > 0) && (
-        <Card title="Слова урока">
+      {dense && (mustSay.length > 0 || modelVocab.length > 0 || pocketVocab.length > 0) && (
+        <Card title={scenario.from_life ? 'Фразы на случай' : 'Слова урока'}>
           {mustSay.length > 0 && (
-            <div style={{ marginBottom: modelVocab.length ? 10 : 0 }}>
+            <div style={{ marginBottom: modelVocab.length || pocketVocab.length ? 10 : 0 }}>
               <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.7, marginBottom: 4 }}>Сказать самому</div>
               {mustSay.map((v) => (
                 <div key={`m-${v.hanzi}`} style={{ fontSize: '0.9375rem' }}>
+                  <strong>{v.hanzi}</strong>
+                  <span style={{ opacity: 0.7 }}> {v.pinyin}</span>
+                  <span style={{ opacity: 0.85 }}> — {v.translation_ru}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {pocketVocab.length > 0 && (
+            <div style={{ marginBottom: modelVocab.length ? 10 : 0 }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.7, marginBottom: 4 }}>Если запнётесь</div>
+              {pocketVocab.slice(0, isPreview ? 6 : 8).map((v) => (
+                <div key={`p-${v.hanzi}`} style={{ fontSize: '0.9375rem' }}>
                   <strong>{v.hanzi}</strong>
                   <span style={{ opacity: 0.7 }}> {v.pinyin}</span>
                   <span style={{ opacity: 0.85 }}> — {v.translation_ru}</span>

@@ -556,7 +556,7 @@ export function ZhScenarioConstructor({
             <button type="button" onClick={addVocab} style={btnSecondary}>+ слово</button>
           </div>
           <p style={{ margin: '0 0 8px', fontSize: '0.8rem', opacity: 0.7 }}>
-            «Сказать» — ученик должен произнести сам. «Показать» — ИИ использует в своих репликах.
+            «Сказать» — ученик должен произнести сам. «Показать» — ИИ использует в своих репликах. «На случай» — фраза, если запнётесь; произносить её не обязательно.
           </p>
           {(draft.vocabulary || []).map((v, i) => (
             <div key={`v-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 132px auto', gap: 6, marginBottom: 6 }}>
@@ -565,12 +565,13 @@ export function ZhScenarioConstructor({
               <input value={field(v?.translation_ru)} onChange={(e) => updateVocab(i, 'translation_ru', e.target.value)} placeholder="перевод" style={inputStyle} />
               <select
                 className="roleplay-modern-select"
-                value={v.usage === 'must_say' ? 'must_say' : 'model'}
+                value={v.usage === 'must_say' || v.usage === 'pocket' ? v.usage : 'model'}
                 onChange={(e) => updateVocab(i, 'usage', e.target.value as ZhVocabUsage)}
                 style={{ ...inputStyle, paddingRight: 8 }}
               >
                 <option value="must_say">Сказать</option>
                 <option value="model">Показать</option>
+                <option value="pocket">На случай</option>
               </select>
               <button type="button" onClick={() => removeVocab(i)} style={btnSecondary}>×</button>
             </div>

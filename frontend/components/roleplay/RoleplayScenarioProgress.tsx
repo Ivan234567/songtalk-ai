@@ -67,14 +67,15 @@ export function RoleplayScenarioProgress({
     learningLanguage === 'zh'
       ? zhScaffoldPolicy(parseZhPlayMode(scenario.playMode))
       : scaffoldPolicy(parsePlayMode(scenario.playMode));
+  const fromLife = scenario.fromLife === true;
   const hideSteps = Boolean(policy && !policy.showSteps);
   const hideVocab = Boolean(policy && !policy.showVocab && !(policy.vocabPeekOnce && vocabPeeked));
-  const canPeekVocab = Boolean(learningLanguage === 'zh' && policy?.vocabPeekOnce && !vocabPeeked && onPeekVocab);
+  const canPeekVocab = Boolean(!fromLife && learningLanguage === 'zh' && policy?.vocabPeekOnce && !vocabPeeked && onPeekVocab);
   const steps = (Array.isArray(scenario.steps) ? scenario.steps : [])
     .slice()
     .sort((a, b) => (Number(a?.order) || 0) - (Number(b?.order) || 0));
   const mustSay: ZhTrackerVocabItem[] =
-    learningLanguage === 'zh' && !selectedSessionId
+    learningLanguage === 'zh' && !selectedSessionId && !fromLife
       ? getMustSayVocab(scenario.scenarioVocabulary)
       : [];
   const tracker = getLessonTrackerState({
@@ -82,6 +83,7 @@ export function RoleplayScenarioProgress({
     completedStepIds,
     mustSay,
     saidHanzi: saidMustSayHanzi,
+    countVocab: !fromLife,
   });
   const hasSteps = steps.length > 0 && !hideSteps;
   const showZhVocab = mustSay.length > 0 && !hideVocab;
@@ -233,7 +235,15 @@ export function RoleplayScenarioProgress({
 
       {!selectedSessionId && hasSteps && !tracker.plotReady ? (
         <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
-          Осталось выполнить: {tracker.stepsTotal - tracker.stepsDone} из {tracker.stepsTotal} шаг(ов)
+          {fromLife
+            ? `Ещё не сделано: ${steps.filter((step) => !completedStepIds.includes(step.id)).map((step) => step.titleRu || 'шаг').join(', ')}`
+            : `Осталось выполнить: ${tracker.stepsTotal - tracker.stepsDone} из ${tracker.stepsTotal} шаг(ов)`}
+        </div>
+      ) : null}
+
+      {canMarkGoal && fromLife ? (
+        <div style={{ marginTop: '0.55rem', fontSize: '0.75rem', fontWeight: 600, color: 'rgba(34, 197, 94, 0.95)' }}>
+          Цель закрыта
         </div>
       ) : null}
 
