@@ -308,7 +308,7 @@ function LandingPageInner() {
             Выбери язык превью — меняются слайды, отзывы, FAQ и акцентный цвет.
           </p>
           <div className={styles.heroCtaWrap}>
-            <Link href="/auth/register" className={styles.heroCtaGlass}>
+            <Link href={userEmail ? '/dashboard' : '/auth/register'} className={styles.heroCtaGlass}>
               Начать
               <span className={styles.heroCtaArrow} aria-hidden>→</span>
             </Link>
