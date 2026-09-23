@@ -279,6 +279,7 @@ export function AgentTab() {
   const [agentMode, setAgentMode] = useState<'chat' | 'roleplay' | 'debate'>('chat');
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
   const [scenarioView, setScenarioView] = useState<'catalog' | 'create' | 'my'>('catalog');
+  const [exitDialogueConfirmOpen, setExitDialogueConfirmOpen] = useState(false);
   const [voiceTaskModalOpen, setVoiceTaskModalOpen] = useState(false);
   const [voiceTaskView, setVoiceTaskView] = useState<'create' | 'my'>('my');
   const [selectedVoiceTask, setSelectedVoiceTask] = useState<ZhVoiceTask | null>(null);
@@ -2285,6 +2286,7 @@ export function AgentTab() {
 
   /** Сброс (выход) из диалога досрочно — во всех режимах */
   const handleExitDialogue = useCallback(() => {
+    setExitDialogueConfirmOpen(false);
     setMessages([]);
     setCurrentSessionId(null);
     setSelectedSessionId(null);
@@ -2332,6 +2334,23 @@ export function AgentTab() {
     setDebateCurrentSessionId(null);
     setDebateCompletionId(null);
   }, []);
+
+  useEffect(() => {
+    if (!exitDialogueConfirmOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setExitDialogueConfirmOpen(false);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [exitDialogueConfirmOpen]);
 
   const requestRoleplayFeedback = useCallback(async () => {
     if (!token || !selectedScenario) return;
@@ -6112,7 +6131,7 @@ export function AgentTab() {
             {(messages.length > 0 || selectedScenario || selectedSessionId) && !selectedVoiceTask && (
               <button
                 type="button"
-                onClick={handleExitDialogue}
+                onClick={() => setExitDialogueConfirmOpen(true)}
                 aria-label="Выйти из диалога"
                 title="Выйти из диалога (сбросить)"
                 style={{
@@ -6787,6 +6806,132 @@ export function AgentTab() {
                 zIndex: 10,
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {exitDialogueConfirmOpen && (
+        <div
+          role="presentation"
+          onClick={() => setExitDialogueConfirmOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 2000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.25rem',
+            background: 'rgba(0, 0, 0, 0.56)',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exit-dialogue-title"
+            aria-describedby="exit-dialogue-desc"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 440,
+              borderRadius: 16,
+              border: '1px solid var(--sidebar-border)',
+              background: 'var(--sidebar-bg)',
+              boxShadow: '0 24px 48px rgba(0, 0, 0, 0.32)',
+              color: 'var(--sidebar-text)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '1.35rem 1.35rem 1.05rem' }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '0.9rem',
+                  background: 'rgba(239, 68, 68, 0.14)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#fca5a5',
+                  fontSize: '1.25rem',
+                  fontWeight: 700,
+                  lineHeight: 1,
+                }}
+                aria-hidden
+              >
+                !
+              </div>
+              <h3
+                id="exit-dialogue-title"
+                style={{
+                  margin: '0 0 0.5rem',
+                  fontSize: '1.125rem',
+                  fontWeight: 700,
+                }}
+              >
+                Выйти из диалога?
+              </h3>
+              <p
+                id="exit-dialogue-desc"
+                style={{
+                  margin: 0,
+                  fontSize: '0.9375rem',
+                  lineHeight: 1.45,
+                  opacity: 0.88,
+                }}
+              >
+                Текущий разговор будет сброшен. Несохранённый прогресс диалога пропадёт — это действие нельзя отменить.
+              </p>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '0.625rem',
+                padding: '0.95rem 1.25rem 1.25rem',
+                borderTop: '1px solid var(--sidebar-border)',
+                background: 'var(--sidebar-hover)',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setExitDialogueConfirmOpen(false)}
+                style={{
+                  height: 38,
+                  padding: '0 0.95rem',
+                  borderRadius: 10,
+                  border: '1px solid var(--sidebar-border)',
+                  background: 'var(--sidebar-bg)',
+                  color: 'var(--sidebar-text)',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Остаться
+              </button>
+              <button
+                type="button"
+                onClick={handleExitDialogue}
+                autoFocus
+                style={{
+                  height: 38,
+                  padding: '0 1rem',
+                  borderRadius: 10,
+                  border: '1px solid rgba(239, 68, 68, 0.55)',
+                  background: 'linear-gradient(145deg, rgba(239, 68, 68, 0.32), rgba(185, 28, 28, 0.28))',
+                  color: '#fecaca',
+                  fontSize: '0.875rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Выйти
+              </button>
+            </div>
           </div>
         </div>
       )}
