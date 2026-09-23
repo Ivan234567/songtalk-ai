@@ -549,6 +549,8 @@ textarea {
 
 /* Шар практики: переливание в духе Siri — цветные пятна и ленты внутри сферы */
 .agent-orb-stage {
+  --orb-ring: 110, 231, 183;
+  --orb-ring-hot: 167, 243, 208;
   position: relative;
   width: 200px;
   height: 200px;
@@ -562,11 +564,11 @@ textarea {
   border-radius: 50%;
   background: conic-gradient(
     from 80deg,
-    rgba(34, 211, 238, 0.55),
-    rgba(99, 102, 241, 0.4),
-    rgba(232, 121, 249, 0.5),
-    rgba(251, 146, 60, 0.38),
-    rgba(34, 211, 238, 0.55)
+    rgba(52, 211, 153, 0.58),
+    rgba(45, 212, 191, 0.42),
+    rgba(163, 230, 53, 0.4),
+    rgba(16, 185, 129, 0.5),
+    rgba(52, 211, 153, 0.58)
   );
   filter: blur(28px);
   opacity: 0.5;
@@ -598,6 +600,8 @@ textarea {
   --orb-spin-rev: 26s;
   --orb-core: 8s;
   --orb-speak: 0;
+  --orb-glow: 52, 211, 153;
+  --orb-glow-soft: 45, 212, 191;
   width: 100%;
   height: 100%;
   border: none;
@@ -607,11 +611,11 @@ textarea {
   z-index: 1;
   overflow: hidden;
   isolation: isolate;
-  background: radial-gradient(circle at 50% 46%, #161022 0%, #07060e 68%);
+  background: radial-gradient(circle at 50% 46%, #10211a 0%, #060d0a 68%);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.07),
-    0 0 36px 2px rgba(99, 102, 241, 0.28),
-    0 0 72px 12px rgba(232, 121, 249, 0.1),
+    0 0 36px 2px rgba(var(--orb-glow), 0.32),
+    0 0 72px 12px rgba(var(--orb-glow-soft), 0.14),
     0 22px 48px -18px rgba(0, 0, 0, 0.72);
   transition: box-shadow 0.4s ease, transform 0.28s ease;
   cursor: pointer;
@@ -622,7 +626,7 @@ textarea {
 }
 
 .agent-orb:focus-visible {
-  outline: 2px solid rgba(125, 211, 252, 0.85);
+  outline: 2px solid rgba(var(--orb-glow-soft), 0.85);
   outline-offset: 8px;
 }
 
@@ -639,9 +643,9 @@ textarea {
   --orb-spin-rev: 8s;
   --orb-core: 3.4s;
   box-shadow:
-    0 0 0 3px rgba(125, 211, 252, 0.28),
-    0 0 64px 16px rgba(56, 189, 248, 0.32),
-    0 0 36px 6px rgba(167, 139, 250, 0.28);
+    0 0 0 3px rgba(var(--orb-glow-soft), 0.3),
+    0 0 64px 16px rgba(var(--orb-glow), 0.36),
+    0 0 36px 6px rgba(var(--orb-glow-soft), 0.22);
 }
 
 .agent-orb--thinking {
@@ -664,8 +668,8 @@ textarea {
   --orb-spin-rev: 13s;
   --orb-core: 5s;
   box-shadow:
-    0 0 calc(20px + var(--orb-speak) * 34px) calc(6px + var(--orb-speak) * 14px) rgba(125, 211, 252, calc(0.28 + var(--orb-speak) * 0.4)),
-    0 0 calc(46px + var(--orb-speak) * 24px) rgba(232, 121, 249, calc(0.18 + var(--orb-speak) * 0.28)),
+    0 0 calc(20px + var(--orb-speak) * 34px) calc(6px + var(--orb-speak) * 14px) rgba(var(--orb-glow), calc(0.3 + var(--orb-speak) * 0.4)),
+    0 0 calc(46px + var(--orb-speak) * 24px) rgba(var(--orb-glow-soft), calc(0.18 + var(--orb-speak) * 0.28)),
     0 0 0 1px rgba(255, 255, 255, 0.1);
   transition: box-shadow 0.06s linear, transform 0.06s linear;
 }
@@ -689,7 +693,7 @@ textarea {
   height: 78%;
   left: -4%;
   top: -6%;
-  background: radial-gradient(circle at 42% 40%, #a5f3fc 0%, #22d3ee 28%, #0891b2 48%, transparent 70%);
+  background: radial-gradient(circle at 42% 40%, #bbf7d0 0%, #34d399 28%, #059669 50%, transparent 72%);
   animation: agent-orb-drift-a var(--orb-a) ease-in-out infinite;
 }
 
@@ -698,7 +702,7 @@ textarea {
   height: 86%;
   right: -12%;
   top: 4%;
-  background: radial-gradient(circle at 48% 46%, #c4b5fd 0%, #818cf8 28%, #4338ca 50%, transparent 72%);
+  background: radial-gradient(circle at 48% 46%, #99f6e4 0%, #2dd4bf 30%, #0f766e 52%, transparent 72%);
   animation: agent-orb-drift-b var(--orb-b) ease-in-out infinite;
 }
 
@@ -707,7 +711,7 @@ textarea {
   height: 74%;
   left: 16%;
   bottom: -14%;
-  background: radial-gradient(circle at 46% 44%, #f9a8d4 0%, #f472b6 30%, #c026d3 50%, transparent 72%);
+  background: radial-gradient(circle at 46% 44%, #d9f99d 0%, #84cc16 32%, #3f6212 54%, transparent 72%);
   animation: agent-orb-drift-c var(--orb-c) ease-in-out infinite;
 }
 
@@ -716,7 +720,7 @@ textarea {
   height: 56%;
   right: 2%;
   bottom: 2%;
-  background: radial-gradient(circle at 50% 48%, #fdba74 0%, #fb923c 32%, #ea580c 52%, transparent 72%);
+  background: radial-gradient(circle at 50% 48%, #a7f3d0 0%, #10b981 34%, #047857 54%, transparent 72%);
   animation: agent-orb-drift-d var(--orb-d) ease-in-out infinite;
 }
 
@@ -727,14 +731,14 @@ textarea {
   height: 88%;
   background: conic-gradient(
     from 0deg,
-    rgba(34, 211, 238, 0) 0deg,
-    rgba(103, 232, 249, 0.95) 42deg,
-    rgba(99, 102, 241, 0.12) 96deg,
-    rgba(167, 139, 250, 0.95) 156deg,
-    rgba(244, 114, 182, 0.16) 206deg,
-    rgba(251, 146, 60, 0.92) 258deg,
-    rgba(56, 189, 248, 0.12) 314deg,
-    rgba(34, 211, 238, 0) 360deg
+    rgba(52, 211, 153, 0) 0deg,
+    rgba(110, 231, 183, 0.95) 42deg,
+    rgba(16, 185, 129, 0.14) 96deg,
+    rgba(45, 212, 191, 0.95) 150deg,
+    rgba(132, 204, 22, 0.18) 206deg,
+    rgba(74, 222, 128, 0.92) 258deg,
+    rgba(20, 184, 166, 0.14) 314deg,
+    rgba(52, 211, 153, 0) 360deg
   );
   animation: agent-orb-spin var(--orb-spin) linear infinite;
   opacity: 0.9;
@@ -743,13 +747,13 @@ textarea {
 .agent-orb__ribbon--rev {
   background: conic-gradient(
     from 30deg,
-    rgba(244, 114, 182, 0) 0deg,
-    rgba(251, 113, 133, 0.75) 55deg,
-    rgba(99, 102, 241, 0) 120deg,
-    rgba(56, 189, 248, 0.8) 190deg,
-    rgba(192, 132, 252, 0) 240deg,
-    rgba(192, 132, 252, 0.85) 305deg,
-    rgba(244, 114, 182, 0) 360deg
+    rgba(22, 163, 74, 0) 0deg,
+    rgba(134, 239, 172, 0.8) 55deg,
+    rgba(5, 150, 105, 0) 120deg,
+    rgba(163, 230, 53, 0.78) 190deg,
+    rgba(15, 118, 110, 0) 240deg,
+    rgba(52, 211, 153, 0.88) 305deg,
+    rgba(22, 163, 74, 0) 360deg
   );
   animation-duration: var(--orb-spin-rev);
   animation-direction: reverse;
@@ -763,7 +767,7 @@ textarea {
   left: 30%;
   top: 22%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.92) 0%, rgba(224, 242, 254, 0.38) 34%, transparent 68%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.92) 0%, rgba(187, 247, 208, 0.42) 34%, transparent 68%);
   filter: blur(7px);
   mix-blend-mode: screen;
   animation: agent-orb-drift-core var(--orb-core) ease-in-out infinite;
@@ -804,15 +808,84 @@ textarea {
   0%,
   100% {
     box-shadow:
-      0 0 32px 6px rgba(167, 139, 250, 0.28),
-      0 0 0 1px rgba(196, 181, 253, 0.22);
+      0 0 32px 6px rgba(var(--orb-glow), 0.3),
+      0 0 0 1px rgba(var(--orb-glow-soft), 0.24);
   }
 
   50% {
     box-shadow:
-      0 0 62px 16px rgba(192, 132, 252, 0.42),
-      0 0 0 2px rgba(216, 180, 254, 0.34);
+      0 0 62px 16px rgba(var(--orb-glow-soft), 0.44),
+      0 0 0 2px rgba(var(--orb-glow), 0.36);
   }
+}
+
+html[data-learning-language='zh'] .agent-orb-stage {
+  --orb-ring: 251, 113, 133;
+  --orb-ring-hot: 254, 205, 211;
+}
+
+html[data-learning-language='zh'] .agent-orb-stage::before {
+  background: conic-gradient(
+    from 80deg,
+    rgba(244, 63, 94, 0.58),
+    rgba(239, 68, 68, 0.42),
+    rgba(251, 146, 60, 0.36),
+    rgba(220, 38, 38, 0.52),
+    rgba(244, 63, 94, 0.58)
+  );
+}
+
+html[data-learning-language='zh'] .agent-orb {
+  --orb-glow: 239, 68, 68;
+  --orb-glow-soft: 244, 63, 94;
+  background: radial-gradient(circle at 50% 46%, #241014 0%, #10080b 68%);
+}
+
+html[data-learning-language='zh'] .agent-orb__blob--cyan {
+  background: radial-gradient(circle at 42% 40%, #fecdd3 0%, #fb7185 26%, #e11d48 50%, transparent 72%);
+}
+
+html[data-learning-language='zh'] .agent-orb__blob--indigo {
+  background: radial-gradient(circle at 48% 46%, #fca5a5 0%, #ef4444 30%, #b91c1c 52%, transparent 72%);
+}
+
+html[data-learning-language='zh'] .agent-orb__blob--pink {
+  background: radial-gradient(circle at 46% 44%, #fda4af 0%, #f43f5e 30%, #9f1239 52%, transparent 72%);
+}
+
+html[data-learning-language='zh'] .agent-orb__blob--amber {
+  background: radial-gradient(circle at 50% 48%, #fed7aa 0%, #fb7185 28%, #dc2626 52%, transparent 72%);
+}
+
+html[data-learning-language='zh'] .agent-orb__ribbon {
+  background: conic-gradient(
+    from 0deg,
+    rgba(244, 63, 94, 0) 0deg,
+    rgba(251, 113, 133, 0.95) 40deg,
+    rgba(185, 28, 28, 0.14) 96deg,
+    rgba(239, 68, 68, 0.95) 150deg,
+    rgba(251, 146, 60, 0.22) 206deg,
+    rgba(225, 29, 72, 0.92) 258deg,
+    rgba(220, 38, 38, 0.14) 314deg,
+    rgba(244, 63, 94, 0) 360deg
+  );
+}
+
+html[data-learning-language='zh'] .agent-orb__ribbon--rev {
+  background: conic-gradient(
+    from 30deg,
+    rgba(159, 18, 57, 0) 0deg,
+    rgba(254, 202, 202, 0.82) 55deg,
+    rgba(185, 28, 28, 0) 120deg,
+    rgba(251, 113, 133, 0.8) 190deg,
+    rgba(127, 29, 29, 0) 240deg,
+    rgba(248, 113, 113, 0.9) 305deg,
+    rgba(159, 18, 57, 0) 360deg
+  );
+}
+
+html[data-learning-language='zh'] .agent-orb__core {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.92) 0%, rgba(254, 205, 211, 0.46) 34%, transparent 68%);
 }
 
 @keyframes agent-orb-drift-a {
