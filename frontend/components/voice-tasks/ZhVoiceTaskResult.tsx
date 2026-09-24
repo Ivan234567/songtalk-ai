@@ -54,7 +54,7 @@ type Props = {
   showPinyin: boolean;
   showTranslation: boolean;
   onPlayModel: () => void;
-  onPlayNextTry: () => void;
+  onPlayMine?: () => void;
   onRetry: () => void;
   onList: () => void;
 };
@@ -65,7 +65,7 @@ export function ZhVoiceTaskResult({
   showPinyin,
   showTranslation,
   onPlayModel,
-  onPlayNextTry,
+  onPlayMine,
   onRetry,
   onList,
 }: Props) {
@@ -152,37 +152,6 @@ export function ZhVoiceTaskResult({
         </section>
       )}
 
-      {(result.next_try_zh?.trim() || result.next_try_ru?.trim()) && (
-        <section
-          style={{
-            padding: '0.75rem 0.9rem',
-            borderRadius: 12,
-            border: '1px solid var(--sidebar-border)',
-            background: 'var(--sidebar-bg)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.55 }}>
-              В следующий раз
-            </div>
-            {result.next_try_zh?.trim() && (
-              <button type="button" onClick={onPlayNextTry} style={{ ...btnSecondary, padding: '0.3rem 0.65rem', fontSize: '0.75rem', fontWeight: 600 }}>
-                Прослушать
-              </button>
-            )}
-          </div>
-          {result.next_try_zh?.trim() && (
-            <p style={{ margin: 0, fontSize: '1.05rem', lineHeight: 1.45 }}>{result.next_try_zh}</p>
-          )}
-          {showPinyin && result.next_try_pinyin?.trim() && (
-            <p style={{ margin: '0.35rem 0 0', fontSize: '0.8125rem', opacity: 0.7 }}>{result.next_try_pinyin}</p>
-          )}
-          {showTranslation && result.next_try_ru?.trim() && (
-            <p style={{ margin: '0.4rem 0 0', fontSize: '0.875rem', opacity: 0.85, fontStyle: 'italic' }}>{result.next_try_ru}</p>
-          )}
-        </section>
-      )}
-
       {(result.model_answer_zh?.trim() || task.model_answer_zh?.trim()) && (
         <section
           style={{
@@ -196,9 +165,16 @@ export function ZhVoiceTaskResult({
             <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.7 }}>
               Эталон
             </div>
-            <button type="button" onClick={onPlayModel} style={{ ...btnSecondary, padding: '0.3rem 0.65rem', fontSize: '0.75rem', fontWeight: 600 }}>
-              Прослушать
-            </button>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              {onPlayMine && (
+                <button type="button" onClick={onPlayMine} style={{ ...btnSecondary, padding: '0.3rem 0.65rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                  Моя запись
+                </button>
+              )}
+              <button type="button" onClick={onPlayModel} style={{ ...btnSecondary, padding: '0.3rem 0.65rem', fontSize: '0.75rem', fontWeight: 600 }}>
+                Образец
+              </button>
+            </div>
           </div>
           <p style={{ margin: 0, fontSize: '1.1rem', lineHeight: 1.45, fontWeight: 600 }}>
             {result.model_answer_zh || task.model_answer_zh}

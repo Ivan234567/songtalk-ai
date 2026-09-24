@@ -13,7 +13,6 @@ import { ZhVoiceTasksUI } from '@/components/voice-tasks/ZhVoiceTasksUI';
 import { ZhVoiceTaskResult } from '@/components/voice-tasks/ZhVoiceTaskResult';
 import {
   ZH_VOICE_TASK_MAX_SEC,
-  ZH_VOICE_TASK_MIN_SEC,
   evaluateZhVoiceTask,
   toZhVoiceTaskWritePayload,
   zhVoiceTaskTypeLabel,
@@ -306,7 +305,10 @@ export function AgentTab() {
   const [voiceTaskAttemptId, setVoiceTaskAttemptId] = useState<string | null>(null);
   const [voiceTaskResult, setVoiceTaskResult] = useState<ZhVoiceTaskEvaluateResult | null>(null);
   const [voiceTaskEvaluating, setVoiceTaskEvaluating] = useState(false);
+  const [voiceTaskHasRecording, setVoiceTaskHasRecording] = useState(false);
   const selectedVoiceTaskRef = useRef<ZhVoiceTask | null>(null);
+  const voiceTaskRecordingUrlRef = useRef<string | null>(null);
+  const voiceTaskRecordingAudioRef = useRef<HTMLAudioElement | null>(null);
   const [debateView, setDebateView] = useState<'catalog' | 'create' | 'my'>('catalog');
 
   const guardCatalogView = useCallback(
@@ -945,12 +947,29 @@ export function AgentTab() {
   }, [state]);
 
   const resetVoiceTaskPlay = useCallback(() => {
+    voiceTaskRecordingAudioRef.current?.pause();
+    voiceTaskRecordingAudioRef.current = null;
+    if (voiceTaskRecordingUrlRef.current) {
+      URL.revokeObjectURL(voiceTaskRecordingUrlRef.current);
+      voiceTaskRecordingUrlRef.current = null;
+    }
+    setVoiceTaskHasRecording(false);
     setVoiceTaskRewriteUsed(false);
     setVoiceTaskRawTranscript('');
     setVoiceTaskDurationSec(0);
     setVoiceTaskAttemptId(null);
     setVoiceTaskResult(null);
     setVoiceTaskEvaluating(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      voiceTaskRecordingAudioRef.current?.pause();
+      if (voiceTaskRecordingUrlRef.current) {
+        URL.revokeObjectURL(voiceTaskRecordingUrlRef.current);
+        voiceTaskRecordingUrlRef.current = null;
+      }
+    };
   }, []);
 
   const playVoiceTaskStimulus = useCallback(async (task: ZhVoiceTask) => {
@@ -998,14 +1017,13 @@ export function AgentTab() {
   const finishVoiceTaskTake = useCallback(async (userText: string, durationMs: number) => {
     const task = selectedVoiceTaskRef.current;
     if (!task) return;
-    if (durationMs < ZH_VOICE_TASK_MIN_SEC * 1000) {
-      setError(`Слишком коротко. Говори хотя бы ${ZH_VOICE_TASK_MIN_SEC} секунд.`);
+    const transcript = userText.trim();
+    if (!transcript) {
       setState('idle');
       return;
     }
     const hadTake = messagesRef.current.some((m) => m.role === 'user');
     if (hadTake) setVoiceTaskRewriteUsed(true);
-    const transcript = userText.trim();
     const durationSec = Math.round(durationMs / 1000);
     setVoiceTaskRawTranscript(transcript);
     setVoiceTaskDurationSec(durationSec);
@@ -1067,6 +1085,15 @@ export function AgentTab() {
     }
   }, [userId, token, learningLanguage, chineseShowPinyin, chineseShowTranslation, chineseSettingsPayload, handleInsufficientBalance]);
 
+  const playVoiceTaskRecording = useCallback(() => {
+    const url = voiceTaskRecordingUrlRef.current;
+    if (!url) return;
+    voiceTaskRecordingAudioRef.current?.pause();
+    const audio = new Audio(url);
+    voiceTaskRecordingAudioRef.current = audio;
+    void audio.play().catch(() => {});
+  }, []);
+
   const playVoiceTaskChinese = useCallback(async (text?: string | null) => {
     const speak = (text || '').trim();
     if (!speak || !token) return;
@@ -1083,7 +1110,9 @@ export function AgentTab() {
       }
       const blob = await ttsResp.blob();
       const url = URL.createObjectURL(blob);
+      voiceTaskRecordingAudioRef.current?.pause();
       const audio = new Audio(url);
+      voiceTaskRecordingAudioRef.current = audio;
       audio.playbackRate = effectiveSpeechRate(chineseSpeechSpeed, selectedScenario);
       audio.onended = () => URL.revokeObjectURL(url);
       await audio.play().catch(() => URL.revokeObjectURL(url));
@@ -3095,6 +3124,12 @@ export function AgentTab() {
           setState('idle');
           return;
         }
+        if (selectedVoiceTaskRef.current) {
+          voiceTaskRecordingAudioRef.current?.pause();
+          if (voiceTaskRecordingUrlRef.current) URL.revokeObjectURL(voiceTaskRecordingUrlRef.current);
+          voiceTaskRecordingUrlRef.current = URL.createObjectURL(blob);
+          setVoiceTaskHasRecording(true);
+        }
         setError(null);
         setState('thinking');
         try {
@@ -4719,18 +4754,22 @@ export function AgentTab() {
                           )}
                           {selectedVoiceTask.type === 'retell' && selectedVoiceTask.stimulus_zh?.trim() && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                                {selectedVoiceTask.stimulus_zh}
-                              </p>
-                              {chineseShowPinyin && selectedVoiceTask.stimulus_pinyin?.trim() && (
-                                <p style={{ margin: 0, fontSize: '0.75rem', opacity: 0.7, lineHeight: 1.4 }}>
-                                  {selectedVoiceTask.stimulus_pinyin}
-                                </p>
-                              )}
-                              {chineseShowTranslation && selectedVoiceTask.stimulus_ru?.trim() && (
-                                <p style={{ margin: 0, fontSize: '0.75rem', opacity: 0.8, fontStyle: 'italic', lineHeight: 1.4 }}>
-                                  {selectedVoiceTask.stimulus_ru}
-                                </p>
+                              {voiceTaskResult && (
+                                <>
+                                  <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {selectedVoiceTask.stimulus_zh}
+                                  </p>
+                                  {chineseShowPinyin && selectedVoiceTask.stimulus_pinyin?.trim() && (
+                                    <p style={{ margin: 0, fontSize: '0.75rem', opacity: 0.7, lineHeight: 1.4 }}>
+                                      {selectedVoiceTask.stimulus_pinyin}
+                                    </p>
+                                  )}
+                                  {chineseShowTranslation && selectedVoiceTask.stimulus_ru?.trim() && (
+                                    <p style={{ margin: 0, fontSize: '0.75rem', opacity: 0.8, fontStyle: 'italic', lineHeight: 1.4 }}>
+                                      {selectedVoiceTask.stimulus_ru}
+                                    </p>
+                                  )}
+                                </>
                               )}
                               <button
                                 type="button"
@@ -4758,7 +4797,7 @@ export function AgentTab() {
                               ))}
                             </ul>
                           )}
-                          {selectedVoiceTask.vocabulary?.filter((v) => v.hanzi?.trim()).length > 0 && (
+                          {voiceTaskResult && selectedVoiceTask.vocabulary?.filter((v) => v.hanzi?.trim()).length > 0 && (
                             <div style={{ fontSize: '0.8125rem', lineHeight: 1.45 }}>
                               {selectedVoiceTask.vocabulary.filter((v) => v.hanzi?.trim()).slice(0, 8).map((v) => (
                                 <div key={v.hanzi}>
@@ -5829,7 +5868,7 @@ export function AgentTab() {
               showPinyin={chineseShowPinyin}
               showTranslation={chineseShowTranslation}
               onPlayModel={() => void playVoiceTaskChinese(voiceTaskResult.model_answer_zh || selectedVoiceTask.model_answer_zh)}
-              onPlayNextTry={() => void playVoiceTaskChinese(voiceTaskResult.next_try_zh)}
+              onPlayMine={voiceTaskHasRecording ? playVoiceTaskRecording : undefined}
               onRetry={() => beginVoiceTask(selectedVoiceTask)}
               onList={() => {
                 setSelectedVoiceTask(null);

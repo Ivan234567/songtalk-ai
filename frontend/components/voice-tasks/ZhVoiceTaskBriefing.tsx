@@ -95,7 +95,7 @@ export function ZhVoiceTaskBriefing({ task, variant = 'play', onBack, onStart }:
         </Card>
       )}
 
-      {isRetell && task.stimulus_zh?.trim() && (
+      {isRetell && task.stimulus_zh?.trim() && isPreview && (
         <Card title="Сначала послушай">
           <div style={{ fontSize: '1.05rem', marginBottom: 6 }}>{task.stimulus_zh}</div>
           {task.stimulus_pinyin && (
@@ -104,6 +104,12 @@ export function ZhVoiceTaskBriefing({ task, variant = 'play', onBack, onStart }:
           {task.stimulus_ru && (
             <div style={{ fontSize: '0.9rem', opacity: 0.8, marginTop: 6 }}>{task.stimulus_ru}</div>
           )}
+        </Card>
+      )}
+
+      {isRetell && task.stimulus_zh?.trim() && !isPreview && (
+        <Card title="Сначала послушай">
+          <div>Текст прозвучит в начале. На экране его не будет — говори своими словами.</div>
         </Card>
       )}
 
@@ -117,7 +123,7 @@ export function ZhVoiceTaskBriefing({ task, variant = 'play', onBack, onStart }:
         </Card>
       )}
 
-      {vocab.length > 0 && (
+      {isPreview && vocab.length > 0 && (
         <Card title="Опорные слова">
           {vocab.map((v) => (
             <div key={v.hanzi} style={{ fontSize: '0.9375rem' }}>
