@@ -306,6 +306,7 @@ export function AgentTab() {
   const [voiceTaskResult, setVoiceTaskResult] = useState<ZhVoiceTaskEvaluateResult | null>(null);
   const [voiceTaskEvaluating, setVoiceTaskEvaluating] = useState(false);
   const [voiceTaskHasRecording, setVoiceTaskHasRecording] = useState(false);
+  const [voiceTaskProgressSaved, setVoiceTaskProgressSaved] = useState(false);
   const selectedVoiceTaskRef = useRef<ZhVoiceTask | null>(null);
   const voiceTaskRecordingUrlRef = useRef<string | null>(null);
   const voiceTaskRecordingAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -954,6 +955,7 @@ export function AgentTab() {
       voiceTaskRecordingUrlRef.current = null;
     }
     setVoiceTaskHasRecording(false);
+    setVoiceTaskProgressSaved(false);
     setVoiceTaskRewriteUsed(false);
     setVoiceTaskRawTranscript('');
     setVoiceTaskDurationSec(0);
@@ -3677,9 +3679,9 @@ export function AgentTab() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: selectedSession || goalReached || debateCompleted ? 'flex-start' : 'center',
-          padding: '2.5rem 1.5rem',
-          overflow: selectedSession || Boolean(voiceTaskResult) || goalReached || debateCompleted || subtitlesVisible ? 'auto' : 'hidden',
+          justifyContent: selectedSession || goalReached || debateCompleted || voiceTaskResult ? 'flex-start' : 'center',
+          padding: voiceTaskResult ? '4.5rem 1.5rem 1.5rem' : '2.5rem 1.5rem',
+          overflow: selectedSession || goalReached || debateCompleted || subtitlesVisible ? 'auto' : 'hidden',
           background: 'radial-gradient(ellipse 100% 70% at 50% 30%, rgba(99, 102, 241, 0.08), transparent 55%), radial-gradient(ellipse 80% 40% at 50% 80%, rgba(139, 92, 246, 0.04), transparent 50%)',
           borderRadius: historyOpen || subtitlesVisible ? '0 28px 28px 0' : 28,
           border: '1px solid var(--sidebar-border)',
@@ -3729,6 +3731,22 @@ export function AgentTab() {
                     </svg>
                     <span>История</span>
                   </button>
+                  {(messages.length > 0 || selectedScenario || selectedSessionId || selectedVoiceTask || debateStarted || goalReached || debateCompleted) && (
+                    <button
+                      type="button"
+                      onClick={() => setExitDialogueConfirmOpen(true)}
+                      aria-label="Выйти из диалога"
+                      title="Выйти из диалога"
+                      className="agent-toolbar-btn"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                      </svg>
+                      <span>Выйти</span>
+                    </button>
+                  )}
                   {messages.length > 0 && (
                     <button
                       type="button"
@@ -3890,7 +3908,7 @@ export function AgentTab() {
                 )}
               </div>
               </div>
-              {learningLanguage === 'zh' && selectedVoiceTask && (
+              {learningLanguage === 'zh' && selectedVoiceTask && !voiceTaskResult && (
                 <div
                   style={{
                     pointerEvents: 'auto',
@@ -3940,14 +3958,6 @@ export function AgentTab() {
                       }}
                     >
                       Сменить
-                    </button>
-                    <button
-                      type="button"
-                      className="agent-toolbar-btn"
-                      style={{ height: 32, fontSize: '0.75rem' }}
-                      onClick={() => setExitDialogueConfirmOpen(true)}
-                    >
-                      Сбросить
                     </button>
                   </div>
                 </div>
@@ -4636,7 +4646,7 @@ export function AgentTab() {
               )}
 
               {/* Настройки для китайского 自由对话 */}
-              {learningLanguage === 'zh' && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || selectedVoiceTask) && (
+              {learningLanguage === 'zh' && !voiceTaskResult && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || selectedVoiceTask) && (
                 <div
                   className="chinese-settings-panel"
                   style={{
@@ -5564,22 +5574,6 @@ export function AgentTab() {
                       ? 'Посмотреть оценку'
                       : 'Оценить речь'}
               </button>
-              <button
-                type="button"
-                onClick={() => setExitDialogueConfirmOpen(true)}
-                style={{
-                  padding: '0.55rem 1.1rem',
-                  borderRadius: 10,
-                  border: '1px solid rgba(239, 68, 68, 0.5)',
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  color: '#fca5a5',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Выйти из диалога
-              </button>
             </div>
             {!savedSessionAssessment && (
               <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.55 }}>
@@ -5856,10 +5850,9 @@ export function AgentTab() {
             style={{
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              gap: '0.85rem',
-              width: 'min(540px, 100%)',
-              margin: '3.25rem auto 0',
+              alignItems: 'stretch',
+              width: 'min(720px, 100%)',
+              margin: '0 auto',
             }}
           >
             <ZhVoiceTaskResult
@@ -5867,9 +5860,11 @@ export function AgentTab() {
               result={voiceTaskResult}
               showPinyin={chineseShowPinyin}
               showTranslation={chineseShowTranslation}
+              progressSaved={voiceTaskProgressSaved}
               onPlayModel={() => void playVoiceTaskChinese(voiceTaskResult.model_answer_zh || selectedVoiceTask.model_answer_zh)}
               onPlayMine={voiceTaskHasRecording ? playVoiceTaskRecording : undefined}
               onRetry={() => beginVoiceTask(selectedVoiceTask)}
+              onSave={() => setVoiceTaskProgressSaved(true)}
               onList={() => {
                 setSelectedVoiceTask(null);
                 resetVoiceTaskPlay();
@@ -5877,23 +5872,6 @@ export function AgentTab() {
                 setVoiceTaskModalOpen(true);
               }}
             />
-            <button
-              type="button"
-              onClick={() => setExitDialogueConfirmOpen(true)}
-              aria-label="Выйти в свободный диалог"
-              style={{
-                padding: '0.5rem 1.25rem',
-                borderRadius: 12,
-                border: '1px solid rgba(239, 68, 68, 0.5)',
-                background: 'rgba(239, 68, 68, 0.2)',
-                color: '#fca5a5',
-                fontSize: '0.875rem',
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              Выйти из диалога
-            </button>
           </div>
         ) : (
           <div
@@ -6106,27 +6084,6 @@ export function AgentTab() {
                   «{selectedScenario.suggestedFirstLine}»
                 </p>
               </div>
-            )}
-
-            {(messages.length > 0 || selectedScenario || selectedSessionId || selectedVoiceTask) && (
-              <button
-                type="button"
-                onClick={() => setExitDialogueConfirmOpen(true)}
-                aria-label="Выйти из диалога"
-                title="Выйти в свободный диалог"
-                style={{
-                  padding: '0.5rem 1.25rem',
-                  borderRadius: 12,
-                  border: '1px solid rgba(239, 68, 68, 0.5)',
-                  background: 'rgba(239, 68, 68, 0.2)',
-                  color: '#fca5a5',
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                Выйти из диалога
-              </button>
             )}
 
             {messages.length > 0 && (

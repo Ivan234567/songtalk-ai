@@ -56,6 +56,8 @@ type Props = {
   onPlayModel: () => void;
   onPlayMine?: () => void;
   onRetry: () => void;
+  onSave: () => void;
+  progressSaved: boolean;
   onList: () => void;
 };
 
@@ -67,6 +69,8 @@ export function ZhVoiceTaskResult({
   onPlayModel,
   onPlayMine,
   onRetry,
+  onSave,
+  progressSaved,
   onList,
 }: Props) {
   const checklist = (task.checklist || [])
@@ -85,12 +89,9 @@ export function ZhVoiceTaskResult({
     <div
       style={{
         width: '100%',
-        maxWidth: 520,
-        maxHeight: 'min(78vh, 760px)',
-        overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: '0.85rem',
+        gap: '1rem',
         textAlign: 'left',
         padding: '0.25rem 0.15rem 0.5rem',
       }}
@@ -194,10 +195,13 @@ export function ZhVoiceTaskResult({
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: 4 }}>
         <button type="button" onClick={onRetry} style={btnPrimary}>
-          Ещё одну
+          Ещё раз
         </button>
         <button type="button" onClick={onList} style={btnSecondary}>
           К списку
+        </button>
+        <button type="button" onClick={onSave} disabled={progressSaved} style={{ ...btnSecondary, opacity: progressSaved ? 0.7 : 1, cursor: progressSaved ? 'default' : 'pointer' }}>
+          {progressSaved ? 'Сохранено' : 'Сохранить прогресс'}
         </button>
       </div>
     </div>
