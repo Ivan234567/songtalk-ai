@@ -783,7 +783,6 @@ export function ZhScenariosUI({
             onBack={() => setBriefing(null)}
             onStart={(playable) => {
               onSelectScenario(playable);
-              onClose();
             }}
             onAddToDictionary={briefing.vocabulary?.length ? () => handleAddVocab(briefing.id) : undefined}
             vocabBusy={vocabBusyId === briefing.id}
