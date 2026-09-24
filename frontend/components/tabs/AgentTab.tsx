@@ -3679,9 +3679,9 @@ export function AgentTab() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: selectedSession || goalReached || debateCompleted || voiceTaskResult ? 'flex-start' : 'center',
-          padding: voiceTaskResult ? '4.5rem 1.5rem 1.5rem' : '2.5rem 1.5rem',
-          overflow: selectedSession || goalReached || debateCompleted || subtitlesVisible ? 'auto' : 'hidden',
+          justifyContent: selectedSession || goalReached || debateCompleted || voiceTaskResult || selectedVoiceTask ? 'flex-start' : 'center',
+          padding: voiceTaskResult || selectedVoiceTask ? '5.5rem 1.5rem 2rem' : '2.5rem 1.5rem',
+          overflow: selectedSession || goalReached || debateCompleted || subtitlesVisible || voiceTaskResult || selectedVoiceTask ? 'auto' : 'hidden',
           background: 'radial-gradient(ellipse 100% 70% at 50% 30%, rgba(99, 102, 241, 0.08), transparent 55%), radial-gradient(ellipse 80% 40% at 50% 80%, rgba(139, 92, 246, 0.04), transparent 50%)',
           borderRadius: historyOpen || subtitlesVisible ? '0 28px 28px 0' : 28,
           border: '1px solid var(--sidebar-border)',
@@ -5850,8 +5850,8 @@ export function AgentTab() {
             style={{
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'stretch',
-              width: 'min(720px, 100%)',
+              alignItems: 'center',
+              width: 'min(560px, 100%)',
               margin: '0 auto',
             }}
           >
@@ -5888,17 +5888,16 @@ export function AgentTab() {
             {selectedVoiceTask && (
               <div
                 style={{
-                  width: 'min(420px, 100%)',
-                  maxWidth: 420,
+                  width: 'min(360px, 100%)',
+                  maxWidth: 360,
                   minWidth: 0,
                   boxSizing: 'border-box',
-                  padding: '0.85rem 1rem',
-                  borderRadius: 14,
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: 12,
                   border: '1px solid var(--sidebar-border)',
                   background: 'var(--sidebar-bg)',
-                  textAlign: 'left',
-                  overflow: 'auto',
-                  maxHeight: 'min(36vh, 280px)',
+                  textAlign: 'center',
+                  overflow: 'hidden',
                 }}
               >
                 <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
@@ -6051,12 +6050,12 @@ export function AgentTab() {
                 onClick={() => void evaluateVoiceTask()}
                 disabled={voiceTaskEvaluating || state === 'listening'}
                 style={{
-                  padding: '0.75rem 1.5rem',
-                  borderRadius: 12,
+                  padding: '0.4rem 0.9rem',
+                  borderRadius: 999,
                   border: 'none',
                   background: voiceTaskEvaluating ? 'rgba(79, 168, 134, 0.5)' : 'rgba(79, 168, 134, 0.9)',
                   color: '#fff',
-                  fontSize: '1rem',
+                  fontSize: '0.8125rem',
                   fontWeight: 600,
                   cursor: voiceTaskEvaluating ? 'default' : 'pointer',
                 }}

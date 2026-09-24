@@ -91,9 +91,10 @@ export function ZhVoiceTaskResult({
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
+        alignItems: 'stretch',
         gap: '1rem',
-        textAlign: 'left',
-        padding: '0.25rem 0.15rem 0.5rem',
+        textAlign: 'center',
+        padding: '0.25rem 0 1.5rem',
       }}
     >
       <div>
@@ -119,7 +120,7 @@ export function ZhVoiceTaskResult({
           {checklist.map((item) => {
             const tint = statusTint(item.status);
             return (
-              <div key={item.id} style={{ padding: '0.7rem 0.85rem', borderRadius: 12, ...tint }}>
+              <div key={item.id} style={{ padding: '0.7rem 0.85rem', borderRadius: 12, textAlign: 'left', ...tint }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
                   <span style={{ fontSize: '0.9375rem', fontWeight: 600 }}>{item.label_ru}</span>
                   <span style={{ fontSize: '0.75rem', fontWeight: 700, color: verdictColor(item.status) }}>
@@ -144,6 +145,7 @@ export function ZhVoiceTaskResult({
             borderRadius: 12,
             border: '1px solid var(--sidebar-border)',
             background: 'var(--sidebar-hover)',
+            textAlign: 'left',
           }}
         >
           <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', opacity: 0.55, marginBottom: 6 }}>
@@ -160,6 +162,7 @@ export function ZhVoiceTaskResult({
             borderRadius: 12,
             border: '1px solid rgba(99, 102, 241, 0.3)',
             background: 'rgba(99, 102, 241, 0.08)',
+            textAlign: 'left',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
@@ -193,7 +196,7 @@ export function ZhVoiceTaskResult({
         </section>
       )}
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', marginTop: 4 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.65rem', marginTop: 4 }}>
         <button type="button" onClick={onRetry} style={btnPrimary}>
           Ещё раз
         </button>
