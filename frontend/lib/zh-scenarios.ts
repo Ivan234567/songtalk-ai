@@ -21,7 +21,7 @@ export type ZhStatus = 'draft' | 'ready';
 export type ZhHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export type ZhVocabUsage = 'must_say' | 'model' | 'pocket';
 export type ZhAiPersonality = 'warm' | 'patient' | 'hurried' | 'chatty' | 'strict' | 'professional';
-export type ZhGeneratePart = 'vocabulary' | 'steps' | 'openings';
+export type ZhGeneratePart = 'vocabulary' | 'steps' | 'openings' | 'situation' | 'goal';
 
 export const ZH_AI_PERSONALITIES: { value: ZhAiPersonality; label: string; hint: string }[] = [
   { value: 'warm', label: 'Тёплый', hint: 'доброжелательный, слегка поддерживает' },
@@ -429,6 +429,15 @@ export function applyGeneratePartPatch(draft: ZhScenario, part: ZhGeneratePart, 
       suggested_first_line_pinyin:
         asString(patch.suggested_first_line_pinyin) || draft.suggested_first_line_pinyin,
     }) || draft;
+  }
+  if (part === 'situation') {
+    return normalizeZhScenario({
+      ...draft,
+      scenario_text_ru: asString(patch.scenario_text_ru) || draft.scenario_text_ru,
+    }) || draft;
+  }
+  if (part === 'goal' && Array.isArray(patch.goals)) {
+    return normalizeZhScenario({ ...draft, goals: patch.goals }) || draft;
   }
   return draft;
 }

@@ -20,6 +20,7 @@ import {
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
 import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
+import { FieldAiButton, fieldFlashStyle } from '@/components/roleplay/FieldAiButton';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -77,6 +78,8 @@ type Props = {
   onAddToDictionary?: () => void;
   vocabBusy?: boolean;
   vocabMessage?: string | null;
+  onInventAnother?: () => void;
+  inventBusy?: boolean;
 };
 
 function Section({
@@ -121,12 +124,15 @@ export function ZhScenarioConstructor({
   onAddToDictionary,
   vocabBusy,
   vocabMessage,
+  onInventAnother,
+  inventBusy,
 }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [advanced, setAdvanced] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [regenPart, setRegenPart] = useState<ZhGeneratePart | null>(null);
   const [regenError, setRegenError] = useState<string | null>(null);
+  const [flashPart, setFlashPart] = useState<string | null>(null);
   const steps = Array.isArray(draft.steps) ? draft.steps : [];
   const safeIndex = steps.length ? Math.min(stepIndex, steps.length - 1) : 0;
   const selected = steps[safeIndex];
@@ -204,6 +210,8 @@ export function ZhScenarioConstructor({
       });
       onChange(applyGeneratePartPatch(draft, result.part, result.patch));
       if (part === 'steps') setStepIndex(0);
+      setFlashPart(part);
+      window.setTimeout(() => setFlashPart((cur) => (cur === part ? null : cur)), 1200);
     } catch (err) {
       setRegenError(err instanceof Error ? err.message : 'Не удалось перегенерировать');
     } finally {
@@ -214,7 +222,12 @@ export function ZhScenarioConstructor({
   const goals = Array.isArray(draft.goals) && draft.goals.length
     ? draft.goals.map((g) => (typeof g === 'string' ? g : ''))
     : [''];
-  const regenBusy = Boolean(regenPart);
+  const regenBusy = Boolean(regenPart) || Boolean(inventBusy);
+  const filled = Boolean(field(draft.title) || field(draft.scenario_text_ru) || goals.some((g) => g.trim()));
+  const ai = (part: ZhGeneratePart, label: string) =>
+    filled ? (
+      <FieldAiButton label={label} busy={regenPart === part} disabled={regenBusy} onClick={() => handleRegenerate(part)} />
+    ) : null;
 
   return (
     <div style={{ padding: '1rem 1.25rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -259,8 +272,11 @@ export function ZhScenarioConstructor({
           <span style={labelStyle}>Место</span>
           <input value={typeof draft.setting_ru === 'string' ? draft.setting_ru : ''} onChange={(e) => patch({ setting_ru: e.target.value })} style={inputStyle} placeholder="магазин одежды, клиника…" />
         </label>
-        <label>
-          <span style={labelStyle}>Ситуация</span>
+        <label style={fieldFlashStyle(flashPart === 'situation')}>
+          <span style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            Ситуация
+            {ai('situation', 'Другая ситуация')}
+          </span>
           <textarea
             value={field(draft.scenario_text_ru)}
             onChange={(e) => patch({ scenario_text_ru: e.target.value })}
@@ -358,8 +374,11 @@ export function ZhScenarioConstructor({
             />
           </label>
         </div>
-        <label>
-          <span style={labelStyle}>Первая реплика собеседника</span>
+        <label style={fieldFlashStyle(flashPart === 'openings')}>
+          <span style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            Первая реплика собеседника
+            {ai('openings', 'Другие фразы')}
+          </span>
           <input value={field(draft.character_opening)} onChange={(e) => patch({ character_opening: e.target.value })} style={inputStyle} />
         </label>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -376,28 +395,16 @@ export function ZhScenarioConstructor({
             />
           </label>
         </div>
-        <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('openings')} style={btnSecondary}>
-          {regenPart === 'openings' ? 'Пересобираем фразы…' : 'Перегенерировать первые фразы'}
-        </button>
       </Section>
 
-      <Section
-        title="Урок"
-        action={
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('steps')} style={btnSecondary}>
-              {regenPart === 'steps' ? 'Шаги…' : 'Пересобрать шаги'}
-            </button>
-            <button type="button" disabled={regenBusy} onClick={() => handleRegenerate('vocabulary')} style={btnSecondary}>
-              {regenPart === 'vocabulary' ? 'Словарь…' : 'Пересобрать словарь'}
-            </button>
-          </div>
-        }
-      >
+      <Section title="Урок">
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...fieldFlashStyle(flashPart === 'goal') }}>
             <span style={labelStyle}>Цели</span>
-            <button type="button" onClick={() => patch({ goals: [...goals, ''] })} style={btnSecondary}>Добавить цель</button>
+            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+              {ai('goal', 'Другая цель')}
+              <button type="button" onClick={() => patch({ goals: [...goals, ''] })} style={btnSecondary}>Добавить цель</button>
+            </span>
           </div>
           {goals.map((g, i) => (
             <div key={`goal-${i}`} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
@@ -450,9 +457,12 @@ export function ZhScenarioConstructor({
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 280px) 1fr', gap: 12, minHeight: 280 }}>
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, ...fieldFlashStyle(flashPart === 'steps') }}>
               <span style={labelStyle}>Шаги</span>
-              <button type="button" onClick={addStep} style={btnSecondary}>+ шаг</button>
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                {ai('steps', 'Другие шаги')}
+                <button type="button" onClick={addStep} style={btnSecondary}>+ шаг</button>
+              </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {steps.map((s, i) => (
@@ -551,9 +561,12 @@ export function ZhScenarioConstructor({
         </div>
 
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...fieldFlashStyle(flashPart === 'vocabulary') }}>
             <span style={labelStyle}>Словарь</span>
-            <button type="button" onClick={addVocab} style={btnSecondary}>+ слово</button>
+            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+              {ai('vocabulary', 'Другой словарь')}
+              <button type="button" onClick={addVocab} style={btnSecondary}>+ слово</button>
+            </span>
           </div>
           <p style={{ margin: '0 0 8px', fontSize: '0.8rem', opacity: 0.7 }}>
             «Сказать» — ученик должен произнести сам. «Показать» — ИИ использует в своих репликах. «На случай» — фраза, если запнётесь; произносить её не обязательно.
@@ -608,6 +621,11 @@ export function ZhScenarioConstructor({
         </label>
       </Section>
 
+      {filled && (
+        <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
+          Значок меняет только это поле. Поля можно править, пока диалог не начат.
+        </p>
+      )}
       {regenError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{regenError}</p>}
       {saveError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{saveError}</p>}
       {!canSave && (
@@ -615,7 +633,15 @@ export function ZhScenarioConstructor({
           Чтобы сохранить, заполните название, хотя бы одну цель и ожидаемое действие в шаге.
         </p>
       )}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {onInventAnother && (
+          <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
+            <button type="button" onClick={onInventAnother} disabled={regenBusy || saving} style={{ ...btnSecondary, opacity: regenBusy ? 0.7 : 1 }}>
+              {inventBusy ? 'Генерация…' : filled ? 'Придумать другой' : 'Придумай сценарий'}
+            </button>
+            {filled && <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Заменит тему, цель и шаги</span>}
+          </span>
+        )}
         <button type="button" onClick={() => onSave(false)} disabled={saving || !canSave} style={{ ...btnPrimary, opacity: saving || !canSave ? 0.7 : 1 }}>
           {saving ? 'Сохранение…' : 'Сохранить'}
         </button>

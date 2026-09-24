@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { pickScenarioSeed, zhSeedsForLevel } from '@/lib/scenario-seeds';
 import type { RoleplayScenario } from '@/lib/roleplay';
 import {
   addZhScenarioVocabToDictionary,
@@ -204,10 +205,38 @@ function ZhIntentForm({
   const [lifeWhen, setLifeWhen] = useState<'today' | 'week' | 'practice'>('week');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const usedSeedIds = useRef<string[]>([]);
 
   const canSubmit = fromLife
     ? Boolean(prompt.trim())
     : Boolean(prompt.trim() || (textbook.trim() && (goal.trim() || lesson.trim())));
+
+  const handleInvent = async () => {
+    const seed = pickScenarioSeed(zhSeedsForLevel(hsk, fromLife), usedSeedIds.current);
+    usedSeedIds.current = [...usedSeedIds.current, seed.id].slice(-24);
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await generateZhScenario({
+        prompt: seed.prompt,
+        textbook_title: textbook.trim() || undefined,
+        lesson_no: lesson.trim() || undefined,
+        goal: goal.trim() || undefined,
+        hsk_level: hsk,
+        role_mode: 'ai',
+        starter: 'auto',
+        formality: 'auto',
+        from_life: fromLife,
+        life_when: fromLife ? lifeWhen : undefined,
+      });
+      const draft = draftFromGenerateResult(result);
+      onGenerated({ ...draft, from_life: fromLife || draft.from_life, life_when: fromLife ? lifeWhen : draft.life_when });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка генерации');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!canSubmit) {
@@ -322,14 +351,20 @@ function ZhIntentForm({
           {error}
         </p>
       )}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={handleGenerate} disabled={loading || !canSubmit} style={{ ...btnPrimary, opacity: loading || !canSubmit ? 0.7 : 1 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button type="button" onClick={handleInvent} disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.7 : 1 }}>
+          {loading ? 'Генерация…' : 'Придумай сценарий'}
+        </button>
+        <button type="button" onClick={handleGenerate} disabled={loading || !canSubmit} style={{ ...btnSecondary, opacity: loading || !canSubmit ? 0.7 : 1 }}>
           {loading ? 'Генерация…' : 'Сгенерировать сценарий'}
         </button>
         <button type="button" onClick={onManualCreate} disabled={loading} style={btnSecondary}>
           Создать вручную
         </button>
       </div>
+      <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
+        «Придумай сценарий» подставит тему вашего уровня. Поля можно править до старта диалога.
+      </p>
     </div>
   );
 }
@@ -355,6 +390,8 @@ export function ZhScenariosUI({
   const [briefing, setBriefing] = useState<ZhScenario | null>(null);
   const [draft, setDraft] = useState<ZhScenario | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [inventBusy, setInventBusy] = useState(false);
+  const usedSeedIds = useRef<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
@@ -792,6 +829,42 @@ export function ZhScenariosUI({
           <ZhScenarioConstructor
             draft={draft}
             onChange={setDraft}
+            inventBusy={inventBusy}
+            onInventAnother={async () => {
+              const hsk = (draft.hsk_level || defaultHsk) as ZhHskLevel;
+              const seed = pickScenarioSeed(zhSeedsForLevel(hsk, Boolean(draft.from_life)), usedSeedIds.current);
+              usedSeedIds.current = [...usedSeedIds.current, seed.id].slice(-24);
+              setInventBusy(true);
+              setSaveError(null);
+              try {
+                const result = await generateZhScenario({
+                  prompt: seed.prompt,
+                  textbook_title: draft.textbook?.title,
+                  lesson_no: draft.textbook?.lesson_no,
+                  hsk_level: hsk,
+                  from_life: draft.from_life,
+                  life_when: draft.life_when,
+                  starter: 'auto',
+                  formality: 'auto',
+                });
+                const next = draftFromGenerateResult(result);
+                setDraft({
+                  ...next,
+                  id: draft.id,
+                  hsk_level: draft.hsk_level || next.hsk_level,
+                  textbook: draft.textbook?.title || draft.textbook?.lesson_no ? draft.textbook : next.textbook,
+                  slang_mode: draft.slang_mode,
+                  formality: draft.formality,
+                  starter: draft.starter,
+                  from_life: draft.from_life,
+                  life_when: draft.life_when,
+                });
+              } catch (err) {
+                setSaveError(err instanceof Error ? err.message : 'Ошибка генерации');
+              } finally {
+                setInventBusy(false);
+              }
+            }}
             onBack={() => { setDraft(null); setSaveError(null); setVocabMessage(null); }}
             onSave={handleSaveDraft}
             saving={saveLoading}

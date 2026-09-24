@@ -103,6 +103,24 @@ export type GenerateScenarioResult = {
   payload: Record<string, unknown>;
 };
 
+export type UserScenarioField = 'topic' | 'place' | 'role' | 'goal' | 'steps';
+
+export async function generateUserScenarioField(params: {
+  field: UserScenarioField;
+  level?: UserScenarioLevel;
+  topic?: string;
+  place?: string;
+  userRole?: string;
+  goal?: string;
+  avoid?: string;
+  systemPrompt?: string;
+}): Promise<{ field: UserScenarioField; patch: Record<string, unknown> }> {
+  return fetchApi('/api/user-scenarios/generate-field', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
 /** Сгенерировать сценарий с помощью ИИ по запросу и уровню */
 export async function generateUserScenario(
   params: GenerateScenarioParams

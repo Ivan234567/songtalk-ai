@@ -706,8 +706,8 @@ export function registerZhScenarioRoutes(app, {
 
     const body = req.body || {}
     const part = body.part
-    if (!['vocabulary', 'steps', 'openings'].includes(part)) {
-      return res.status(400).json({ error: 'part должен быть vocabulary, steps или openings' })
+    if (!['vocabulary', 'steps', 'openings', 'situation', 'goal'].includes(part)) {
+      return res.status(400).json({ error: 'part должен быть vocabulary, steps, openings, situation или goal' })
     }
     const src = body.scenario && typeof body.scenario === 'object' ? body.scenario : {}
     const payload = buildPayload(src, src)
@@ -750,6 +750,12 @@ export function registerZhScenarioRoutes(app, {
           'Each step is one outcome of this conversation, not a vocabulary drill. Keep the same real-life scene.'
         : 'Regenerate ONLY steps (2–6). JSON: {"steps":[{"id":"step1","order":1,"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}]}. ' +
           'Each step is one learner action. Keep the same scene.'
+    } else if (part === 'situation') {
+      want = 'Regenerate ONLY the situation text. JSON: {"scenario_text_ru":""}. One or two Russian sentences. Keep the same roles, place and goal. Do not repeat the current situation wording.'
+    } else if (part === 'goal') {
+      want = fromLife
+        ? 'Regenerate ONLY the goals. JSON: {"goals":["практический результат по-русски"]}. 1–3 outcomes. Keep the same real-life scene.'
+        : 'Regenerate ONLY the goals. JSON: {"goals":["цель урока по-русски"]}. 1–3 outcomes. Keep the same scene and HSK.'
     } else {
       want = fromLife
         ? 'Regenerate ONLY opening lines. JSON: {"character_opening":"","suggested_first_line":"","suggested_first_line_pinyin":""}. ' +
@@ -806,6 +812,20 @@ export function registerZhScenarioRoutes(app, {
           return res.status(422).json({ error: 'ИИ не вернул шаги, попробуйте ещё раз' })
         }
         patch = { steps }
+      } else if (part === 'situation') {
+        const scenario_text_ru = asTrimmed(parsed.scenario_text_ru, 500)
+        if (!scenario_text_ru) {
+          return res.status(422).json({ error: 'ИИ не вернул ситуацию, попробуйте ещё раз' })
+        }
+        patch = { scenario_text_ru }
+      } else if (part === 'goal') {
+        const goals = Array.isArray(parsed.goals)
+          ? parsed.goals.map((item) => asTrimmed(item, 200)).filter(Boolean).slice(0, 3)
+          : []
+        if (!goals.length) {
+          return res.status(422).json({ error: 'ИИ не вернул цель, попробуйте ещё раз' })
+        }
+        patch = { goals }
       } else {
         const character_opening = asTrimmed(parsed.character_opening, 300)
         const suggested_first_line = asTrimmed(parsed.suggested_first_line, 300)

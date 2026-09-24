@@ -6,12 +6,16 @@ import {
   createUserScenario,
   deleteUserScenario,
   generateUserScenario,
+  generateUserScenarioField,
   listUserScenarios,
   updateUserScenario,
   type GenerateScenarioResult,
   type UserScenario,
+  type UserScenarioField,
   type UserScenarioLevel,
 } from '@/lib/user-scenarios';
+import { enSeedsForLevel, pickScenarioSeed } from '@/lib/scenario-seeds';
+import { FieldAiButton, fieldFlashStyle } from '@/components/roleplay/FieldAiButton';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { BriefingView } from './RoleplayModeUI';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
@@ -670,6 +674,10 @@ export function PersonalScenariosUI({
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<GenerateScenarioResult | null>(null);
+  const [invented, setInvented] = useState(false);
+  const [fieldBusy, setFieldBusy] = useState<UserScenarioField | null>(null);
+  const [flashField, setFlashField] = useState<string | null>(null);
+  const usedSeedIds = useRef<string[]>([]);
   const [editTitle, setEditTitle] = useState('');
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -777,10 +785,11 @@ export function PersonalScenariosUI({
           setEditId(null);
           setEditDraft(null);
         } else if (generated) {
-          setGenerated(null);
-          setEditTitle('');
-          setCreateStep(1);
-        } else {
+      setGenerated(null);
+      setInvented(false);
+      setEditTitle('');
+      setCreateStep(1);
+    } else {
           onClose();
         }
       }
@@ -788,6 +797,90 @@ export function PersonalScenariosUI({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [view, editId, generated, briefingScenario, cardMenuOpenId, onClose]);
+
+  const slangStructured = {
+    slangMode: createSlangMode,
+    allowProfanity: createAllowProfanity,
+    aiMayUseProfanity: createAllowProfanity ? createAiMayUseProfanity : false,
+    profanityIntensity: createProfanityIntensity,
+  };
+
+  const applyGenerated = (result: GenerateScenarioResult, seedPrompt?: string) => {
+    const payload = { ...result.payload, ...slangStructured };
+    setGenerated({ ...result, payload });
+    setEditTitle(result.title);
+    if (seedPrompt) {
+      setPrompt(seedPrompt);
+      setTopic(seedPrompt);
+    }
+    if (typeof payload.settingRu === 'string' && payload.settingRu.trim()) setPlace(payload.settingRu);
+    if (typeof payload.yourRoleRu === 'string' && payload.yourRoleRu.trim()) setUserRole(payload.yourRoleRu);
+    if (typeof payload.goalRu === 'string' && payload.goalRu.trim()) setGoalStructured(payload.goalRu);
+    setCreateStep(1);
+  };
+
+  const patchGeneratedPayload = (partial: Record<string, unknown>) => {
+    setGenerated((current) => (current ? { ...current, payload: { ...current.payload, ...partial } } : current));
+  };
+
+  const flash = (id: string) => {
+    setFlashField(id);
+    window.setTimeout(() => setFlashField((cur) => (cur === id ? null : cur)), 1200);
+  };
+
+  const handleInvent = async () => {
+    const seeds = enSeedsForLevel(level);
+    const seed = pickScenarioSeed(seeds, usedSeedIds.current);
+    usedSeedIds.current = [...usedSeedIds.current, seed.id].slice(-24);
+    setGenerateLoading(true);
+    setGenerateError(null);
+    try {
+      const result = await generateUserScenario({
+        prompt: seed.prompt,
+        level,
+        structured: slangStructured,
+      });
+      applyGenerated(result, seed.prompt);
+      setInvented(true);
+      flash('form');
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Ошибка генерации');
+    } finally {
+      setGenerateLoading(false);
+    }
+  };
+
+  const handleFieldRegen = async (field: UserScenarioField) => {
+    setFieldBusy(field);
+    setGenerateError(null);
+    try {
+      const steps = Array.isArray(generated?.payload.steps) ? generated?.payload.steps : [];
+      const result = await generateUserScenarioField({
+        field,
+        level,
+        topic: topic.trim() || undefined,
+        place: place.trim() || undefined,
+        userRole: userRole.trim() || undefined,
+        goal: goalStructured.trim() || undefined,
+        avoid: field === 'steps'
+          ? (steps as { titleRu?: string }[]).map((s) => s.titleRu).filter(Boolean).join('; ')
+          : field === 'topic' ? topic : field === 'place' ? place : field === 'role' ? userRole : goalStructured,
+        systemPrompt: typeof generated?.payload.systemPrompt === 'string' ? generated.payload.systemPrompt : undefined,
+      });
+      const patch = result.patch || {};
+      if (field === 'topic' && typeof patch.text === 'string') setTopic(patch.text);
+      if (field === 'place' && typeof patch.text === 'string') setPlace(patch.text);
+      if (field === 'role' && typeof patch.text === 'string') setUserRole(patch.text);
+      if (field === 'goal' && typeof patch.text === 'string') setGoalStructured(patch.text);
+      const { text: _text, ...payloadPatch } = patch;
+      if (generated) patchGeneratedPayload(payloadPatch);
+      flash(field);
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Не удалось обновить поле');
+    } finally {
+      setFieldBusy(null);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim() && !topic.trim() && !place.trim() && !userRole.trim() && !goalStructured.trim()) {
@@ -841,6 +934,7 @@ export function PersonalScenariosUI({
         payload: generated.payload,
       });
       setGenerated(null);
+      setInvented(false);
       setEditTitle('');
       setCreateStep(1);
       setPrompt('');
@@ -1192,12 +1286,22 @@ export function PersonalScenariosUI({
                 <div>
                   <span style={createSectionTitle}>Детали (по желанию)</span>
                   <label style={{ display: 'block', marginBottom: '0.75rem' }}>
-                    <span style={createLabelStyle}>Тема</span>
-                    <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="кафе, такси" style={inputStyle} />
+                    <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      Тема
+                      {generated && (
+                        <FieldAiButton label="Другая тема" busy={fieldBusy === 'topic'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('topic')} />
+                      )}
+                    </span>
+                    <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="кафе, такси" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'topic') }} />
                   </label>
                   <label style={{ display: 'block', marginBottom: '0.75rem' }}>
-                    <span style={createLabelStyle}>Место</span>
-                    <input type="text" value={place} onChange={(e) => setPlace(e.target.value)} placeholder="аэропорт, офис" style={inputStyle} />
+                    <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      Место
+                      {generated && (
+                        <FieldAiButton label="Другое место" busy={fieldBusy === 'place'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('place')} />
+                      )}
+                    </span>
+                    <input type="text" value={place} onChange={(e) => { setPlace(e.target.value); if (generated) patchGeneratedPayload({ settingRu: e.target.value }); }} placeholder="аэропорт, офис" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'place') }} />
                   </label>
                   <label style={{ display: 'block' }}>
                     <span style={{ ...createLabelStyle, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -1282,15 +1386,54 @@ export function PersonalScenariosUI({
                 <div>
                   <span style={createSectionTitle}>Роль и цель</span>
                   <label style={{ display: 'block', marginBottom: '0.75rem' }}>
-                    <span style={createLabelStyle}>Ваша роль</span>
-                    <input type="text" value={userRole} onChange={(e) => setUserRole(e.target.value)} placeholder="клиент, пассажир" style={inputStyle} />
+                    <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      Ваша роль
+                      {generated && (
+                        <FieldAiButton label="Другая роль" busy={fieldBusy === 'role'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('role')} />
+                      )}
+                    </span>
+                    <input type="text" value={userRole} onChange={(e) => { setUserRole(e.target.value); if (generated) patchGeneratedPayload({ yourRoleRu: e.target.value }); }} placeholder="клиент, пассажир" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'role') }} />
                   </label>
                   <label style={{ display: 'block' }}>
-                    <span style={createLabelStyle}>Цель диалога</span>
-                    <input type="text" value={goalStructured} onChange={(e) => setGoalStructured(e.target.value)} placeholder="заказать такси до отеля" style={inputStyle} />
+                    <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      Цель диалога
+                      {generated && (
+                        <FieldAiButton label="Другая цель" busy={fieldBusy === 'goal'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('goal')} />
+                      )}
+                    </span>
+                    <input type="text" value={goalStructured} onChange={(e) => { setGoalStructured(e.target.value); if (generated) patchGeneratedPayload({ goalRu: e.target.value }); }} placeholder="заказать такси до отеля" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'goal') }} />
                   </label>
                 </div>
               </div>
+              {generated && Array.isArray(generated.payload.steps) && (
+                <div style={{ marginTop: '0.9rem', ...fieldFlashStyle(flashField === 'steps') }}>
+                  <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    Шаги
+                    <FieldAiButton label="Другие шаги" busy={fieldBusy === 'steps'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('steps')} />
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {(generated.payload.steps as { id?: string; titleRu?: string; titleEn?: string; order?: number }[]).map((step, index) => (
+                      <input
+                        key={step.id || index}
+                        type="text"
+                        value={step.titleRu || ''}
+                        onChange={(e) => {
+                          const next = (generated.payload.steps as { titleRu?: string }[]).map((item, i) => (
+                            i === index ? { ...item, titleRu: e.target.value } : item
+                          ));
+                          patchGeneratedPayload({ steps: next });
+                        }}
+                        style={inputStyle}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {generated && (
+                <p style={{ margin: '0.75rem 0 0', fontSize: '0.85rem', opacity: 0.7 }}>
+                  Значок меняет только это поле. Поля можно править, пока диалог не начат.
+                </p>
+              )}
               {generateError && (
                 <p style={{ margin: '0.75rem 0 0', padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--sidebar-text)', fontSize: '0.9375rem', flexShrink: 0 }}>
                   {generateError}
@@ -1330,6 +1473,9 @@ export function PersonalScenariosUI({
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flexShrink: 0 }}>
                     <button type="button" onClick={() => setCreateStep(3)} style={btnPrimary}>
                       Далее — название и сохранение
+                    </button>
+                    <button type="button" onClick={handleInvent} disabled={generateLoading} style={btnSecondary}>
+                      {generateLoading ? 'Генерация…' : 'Придумать другой'}
                     </button>
                     <button type="button" onClick={() => setCreateStep(1)} style={btnSecondary}>
                       Назад
@@ -1371,7 +1517,7 @@ export function PersonalScenariosUI({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setGenerated(null); setEditTitle(''); setCreateStep(1); }}
+                      onClick={() => { setGenerated(null); setInvented(false); setEditTitle(''); setCreateStep(1); }}
                       style={btnSecondary}
                     >
                       Отмена
@@ -1399,9 +1545,22 @@ export function PersonalScenariosUI({
                 background: 'var(--sidebar-bg)',
               }}
             >
-              <button type="button" onClick={handleGenerate} disabled={generateLoading} style={{ ...btnPrimary, opacity: generateLoading ? 0.7 : 1 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <button type="button" onClick={handleInvent} disabled={generateLoading || Boolean(fieldBusy)} style={{ ...btnPrimary, opacity: generateLoading ? 0.7 : 1 }}>
+                  {generateLoading ? 'Генерация…' : invented ? 'Придумать другой' : 'Придумай сценарий'}
+                </button>
+                {invented && (
+                  <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Заменит тему, цель и шаги</span>
+                )}
+              </div>
+              <button type="button" onClick={handleGenerate} disabled={generateLoading || Boolean(fieldBusy)} style={{ ...btnSecondary, opacity: generateLoading ? 0.7 : 1 }}>
                 {generateLoading ? 'Генерация…' : 'Сгенерировать сценарий'}
               </button>
+              {generated && (
+                <button type="button" onClick={() => setCreateStep(2)} style={btnSecondary}>
+                  Дальше — цель и шаги
+                </button>
+              )}
             </div>
           )}
         </div>

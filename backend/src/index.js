@@ -2582,6 +2582,107 @@ Rules:
   }
 })
 
+function replacePromptBlock(prompt, label, body) {
+  if (!prompt || !body) return prompt || ''
+  const re = new RegExp(`(${label}:\\s*)([\\s\\S]*?)(?=\\n\\n(?:Character|Situation|Goal|Style|First line):|$)`)
+  if (!re.test(prompt)) return prompt
+  return prompt.replace(re, `$1${String(body).trim()}`)
+}
+
+app.post('/api/user-scenarios/generate-field', async (req, res) => {
+  const userId = requireUserScenarioAuth(req, res)
+  if (!userId) return
+
+  const body = req.body || {}
+  const field = body.field
+  if (!['topic', 'place', 'role', 'goal', 'steps'].includes(field)) {
+    return res.status(400).json({ error: 'field должен быть topic, place, role, goal или steps' })
+  }
+  const level = USER_SCENARIO_LEVELS.includes(body.level) ? body.level : 'medium'
+  const topic = typeof body.topic === 'string' ? body.topic.trim() : ''
+  const place = typeof body.place === 'string' ? body.place.trim() : ''
+  const userRole = typeof body.userRole === 'string' ? body.userRole.trim() : ''
+  const goal = typeof body.goal === 'string' ? body.goal.trim() : ''
+  const avoid = typeof body.avoid === 'string' ? body.avoid.trim() : ''
+  const systemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : ''
+
+  const want = {
+    topic: 'Rewrite ONLY the topic. Keep the same place, role and goal. JSON: {"text":"короткая тема по-русски","scenarioTextRu":"одно предложение ситуации по-русски","scenarioText":"one English sentence","situationBlock":"one English sentence for the Situation block"}',
+    place: 'Rewrite ONLY the place. Keep the same topic, role and goal. JSON: {"text":"место по-русски","settingRu":"место по-русски","setting":"place in English","situationBlock":"one English sentence, same goal, new place"}',
+    role: 'Rewrite ONLY the learner role. Keep the same topic, place and goal. JSON: {"text":"роль по-русски","yourRoleRu":"роль по-русски","yourRole":"role in English"}',
+    goal: 'Rewrite ONLY the dialogue goal. Keep the same topic, place and role. JSON: {"text":"цель по-русски","goalRu":"цель по-русски","goal":"goal in English","goalBlock":"one English sentence for the Goal block"}',
+    steps: 'Rewrite ONLY the steps (2–4). Keep the same situation and goal. JSON: {"steps":[{"id":"step1","order":1,"titleRu":"шаг по-русски","titleEn":"step in English"}]}',
+  }[field]
+
+  const userPrompt = [
+    `Level: ${level}`,
+    topic ? `Topic: ${topic}` : '',
+    place ? `Place: ${place}` : '',
+    userRole ? `Learner role: ${userRole}` : '',
+    goal ? `Goal: ${goal}` : '',
+    avoid ? `Do not repeat this current value: ${avoid}` : '',
+    want,
+    'Everyday spoken situation. Russian UI strings, English dialogue strings. JSON only.',
+  ].filter(Boolean).join('\n')
+
+  try {
+    const completion = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        { role: 'system', content: 'You rewrite one field of an English roleplay scenario for Russian-speaking learners. Output ONLY valid JSON, no markdown.' },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 700,
+      temperature: 0.7,
+    })
+    const raw = completion.choices?.[0]?.message?.content?.trim() || ''
+    const jsonStr = raw.replace(/^```json\s*|\s*```$/g, '').trim()
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStr)
+    } catch {
+      return res.status(422).json({ error: 'Не удалось разобрать ответ ИИ, попробуйте ещё раз' })
+    }
+
+    const patch = {}
+    if (field === 'steps') {
+      const steps = Array.isArray(parsed.steps) ? parsed.steps.slice(0, 4).map((step, index) => ({
+        id: typeof step?.id === 'string' && step.id.trim() ? step.id.trim() : `step${index + 1}`,
+        order: index + 1,
+        titleRu: typeof step?.titleRu === 'string' ? step.titleRu.trim() : '',
+        titleEn: typeof step?.titleEn === 'string' ? step.titleEn.trim() : '',
+      })).filter((step) => step.titleRu) : []
+      if (!steps.length) return res.status(422).json({ error: 'ИИ не вернул шаги, попробуйте ещё раз' })
+      patch.steps = steps
+    } else {
+      const text = typeof parsed.text === 'string' ? parsed.text.trim() : ''
+      if (!text) return res.status(422).json({ error: 'ИИ не вернул поле, попробуйте ещё раз' })
+      patch.text = text
+      if (field === 'topic') {
+        if (parsed.scenarioTextRu) patch.scenarioTextRu = String(parsed.scenarioTextRu).trim()
+        if (parsed.scenarioText) patch.scenarioText = String(parsed.scenarioText).trim()
+        if (parsed.situationBlock) patch.systemPrompt = replacePromptBlock(systemPrompt, 'Situation', parsed.situationBlock)
+      } else if (field === 'place') {
+        patch.settingRu = String(parsed.settingRu || text).trim()
+        if (parsed.setting) patch.setting = String(parsed.setting).trim()
+        if (parsed.situationBlock) patch.systemPrompt = replacePromptBlock(systemPrompt, 'Situation', parsed.situationBlock)
+      } else if (field === 'role') {
+        patch.yourRoleRu = String(parsed.yourRoleRu || text).trim()
+        if (parsed.yourRole) patch.yourRole = String(parsed.yourRole).trim()
+      } else if (field === 'goal') {
+        patch.goalRu = String(parsed.goalRu || text).trim()
+        if (parsed.goal) patch.goal = String(parsed.goal).trim()
+        if (parsed.goalBlock) patch.systemPrompt = replacePromptBlock(systemPrompt, 'Goal', parsed.goalBlock)
+      }
+    }
+
+    res.json({ field, patch })
+  } catch (err) {
+    console.error('[api/user-scenarios/generate-field] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Field generation failed' })
+  }
+})
+
 // Get one user scenario (for play or edit)
 app.get('/api/user-scenarios/:id', async (req, res) => {
   const userId = requireUserScenarioAuth(req, res)
