@@ -4,8 +4,6 @@ import React, { useState } from 'react';
 import {
   applyGeneratePartPatch,
   canSaveZhScenario,
-  draftFromGenerateResult,
-  generateZhScenario,
   generateZhScenarioPart,
   toZhWritePayload,
   ZH_AI_PERSONALITIES,
@@ -129,7 +127,6 @@ export function ZhScenarioConstructor({
   const [advanced, setAdvanced] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [regenKey, setRegenKey] = useState<string | null>(null);
-  const [fullGenerating, setFullGenerating] = useState(false);
   const [levelNotice, setLevelNotice] = useState(false);
   const [regenError, setRegenError] = useState<string | null>(null);
   const [flashPart, setFlashPart] = useState<string | null>(null);
@@ -234,58 +231,8 @@ export function ZhScenarioConstructor({
   const goals = Array.isArray(draft.goals) && draft.goals.length
     ? draft.goals.map((g) => (typeof g === 'string' ? g : ''))
     : [''];
-  const regenBusy = Boolean(regenKey) || fullGenerating;
+  const regenBusy = Boolean(regenKey);
 
-  const handleGenerateScenario = async () => {
-    const hsk = draft.hsk_level;
-    if (!hsk) {
-      askForLevel();
-      return;
-    }
-    const goalText = goals.map((item) => item.trim()).filter(Boolean).join('; ');
-    const promptParts = [
-      field(draft.scenario_text_ru),
-      field(draft.setting_ru) ? `Место: ${field(draft.setting_ru)}` : '',
-      field(draft.user_role) ? `Роль ученика: ${field(draft.user_role)}` : '',
-      field(draft.ai_role) ? `Роль собеседника: ${field(draft.ai_role)}` : '',
-      goalText ? `Цели: ${goalText}` : '',
-      field(draft.title) ? `Название: ${field(draft.title)}` : '',
-    ].filter(Boolean);
-    setFullGenerating(true);
-    setRegenError(null);
-    try {
-      const result = await generateZhScenario({
-        prompt: promptParts.join('. ') || `Короткий бытовой диалог для HSK ${hsk}`,
-        textbook_title: field(draft.textbook?.title) || undefined,
-        lesson_no: field(draft.textbook?.lesson_no) || undefined,
-        goal: goalText || undefined,
-        hsk_level: hsk,
-        role_mode: field(draft.user_role) ? 'user' : 'ai',
-        user_role: field(draft.user_role) || undefined,
-        starter: 'auto',
-        formality: 'auto',
-        from_life: draft.from_life,
-        life_when: draft.life_when,
-      });
-      const next = draftFromGenerateResult(result);
-      onChange({
-        ...next,
-        id: draft.id,
-        hsk_level: hsk,
-        textbook: field(draft.textbook?.title) || field(draft.textbook?.lesson_no) ? draft.textbook : next.textbook,
-        from_life: draft.from_life,
-        life_when: draft.life_when,
-        slang_mode: draft.slang_mode,
-        formality: draft.formality,
-        starter: draft.starter,
-      });
-      setStepIndex(0);
-    } catch (err) {
-      setRegenError(err instanceof Error ? err.message : 'Ошибка генерации');
-    } finally {
-      setFullGenerating(false);
-    }
-  };
   const ai = (part: ZhGeneratePart, label: string, index?: number) => {
     const key = index == null ? part : `${part}:${index}`;
     return (
@@ -706,9 +653,6 @@ export function ZhScenarioConstructor({
         </p>
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button type="button" onClick={handleGenerateScenario} disabled={regenBusy || saving} style={{ ...btnPrimary, opacity: regenBusy || saving ? 0.7 : 1 }}>
-          {fullGenerating ? 'Генерация…' : 'Сгенерировать сценарий'}
-        </button>
         <button type="button" onClick={() => onSave(false)} disabled={saving || !canSave || regenBusy} style={{ ...btnPrimary, opacity: saving || !canSave || regenBusy ? 0.7 : 1 }}>
           {saving ? 'Сохранение…' : 'Сохранить'}
         </button>

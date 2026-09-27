@@ -804,7 +804,7 @@ export function PersonalScenariosUI({
   };
 
   const applyGenerated = (result: GenerateScenarioResult, seedPrompt?: string) => {
-    const payload = { ...result.payload, ...slangStructured };
+    const payload = { ...result.payload, ...slangStructured, manual: false };
     setGenerated({ ...result, payload });
     setEditTitle(result.title);
     if (seedPrompt) {
@@ -814,7 +814,64 @@ export function PersonalScenariosUI({
     if (typeof payload.settingRu === 'string' && payload.settingRu.trim()) setPlace(payload.settingRu);
     if (typeof payload.yourRoleRu === 'string' && payload.yourRoleRu.trim()) setUserRole(payload.yourRoleRu);
     if (typeof payload.goalRu === 'string' && payload.goalRu.trim()) setGoalStructured(payload.goalRu);
-    setCreateStep(1);
+    setCreateStep((current) => (current > 1 ? current : 1));
+  };
+
+  const composeManualSystemPrompt = (goalText: string) => {
+    const situation = [prompt.trim(), topic.trim(), place.trim()].filter(Boolean).join('. ') || 'An everyday conversation.';
+    const role = userRole.trim() || 'the other person in this conversation';
+    const goal = goalText.trim() || 'Have a short conversation.';
+    return [
+      `Character: You are the person talking with the learner. The learner's role: ${role}.`,
+      '',
+      `Situation: ${situation}`,
+      '',
+      `Goal: ${goal}`,
+      '',
+      'Style: Speak only in English. Use short, simple sentences (1–2). Confirm what you heard. If the learner struggles, offer a simple choice.',
+      '',
+      'First line: Start in character and help the learner begin.',
+    ].join('\n');
+  };
+
+  const buildManualDraft = (chosenLevel: UserScenarioLevel): GenerateScenarioResult => {
+    const goal = goalStructured.trim() || 'Провести диалог';
+    const titleSource = topic.trim() || prompt.trim() || place.trim() || 'Новый сценарий';
+    return {
+      title: titleSource.slice(0, 80),
+      level: chosenLevel,
+      payload: {
+        ...slangStructured,
+        manual: true,
+        language: 'en',
+        category: 'everyday',
+        description: prompt.trim() || topic.trim(),
+        settingRu: place.trim(),
+        setting: place.trim(),
+        scenarioTextRu: prompt.trim() || topic.trim(),
+        scenarioText: prompt.trim() || topic.trim(),
+        yourRoleRu: userRole.trim(),
+        yourRole: userRole.trim(),
+        goalRu: goal,
+        goal,
+        systemPrompt: composeManualSystemPrompt(goal),
+        steps: [{ id: 'step1', order: 1, titleRu: goal, titleEn: goal }],
+      },
+    };
+  };
+
+  const handleContinue = () => {
+    if (!level) {
+      askForLevel();
+      return;
+    }
+    if (!generated) {
+      const draft = buildManualDraft(level);
+      setGenerated(draft);
+      setEditTitle((current) => (current.trim() ? current : draft.title));
+      if (!goalStructured.trim()) setGoalStructured('Провести диалог');
+    }
+    setCreateStep(2);
   };
 
   const patchGeneratedPayload = (partial: Record<string, unknown>) => {
@@ -1232,7 +1289,7 @@ export function PersonalScenariosUI({
           {(!generated || createStep === 1) && (
             <>
               <p style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: 'var(--sidebar-text)', opacity: 0.85, lineHeight: 1.45, flexShrink: 0 }}>
-                Опишите сценарий и/или заполните поля. Уровень задаёт сложность языка.
+                Заполните поля и нажмите «Дальше» или сгенерируйте сценарий. Уровень нужен в обоих случаях.
               </p>
               <div
                 style={{
@@ -1433,18 +1490,65 @@ export function PersonalScenariosUI({
                       minHeight: 0,
                     }}
                   >
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.7, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Цель</div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--sidebar-text)', lineHeight: 1.35 }}>
-                      {(generated.payload.goalRu as string) || (generated.payload.goal as string) || '—'}
-                    </div>
-                    {Array.isArray(generated.payload.steps) && (generated.payload.steps as { titleRu?: string }[]).length > 0 && (
-                      <>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.7, marginTop: '0.5rem', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Шаги</div>
-                        <div style={{ fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.9, lineHeight: 1.4 }}>
-                          {(generated.payload.steps as { titleRu?: string }[]).map((s) => s.titleRu).filter(Boolean).join(' → ')}
+                    <label style={{ display: 'block', marginBottom: '0.65rem' }}>
+                      <span style={createLabelStyle}>Цель</span>
+                      <textarea
+                        value={goalStructured}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setGoalStructured(value);
+                          const manual = generated.payload.manual === true;
+                          patchGeneratedPayload({
+                            goalRu: value,
+                            goal: value,
+                            ...(manual ? { systemPrompt: composeManualSystemPrompt(value) } : {}),
+                          });
+                        }}
+                        rows={2}
+                        style={{ ...inputStyle, resize: 'vertical' }}
+                      />
+                    </label>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.7, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Шаги</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {((generated.payload.steps as { id?: string; titleRu?: string; titleEn?: string; order?: number }[]) || []).map((step, index) => (
+                        <div key={step.id || index} style={{ display: 'flex', gap: 6 }}>
+                          <input
+                            type="text"
+                            value={step.titleRu || ''}
+                            onChange={(e) => {
+                              const next = ((generated.payload.steps as { titleRu?: string }[]) || []).map((item, i) => (
+                                i === index ? { ...item, titleRu: e.target.value } : item
+                              ));
+                              patchGeneratedPayload({ steps: next });
+                            }}
+                            placeholder={`Шаг ${index + 1}`}
+                            style={inputStyle}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = ((generated.payload.steps as unknown[]) || []).filter((_, i) => i !== index);
+                              patchGeneratedPayload({ steps: next.length ? next : [{ id: 'step1', order: 1, titleRu: '', titleEn: '' }] });
+                            }}
+                            style={{ ...btnSecondary, padding: '0.45rem 0.7rem' }}
+                          >
+                            ×
+                          </button>
                         </div>
-                      </>
-                    )}
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = (generated.payload.steps as { id?: string; order?: number }[]) || [];
+                          patchGeneratedPayload({
+                            steps: [...current, { id: `step${current.length + 1}`, order: current.length + 1, titleRu: '', titleEn: '' }],
+                          });
+                        }}
+                        style={{ ...btnSecondary, alignSelf: 'flex-start' }}
+                      >
+                        Добавить шаг
+                      </button>
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flexShrink: 0 }}>
                     <button type="button" onClick={() => setCreateStep(3)} style={btnPrimary}>
@@ -1521,14 +1625,12 @@ export function PersonalScenariosUI({
                 background: 'var(--sidebar-bg)',
               }}
             >
-              <button type="button" onClick={handleGenerate} disabled={generateLoading || Boolean(fieldBusy)} style={{ ...btnPrimary, opacity: generateLoading ? 0.7 : 1 }}>
+              <button type="button" onClick={handleContinue} disabled={generateLoading || Boolean(fieldBusy)} style={btnPrimary}>
+                Дальше — цель и шаги
+              </button>
+              <button type="button" onClick={handleGenerate} disabled={generateLoading || Boolean(fieldBusy)} style={{ ...btnSecondary, opacity: generateLoading ? 0.7 : 1 }}>
                 {generateLoading ? 'Генерация…' : 'Сгенерировать сценарий'}
               </button>
-              {generated && (
-                <button type="button" onClick={() => setCreateStep(2)} style={btnSecondary}>
-                  Дальше — цель и шаги
-                </button>
-              )}
             </div>
           )}
           <LevelRequiredNotice open={levelNotice} message="Сначала выберите уровень" />

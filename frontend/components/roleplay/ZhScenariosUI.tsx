@@ -292,8 +292,8 @@ function ZhIntentForm({
       </div>
       <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.4, opacity: 0.85 }}>
         {fromLife
-          ? 'Что случится в жизни — ИИ соберёт один диалог на 3–5 шагов, не квест на неделю.'
-          : 'Опишите урок своими словами — ИИ соберёт диалог, шаги и словарь.'}
+          ? 'Что случится в жизни. «Далее» откроет форму, чтобы заполнить диалог самому. «Сгенерировать сценарий» соберёт его с ИИ.'
+          : 'Опишите урок своими словами. «Далее» откроет форму, чтобы заполнить диалог самому. «Сгенерировать сценарий» соберёт его с ИИ.'}
       </p>
       <label>
         <span style={labelStyle}>{fromLife ? 'Что случится' : 'Что хотите отработать'}</span>
@@ -355,11 +355,11 @@ function ZhIntentForm({
         </p>
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', flexShrink: 0, padding: '0.85rem 1.25rem 1.1rem', borderTop: '1px solid var(--sidebar-border)' }}>
-        <button type="button" onClick={handleGenerate} disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.7 : 1 }}>
-          {loading ? 'Генерация…' : 'Сгенерировать сценарий'}
+        <button type="button" onClick={handleManual} disabled={loading} style={btnPrimary}>
+          Далее
         </button>
-        <button type="button" onClick={handleManual} disabled={loading} style={btnSecondary}>
-          Создать вручную
+        <button type="button" onClick={handleGenerate} disabled={loading} style={{ ...btnSecondary, opacity: loading ? 0.7 : 1 }}>
+          {loading ? 'Генерация…' : 'Сгенерировать сценарий'}
         </button>
       </div>
       <LevelRequiredNotice open={levelNotice} />
