@@ -1,13 +1,13 @@
 /**
  * Пополнение баланса через ITPAY (СБП / страница оплаты шлюза).
  * Секреты только в ITPAY_PUBLIC_ID и ITPAY_API_SECRET.
- * Сумма к оплате равна сумме зачисления: 300, 500 или 1000 ₽.
+ * Сумма к оплате равна сумме зачисления: 50 (тест), 300, 500 или 1000 ₽.
  */
 
 import crypto from 'crypto'
 
 const ITPAY_API_BASE = (process.env.ITPAY_API_BASE || 'https://api.gw.itpay.ru/v1').replace(/\/$/, '')
-const ALLOWED_CREDITS = new Set([300, 500, 1000])
+const ALLOWED_CREDITS = new Set([50, 300, 500, 1000])
 const CREDIT_EVENTS = new Set(['payment.pay', 'payment.completed'])
 const FAIL_EVENTS = new Set(['payment.rejected', 'payment.cancelled', 'payment.errored'])
 const FAIL_STATUSES = new Set(['cancelled', 'rejected', 'error'])
@@ -229,7 +229,7 @@ export function registerItpayRoutes(app, { supabase, asyncHandler, resolveUserId
 
     const creditRub = Number(req.body?.amount_rub)
     if (!ALLOWED_CREDITS.has(creditRub)) {
-      return res.status(400).json({ error: 'Доступны суммы 300, 500 и 1000 ₽' })
+      return res.status(400).json({ error: 'Доступны суммы 50, 300, 500 и 1000 ₽' })
     }
 
     const clientPaymentId = crypto.randomUUID()

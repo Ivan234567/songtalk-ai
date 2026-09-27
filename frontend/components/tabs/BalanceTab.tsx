@@ -17,8 +17,9 @@ const PERIOD_LABELS: Record<PeriodKey, string> = {
   custom: 'Свой период',
 };
 
-// Суммы и зачисления, и оплаты: 300, 500 и 1000 ₽.
-const TOPUP_OPTIONS = [
+// Суммы и зачисления, и оплаты. 50 ₽ — временная проверка шлюза, потом убрать.
+const TOPUP_OPTIONS: { amount: number; label: string; sub: string; test?: boolean }[] = [
+  { amount: 50, label: 'Проверка оплаты', sub: 'временная сумма', test: true },
   { amount: 300, label: '~2 часа с агентом', sub: 'или до 800 озвучек' },
   { amount: 500, label: '~3,5 часа практики', sub: 'или до 1 300 озвучек' },
   { amount: 1000, label: '~7 часов разговора', sub: 'или до 2 500 озвучек' },
@@ -521,7 +522,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
               <span className={styles.topupLabel}>{opt.label}</span>
               <span className={styles.topupLabel}>{opt.sub}</span>
               <span className={styles.topupBadge}>
-                {topupLoading === opt.amount ? 'Создаём счёт…' : 'Оплатить'}
+                {topupLoading === opt.amount ? 'Создаём счёт…' : opt.test ? 'Тест' : 'Оплатить'}
               </span>
             </button>
           ))}
