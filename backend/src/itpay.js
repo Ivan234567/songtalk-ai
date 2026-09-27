@@ -322,31 +322,50 @@ export function registerItpayRoutes(app, { supabase, asyncHandler, resolveUserId
 
   app.post('/api/payments/itpay/webhook', asyncHandler(async (req, res) => {
     if (!itpayConfigured()) return res.status(503).json({ error: 'ITPAY is not configured' })
-    const header = req.headers['itpay-signature']
-    if (!verifyItpaySignature(req.rawBody, header)) {
-      console.error('[itpay] webhook signature rejected')
-      return res.status(401).json({ error: 'invalid signature' })
+
+    const signatureOk = verifyItpaySignature(req.rawBody, req.headers['itpay-signature'])
+    if (!signatureOk) {
+      console.error('[itpay] webhook signature mismatch, status will be checked via ITPAY API')
     }
 
     const event = req.body || {}
     const eventType = typeof event.type === 'string' ? event.type : ''
     const data = event.data && typeof event.data === 'object' ? event.data : {}
-    const order = await findOrder(supabase, {
-      itpayPaymentId: typeof data.id === 'string' ? data.id : null,
-      clientPaymentId: typeof data.client_payment_id === 'string' ? data.client_payment_id : null,
-    })
+    const itpayPaymentId = typeof data.id === 'string' ? data.id : null
+    const clientPaymentId = typeof data.client_payment_id === 'string' ? data.client_payment_id : null
+    const order = await findOrder(supabase, { itpayPaymentId, clientPaymentId })
 
     if (!order) return res.status(200).json({ status: 0 })
 
-    if (shouldCredit(eventType, data.status)) {
-      const result = await creditOrder(supabase, order, data.amount)
+    let payment
+    try {
+      const lookupId = order.itpay_payment_id || itpayPaymentId
+      payment = await itpayRequest('GET', `/payments/${encodeURIComponent(lookupId)}`)
+    } catch (err) {
+      console.error('[itpay] webhook payment lookup failed', { message: err.message, status: err.status })
+      return res.status(500).json({ error: 'payment lookup failed' })
+    }
+
+    if (payment?.client_payment_id && payment.client_payment_id !== order.client_payment_id) {
+      console.error('[itpay] webhook client_payment_id mismatch', { orderId: order.id })
+      return res.status(200).json({ status: 0 })
+    }
+
+    const status = payment?.status
+    if (CREDIT_STATUSES.has(status) || (signatureOk && shouldCredit(eventType, status))) {
+      const result = await creditOrder(supabase, order, payment.amount)
       if (!result.ok && result.error !== 'amount_mismatch') {
         return res.status(500).json({ error: 'credit failed' })
       }
-    } else if (FAIL_EVENTS.has(eventType) || FAIL_STATUSES.has(data.status)) {
-      await markFailed(supabase, order.id)
+      if (!result.ok) return res.status(500).json({ error: 'amount mismatch' })
+      return res.status(200).json({ status: 0 })
     }
 
-    return res.status(200).json({ status: 0 })
+    if (FAIL_STATUSES.has(status) || FAIL_EVENTS.has(eventType)) {
+      await markFailed(supabase, order.id)
+      return res.status(200).json({ status: 0 })
+    }
+
+    return res.status(500).json({ error: 'payment not finished' })
   }))
 }
