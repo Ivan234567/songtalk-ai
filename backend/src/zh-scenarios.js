@@ -706,14 +706,15 @@ export function registerZhScenarioRoutes(app, {
 
     const body = req.body || {}
     const part = body.part
-    if (!['vocabulary', 'steps', 'openings', 'situation', 'goal'].includes(part)) {
-      return res.status(400).json({ error: 'part должен быть vocabulary, steps, openings, situation или goal' })
+    if (!['vocabulary', 'steps', 'openings', 'situation', 'goal', 'place', 'user_role', 'ai_role', 'personality_note', 'goal_item', 'step_item'].includes(part)) {
+      return res.status(400).json({ error: 'Неизвестная часть сценария' })
     }
     const src = body.scenario && typeof body.scenario === 'object' ? body.scenario : {}
     const payload = buildPayload(src, src)
     const title = asTrimmed(src.title, 200) || 'Сценарий'
     const hsk = asHsk(src.hsk_level ?? src.hskLevel ?? payload.hsk_level) || 3
     const note = asTrimmed(body.note, 400)
+    const itemIndex = Number.isInteger(Number(body.index)) && Number(body.index) >= 0 ? Number(body.index) : 0
 
     const snapshot = {
       title,
@@ -726,6 +727,7 @@ export function registerZhScenarioRoutes(app, {
       user_role: payload.user_role,
       ai_role: payload.ai_role,
       ai_personality: payload.ai_personality,
+      ai_personality_note: payload.ai_personality_note,
       grammar_focus: payload.grammar_focus,
       setting_ru: payload.setting_ru,
       scenario_text_ru: payload.scenario_text_ru,
@@ -756,6 +758,19 @@ export function registerZhScenarioRoutes(app, {
       want = fromLife
         ? 'Regenerate ONLY the goals. JSON: {"goals":["практический результат по-русски"]}. 1–3 outcomes. Keep the same real-life scene.'
         : 'Regenerate ONLY the goals. JSON: {"goals":["цель урока по-русски"]}. 1–3 outcomes. Keep the same scene and HSK.'
+    } else if (part === 'place') {
+      want = 'Rewrite ONLY the place. JSON: {"setting_ru":"короткое место по-русски"}. Keep the same situation and roles. Do not repeat the current place.'
+    } else if (part === 'user_role') {
+      want = 'Rewrite ONLY the learner role. JSON: {"user_role":"короткая роль ученика по-русски"}. Keep the scene and a complementary AI role. Do not repeat the current role.'
+    } else if (part === 'ai_role') {
+      want = 'Rewrite ONLY the AI character role. JSON: {"ai_role":"короткая роль собеседника по-русски"}. Keep the scene and the learner role. Do not repeat the current role.'
+    } else if (part === 'personality_note') {
+      want = 'Rewrite ONLY the personality note. JSON: {"ai_personality_note":"короткая фраза по-русски"}. It must fit the current ai_personality. Do not change the role. Do not repeat the current note.'
+    } else if (part === 'goal_item') {
+      want = `Rewrite ONLY goal number ${itemIndex + 1}. JSON: {"goal":"одна новая цель по-русски"}. Keep the same scene. Do not repeat this goal. Do not write the other goals.`
+    } else if (part === 'step_item') {
+      want = `Rewrite ONLY step number ${itemIndex + 1}. JSON: {"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}. ` +
+        'title_ru and expected_user_action in Russian. example_zh in Simplified Chinese if you include it. Keep the same scene and the other steps. Do not repeat this step.'
     } else {
       want = fromLife
         ? 'Regenerate ONLY opening lines. JSON: {"character_opening":"","suggested_first_line":"","suggested_first_line_pinyin":""}. ' +
@@ -826,6 +841,42 @@ export function registerZhScenarioRoutes(app, {
           return res.status(422).json({ error: 'ИИ не вернул цель, попробуйте ещё раз' })
         }
         patch = { goals }
+      } else if (part === 'place') {
+        const setting_ru = asTrimmed(parsed.setting_ru, 200)
+        if (!setting_ru) return res.status(422).json({ error: 'ИИ не вернул место, попробуйте ещё раз' })
+        patch = { setting_ru }
+      } else if (part === 'user_role') {
+        const user_role = asTrimmed(parsed.user_role, 120)
+        if (!user_role) return res.status(422).json({ error: 'ИИ не вернул роль, попробуйте ещё раз' })
+        patch = { user_role }
+      } else if (part === 'ai_role') {
+        const ai_role = asTrimmed(parsed.ai_role, 120)
+        if (!ai_role) return res.status(422).json({ error: 'ИИ не вернул роль, попробуйте ещё раз' })
+        patch = { ai_role }
+      } else if (part === 'personality_note') {
+        const ai_personality_note = asTrimmed(parsed.ai_personality_note, 200)
+        if (!ai_personality_note) return res.status(422).json({ error: 'ИИ не вернул уточнение, попробуйте ещё раз' })
+        patch = { ai_personality_note }
+      } else if (part === 'goal_item') {
+        const goal = asTrimmed(parsed.goal, 200)
+        if (!goal) return res.status(422).json({ error: 'ИИ не вернул цель, попробуйте ещё раз' })
+        patch = { goal, index: itemIndex }
+      } else if (part === 'step_item') {
+        const title_ru = asTrimmed(parsed.title_ru, 200)
+        const expected_user_action = asTrimmed(parsed.expected_user_action, 500)
+        if (!title_ru && !expected_user_action) {
+          return res.status(422).json({ error: 'ИИ не вернул шаг, попробуйте ещё раз' })
+        }
+        patch = {
+          index: itemIndex,
+          step: {
+            title_ru,
+            expected_user_action,
+            ai_context: asTrimmed(parsed.ai_context, 1000),
+            keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
+            example_zh: asTrimmed(parsed.example_zh, 300),
+          },
+        }
       } else {
         const character_opening = asTrimmed(parsed.character_opening, 300)
         const suggested_first_line = asTrimmed(parsed.suggested_first_line, 300)

@@ -21,7 +21,18 @@ export type ZhStatus = 'draft' | 'ready';
 export type ZhHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export type ZhVocabUsage = 'must_say' | 'model' | 'pocket';
 export type ZhAiPersonality = 'warm' | 'patient' | 'hurried' | 'chatty' | 'strict' | 'professional';
-export type ZhGeneratePart = 'vocabulary' | 'steps' | 'openings' | 'situation' | 'goal';
+export type ZhGeneratePart =
+  | 'vocabulary'
+  | 'steps'
+  | 'openings'
+  | 'situation'
+  | 'goal'
+  | 'place'
+  | 'user_role'
+  | 'ai_role'
+  | 'personality_note'
+  | 'goal_item'
+  | 'step_item';
 
 export const ZH_AI_PERSONALITIES: { value: ZhAiPersonality; label: string; hint: string }[] = [
   { value: 'warm', label: 'Тёплый', hint: 'доброжелательный, слегка поддерживает' },
@@ -238,6 +249,7 @@ export type GenerateZhScenarioPartParams = {
   part: ZhGeneratePart;
   scenario: ZhScenarioWritePayload & { title?: string; hsk_level?: ZhHskLevel | null };
   note?: string;
+  index?: number;
 };
 
 export type GenerateZhScenarioPartResult = {
@@ -438,6 +450,47 @@ export function applyGeneratePartPatch(draft: ZhScenario, part: ZhGeneratePart, 
   }
   if (part === 'goal' && Array.isArray(patch.goals)) {
     return normalizeZhScenario({ ...draft, goals: patch.goals }) || draft;
+  }
+  if (part === 'place') {
+    return { ...draft, setting_ru: asString(patch.setting_ru) || draft.setting_ru };
+  }
+  if (part === 'user_role') {
+    return { ...draft, user_role: asString(patch.user_role) || draft.user_role };
+  }
+  if (part === 'ai_role') {
+    return { ...draft, ai_role: asString(patch.ai_role) || draft.ai_role };
+  }
+  if (part === 'personality_note') {
+    return { ...draft, ai_personality_note: asString(patch.ai_personality_note) || draft.ai_personality_note };
+  }
+  if (part === 'goal_item') {
+    const index = Number(patch.index);
+    const goal = asString(patch.goal);
+    if (!goal || !Number.isInteger(index) || index < 0) return draft;
+    const goals = draft.goals.length ? [...draft.goals] : [''];
+    if (index >= goals.length) return draft;
+    goals[index] = goal;
+    return { ...draft, goals };
+  }
+  if (part === 'step_item') {
+    const index = Number(patch.index);
+    const raw = patch.step;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Number.isInteger(index) || index < 0) return draft;
+    const steps = [...draft.steps];
+    const prev = steps[index];
+    if (!prev) return draft;
+    const src = raw as Record<string, unknown>;
+    steps[index] = {
+      ...prev,
+      title_ru: asString(src.title_ru) || prev.title_ru,
+      expected_user_action: asString(src.expected_user_action) || prev.expected_user_action,
+      ai_context: asString(src.ai_context) || prev.ai_context,
+      example_zh: asString(src.example_zh) || prev.example_zh,
+      keywords: Array.isArray(src.keywords)
+        ? src.keywords.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean).slice(0, 8)
+        : prev.keywords,
+    };
+    return { ...draft, steps };
   }
   return draft;
 }

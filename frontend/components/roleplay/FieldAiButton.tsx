@@ -18,19 +18,22 @@ export function FieldAiButton({ label, busy, disabled, onClick }: Props) {
       disabled={disabled || busy}
       onClick={onClick}
       style={{
-        width: 28,
-        height: 28,
-        borderRadius: 8,
-        border: '1px solid var(--sidebar-border)',
-        background: 'transparent',
-        color: 'var(--sidebar-text)',
+        height: 34,
+        padding: '0 10px',
+        borderRadius: 10,
+        border: '1px solid rgba(16, 140, 98, 0.55)',
+        background: busy ? 'rgba(16, 140, 98, 0.28)' : 'rgba(16, 140, 98, 0.16)',
+        color: 'rgb(8, 110, 74)',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 5,
         cursor: disabled || busy ? 'default' : 'pointer',
-        opacity: disabled ? 0.45 : 0.8,
+        opacity: disabled ? 0.45 : 1,
         flexShrink: 0,
-        padding: 0,
+        fontSize: '0.75rem',
+        fontWeight: 800,
+        letterSpacing: '0.04em',
       }}
     >
       {busy ? (
@@ -53,6 +56,7 @@ export function FieldAiButton({ label, busy, disabled, onClick }: Props) {
           <path d="M4 20l3.5-1.2L5.2 16.5 4 20z" />
           <path d="M15 4l1.2-1.2M19 8l1.2 1.2M17.2 3.2l.6 1.4M20.2 6.2l-1.4.6" />
         </svg>
+        <span>ИИ</span>
       )}
       <style>{`@keyframes field-ai-spin { to { transform: rotate(360deg); } }`}</style>
     </button>

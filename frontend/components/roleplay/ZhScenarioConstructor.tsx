@@ -126,7 +126,7 @@ export function ZhScenarioConstructor({
   const [stepIndex, setStepIndex] = useState(0);
   const [advanced, setAdvanced] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
-  const [regenPart, setRegenPart] = useState<ZhGeneratePart | null>(null);
+  const [regenKey, setRegenKey] = useState<string | null>(null);
   const [regenError, setRegenError] = useState<string | null>(null);
   const [flashPart, setFlashPart] = useState<string | null>(null);
   const steps = Array.isArray(draft.steps) ? draft.steps : [];
@@ -196,32 +196,38 @@ export function ZhScenarioConstructor({
     patch({ grammar_focus: current.trim() ? `${current.trim()}, ${chip}` : chip });
   };
 
-  const handleRegenerate = async (part: ZhGeneratePart) => {
-    setRegenPart(part);
+  const handleRegenerate = async (part: ZhGeneratePart, index?: number) => {
+    const key = index == null ? part : `${part}:${index}`;
+    setRegenKey(key);
     setRegenError(null);
     try {
       const result = await generateZhScenarioPart({
         part,
+        index,
         scenario: toZhWritePayload({ ...draft, title: draft.title || 'Сценарий' }),
       });
       onChange(applyGeneratePartPatch(draft, result.part, result.patch));
+      if (part === 'step_item' && index != null) setStepIndex(index);
       if (part === 'steps') setStepIndex(0);
-      setFlashPart(part);
-      window.setTimeout(() => setFlashPart((cur) => (cur === part ? null : cur)), 1200);
+      setFlashPart(key);
+      window.setTimeout(() => setFlashPart((cur) => (cur === key ? null : cur)), 1200);
     } catch (err) {
       setRegenError(err instanceof Error ? err.message : 'Не удалось перегенерировать');
     } finally {
-      setRegenPart(null);
+      setRegenKey(null);
     }
   };
 
   const goals = Array.isArray(draft.goals) && draft.goals.length
     ? draft.goals.map((g) => (typeof g === 'string' ? g : ''))
     : [''];
-  const regenBusy = Boolean(regenPart);
-  const ai = (part: ZhGeneratePart, label: string) => (
-    <FieldAiButton label={label} busy={regenPart === part} disabled={regenBusy} onClick={() => handleRegenerate(part)} />
-  );
+  const regenBusy = Boolean(regenKey);
+  const ai = (part: ZhGeneratePart, label: string, index?: number) => {
+    const key = index == null ? part : `${part}:${index}`;
+    return (
+      <FieldAiButton label={label} busy={regenKey === key} disabled={regenBusy} onClick={() => handleRegenerate(part, index)} />
+    );
+  };
 
   return (
     <div style={{ padding: '1rem 1.25rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -262,9 +268,12 @@ export function ZhScenarioConstructor({
             <input value={typeof draft.description === 'string' ? draft.description : ''} onChange={(e) => patch({ description: e.target.value })} style={inputStyle} />
           </label>
         </div>
-        <label>
+        <label style={fieldFlashStyle(flashPart === 'place')}>
           <span style={labelStyle}>Место</span>
-          <input value={typeof draft.setting_ru === 'string' ? draft.setting_ru : ''} onChange={(e) => patch({ setting_ru: e.target.value })} style={inputStyle} placeholder="магазин одежды, клиника…" />
+          <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input value={typeof draft.setting_ru === 'string' ? draft.setting_ru : ''} onChange={(e) => patch({ setting_ru: e.target.value })} style={inputStyle} placeholder="магазин одежды, клиника…" />
+            {ai('place', 'Другое место')}
+          </span>
         </label>
         <label style={fieldFlashStyle(flashPart === 'situation')}>
           <span style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -283,13 +292,19 @@ export function ZhScenarioConstructor({
 
       <Section title="Роли и тон">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <label>
+          <label style={fieldFlashStyle(flashPart === 'user_role')}>
             <span style={labelStyle}>Ваша роль</span>
-            <input value={field(draft.user_role)} onChange={(e) => patch({ user_role: e.target.value })} style={inputStyle} />
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input value={field(draft.user_role)} onChange={(e) => patch({ user_role: e.target.value })} style={inputStyle} />
+              {ai('user_role', 'Другая роль')}
+            </span>
           </label>
-          <label>
+          <label style={fieldFlashStyle(flashPart === 'ai_role')}>
             <span style={labelStyle}>Роль ИИ</span>
-            <input value={field(draft.ai_role)} onChange={(e) => patch({ ai_role: e.target.value })} style={inputStyle} />
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input value={field(draft.ai_role)} onChange={(e) => patch({ ai_role: e.target.value })} style={inputStyle} />
+              {ai('ai_role', 'Другая роль собеседника')}
+            </span>
           </label>
         </div>
         <div>
@@ -314,14 +329,17 @@ export function ZhScenarioConstructor({
             {ZH_AI_PERSONALITIES.find((p) => p.value === (draft.ai_personality || 'warm'))?.hint}
           </p>
         </div>
-        <label>
+        <label style={fieldFlashStyle(flashPart === 'personality_note')}>
           <span style={labelStyle}>Уточнение характера</span>
-          <input
-            value={field(draft.ai_personality_note)}
-            onChange={(e) => patch({ ai_personality_note: e.target.value })}
-            style={inputStyle}
-            placeholder="необязательно: слегка ворчливый, очень вежливый…"
-          />
+          <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              value={field(draft.ai_personality_note)}
+              onChange={(e) => patch({ ai_personality_note: e.target.value })}
+              style={inputStyle}
+              placeholder="необязательно: слегка ворчливый, очень вежливый…"
+            />
+            {ai('personality_note', 'Другое уточнение')}
+          </span>
         </label>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, position: 'relative', zIndex: 4, overflow: 'visible' }}>
           <label>
@@ -393,15 +411,12 @@ export function ZhScenarioConstructor({
 
       <Section title="Урок">
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...fieldFlashStyle(flashPart === 'goal') }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={labelStyle}>Цели</span>
-            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-              {ai('goal', 'Другая цель')}
-              <button type="button" onClick={() => patch({ goals: [...goals, ''] })} style={btnSecondary}>Добавить цель</button>
-            </span>
+            <button type="button" onClick={() => patch({ goals: [...goals, ''] })} style={btnSecondary}>Добавить цель</button>
           </div>
           {goals.map((g, i) => (
-            <div key={`goal-${i}`} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+            <div key={`goal-${i}`} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center', ...fieldFlashStyle(flashPart === `goal_item:${i}`) }}>
               <input
                 value={g}
                 onChange={(e) => {
@@ -412,6 +427,7 @@ export function ZhScenarioConstructor({
                 style={inputStyle}
                 placeholder="Цель на русском"
               />
+              {ai('goal_item', 'Другая цель', i)}
               {goals.length > 1 && (
                 <button type="button" onClick={() => patch({ goals: goals.filter((_, j) => j !== i) })} style={btnSecondary}>×</button>
               )}
@@ -451,27 +467,27 @@ export function ZhScenarioConstructor({
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 280px) 1fr', gap: 12, minHeight: 280 }}>
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, ...fieldFlashStyle(flashPart === 'steps') }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={labelStyle}>Шаги</span>
-              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                {ai('steps', 'Другие шаги')}
-                <button type="button" onClick={addStep} style={btnSecondary}>+ шаг</button>
-              </span>
+              <button type="button" onClick={addStep} style={btnSecondary}>+ шаг</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {steps.map((s, i) => (
-                <button
-                  key={s.id || i}
-                  type="button"
-                  onClick={() => setStepIndex(i)}
-                  style={{
-                    ...btnSecondary,
-                    textAlign: 'left',
-                    background: i === stepIndex ? 'var(--sidebar-active)' : 'transparent',
-                  }}
-                >
-                  {i + 1}. {field(s.title_ru) || 'Без названия'}
-                </button>
+                <div key={s.id || i} style={{ display: 'flex', gap: 6, alignItems: 'center', ...fieldFlashStyle(flashPart === `step_item:${i}`) }}>
+                  <button
+                    type="button"
+                    onClick={() => setStepIndex(i)}
+                    style={{
+                      ...btnSecondary,
+                      flex: 1,
+                      textAlign: 'left',
+                      background: i === stepIndex ? 'var(--sidebar-active)' : 'transparent',
+                    }}
+                  >
+                    {i + 1}. {field(s.title_ru) || 'Без названия'}
+                  </button>
+                  {ai('step_item', 'Другой шаг', i)}
+                </div>
               ))}
             </div>
           </div>
@@ -616,7 +632,7 @@ export function ZhScenarioConstructor({
       </Section>
 
       <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
-        Палочка переписывает только этот блок. Остальные поля остаются как есть.
+        Кнопка «ИИ» переписывает только это поле. У каждой цели и каждого шага она своя.
       </p>
       {regenError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{regenError}</p>}
       {saveError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{saveError}</p>}
