@@ -9,7 +9,7 @@ export function HskLevelPicker({
   value,
   onChange,
 }: {
-  value: ZhHskLevel;
+  value: ZhHskLevel | null;
   onChange: (v: ZhHskLevel) => void;
 }) {
   return (
@@ -60,6 +60,32 @@ export function HskLevelPicker({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+export function LevelRequiredNotice({ open }: { open: boolean }) {
+  if (!open) return null;
+  return (
+    <div
+      role="alert"
+      style={{
+        position: 'fixed',
+        left: '50%',
+        bottom: 28,
+        transform: 'translateX(-50%)',
+        zIndex: 1200,
+        maxWidth: 'min(420px, calc(100vw - 32px))',
+        padding: '0.8rem 1rem',
+        borderRadius: 12,
+        background: 'rgb(120, 53, 15)',
+        color: '#fff',
+        fontSize: '0.95rem',
+        lineHeight: 1.4,
+        boxShadow: '0 10px 28px rgba(0,0,0,0.28)',
+      }}
+    >
+      Сначала выберите уровень HSK
     </div>
   );
 }

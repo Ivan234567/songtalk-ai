@@ -20,7 +20,7 @@ import {
   type ZhVocabUsage,
 } from '@/lib/zh-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
-import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
+import { HskLevelPicker, LevelRequiredNotice } from '@/components/ui/HskLevelPicker';
 import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
 import { FieldAiButton, fieldFlashStyle } from '@/components/roleplay/FieldAiButton';
 
@@ -130,6 +130,7 @@ export function ZhScenarioConstructor({
   const [showPreview, setShowPreview] = useState(true);
   const [regenKey, setRegenKey] = useState<string | null>(null);
   const [fullGenerating, setFullGenerating] = useState(false);
+  const [levelNotice, setLevelNotice] = useState(false);
   const [regenError, setRegenError] = useState<string | null>(null);
   const [flashPart, setFlashPart] = useState<string | null>(null);
   const steps = Array.isArray(draft.steps) ? draft.steps : [];
@@ -199,7 +200,16 @@ export function ZhScenarioConstructor({
     patch({ grammar_focus: current.trim() ? `${current.trim()}, ${chip}` : chip });
   };
 
+  const askForLevel = () => {
+    setLevelNotice(true);
+    window.setTimeout(() => setLevelNotice(false), 3200);
+  };
+
   const handleRegenerate = async (part: ZhGeneratePart, index?: number) => {
+    if (!draft.hsk_level) {
+      askForLevel();
+      return;
+    }
     const key = index == null ? part : `${part}:${index}`;
     setRegenKey(key);
     setRegenError(null);
@@ -227,7 +237,11 @@ export function ZhScenarioConstructor({
   const regenBusy = Boolean(regenKey) || fullGenerating;
 
   const handleGenerateScenario = async () => {
-    const hsk = (draft.hsk_level ?? 3) as ZhHskLevel;
+    const hsk = draft.hsk_level;
+    if (!hsk) {
+      askForLevel();
+      return;
+    }
     const goalText = goals.map((item) => item.trim()).filter(Boolean).join('; ');
     const promptParts = [
       field(draft.scenario_text_ru),
@@ -300,7 +314,7 @@ export function ZhScenarioConstructor({
         <div>
           <span style={labelStyle}>HSK</span>
           <HskLevelPicker
-            value={(draft.hsk_level ?? 3) as ZhHskLevel}
+            value={draft.hsk_level ?? null}
             onChange={(v) => patch({ hsk_level: v })}
           />
         </div>
@@ -707,6 +721,7 @@ export function ZhScenarioConstructor({
         <button type="button" onClick={onBack} style={btnSecondary}>Назад</button>
       </div>
 
+      <LevelRequiredNotice open={levelNotice} />
       {showPreview && (
         <div
           style={{

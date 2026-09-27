@@ -19,7 +19,7 @@ import {
   type ZhScenario,
 } from '@/lib/zh-scenarios';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
-import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
+import { HskLevelPicker, LevelRequiredNotice } from '@/components/ui/HskLevelPicker';
 import { ZhScenarioCatalog } from '@/components/roleplay/ZhScenarioCatalog';
 import { ZhScenarioConstructor } from '@/components/roleplay/ZhScenarioConstructor';
 import { ZhScenarioBriefing } from '@/components/roleplay/ZhScenarioBriefing';
@@ -187,11 +187,9 @@ const labelStyle: React.CSSProperties = {
 };
 
 function ZhIntentForm({
-  defaultHsk,
   onGenerated,
   onManualCreate,
 }: {
-  defaultHsk: ZhHskLevel;
   onGenerated: (draft: ZhScenario) => void;
   onManualCreate: (draft: ZhScenario) => void;
 }) {
@@ -199,22 +197,33 @@ function ZhIntentForm({
   const [textbook, setTextbook] = useState('');
   const [lesson, setLesson] = useState('');
   const [goal, setGoal] = useState('');
-  const [hsk, setHsk] = useState<ZhHskLevel>(defaultHsk);
+  const [hsk, setHsk] = useState<ZhHskLevel | null>(null);
+  const [levelNotice, setLevelNotice] = useState(false);
   const [fromLife, setFromLife] = useState(false);
   const [lifeWhen, setLifeWhen] = useState<'today' | 'week' | 'practice'>('week');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fallbackPrompt = fromLife
-    ? `Короткий бытовой диалог для HSK ${hsk}`
-    : `Короткий учебный диалог для HSK ${hsk}`;
+  const askForLevel = () => {
+    setLevelNotice(true);
+    window.setTimeout(() => setLevelNotice(false), 3200);
+  };
+
+  const fallbackPrompt = (level: ZhHskLevel) =>
+    fromLife
+      ? `Короткий бытовой диалог для HSK ${level}`
+      : `Короткий учебный диалог для HSK ${level}`;
 
   const handleGenerate = async () => {
+    if (!hsk) {
+      askForLevel();
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const result = await generateZhScenario({
-        prompt: prompt.trim() || fallbackPrompt,
+        prompt: prompt.trim() || fallbackPrompt(hsk),
         textbook_title: textbook.trim() || undefined,
         lesson_no: lesson.trim() || undefined,
         goal: goal.trim() || undefined,
@@ -243,6 +252,10 @@ function ZhIntentForm({
   };
 
   const handleManual = () => {
+    if (!hsk) {
+      askForLevel();
+      return;
+    }
     const base = emptyManualZhScenario(hsk);
     onManualCreate({
       ...base,
@@ -349,6 +362,7 @@ function ZhIntentForm({
           Создать вручную
         </button>
       </div>
+      <LevelRequiredNotice open={levelNotice} />
     </div>
   );
 }
@@ -357,7 +371,6 @@ export function ZhScenariosUI({
   onSelectScenario,
   onClose,
   initialView,
-  defaultHsk = 3,
   onCopyToMineSuccess,
   initialScenarioId,
   initialPlayMode,
@@ -822,7 +835,6 @@ export function ZhScenariosUI({
           />
         ) : view === 'create' ? (
           <ZhIntentForm
-            defaultHsk={defaultHsk}
             onGenerated={(next) => { setSaveError(null); setDraft(next); }}
             onManualCreate={(next) => { setSaveError(null); setDraft(next); }}
           />
