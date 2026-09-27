@@ -1,8 +1,7 @@
 /**
  * Пополнение баланса через ITPAY (СБП / страница оплаты шлюза).
  * Секреты только в ITPAY_PUBLIC_ID и ITPAY_API_SECRET.
- * Комиссии шлюза нет. В сумму к оплате заложен налог УСН 6%:
- * charge = ceil(credit / 0.94) до копейки. На баланс зачисляется credit.
+ * Сумма к оплате равна сумме зачисления: 300, 500 или 1000 ₽.
  */
 
 import crypto from 'crypto'
@@ -31,10 +30,8 @@ export function itpayConfigured() {
   return Boolean(process.env.ITPAY_PUBLIC_ID && process.env.ITPAY_API_SECRET)
 }
 
-/** Сумма к оплате в копейках: ceil(creditKop * 100 / 94). */
-export function chargeKopecks(creditRub) {
-  const creditKop = Math.round(Number(creditRub) * 100)
-  return Math.ceil((creditKop * 100) / 94)
+function creditKopecks(creditRub) {
+  return Math.round(Number(creditRub) * 100)
 }
 
 export function kopecksToAmount(kopecks) {
@@ -236,7 +233,7 @@ export function registerItpayRoutes(app, { supabase, asyncHandler, resolveUserId
     }
 
     const clientPaymentId = crypto.randomUUID()
-    const charge = kopecksToAmount(chargeKopecks(creditRub))
+    const charge = kopecksToAmount(creditKopecks(creditRub))
     const successUrl = `${frontendBase()}/dashboard?tab=balance&topup=${clientPaymentId}`
 
     const { data: order, error: insertError } = await supabase
