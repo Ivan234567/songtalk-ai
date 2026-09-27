@@ -193,7 +193,7 @@ function ZhIntentForm({
 }: {
   defaultHsk: ZhHskLevel;
   onGenerated: (draft: ZhScenario) => void;
-  onManualCreate: () => void;
+  onManualCreate: (draft: ZhScenario) => void;
 }) {
   const [prompt, setPrompt] = useState('');
   const [textbook, setTextbook] = useState('');
@@ -205,20 +205,16 @@ function ZhIntentForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = fromLife
-    ? Boolean(prompt.trim())
-    : Boolean(prompt.trim() || (textbook.trim() && (goal.trim() || lesson.trim())));
+  const fallbackPrompt = fromLife
+    ? `Короткий бытовой диалог для HSK ${hsk}`
+    : `Короткий учебный диалог для HSK ${hsk}`;
 
   const handleGenerate = async () => {
-    if (!canSubmit) {
-      setError(fromLife ? 'Опишите, что случится в жизни.' : 'Опишите ситуацию или укажите учебник и что отрабатывать.');
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
       const result = await generateZhScenario({
-        prompt: prompt.trim() || undefined,
+        prompt: prompt.trim() || fallbackPrompt,
         textbook_title: textbook.trim() || undefined,
         lesson_no: lesson.trim() || undefined,
         goal: goal.trim() || undefined,
@@ -230,7 +226,15 @@ function ZhIntentForm({
         life_when: fromLife ? lifeWhen : undefined,
       });
       const draft = draftFromGenerateResult(result);
-      onGenerated({ ...draft, from_life: fromLife || draft.from_life, life_when: fromLife ? lifeWhen : draft.life_when });
+      onGenerated({
+        ...draft,
+        hsk_level: hsk,
+        from_life: fromLife || draft.from_life,
+        life_when: fromLife ? lifeWhen : draft.life_when,
+        textbook: textbook.trim() || lesson.trim()
+          ? { title: textbook.trim(), lesson_no: lesson.trim() }
+          : draft.textbook,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка генерации');
     } finally {
@@ -238,11 +242,25 @@ function ZhIntentForm({
     }
   };
 
+  const handleManual = () => {
+    const base = emptyManualZhScenario(hsk);
+    onManualCreate({
+      ...base,
+      hsk_level: hsk,
+      scenario_text_ru: prompt.trim(),
+      textbook: { title: textbook.trim(), lesson_no: lesson.trim() },
+      goals: goal.trim() ? [goal.trim()] : [''],
+      from_life: fromLife,
+      life_when: fromLife ? lifeWhen : undefined,
+    });
+  };
+
   const lifeWhenLabel = (value: typeof lifeWhen) =>
     value === 'today' ? 'сегодня' : value === 'week' ? 'на этой неделе' : 'просто потренировать';
 
   return (
-    <div style={{ padding: '1rem 1.25rem 1.1rem', overflow: 'visible', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div style={{ padding: '1rem 1.25rem 1.1rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button
           type="button"
@@ -317,16 +335,17 @@ function ZhIntentForm({
         <span style={labelStyle}>HSK</span>
         <HskLevelPicker value={hsk} onChange={setHsk} />
       </div>
+    </div>
       {error && (
         <p style={{ margin: 0, padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
           {error}
         </p>
       )}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button type="button" onClick={handleGenerate} disabled={loading || !canSubmit} style={{ ...btnPrimary, opacity: loading || !canSubmit ? 0.7 : 1 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', flexShrink: 0, padding: '0.85rem 1.25rem 1.1rem', borderTop: '1px solid var(--sidebar-border)' }}>
+        <button type="button" onClick={handleGenerate} disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Генерация…' : 'Сгенерировать сценарий'}
         </button>
-        <button type="button" onClick={onManualCreate} disabled={loading} style={btnSecondary}>
+        <button type="button" onClick={handleManual} disabled={loading} style={btnSecondary}>
           Создать вручную
         </button>
       </div>
@@ -695,6 +714,7 @@ export function ZhScenariosUI({
         style={{
           ...panelStyle,
           maxWidth: draft || briefing ? 980 : view === 'catalog' ? 960 : 720,
+          height: !draft && !briefing && view === 'create' ? 'min(94vh, 100%)' : undefined,
           overflow: draft ? 'visible' : 'hidden',
           boxShadow: '0 24px 48px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.04)',
         }}
@@ -804,7 +824,7 @@ export function ZhScenariosUI({
           <ZhIntentForm
             defaultHsk={defaultHsk}
             onGenerated={(next) => { setSaveError(null); setDraft(next); }}
-            onManualCreate={() => { setSaveError(null); setDraft(emptyManualZhScenario(defaultHsk)); }}
+            onManualCreate={(next) => { setSaveError(null); setDraft(next); }}
           />
         ) : view === 'catalog' ? (
           <ZhScenarioCatalog
