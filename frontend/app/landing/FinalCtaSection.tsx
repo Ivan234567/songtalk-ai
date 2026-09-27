@@ -37,7 +37,7 @@ export function FinalCtaSection() {
         </p>
         <div className={styles.finalCtaWrap}>
           <Link
-            href={user ? '/dashboard' : '/auth/register'}
+            href={user ? '/dashboard?tab=balance' : '/auth/register'}
             className={`${styles.finalCtaButton} ${!user ? styles.finalCtaButtonPulse : ''}`}
           >
             {user ? 'Пополнить баланс' : 'Зарегистрироваться'}

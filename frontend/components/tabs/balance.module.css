@@ -171,17 +171,27 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  width: 100%;
   padding: 1rem 1.25rem;
   border-radius: 12px;
   border: 1px solid var(--stroke);
   background: var(--card);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
-.topupCard:hover {
+.topupCard:hover:not(:disabled) {
   border-color: var(--stroke-strong);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   transform: translateY(-2px);
+}
+
+.topupCard:disabled {
+  cursor: progress;
+  opacity: 0.72;
 }
 
 .topupAmount {

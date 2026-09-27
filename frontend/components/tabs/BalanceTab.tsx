@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import styles from './balance.module.css';
 
@@ -16,7 +17,7 @@ const PERIOD_LABELS: Record<PeriodKey, string> = {
   custom: 'Свой период',
 };
 
-// Суммы зачисления на баланс (X). При подключении ЮKassa (шаг 5): сумма к оплате P = X / (0.94 * 0.993) — налог 6% и комиссия 0,7% в цене (п. 4 плана).
+// Суммы зачисления на баланс. К оплате уходит чуть больше: налог УСН 6% уже в цене, комиссии ITPAY нет.
 const TOPUP_OPTIONS = [
   { amount: 300, label: '~2 часа с агентом', sub: 'или до 800 озвучек' },
   { amount: 500, label: '~3,5 часа практики', sub: 'или до 1 300 озвучек' },
@@ -122,7 +123,14 @@ type BalanceTabProps = {
 };
 
 export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const topupId = searchParams.get('topup');
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [topupLoading, setTopupLoading] = useState<number | null>(null);
+  const [topupError, setTopupError] = useState<string | null>(null);
+  const [confirmingTopup, setConfirmingTopup] = useState(false);
   const [balanceRub, setBalanceRub] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +151,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
   const [historyVisibleCount, setHistoryVisibleCount] = useState(HISTORY_PAGE_SIZE);
   const [prevTransactions, setPrevTransactions] = useState<Transaction[]>([]);
   const initialLoadDoneRef = useRef(false);
+  const confirmedTopupRef = useRef<string | null>(null);
 
   useEffect(() => {
     setHistoryVisibleCount(HISTORY_PAGE_SIZE);
@@ -221,6 +230,83 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
       setAccessToken(data.session?.access_token ?? null);
     })();
   }, []);
+
+  const replaceBalanceQuery = useCallback((noticeText: string) => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('topup');
+    next.set('tab', 'balance');
+    next.set('balance_notice', noticeText);
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  }, [pathname, router, searchParams]);
+
+  useEffect(() => {
+    if (!accessToken || !topupId || confirmedTopupRef.current === topupId) return;
+    confirmedTopupRef.current = topupId;
+    let cancelled = false;
+    let finished = false;
+
+    const confirm = async () => {
+      setConfirmingTopup(true);
+      let status = 'pending';
+      try {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          if (cancelled) return;
+          const res = await fetch(`${API_URL}/api/balance/topup/confirm`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ client_payment_id: topupId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          status = typeof data.status === 'string' ? data.status : 'pending';
+          if (status === 'paid' || status === 'failed' || !res.ok) break;
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      } catch {
+        status = 'pending';
+      }
+      if (cancelled) return;
+      if (status === 'paid') await fetchBalance();
+      if (cancelled) return;
+      finished = true;
+      setConfirmingTopup(false);
+      if (status === 'paid') replaceBalanceQuery('Баланс пополнен');
+      else if (status === 'failed') replaceBalanceQuery('Оплата не прошла. Баланс не изменился.');
+      else replaceBalanceQuery('Оплата ещё не подтвердилась. Нажмите «Обновить» через минуту.');
+    };
+
+    confirm();
+    return () => {
+      cancelled = true;
+      if (!finished) confirmedTopupRef.current = null;
+    };
+  }, [accessToken, topupId, fetchBalance, replaceBalanceQuery]);
+
+  const handleTopup = async (amount: number) => {
+    if (!accessToken || topupLoading != null) return;
+    setTopupLoading(amount);
+    setTopupError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/balance/topup`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount_rub: amount }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || typeof data.payment_url !== 'string') {
+        throw new Error(typeof data.error === 'string' ? data.error : 'Не удалось создать платёж');
+      }
+      window.location.href = data.payment_url;
+    } catch (e) {
+      setTopupError(e instanceof Error ? e.message : 'Не удалось создать платёж');
+      setTopupLoading(null);
+    }
+  };
 
   useEffect(() => {
     if (!accessToken) {
@@ -362,7 +448,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
             <circle cx="12" cy="12" r="10" />
             <path d="M12 8v4M12 16h.01" />
           </svg>
-          <span>Баланс ниже {LOW_BALANCE_THRESHOLD} ₽. Пополнение будет доступно после подключения оплаты.</span>
+          <span>Баланс ниже {LOW_BALANCE_THRESHOLD} ₽. Пополните его, чтобы продолжить занятия.</span>
         </div>
       )}
 
@@ -414,14 +500,30 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
             )}
           </div>
         ) : null}
+        {topupError && (
+          <div className={styles.errorBanner} role="alert">
+            {topupError}
+          </div>
+        )}
+        {confirmingTopup && (
+          <p className={styles.balanceHint}>Проверяем оплату…</p>
+        )}
         <div className={styles.topupGrid}>
           {TOPUP_OPTIONS.map((opt) => (
-            <div key={opt.amount} className={styles.topupCard}>
+            <button
+              key={opt.amount}
+              type="button"
+              className={styles.topupCard}
+              disabled={topupLoading != null || !accessToken}
+              onClick={() => handleTopup(opt.amount)}
+            >
               <span className={styles.topupAmount}>{opt.amount} ₽</span>
               <span className={styles.topupLabel}>{opt.label}</span>
               <span className={styles.topupLabel}>{opt.sub}</span>
-              <span className={styles.topupBadge}>Скоро</span>
-            </div>
+              <span className={styles.topupBadge}>
+                {topupLoading === opt.amount ? 'Создаём счёт…' : 'Оплатить'}
+              </span>
+            </button>
           ))}
         </div>
       </section>

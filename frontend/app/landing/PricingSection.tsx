@@ -148,7 +148,7 @@ export function PricingSection() {
 
               <div className={styles.pricingCardCta}>
                 <Link
-                  href={user ? '/dashboard' : '/auth/register'}
+                  href={user ? '/dashboard?tab=balance' : '/auth/register'}
                   className={styles.pricingCardButton}
                 >
                   Пополнить баланс
