@@ -21,19 +21,22 @@ export function LevelDropdown<T extends string>({
   options,
   style,
   ariaLabel,
+  placeholder,
   openUpward = true,
 }: {
-  value: T;
+  value: T | null;
   onChange: (v: T) => void;
   options: { value: T; label: string }[];
   style?: React.CSSProperties;
   ariaLabel?: string;
+  placeholder?: string;
   /** true = список вверх, false = вниз */
   openUpward?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const currentLabel = options.find((o) => o.value === value)?.label ?? value;
+  const selected = value != null ? options.find((o) => o.value === value) : undefined;
+  const currentLabel = selected?.label ?? placeholder ?? '';
 
   useEffect(() => {
     if (!open) return;
@@ -67,7 +70,7 @@ export function LevelDropdown<T extends string>({
           ...style,
         }}
       >
-        <span>{currentLabel}</span>
+        <span style={{ opacity: selected ? 1 : 0.55 }}>{currentLabel}</span>
         <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ flexShrink: 0, opacity: 0.7 }}>
           <path d="M6 9l6 6 6-6" />
         </svg>

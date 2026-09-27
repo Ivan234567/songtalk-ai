@@ -16,7 +16,7 @@ export function attachLearningLanguage(req, _res, next) {
   next()
 }
 
-const CEFR_LEVEL_INSTRUCTIONS = {
+export const CEFR_LEVEL_INSTRUCTIONS = {
   A1: 'CEFR A1 ONLY. Very simple words and short sentences (I like, Yes please, Thank you, I want). Maximum ~6–8 words. Present simple. FORBIDDEN: complex clauses, idioms, rare vocabulary.',
   A2: 'CEFR A2 ONLY. Everyday phrases and short connected sentences. Common past/future OK. FORBIDDEN: abstract academic words, dense idioms, long nested clauses.',
   B1: 'CEFR B1 ONLY. Natural everyday English with common connectors (because, so, but, if). 1–3 sentences. FORBIDDEN: C1 idioms, rare words, essay-like phrasing.',

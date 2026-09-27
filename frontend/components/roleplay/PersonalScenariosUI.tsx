@@ -14,9 +14,9 @@ import {
   type UserScenarioField,
   type UserScenarioLevel,
 } from '@/lib/user-scenarios';
-import { enSeedsForLevel, pickScenarioSeed } from '@/lib/scenario-seeds';
 import { FieldAiButton, fieldFlashStyle } from '@/components/roleplay/FieldAiButton';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
+import { LevelRequiredNotice } from '@/components/ui/HskLevelPicker';
 import { BriefingView } from './RoleplayModeUI';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 import { parsePlayMode, type PlayMode } from '@/lib/play-mode';
@@ -670,14 +670,13 @@ export function PersonalScenariosUI({
   const [createAllowProfanity, setCreateAllowProfanity] = useState(false);
   const [createAiMayUseProfanity, setCreateAiMayUseProfanity] = useState(false);
   const [createProfanityIntensity, setCreateProfanityIntensity] = useState<ProfanityIntensity>('light');
-  const [level, setLevel] = useState<UserScenarioLevel>('medium');
+  const [level, setLevel] = useState<UserScenarioLevel | null>(null);
+  const [levelNotice, setLevelNotice] = useState(false);
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<GenerateScenarioResult | null>(null);
-  const [invented, setInvented] = useState(false);
   const [fieldBusy, setFieldBusy] = useState<UserScenarioField | null>(null);
   const [flashField, setFlashField] = useState<string | null>(null);
-  const usedSeedIds = useRef<string[]>([]);
   const [editTitle, setEditTitle] = useState('');
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -786,7 +785,6 @@ export function PersonalScenariosUI({
           setEditDraft(null);
         } else if (generated) {
       setGenerated(null);
-      setInvented(false);
       setEditTitle('');
       setCreateStep(1);
     } else {
@@ -828,29 +826,16 @@ export function PersonalScenariosUI({
     window.setTimeout(() => setFlashField((cur) => (cur === id ? null : cur)), 1200);
   };
 
-  const handleInvent = async () => {
-    const seeds = enSeedsForLevel(level);
-    const seed = pickScenarioSeed(seeds, usedSeedIds.current);
-    usedSeedIds.current = [...usedSeedIds.current, seed.id].slice(-24);
-    setGenerateLoading(true);
-    setGenerateError(null);
-    try {
-      const result = await generateUserScenario({
-        prompt: seed.prompt,
-        level,
-        structured: slangStructured,
-      });
-      applyGenerated(result, seed.prompt);
-      setInvented(true);
-      flash('form');
-    } catch (err) {
-      setGenerateError(err instanceof Error ? err.message : 'Ошибка генерации');
-    } finally {
-      setGenerateLoading(false);
-    }
+  const askForLevel = () => {
+    setLevelNotice(true);
+    window.setTimeout(() => setLevelNotice(false), 3200);
   };
 
   const handleFieldRegen = async (field: UserScenarioField) => {
+    if (!level) {
+      askForLevel();
+      return;
+    }
     setFieldBusy(field);
     setGenerateError(null);
     try {
@@ -883,15 +868,16 @@ export function PersonalScenariosUI({
   };
 
   const handleGenerate = async () => {
-    if (!prompt.trim() && !topic.trim() && !place.trim() && !userRole.trim() && !goalStructured.trim()) {
-      setGenerateError('Введите запрос или заполните поля (тема, место, роль, цель).');
+    if (!level) {
+      askForLevel();
       return;
     }
+    const hasInput = Boolean(prompt.trim() || topic.trim() || place.trim() || userRole.trim() || goalStructured.trim());
     setGenerateLoading(true);
     setGenerateError(null);
     try {
       const result = await generateUserScenario({
-        prompt: prompt.trim() || undefined,
+        prompt: hasInput ? (prompt.trim() || undefined) : `Короткий учебный диалог для уровня ${level}`,
         level,
         structured: {
           topic: topic.trim() || undefined,
@@ -904,18 +890,8 @@ export function PersonalScenariosUI({
           profanityIntensity: createProfanityIntensity,
         },
       });
-      setGenerated({
-        ...result,
-        payload: {
-          ...result.payload,
-          slangMode: createSlangMode,
-          allowProfanity: createAllowProfanity,
-          aiMayUseProfanity: createAllowProfanity ? createAiMayUseProfanity : false,
-          profanityIntensity: createProfanityIntensity,
-        },
-      });
-      setEditTitle(result.title);
-      setCreateStep(2);
+      applyGenerated({ ...result, level });
+      flash('form');
     } catch (err) {
       setGenerateError(err instanceof Error ? err.message : 'Ошибка генерации');
     } finally {
@@ -934,7 +910,6 @@ export function PersonalScenariosUI({
         payload: generated.payload,
       });
       setGenerated(null);
-      setInvented(false);
       setEditTitle('');
       setCreateStep(1);
       setPrompt('');
@@ -1322,6 +1297,7 @@ export function PersonalScenariosUI({
                       value={level}
                       onChange={setLevel}
                       options={LEVELS}
+                      placeholder="Выберите уровень"
                       ariaLabel="Уровень сценария"
                     />
                   </label>
@@ -1474,8 +1450,8 @@ export function PersonalScenariosUI({
                     <button type="button" onClick={() => setCreateStep(3)} style={btnPrimary}>
                       Далее — название и сохранение
                     </button>
-                    <button type="button" onClick={handleInvent} disabled={generateLoading} style={btnSecondary}>
-                      {generateLoading ? 'Генерация…' : 'Придумать другой'}
+                    <button type="button" onClick={handleGenerate} disabled={generateLoading} style={btnSecondary}>
+                      {generateLoading ? 'Генерация…' : 'Сгенерировать сценарий'}
                     </button>
                     <button type="button" onClick={() => setCreateStep(1)} style={btnSecondary}>
                       Назад
@@ -1517,7 +1493,7 @@ export function PersonalScenariosUI({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setGenerated(null); setInvented(false); setEditTitle(''); setCreateStep(1); }}
+                      onClick={() => { setGenerated(null); setEditTitle(''); setCreateStep(1); }}
                       style={btnSecondary}
                     >
                       Отмена
@@ -1545,15 +1521,7 @@ export function PersonalScenariosUI({
                 background: 'var(--sidebar-bg)',
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <button type="button" onClick={handleInvent} disabled={generateLoading || Boolean(fieldBusy)} style={{ ...btnPrimary, opacity: generateLoading ? 0.7 : 1 }}>
-                  {generateLoading ? 'Генерация…' : invented ? 'Придумать другой' : 'Придумай сценарий'}
-                </button>
-                {invented && (
-                  <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Заменит тему, цель и шаги</span>
-                )}
-              </div>
-              <button type="button" onClick={handleGenerate} disabled={generateLoading || Boolean(fieldBusy)} style={{ ...btnSecondary, opacity: generateLoading ? 0.7 : 1 }}>
+              <button type="button" onClick={handleGenerate} disabled={generateLoading || Boolean(fieldBusy)} style={{ ...btnPrimary, opacity: generateLoading ? 0.7 : 1 }}>
                 {generateLoading ? 'Генерация…' : 'Сгенерировать сценарий'}
               </button>
               {generated && (
@@ -1563,6 +1531,7 @@ export function PersonalScenariosUI({
               )}
             </div>
           )}
+          <LevelRequiredNotice open={levelNotice} message="Сначала выберите уровень" />
         </div>
       </>
     );

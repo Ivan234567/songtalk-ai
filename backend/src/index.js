@@ -18,7 +18,7 @@ import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
 import { getCost } from './balance-rates.js'
-import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction } from './learning-language.js'
+import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction, CEFR_LEVEL_INSTRUCTIONS } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
@@ -2535,7 +2535,8 @@ Rules:
   parts.push(`AI may use profanity: ${aiMayUseProfanity ? 'yes' : 'no'}`)
   parts.push(`Profanity intensity: ${profanityIntensity}`)
   parts.push('Hard forbidden themes: pedophilia/minors sexual content, extremism/terrorism promotion, violent wrongdoing instructions, non-consensual sexual violence, direct real-world threats, doxxing.')
-  const userPrompt = `${parts.join('\n')}\n\nLevel: ${level}. ${levelHint}\n\nGenerate the scenario JSON now (only the JSON object, no other text).`
+  const levelLock = CEFR_LEVEL_INSTRUCTIONS[level] || levelHint
+  const userPrompt = `${parts.join('\n')}\n\nMANDATORY LEVEL: ${level} only. ${levelLock}\nWrite the dialogue so a learner at ${level} can say it. Do not use a higher level and do not drop below it.\n\nGenerate the scenario JSON now (only the JSON object, no other text).`
 
   try {
     const completion = await llm.chat.completions.create({
@@ -2614,7 +2615,9 @@ app.post('/api/user-scenarios/generate-field', async (req, res) => {
     steps: 'Rewrite ONLY the steps (2–4). Keep the same situation and goal. JSON: {"steps":[{"id":"step1","order":1,"titleRu":"шаг по-русски","titleEn":"step in English"}]}',
   }[field]
 
+  const levelLock = `MANDATORY LEVEL: ${level} only. ${CEFR_LEVEL_INSTRUCTIONS[level] || 'Use natural everyday English at this level.'} The learner lines must be speakable at ${level}.`
   const userPrompt = [
+    levelLock,
     `Level: ${level}`,
     topic ? `Topic: ${topic}` : '',
     place ? `Place: ${place}` : '',
@@ -2629,7 +2632,7 @@ app.post('/api/user-scenarios/generate-field', async (req, res) => {
     const completion = await llm.chat.completions.create({
       model: AITUNNEL_MODEL,
       messages: [
-        { role: 'system', content: 'You rewrite one field of an English roleplay scenario for Russian-speaking learners. Output ONLY valid JSON, no markdown.' },
+        { role: 'system', content: 'You rewrite one field of an English roleplay scenario for Russian-speaking learners. Output ONLY valid JSON, no markdown. The user message states one level. English lines must stay inside that level only.' },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: 700,

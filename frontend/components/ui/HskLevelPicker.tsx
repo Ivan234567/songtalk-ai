@@ -64,7 +64,7 @@ export function HskLevelPicker({
   );
 }
 
-export function LevelRequiredNotice({ open }: { open: boolean }) {
+export function LevelRequiredNotice({ open, message = 'Сначала выберите уровень HSK' }: { open: boolean; message?: string }) {
   if (!open) return null;
   return (
     <div
@@ -85,7 +85,7 @@ export function LevelRequiredNotice({ open }: { open: boolean }) {
         boxShadow: '0 10px 28px rgba(0,0,0,0.28)',
       }}
     >
-      Сначала выберите уровень HSK
+      {message}
     </div>
   );
 }
