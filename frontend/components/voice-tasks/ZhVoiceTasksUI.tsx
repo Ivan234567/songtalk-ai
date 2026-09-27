@@ -21,7 +21,7 @@ import {
   type ZhVoiceTaskType,
 } from '@/lib/zh-voice-tasks';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
-import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
+import { HskLevelPicker, LevelRequiredNotice } from '@/components/ui/HskLevelPicker';
 import { ZhVoiceTaskConstructor } from '@/components/voice-tasks/ZhVoiceTaskConstructor';
 import { ZhVoiceTaskBriefing } from '@/components/voice-tasks/ZhVoiceTaskBriefing';
 
@@ -108,42 +108,45 @@ const HSK_FILTERS: { value: string; label: string }[] = [
 ];
 
 function ZhIntentForm({
-  defaultHsk,
   onGenerated,
   onManualCreate,
 }: {
-  defaultHsk: ZhHskLevel;
   onGenerated: (draft: ZhVoiceTask) => void;
-  onManualCreate: () => void;
+  onManualCreate: (draft: ZhVoiceTask) => void;
 }) {
   const [prompt, setPrompt] = useState('');
   const [textbook, setTextbook] = useState('');
   const [lesson, setLesson] = useState('');
   const [goal, setGoal] = useState('');
-  const [hsk, setHsk] = useState<ZhHskLevel>(defaultHsk);
+  const [hsk, setHsk] = useState<ZhHskLevel | null>(null);
+  const [levelNotice, setLevelNotice] = useState(false);
   const [type, setType] = useState<'auto' | Exclude<ZhVoiceTaskType, 'picture'>>('auto');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = prompt.trim() || (textbook.trim() && (goal.trim() || lesson.trim()));
+  const askForLevel = () => {
+    setLevelNotice(true);
+    window.setTimeout(() => setLevelNotice(false), 3200);
+  };
 
   const handleGenerate = async () => {
-    if (!canSubmit) {
-      setError('Опишите минутку или укажите учебник и что отработать.');
+    if (!hsk) {
+      askForLevel();
       return;
     }
     setLoading(true);
     setError(null);
     try {
       const result = await generateZhVoiceTask({
-        prompt: prompt.trim() || undefined,
+        prompt: prompt.trim() || `Короткое высказывание для HSK ${hsk}`,
         textbook_title: textbook.trim() || undefined,
         lesson_no: lesson.trim() || undefined,
         goal: goal.trim() || undefined,
         hsk_level: hsk,
         type,
       });
-      onGenerated(draftFromGenerateResult(result));
+      const draft = draftFromGenerateResult(result);
+      onGenerated({ ...draft, hsk_level: hsk, time_target_sec: draft.time_target_sec });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка генерации');
     } finally {
@@ -151,8 +154,24 @@ function ZhIntentForm({
     }
   };
 
+  const handleManual = () => {
+    if (!hsk) {
+      askForLevel();
+      return;
+    }
+    const base = emptyManualZhVoiceTask(hsk);
+    onManualCreate({
+      ...base,
+      hsk_level: hsk,
+      situation_ru: prompt.trim(),
+      instruction_ru: goal.trim(),
+      description: [textbook.trim(), lesson.trim()].filter(Boolean).join(' · '),
+    });
+  };
+
   return (
-    <div style={{ padding: '1rem 1.25rem 1.1rem', overflow: 'visible', flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div style={{ padding: '1rem 1.25rem 1.1rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.4, opacity: 0.85 }}>
         Опишите одно высказывание — ИИ соберёт карточку, чеклист и эталон. Без диалога и ролей.
       </p>
@@ -202,24 +221,26 @@ function ZhIntentForm({
         <span style={labelStyle}>HSK</span>
         <HskLevelPicker value={hsk} onChange={setHsk} />
       </div>
+    </div>
       {error && (
         <p style={{ margin: 0, padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
           {error}
         </p>
       )}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={handleGenerate} disabled={loading || !canSubmit} style={{ ...btnPrimary, opacity: loading || !canSubmit ? 0.7 : 1 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexShrink: 0, padding: '0.85rem 1.25rem 1.1rem', borderTop: '1px solid var(--sidebar-border)' }}>
+        <button type="button" onClick={handleGenerate} disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Генерация…' : 'Сгенерировать минутку'}
         </button>
-        <button type="button" onClick={onManualCreate} disabled={loading} style={btnSecondary}>
+        <button type="button" onClick={handleManual} disabled={loading} style={btnSecondary}>
           Создать вручную
         </button>
       </div>
+      <LevelRequiredNotice open={levelNotice} />
     </div>
   );
 }
 
-export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk = 2 }: Props) {
+export function ZhVoiceTasksUI({ onStartTask, onClose, initialView }: Props) {
   const [view, setView] = useState<'create' | 'my'>(initialView === 'create' ? 'create' : 'my');
   const [tasks, setTasks] = useState<ZhVoiceTask[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -469,7 +490,7 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Голосовые минутки" style={overlayStyle} onClick={briefing || draft ? undefined : onClose}>
-      <div style={{ ...panelStyle, maxWidth: draft || briefing ? 980 : 720, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ ...panelStyle, maxWidth: draft || briefing ? 980 : 720, height: !draft && !briefing && view === 'create' ? 'min(94vh, 100%)' : undefined, overflow: draft ? 'visible' : 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--sidebar-border)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div
             style={{
@@ -545,9 +566,8 @@ export function ZhVoiceTasksUI({ onStartTask, onClose, initialView, defaultHsk =
           />
         ) : view === 'create' ? (
           <ZhIntentForm
-            defaultHsk={defaultHsk}
             onGenerated={(next) => { setSaveError(null); setDraft(next); }}
-            onManualCreate={() => { setSaveError(null); setDraft(emptyManualZhVoiceTask(defaultHsk)); }}
+            onManualCreate={(next) => { setSaveError(null); setDraft(next); }}
           />
         ) : (
           <>

@@ -7,7 +7,9 @@ const UUID_RE =
 
 const TYPES = ['voicemail', 'explain', 'retell', 'picture']
 const V1_TYPES = ['voicemail', 'explain', 'retell']
-const GENERATE_PARTS = ['vocabulary', 'checklist', 'model_answer', 'stimulus']
+import { HSK_LEVEL_INSTRUCTIONS } from './learning-language.js'
+
+const GENERATE_PARTS = ['vocabulary', 'checklist', 'model_answer', 'stimulus', 'situation', 'instruction', 'checklist_item']
 const STATUSES = ['draft', 'ready']
 const SOURCES = ['user', 'system', 'all']
 const VERDICTS = ['done', 'almost', 'missed']
@@ -324,9 +326,10 @@ Rules:
 
 const ZH_VOICE_GENERATE_PART_SYSTEM = `You update ONE part of an existing Simplified Chinese one-shot speaking task.
 Output ONLY valid JSON, no markdown, no code fence.
-Keep the same HSK, type, and situation. Do not rewrite parts you were not asked to change.
+Keep the type and the parts you were not asked to change.
 Chinese fields: Simplified Chinese only. UI strings: Russian. Pinyin with tone marks.
-This is still NOT a dialogue: no roles, steps, or character lines.`
+This is still NOT a dialogue: no roles, steps, or character lines.
+The user message states one HSK level. Chinese lines and the speaking task must stay inside that level only.`
 
 const ZH_VOICE_EVALUATE_SYSTEM = `You check ONE Simplified Chinese speaking attempt against a checklist.
 The transcript comes from speech-to-text and MAY contain wrong characters, missing particles, or near-homophones. Judge MEANING, not exact hanzi match.
@@ -422,7 +425,8 @@ export function registerZhVoiceTaskRoutes(app, {
     if (textbookTitle) parts.push(`Textbook: ${textbookTitle}`)
     if (lessonNo) parts.push(`Lesson: ${lessonNo}`)
     if (goal) parts.push(`Practice goal: ${goal}`)
-    parts.push(`HSK level: ${hsk}`)
+    parts.push(`MANDATORY LEVEL: HSK ${hsk} only. ${HSK_LEVEL_INSTRUCTIONS[hsk] || HSK_LEVEL_INSTRUCTIONS[2]}`)
+    parts.push(`Write the utterance, checklist and model answer so a learner at HSK ${hsk} can say them. Do not use a higher level.`)
     parts.push(`Task type (mandatory): ${typeHint}`)
     parts.push('If the request sounds like a dialogue, compress it into one voice message. Nobody replies.')
     parts.push('Hard forbidden themes: sexual content involving minors, extremism, violent crime instructions, doxxing, real-world threats.')
@@ -477,7 +481,7 @@ export function registerZhVoiceTaskRoutes(app, {
       }
 
       const title = asTrimmed(parsed.title, 200) || 'Новое задание'
-      const hskOut = asHsk(parsed.hsk_level) || hsk
+      const hskOut = hsk
 
       const usage = completion?.usage
       if (usage && typeof deductBalance === 'function' && typeof getCost === 'function') {
@@ -519,7 +523,7 @@ export function registerZhVoiceTaskRoutes(app, {
     const body = req.body || {}
     const part = body.part
     if (!GENERATE_PARTS.includes(part)) {
-      return res.status(400).json({ error: 'part должен быть vocabulary, checklist, model_answer или stimulus' })
+      return res.status(400).json({ error: 'Неизвестная часть минутки' })
     }
     const src = body.task && typeof body.task === 'object' ? body.task : {}
     const type = asV1Type(src.type)
@@ -530,6 +534,8 @@ export function registerZhVoiceTaskRoutes(app, {
     const title = asTrimmed(src.title, 200) || 'Задание'
     const hsk = asHsk(src.hsk_level ?? src.hskLevel ?? payload.hsk_level) || 2
     const note = asTrimmed(body.note, 400)
+    const itemIndex = Number.isInteger(Number(body.index)) && Number(body.index) >= 0 ? Number(body.index) : 0
+    const hskLock = `MANDATORY LEVEL: HSK ${hsk} only. ${HSK_LEVEL_INSTRUCTIONS[hsk] || HSK_LEVEL_INSTRUCTIONS[2]} The utterance must be speakable at HSK ${hsk}.`
 
     const snapshot = {
       title,
@@ -553,7 +559,13 @@ export function registerZhVoiceTaskRoutes(app, {
     if (part === 'vocabulary') {
       want =
         'Regenerate ONLY vocabulary (4–8 items). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1}]}. ' +
-        'Stay at or below the HSK. Pinyin with tone marks.'
+        `Words must be HSK ${hsk} only. Set each hsk_level to ${hsk} or lower. Pinyin with tone marks.`
+    } else if (part === 'situation') {
+      want = 'Rewrite ONLY the situation. JSON: {"situation_ru":"одно-два предложения по-русски"}. Keep the same task type. Doable at this HSK. Do not repeat the current wording.'
+    } else if (part === 'instruction') {
+      want = 'Rewrite ONLY what the learner must say. JSON: {"instruction_ru":"инструкция по-русски"}. One utterance, not a dialogue. Doable at this HSK. Do not repeat the current wording.'
+    } else if (part === 'checklist_item') {
+      want = `Rewrite ONLY checklist item number ${itemIndex + 1}. JSON: {"label_ru":"один пункт по-русски"}. One thing to cover in the same utterance. Do not write the other items.`
     } else if (part === 'checklist') {
       want =
         'Regenerate ONLY checklist (2–4 items). JSON: {"checklist":[{"id":"item-1","label_ru":""}]}. ' +
@@ -569,6 +581,7 @@ export function registerZhVoiceTaskRoutes(app, {
     }
 
     const userPrompt = [
+      hskLock,
       `Current task JSON:\n${JSON.stringify(snapshot)}`,
       want,
       note ? `Extra instruction from the author: ${note}` : '',
@@ -614,6 +627,18 @@ export function registerZhVoiceTaskRoutes(app, {
           return res.status(422).json({ error: 'ИИ не вернул чеклист, попробуйте ещё раз' })
         }
         patch = { checklist }
+      } else if (part === 'situation') {
+        const situation_ru = asTrimmed(parsed.situation_ru, 500)
+        if (!situation_ru) return res.status(422).json({ error: 'ИИ не вернул ситуацию, попробуйте ещё раз' })
+        patch = { situation_ru }
+      } else if (part === 'instruction') {
+        const instruction_ru = asTrimmed(parsed.instruction_ru, 800)
+        if (!instruction_ru) return res.status(422).json({ error: 'ИИ не вернул задание, попробуйте ещё раз' })
+        patch = { instruction_ru }
+      } else if (part === 'checklist_item') {
+        const label_ru = asTrimmed(parsed.label_ru, 200)
+        if (!label_ru) return res.status(422).json({ error: 'ИИ не вернул пункт, попробуйте ещё раз' })
+        patch = { label_ru, index: itemIndex }
       } else if (part === 'model_answer') {
         const model_answer_zh = asTrimmed(parsed.model_answer_zh, 800)
         const model_answer_pinyin = asTrimmed(parsed.model_answer_pinyin, 800)

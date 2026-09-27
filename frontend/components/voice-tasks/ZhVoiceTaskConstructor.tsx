@@ -12,12 +12,12 @@ import {
   ZH_VOICE_TASK_MIN_SEC,
   ZH_VOICE_TASK_V1_TYPES,
   zhVoiceTaskTypeLabel,
-  type ZhHskLevel,
   type ZhVoiceTask,
   type ZhVoiceTaskGeneratePart,
   type ZhVoiceTaskType,
 } from '@/lib/zh-voice-tasks';
-import { HskLevelPicker } from '@/components/ui/HskLevelPicker';
+import { HskLevelPicker, LevelRequiredNotice } from '@/components/ui/HskLevelPicker';
+import { FieldAiButton, fieldFlashStyle } from '@/components/roleplay/FieldAiButton';
 import { ZhVoiceTaskBriefing } from '@/components/voice-tasks/ZhVoiceTaskBriefing';
 
 const inputStyle: React.CSSProperties = {
@@ -105,10 +105,12 @@ type Props = {
 
 export function ZhVoiceTaskConstructor({ draft, onChange, onBack, onSave, saving, saveError }: Props) {
   const [showPreview, setShowPreview] = useState(true);
-  const [regenPart, setRegenPart] = useState<ZhVoiceTaskGeneratePart | null>(null);
+  const [regenKey, setRegenKey] = useState<string | null>(null);
   const [regenError, setRegenError] = useState<string | null>(null);
+  const [levelNotice, setLevelNotice] = useState(false);
+  const [flashKey, setFlashKey] = useState<string | null>(null);
   const canSave = canSaveZhVoiceTask(draft);
-  const hsk = (draft.hsk_level || 2) as ZhHskLevel;
+  const hsk = draft.hsk_level ?? null;
 
   const patch = (partial: Partial<ZhVoiceTask>) => onChange({ ...draft, ...partial });
 
@@ -156,21 +158,40 @@ export function ZhVoiceTaskConstructor({ draft, onChange, onBack, onSave, saving
     patch({ vocabulary: (draft.vocabulary || []).filter((_, i) => i !== index) });
   };
 
-  const handleRegenerate = async (part: ZhVoiceTaskGeneratePart) => {
+  const askForLevel = () => {
+    setLevelNotice(true);
+    window.setTimeout(() => setLevelNotice(false), 3200);
+  };
+
+  const handleRegenerate = async (part: ZhVoiceTaskGeneratePart, index?: number) => {
+    if (!draft.hsk_level) {
+      askForLevel();
+      return;
+    }
     if (part === 'stimulus' && draft.type !== 'retell') return;
-    setRegenPart(part);
+    const key = index == null ? part : `${part}:${index}`;
+    setRegenKey(key);
     setRegenError(null);
     try {
       const result = await generateZhVoiceTaskPart({
         part,
+        index,
         task: toZhVoiceTaskWritePayload({ ...draft, title: draft.title || 'Минутка' }),
       });
       onChange(applyGeneratePartPatch(draft, part, result.patch));
+      setFlashKey(key);
+      window.setTimeout(() => setFlashKey((cur) => (cur === key ? null : cur)), 1200);
     } catch (err) {
       setRegenError(err instanceof Error ? err.message : 'Не удалось перегенерировать');
     } finally {
-      setRegenPart(null);
+      setRegenKey(null);
     }
+  };
+
+  const regenBusy = Boolean(regenKey);
+  const ai = (part: ZhVoiceTaskGeneratePart, label: string, index?: number) => {
+    const key = index == null ? part : `${part}:${index}`;
+    return <FieldAiButton label={label} busy={regenKey === key} disabled={regenBusy} onClick={() => handleRegenerate(part, index)} />;
   };
 
   return (
@@ -238,34 +259,34 @@ export function ZhVoiceTaskConstructor({ draft, onChange, onBack, onSave, saving
                 min={ZH_VOICE_TASK_MIN_SEC}
                 max={ZH_VOICE_TASK_MAX_SEC}
                 value={draft.time_target_sec}
-                onChange={(e) => patch({ time_target_sec: clampTimeTargetSec(e.target.value, hsk) })}
+                onChange={(e) => patch({ time_target_sec: clampTimeTargetSec(e.target.value, hsk || 2) })}
                 style={inputStyle}
               />
             </label>
           </Section>
 
           <Section title="Минутка">
-            <label>
-              <span style={labelStyle}>Ситуация</span>
+            <label style={fieldFlashStyle(flashKey === 'situation')}>
+              <span style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                Ситуация
+                {ai('situation', 'Другая ситуация')}
+              </span>
               <textarea value={draft.situation_ru || ''} onChange={(e) => patch({ situation_ru: e.target.value })} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
             </label>
-            <label>
-              <span style={labelStyle}>Что сказать</span>
+            <label style={fieldFlashStyle(flashKey === 'instruction')}>
+              <span style={{ ...labelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                Что сказать
+                {ai('instruction', 'Другое задание')}
+              </span>
               <textarea value={draft.instruction_ru} onChange={(e) => patch({ instruction_ru: e.target.value })} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
             </label>
           </Section>
 
-          <Section
-            title="Чеклист"
-            action={
-              <button type="button" disabled={regenPart === 'checklist'} onClick={() => handleRegenerate('checklist')} style={btnSecondary}>
-                {regenPart === 'checklist' ? 'Генерация…' : 'Пересобрать'}
-              </button>
-            }
-          >
+          <Section title="Чеклист">
             {(draft.checklist || []).map((item, i) => (
-              <div key={item.id || i} style={{ display: 'flex', gap: 8 }}>
+              <div key={item.id || i} style={{ display: 'flex', gap: 8, alignItems: 'center', ...fieldFlashStyle(flashKey === `checklist_item:${i}`) }}>
                 <input value={item.label_ru} onChange={(e) => updateChecklist(i, e.target.value)} placeholder={`Пункт ${i + 1}`} style={inputStyle} />
+                {ai('checklist_item', 'Другой пункт', i)}
                 <button type="button" onClick={() => removeChecklist(i)} style={btnSecondary}>×</button>
               </div>
             ))}
@@ -274,14 +295,7 @@ export function ZhVoiceTaskConstructor({ draft, onChange, onBack, onSave, saving
             )}
           </Section>
 
-          <Section
-            title="Опорные слова"
-            action={
-              <button type="button" disabled={regenPart === 'vocabulary'} onClick={() => handleRegenerate('vocabulary')} style={btnSecondary}>
-                {regenPart === 'vocabulary' ? 'Генерация…' : 'Пересобрать'}
-              </button>
-            }
-          >
+          <Section title="Опорные слова" action={ai('vocabulary', 'Другие слова')}>
             {(draft.vocabulary || []).map((v, i) => (
               <div key={`${v.hanzi}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8 }}>
                 <input value={v.hanzi} onChange={(e) => updateVocab(i, 'hanzi', e.target.value)} placeholder="汉字" style={inputStyle} />
@@ -294,34 +308,21 @@ export function ZhVoiceTaskConstructor({ draft, onChange, onBack, onSave, saving
           </Section>
 
           {draft.type === 'retell' && (
-            <Section
-              title="Стимул"
-              action={
-                <button type="button" disabled={regenPart === 'stimulus'} onClick={() => handleRegenerate('stimulus')} style={btnSecondary}>
-                  {regenPart === 'stimulus' ? 'Генерация…' : 'Пересобрать'}
-                </button>
-              }
-            >
+            <Section title="Стимул" action={ai('stimulus', 'Другой стимул')}>
               <textarea value={draft.stimulus_zh || ''} onChange={(e) => patch({ stimulus_zh: e.target.value })} rows={2} placeholder="中文" style={{ ...inputStyle, resize: 'vertical' }} />
               <input value={draft.stimulus_pinyin || ''} onChange={(e) => patch({ stimulus_pinyin: e.target.value })} placeholder="пиньинь" style={inputStyle} />
               <input value={draft.stimulus_ru || ''} onChange={(e) => patch({ stimulus_ru: e.target.value })} placeholder="перевод" style={inputStyle} />
             </Section>
           )}
 
-          <Section
-            title="Эталон (после проверки)"
-            action={
-              <button type="button" disabled={regenPart === 'model_answer'} onClick={() => handleRegenerate('model_answer')} style={btnSecondary}>
-                {regenPart === 'model_answer' ? 'Генерация…' : 'Пересобрать'}
-              </button>
-            }
-          >
+          <Section title="Эталон (после проверки)" action={ai('model_answer', 'Другой эталон')}>
             <textarea value={draft.model_answer_zh || ''} onChange={(e) => patch({ model_answer_zh: e.target.value })} rows={2} placeholder="中文" style={{ ...inputStyle, resize: 'vertical' }} />
             <input value={draft.model_answer_pinyin || ''} onChange={(e) => patch({ model_answer_pinyin: e.target.value })} placeholder="пиньинь" style={inputStyle} />
             <input value={draft.model_answer_ru || ''} onChange={(e) => patch({ model_answer_ru: e.target.value })} placeholder="перевод" style={inputStyle} />
           </Section>
         </div>
 
+        <LevelRequiredNotice open={levelNotice} />
         {showPreview && (
           <div style={{ borderLeft: '1px solid var(--sidebar-border)', padding: '1rem 1.25rem', overflowY: 'auto' }}>
             <ZhVoiceTaskBriefing task={draft} variant="preview" />

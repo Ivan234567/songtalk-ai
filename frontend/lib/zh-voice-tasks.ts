@@ -8,7 +8,14 @@ import { getStoredBackendToken } from '@/lib/backend-jwt';
 export type ZhHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
 export type ZhVoiceTaskType = 'voicemail' | 'explain' | 'retell' | 'picture';
 export type ZhVoiceTaskSource = 'user' | 'system';
-export type ZhVoiceTaskGeneratePart = 'vocabulary' | 'checklist' | 'model_answer' | 'stimulus';
+export type ZhVoiceTaskGeneratePart =
+  | 'vocabulary'
+  | 'checklist'
+  | 'model_answer'
+  | 'stimulus'
+  | 'situation'
+  | 'instruction'
+  | 'checklist_item';
 export type ZhVoiceTaskStatus = 'draft' | 'ready';
 export type ZhVoiceAttemptStatus = 'recorded' | 'checked' | 'abandoned';
 export type ZhChecklistItemStatus = 'done' | 'almost' | 'missed';
@@ -341,6 +348,7 @@ export type GenerateZhVoiceTaskPartParams = {
   part: ZhVoiceTaskGeneratePart;
   task: ZhVoiceTaskWritePayload & { title?: string; hsk_level?: ZhHskLevel | null; type?: ZhVoiceTaskType };
   note?: string;
+  index?: number;
 };
 
 export type GenerateZhVoiceTaskPartResult = {
@@ -464,6 +472,22 @@ export function applyGeneratePartPatch(
       stimulus_pinyin: asNullableString(patch.stimulus_pinyin),
       stimulus_ru: asNullableString(patch.stimulus_ru),
     };
+  }
+  if (part === 'situation') {
+    return { ...draft, situation_ru: asString(patch.situation_ru) || draft.situation_ru };
+  }
+  if (part === 'instruction') {
+    return { ...draft, instruction_ru: asString(patch.instruction_ru) || draft.instruction_ru };
+  }
+  if (part === 'checklist_item') {
+    const index = Number(patch.index);
+    const label = asString(patch.label_ru);
+    if (!label || !Number.isInteger(index) || index < 0) return draft;
+    const checklist = [...(draft.checklist || [])];
+    const prev = checklist[index];
+    if (!prev) return draft;
+    checklist[index] = { ...prev, label_ru: label };
+    return { ...draft, checklist };
   }
   return draft;
 }
