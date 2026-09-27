@@ -3,6 +3,8 @@
  * Генерация ИИ — этап 3.
  */
 
+import { HSK_LEVEL_INSTRUCTIONS } from './learning-language.js'
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -497,11 +499,12 @@ Rules:
 - Always include stress_twist_ru: one realistic snag that does NOT change the outcome (they misheard, they are in a hurry, the slot is taken).
 - No profanity. No English spoken lines.`
 
-const ZH_GENERATE_PART_SYSTEM = `You update ONE part of an existing Simplified Chinese roleplay scenario for Russian-speaking learners (HSK 1–6).
+const ZH_GENERATE_PART_SYSTEM = `You update ONE part of an existing Simplified Chinese roleplay scenario for Russian-speaking learners.
 Output ONLY valid JSON, no markdown, no code fence.
-Keep the same HSK, situation, and roles. Do not rewrite parts you were not asked to change.
+Keep the situation and roles unless that exact field was requested. Do not rewrite parts you were not asked to change.
 Dialogue Chinese fields: Simplified Chinese only. UI strings: Russian.
-Pinyin must include tone marks.`
+Pinyin must include tone marks.
+The user message states one HSK level. That level is mandatory for this rewrite: Chinese lines use only that level, and Russian tasks must be doable with only that level's words.`
 
 export function registerZhScenarioRoutes(app, {
   supabase,
@@ -739,13 +742,19 @@ export function registerZhScenarioRoutes(app, {
     }
 
     const fromLife = payload.from_life === true
+    const hskLock = [
+      `MANDATORY LEVEL: HSK ${hsk} only.`,
+      HSK_LEVEL_INSTRUCTIONS[hsk] || HSK_LEVEL_INSTRUCTIONS[3],
+      `Every Chinese string you write (hanzi, example_zh, character_opening, suggested_first_line, keywords) must be speakable at HSK ${hsk}.`,
+      `Russian fields must describe a task the learner can finish with HSK ${hsk} words. Do not invent a harder scene than this level can say.`,
+    ].join(' ')
     let want = ''
     if (part === 'vocabulary') {
       want = fromLife
-        ? 'Regenerate ONLY vocabulary (4–8 pocket phrases). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1,"usage":"pocket"}]}. ' +
-          'Every item usage=pocket. These are phrases the learner might need if they freeze, not lesson words and not lines for you to teach. Stay at or below the HSK.'
-        : 'Regenerate ONLY vocabulary (4–12 items). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1,"usage":"must_say"}]}. ' +
-          'Mark 3–6 core lesson words usage=must_say; the rest usage=model. Stay at or below the HSK.'
+        ? `Regenerate ONLY vocabulary (4–8 pocket phrases). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":${hsk},"usage":"pocket"}]}. ` +
+          `Every item usage=pocket. These are phrases the learner might need if they freeze, not lesson words and not lines for you to teach. Words must be HSK ${hsk} only. Set each hsk_level to ${hsk} or lower, never higher.`
+        : `Regenerate ONLY vocabulary (4–12 items). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":${hsk},"usage":"must_say"}]}. ` +
+          `Mark 3–6 core lesson words usage=must_say; the rest usage=model. Words must be HSK ${hsk} only. Set each hsk_level to ${hsk} or lower, never higher.`
     } else if (part === 'steps') {
       want = fromLife
         ? 'Regenerate ONLY steps (3–5). JSON: {"steps":[{"id":"step1","order":1,"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}]}. ' +
@@ -780,6 +789,7 @@ export function registerZhScenarioRoutes(app, {
     }
 
     const userPrompt = [
+      hskLock,
       `Current scenario JSON:\n${JSON.stringify(snapshot)}`,
       want,
       note ? `Extra instruction from the author: ${note}` : '',
