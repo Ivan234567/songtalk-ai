@@ -47,9 +47,11 @@ export function FieldAiButton({ label, busy, disabled, onClick }: Props) {
           }}
         />
       ) : (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z" />
-          <path d="M19 14l.7 1.8L21.5 16.5 19.7 17.2 19 19l-.7-1.8-1.8-.7 1.8-.7L19 14z" />
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M15 4l5 5" />
+          <path d="M14 5l-9 9 2 2 9-9" />
+          <path d="M4 20l3.5-1.2L5.2 16.5 4 20z" />
+          <path d="M15 4l1.2-1.2M19 8l1.2 1.2M17.2 3.2l.6 1.4M20.2 6.2l-1.4.6" />
         </svg>
       )}
       <style>{`@keyframes field-ai-spin { to { transform: rotate(360deg); } }`}</style>

@@ -78,8 +78,6 @@ type Props = {
   onAddToDictionary?: () => void;
   vocabBusy?: boolean;
   vocabMessage?: string | null;
-  onInventAnother?: () => void;
-  inventBusy?: boolean;
 };
 
 function Section({
@@ -124,8 +122,6 @@ export function ZhScenarioConstructor({
   onAddToDictionary,
   vocabBusy,
   vocabMessage,
-  onInventAnother,
-  inventBusy,
 }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [advanced, setAdvanced] = useState(false);
@@ -222,12 +218,10 @@ export function ZhScenarioConstructor({
   const goals = Array.isArray(draft.goals) && draft.goals.length
     ? draft.goals.map((g) => (typeof g === 'string' ? g : ''))
     : [''];
-  const regenBusy = Boolean(regenPart) || Boolean(inventBusy);
-  const filled = Boolean(field(draft.title) || field(draft.scenario_text_ru) || goals.some((g) => g.trim()));
-  const ai = (part: ZhGeneratePart, label: string) =>
-    filled ? (
-      <FieldAiButton label={label} busy={regenPart === part} disabled={regenBusy} onClick={() => handleRegenerate(part)} />
-    ) : null;
+  const regenBusy = Boolean(regenPart);
+  const ai = (part: ZhGeneratePart, label: string) => (
+    <FieldAiButton label={label} busy={regenPart === part} disabled={regenBusy} onClick={() => handleRegenerate(part)} />
+  );
 
   return (
     <div style={{ padding: '1rem 1.25rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
@@ -621,11 +615,9 @@ export function ZhScenarioConstructor({
         </label>
       </Section>
 
-      {filled && (
-        <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
-          Значок меняет только это поле. Поля можно править, пока диалог не начат.
-        </p>
-      )}
+      <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>
+        Палочка переписывает только этот блок. Остальные поля остаются как есть.
+      </p>
       {regenError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{regenError}</p>}
       {saveError && <p style={{ margin: 0, color: 'rgb(185, 28, 28)' }}>{saveError}</p>}
       {!canSave && (
@@ -634,14 +626,6 @@ export function ZhScenarioConstructor({
         </p>
       )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        {onInventAnother && (
-          <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
-            <button type="button" onClick={onInventAnother} disabled={regenBusy || saving} style={{ ...btnSecondary, opacity: regenBusy ? 0.7 : 1 }}>
-              {inventBusy ? 'Генерация…' : filled ? 'Придумать другой' : 'Придумай сценарий'}
-            </button>
-            {filled && <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Заменит тему, цель и шаги</span>}
-          </span>
-        )}
         <button type="button" onClick={() => onSave(false)} disabled={saving || !canSave} style={{ ...btnPrimary, opacity: saving || !canSave ? 0.7 : 1 }}>
           {saving ? 'Сохранение…' : 'Сохранить'}
         </button>
