@@ -5,7 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
 import styles from './landing.module.css';
 import { useLandingPreviewLang } from './preview-lang';
-import { SELLER, SELLER_ROWS } from '@/lib/seller';
+import { SELLER } from '@/lib/seller';
 
 const TELEGRAM_SUPPORT = 'https://t.me/SPEAKEASY_SUPPORT';
 
@@ -111,15 +111,31 @@ export function FooterSection() {
           {/* Градиентный разделитель */}
           <div className={styles.ftDivider} aria-hidden />
 
-          {/* Нижняя строка */}
           <div className={styles.ftBottom}>
-            <span className={styles.ftCopy}>© {new Date().getFullYear()} Speakeasy</span>
-            <span className={styles.ftCopy}>
-              {SELLER.legalName}
-              {SELLER_ROWS.filter((row) => row.label === 'ИНН' || row.label === 'ОГРНИП' || row.label === 'Эл. почта' || row.label === 'Телефон')
-                .map((row) => ` · ${row.label} ${row.value}`)
-                .join('')}
-            </span>
+            <p className={styles.ftCopy}>© {new Date().getFullYear()} Speakeasy</p>
+            <p className={styles.ftSellerName}>{SELLER.legalName}</p>
+            <dl className={styles.ftRequisites}>
+              <div className={styles.ftReqItem}>
+                <dt className={styles.ftReqLabel}>ИНН</dt>
+                <dd className={styles.ftReqValue}>{SELLER.inn}</dd>
+              </div>
+              <div className={styles.ftReqItem}>
+                <dt className={styles.ftReqLabel}>ОГРНИП</dt>
+                <dd className={styles.ftReqValue}>{SELLER.ogrnip}</dd>
+              </div>
+              <div className={styles.ftReqItem}>
+                <dt className={styles.ftReqLabel}>Телефон</dt>
+                <dd className={styles.ftReqValue}>
+                  <a href={`tel:${SELLER.phone.replace(/[^\d+]/g, '')}`}>{SELLER.phone}</a>
+                </dd>
+              </div>
+              <div className={styles.ftReqItem}>
+                <dt className={styles.ftReqLabel}>Почта</dt>
+                <dd className={styles.ftReqValue}>
+                  <a href={`mailto:${SELLER.email}`}>{SELLER.email}</a>
+                </dd>
+              </div>
+            </dl>
           </div>
         </div>
       </div>
