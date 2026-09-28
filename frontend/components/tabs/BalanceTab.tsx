@@ -87,8 +87,6 @@ const TOPUP_OPTIONS = [
   },
 ];
 
-const TEST_TOPUP_RUB = 50;
-
 const LOW_BALANCE_THRESHOLD = 50;
 const MIN_BALANCE_PORTFOLIO = 10; // порог, ниже которого сервисы блокируются
 const HISTORY_PAGE_SIZE = 25;
@@ -686,49 +684,6 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
               </article>
             );
           })}
-        </div>
-        <div className={styles.testSlot}>
-          <div className={styles.testSlotCopy}>
-            <p className={styles.testSlotKicker}>Проверка оплаты</p>
-            <p className={styles.testSlotTitle}>Тест · {TEST_TOPUP_RUB} ₽ на баланс</p>
-            <p className={styles.testSlotText}>
-              К оплате через СБП {formatChargeRub(chargeKopecks(TEST_TOPUP_RUB, 'sbp'))}, другими способами {formatChargeRub(chargeKopecks(TEST_TOPUP_RUB, 'other'))}.
-            </p>
-          </div>
-          <div className={styles.testSlotActions}>
-            <button
-              type="button"
-              className={styles.paySbp}
-              disabled={!accessToken || payingKey !== null}
-              aria-busy={payingKey === `${TEST_TOPUP_RUB}:sbp`}
-              onClick={() => startTopup(TEST_TOPUP_RUB, 'sbp')}
-            >
-              {payingKey === `${TEST_TOPUP_RUB}:sbp` ? (
-                <span className={styles.paySpinner} aria-hidden />
-              ) : (
-                <>
-                  <span className={styles.paySbpLabel}>СБП</span>
-                  <span className={styles.paySbpPrice}>{formatChargeRub(chargeKopecks(TEST_TOPUP_RUB, 'sbp'))}</span>
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              className={styles.payOther}
-              disabled={!accessToken || payingKey !== null}
-              aria-busy={payingKey === `${TEST_TOPUP_RUB}:other`}
-              onClick={() => startTopup(TEST_TOPUP_RUB, 'other')}
-            >
-              {payingKey === `${TEST_TOPUP_RUB}:other` ? (
-                <span className={styles.paySpinner} aria-hidden />
-              ) : (
-                <>
-                  <span className={styles.payOtherLabel}>Другие</span>
-                  <span className={styles.payOtherPrice}>{formatChargeRub(chargeKopecks(TEST_TOPUP_RUB, 'other'))}</span>
-                </>
-              )}
-            </button>
-          </div>
         </div>
       </section>
 
