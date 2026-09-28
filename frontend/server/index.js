@@ -2043,6 +2043,82 @@ app.post('/api/agent/debate-topic-prepare', async (req, res) => {
   })
 })
 
+// Debate topic field: one English motion, same idea as scenario field AI buttons.
+app.post('/api/agent/debate-topic-generate', async (req, res) => {
+  const rawToken = getBearerToken(req)
+  if (!rawToken) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
+  const decoded = verifyBackendJwt(rawToken)
+  if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
+  const userId = decoded.sub
+
+  const balance = await getBalance(supabase, userId)
+  if (balance < BALANCE_THRESHOLD_RUB) {
+    return res.status(402).json({ error: 'Пополните баланс' })
+  }
+
+  const body = req.body || {}
+  const difficulty = ['easy', 'medium', 'hard'].includes(body.difficulty) ? body.difficulty : 'medium'
+  const seed = typeof body.seed === 'string' ? body.seed.trim().slice(0, 300) : ''
+  const avoid = typeof body.avoid === 'string' ? body.avoid.trim().slice(0, 300) : ''
+  const difficultyHint = {
+    easy: 'Everyday claim a beginner can argue with simple words: school, food, pets, hobbies, daily habits.',
+    medium: 'A clear claim about work, technology, health, or society. Still one plain sentence.',
+    hard: 'A policy, ethics, or economics claim. One sentence, no jargon pile-up.',
+  }[difficulty]
+
+  const userPrompt = [
+    `Difficulty: ${difficulty}. ${difficultyHint}`,
+    seed ? `Learner note (theme or rough wording): ${seed}` : 'No note. Invent a fresh topic.',
+    avoid ? `Do not return this sentence again: ${avoid}` : '',
+    'If the note is a rough idea, turn it into one clear motion. If it is already a full motion, write a different motion.',
+    'JSON only: {"text":"one English debate motion"}',
+  ].filter(Boolean).join('\n')
+
+  try {
+    const completion = await llm.chat.completions.create({
+      model: AITUNNEL_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: `You write one English debate motion for language learners. Output ONLY valid JSON, no markdown.
+The motion is one declarative sentence a person can argue for or against. English only. 40–160 characters. No quotation marks around the sentence. No line breaks.
+Forbidden: sexual content involving minors, extremism or terrorism, violent crime instructions, non-consensual sexual violence, real-world threats, doxxing.
+If the learner note asks for a forbidden topic, ignore it and write a safe everyday motion instead.`,
+        },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: 180,
+      temperature: 0.8,
+    })
+    const usage = completion?.usage
+    if (usage && (usage.input_tokens || usage.output_tokens)) {
+      const costRub = getCost('deepseek-v3.2', usage)
+      if (costRub > 0) {
+        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { debate_topic_generate: true })
+      }
+    }
+    const raw = completion.choices?.[0]?.message?.content?.trim() || ''
+    const jsonStr = raw.replace(/^```json\s*|\s*```$/g, '').trim()
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStr)
+    } catch {
+      return res.status(422).json({ error: 'Не удалось разобрать ответ ИИ, попробуйте ещё раз' })
+    }
+    let text = typeof parsed.text === 'string' ? parsed.text.replace(/[\r\n]+/g, ' ').replace(/^["'«»]+|["'«»]+$/g, '').trim() : ''
+    text = text.replace(/\s+/g, ' ')
+    if (text.length > 180) text = text.slice(0, 180).trim()
+    const validation = validateDebateTopicInput(text)
+    if (!text || validation.status === 'rejected') {
+      return res.status(422).json({ error: 'ИИ не вернул тему, попробуйте ещё раз' })
+    }
+    res.json({ text, difficulty })
+  } catch (err) {
+    console.error('[api/agent/debate-topic-generate] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Не удалось придумать тему' })
+  }
+})
+
 // Reply hint — подсказка ответа: и по реплике ИИ, и по шагам сценария
 app.post('/api/agent/reply-hint', async (req, res) => {
   const rawToken = getBearerToken(req)

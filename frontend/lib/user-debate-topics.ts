@@ -1,3 +1,4 @@
+import { getStoredBackendToken } from '@/lib/backend-jwt';
 import { supabase } from '@/lib/supabase';
 
 export type UserDebateTopicDifficulty = 'easy' | 'medium' | 'hard';
@@ -192,6 +193,40 @@ export async function archiveUserDebateTopic(
   if (error) {
     throw error;
   }
+}
+
+function getApiUrl(): string {
+  const url = process.env.NEXT_PUBLIC_API_URL || '';
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+/** Придумать или переписать формулировку темы дебата. Кнопка «ИИ» у поля. */
+export async function generateDebateTopic(params: {
+  difficulty?: UserDebateTopicDifficulty;
+  seed?: string;
+  avoid?: string;
+}): Promise<{ text: string }> {
+  const token = getStoredBackendToken();
+  if (!token) throw new Error('Необходима авторизация');
+  const res = await fetch(`${getApiUrl()}/api/agent/debate-topic-generate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      difficulty: params.difficulty,
+      seed: params.seed?.trim() || undefined,
+      avoid: params.avoid?.trim() || undefined,
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { error?: string; text?: string };
+  if (!res.ok) {
+    throw new Error(body.error || 'Не удалось придумать тему');
+  }
+  const text = typeof body.text === 'string' ? body.text.trim() : '';
+  if (!text) throw new Error('ИИ не вернул тему, попробуйте ещё раз');
+  return { text };
 }
 
 export async function deleteUserDebateTopic(userId: string, topicId: string): Promise<void> {

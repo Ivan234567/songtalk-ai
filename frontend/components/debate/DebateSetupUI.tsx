@@ -19,9 +19,11 @@ import {
   type DebateWhoStarts,
 } from '@/lib/debate';
 import { DebateBriefingUI } from './DebateBriefingUI';
+import { FieldAiButton, fieldFlashStyle } from '@/components/roleplay/FieldAiButton';
 import {
   archiveUserDebateTopic,
   deleteUserDebateTopic,
+  generateDebateTopic,
   listUserDebateTopics,
   saveUserDebateTopic,
   updateUserDebateTopic,
@@ -198,6 +200,10 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
   const [customDifficulty, setCustomDifficulty] = useState<DebateDifficulty>('medium');
   const [topicPrepareError, setTopicPrepareError] = useState<string | null>(null);
   const [topicPreparing, setTopicPreparing] = useState(false);
+  const [topicAiBusy, setTopicAiBusy] = useState<'create' | 'edit' | null>(null);
+  const [topicAiError, setTopicAiError] = useState<string | null>(null);
+  const [topicAiWhere, setTopicAiWhere] = useState<'create' | 'edit' | null>(null);
+  const [topicFlash, setTopicFlash] = useState<'create' | 'edit' | null>(null);
   const [myTopics, setMyTopics] = useState<UserDebateTopic[]>([]);
   const [myTopicsLoading, setMyTopicsLoading] = useState(false);
   const [myTopicsError, setMyTopicsError] = useState<string | null>(null);
@@ -631,6 +637,34 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
     []
   );
 
+  const handleTopicAi = async (target: 'create' | 'edit') => {
+    const current = target === 'create' ? customTopic : (editDraft?.topic ?? '');
+    const difficulty = target === 'create' ? customDifficulty : (editDraft?.difficulty ?? 'medium');
+    setTopicAiBusy(target);
+    setTopicAiWhere(target);
+    setTopicAiError(null);
+    try {
+      const trimmed = current.trim();
+      const result = await generateDebateTopic({
+        difficulty,
+        seed: trimmed || undefined,
+        avoid: trimmed || undefined,
+      });
+      if (target === 'create') {
+        setCustomTopic(result.text);
+        setTopicPrepareError(null);
+      } else {
+        setEditDraft((d) => (d ? { ...d, topic: result.text } : d));
+      }
+      setTopicFlash(target);
+      window.setTimeout(() => setTopicFlash((cur) => (cur === target ? null : cur)), 1200);
+    } catch (err) {
+      setTopicAiError(err instanceof Error ? err.message : 'Не удалось придумать тему');
+    } finally {
+      setTopicAiBusy(null);
+    }
+  };
+
   const handleStart = () => {
     if (!canOpenBriefing) return;
     const topic = activeTopicText;
@@ -775,13 +809,24 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
               <div style={{ gridColumn: '1 / -1' }}>
                 <span style={createSectionTitle}>Тема дебата</span>
                 <label style={{ display: 'block' }}>
-                  <span style={createLabelStyle}>Формулировка темы</span>
+                  <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    Формулировка темы
+                    <FieldAiButton
+                      label={editDraft.topic.trim() ? 'Другая тема' : 'Придумать тему'}
+                      busy={topicAiBusy === 'edit'}
+                      disabled={topicAiBusy !== null}
+                      onClick={() => handleTopicAi('edit')}
+                    />
+                  </span>
                   <textarea
                     value={editDraft.topic}
-                    onChange={(e) => setEditDraft((d) => d ? { ...d, topic: e.target.value } : d)}
+                    onChange={(e) => {
+                      setEditDraft((d) => d ? { ...d, topic: e.target.value } : d);
+                      if (topicAiWhere === 'edit') setTopicAiError(null);
+                    }}
                     placeholder="Например: Remote work is better than office work"
                     rows={3}
-                    style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', minHeight: 80 }}
+                    style={{ ...inputStyle, ...fieldFlashStyle(topicFlash === 'edit'), resize: 'vertical', fontFamily: 'inherit', minHeight: 80 }}
                     autoFocus
                   />
                 </label>
@@ -791,7 +836,7 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
                       margin: 0,
                       fontSize: '0.8125rem',
                       color:
-                        topicValidation.status === 'rejected'
+                        (topicAiWhere === 'edit' && topicAiError) || topicValidation.status === 'rejected'
                           ? 'rgb(239, 68, 68)'
                           : topicValidation.status === 'warning'
                             ? 'rgb(202, 138, 4)'
@@ -799,7 +844,10 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
                       opacity: topicValidation.status === 'valid' ? 0.72 : 0.95,
                     }}
                   >
-                    {topicValidation.errors[0] || topicValidation.warnings[0] || `Рекомендуемая длина: ${CUSTOM_TOPIC_MIN_LEN}–${CUSTOM_TOPIC_MAX_LEN} символов.`}
+                    {(topicAiWhere === 'edit' && topicAiError) ||
+                      topicValidation.errors[0] ||
+                      topicValidation.warnings[0] ||
+                      `Рекомендуемая длина: ${CUSTOM_TOPIC_MIN_LEN}–${CUSTOM_TOPIC_MAX_LEN} символов.`}
                   </p>
                   <span style={{ fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.7, flexShrink: 0 }}>
                     {normalizeDebateTopic(editDraft.topic).length}/{CUSTOM_TOPIC_MAX_LEN}
@@ -1653,16 +1701,25 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
                     <div style={{ gridColumn: '1 / -1' }}>
                       <span style={createSectionTitle}>Тема дебата</span>
                       <label style={{ display: 'block' }}>
-                        <span style={createLabelStyle}>Формулировка темы</span>
+                        <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          Формулировка темы
+                          <FieldAiButton
+                            label={customTopic.trim() ? 'Другая тема' : 'Придумать тему'}
+                            busy={topicAiBusy === 'create'}
+                            disabled={topicAiBusy !== null}
+                            onClick={() => handleTopicAi('create')}
+                          />
+                        </span>
                         <textarea
                           value={customTopic}
                           onChange={(e) => {
                             setCustomTopic(e.target.value);
                             setTopicPrepareError(null);
+                            if (topicAiWhere === 'create') setTopicAiError(null);
                           }}
                           placeholder="Например: Remote work is better than office work"
                           rows={3}
-                          style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', minHeight: 80 }}
+                          style={{ ...inputStyle, ...fieldFlashStyle(topicFlash === 'create'), resize: 'vertical', fontFamily: 'inherit', minHeight: 80 }}
                         />
                       </label>
                       <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
@@ -1671,7 +1728,7 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
                             margin: 0,
                             fontSize: '0.8125rem',
                             color:
-                              customTopicValidation.status === 'rejected'
+                              (topicAiWhere === 'create' && topicAiError) || customTopicValidation.status === 'rejected'
                                 ? 'rgb(239, 68, 68)'
                                 : customTopicValidation.status === 'warning'
                                   ? 'rgb(202, 138, 4)'
@@ -1679,7 +1736,8 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
                             opacity: customTopicValidation.status === 'valid' ? 0.72 : 0.95,
                           }}
                         >
-                          {customTopicValidation.errors[0] ||
+                          {(topicAiWhere === 'create' && topicAiError) ||
+                            customTopicValidation.errors[0] ||
                             customTopicValidation.warnings[0] ||
                             `Рекомендуемая длина: ${CUSTOM_TOPIC_MIN_LEN}–${CUSTOM_TOPIC_MAX_LEN} символов.`}
                         </p>
