@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { clearBackendToken, getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt'
+import { readStoredTtsVoice } from '@/context/TtsVoiceContext'
 import type { User } from '@supabase/supabase-js'
 
 type Video = {
@@ -330,11 +331,13 @@ export default function VideosPage() {
     if (!accessToken || !idiomPhrase) return
 
     const phraseKey = idiomPhrase.trim().toLowerCase()
+    const voice = readStoredTtsVoice()
+    const cacheKey = `${voice}:${phraseKey}`
     
     // Check cache first
-    const cachedUrl = idiomAudioCache.current.get(phraseKey)
+    const cachedUrl = idiomAudioCache.current.get(cacheKey)
     if (cachedUrl) {
-      const audioEl = idiomAudioRefs.current.get(phraseKey)
+      const audioEl = idiomAudioRefs.current.get(cacheKey)
       if (audioEl) {
         audioEl.play()
       }
@@ -349,7 +352,7 @@ export default function VideosPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ text: idiomPhrase.trim() }),
+        body: JSON.stringify({ text: idiomPhrase.trim(), voice }),
       })
 
       if (!resp.ok) {
@@ -360,11 +363,11 @@ export default function VideosPage() {
       const url = URL.createObjectURL(blob)
       
       // Cache the URL
-      idiomAudioCache.current.set(phraseKey, url)
+      idiomAudioCache.current.set(cacheKey, url)
       
       // Create audio element
       const audioEl = new Audio(url)
-      idiomAudioRefs.current.set(phraseKey, audioEl)
+      idiomAudioRefs.current.set(cacheKey, audioEl)
       
       // Play automatically after synthesis
       audioEl.play()

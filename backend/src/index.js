@@ -227,6 +227,11 @@ const AITUNNEL_STT_TIMEOUT_MS = Number.parseInt(process.env.AITUNNEL_STT_TIMEOUT
 const AITUNNEL_MAX_RETRIES = Number.parseInt(process.env.AITUNNEL_MAX_RETRIES || '1', 10)
 const AITUNNEL_STT_MODEL = process.env.AITUNNEL_STT_MODEL || 'whisper-1'
 const AITUNNEL_TTS_MODEL = process.env.AITUNNEL_TTS_MODEL || 'gpt-4o-mini-tts'
+const TTS_VOICES = new Set(['onyx', 'nova'])
+
+function resolveTtsVoice(voice) {
+  return typeof voice === 'string' && TTS_VOICES.has(voice) ? voice : 'nova'
+}
 
 if (!AITUNNEL_API_KEY) {
   console.error('Missing AITUNNEL_API_KEY environment variable')
@@ -912,7 +917,7 @@ app.post('/api/tts', async (req, res) => {
         : undefined
 
     const startTime = Date.now()
-    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice, instructions })
+    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice), instructions })
     const duration = Date.now() - startTime
     console.log('[api/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
 
@@ -1190,13 +1195,13 @@ app.post('/api/agent/tts', async (req, res) => {
       return res.status(402).json({ error: 'Пополните баланс' })
     }
 
-    const { text } = req.body || {}
+    const { text, voice } = req.body || {}
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ error: 'Text is required' })
     }
 
     const startTime = Date.now()
-    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000 })
+    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice) })
     const duration = Date.now() - startTime
     console.log('[api/agent/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
 

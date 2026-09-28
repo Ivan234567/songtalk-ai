@@ -4,6 +4,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useState, useCallback, useR
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import { useTtsVoice } from '@/context/TtsVoiceContext';
 import {
   getLevelOptions,
   getWordLevelBadge,
@@ -142,14 +143,14 @@ async function playAudioUrl(ref: { current: HTMLAudioElement | null }, url: stri
   await audio.play();
 }
 
-async function fetchTtsBlobUrl(accessToken: string, text: string, language: string) {
+async function fetchTtsBlobUrl(accessToken: string, text: string, language: string, voice: string) {
   const resp = await fetch(`${getApiUrl()}/api/tts`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ text, language }),
+    body: JSON.stringify({ text, language, voice }),
   });
 
   if (!resp.ok) {
@@ -202,6 +203,7 @@ const ChevronUpIcon = () => (
 
 export const DictionaryTab: React.FC = () => {
   const { learningLanguage, isLanguageReady } = useLearningLanguage();
+  const { ttsVoice } = useTtsVoice();
   const isChinese = learningLanguage === 'zh';
   const levelOptions = useMemo(() => getLevelOptions(learningLanguage), [learningLanguage]);
 
@@ -809,7 +811,9 @@ export const DictionaryTab: React.FC = () => {
     if (!accessToken || !selectedWord) {
       // Clean up audio URL when no word is selected (but don't revoke cached URLs)
       if (wordAudioUrl) {
-        const wordKey = selectedWord?.word?.trim().toLowerCase();
+        const wordKey = selectedWord?.word?.trim()
+          ? `${ttsVoice}:${selectedWord.word.trim().toLowerCase()}`
+          : undefined;
         const cachedUrl = wordKey ? audioCacheRef.current.get(wordKey) : null;
         // Only revoke if this URL is not in cache
         if (wordAudioUrl !== cachedUrl) {
@@ -823,7 +827,7 @@ export const DictionaryTab: React.FC = () => {
     const word = selectedWord.word.trim();
     if (!word) return;
 
-    const wordKey = word.toLowerCase();
+    const wordKey = `${ttsVoice}:${word.toLowerCase()}`;
 
     // Check cache first
     const cachedUrl = audioCacheRef.current.get(wordKey);
@@ -832,7 +836,9 @@ export const DictionaryTab: React.FC = () => {
       setWordAudioUrl((prev) => {
         // Revoke previous URL if it's not cached
         if (prev && prev !== cachedUrl) {
-          const prevWordKey = selectedWord?.word?.trim().toLowerCase();
+          const prevWordKey = selectedWord?.word?.trim()
+            ? `${ttsVoice}:${selectedWord.word.trim().toLowerCase()}`
+            : undefined;
           const prevCachedUrl = prevWordKey ? audioCacheRef.current.get(prevWordKey) : null;
           if (prev !== prevCachedUrl) {
             URL.revokeObjectURL(prev);
@@ -853,7 +859,7 @@ export const DictionaryTab: React.FC = () => {
       // We don't revoke cached URLs here to keep them available
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, selectedWord?.word]);
+  }, [accessToken, selectedWord?.word, ttsVoice]);
 
   // Synthesize audio for selected word (called by button)
   const synthesizeWordAudio = useCallback(async () => {
@@ -877,7 +883,7 @@ export const DictionaryTab: React.FC = () => {
     const word = selectedWord.word.trim();
     if (!word) return;
 
-    const wordKey = word.toLowerCase();
+    const wordKey = `${ttsVoice}:${word.toLowerCase()}`;
 
     // Check cache first
     const cachedUrl = audioCacheRef.current.get(wordKey);
@@ -889,7 +895,7 @@ export const DictionaryTab: React.FC = () => {
 
     setWordAudioLoading(true);
     try {
-      const url = await fetchTtsBlobUrl(accessToken, word, learningLanguage);
+      const url = await fetchTtsBlobUrl(accessToken, word, learningLanguage, ttsVoice);
 
       // Cache the URL
       audioCacheRef.current.set(wordKey, url);
@@ -897,7 +903,9 @@ export const DictionaryTab: React.FC = () => {
       setWordAudioUrl((prev) => {
         // Revoke previous URL if it's not cached
         if (prev) {
-          const prevWordKey = selectedWord?.word?.trim().toLowerCase();
+          const prevWordKey = selectedWord?.word?.trim()
+            ? `${ttsVoice}:${selectedWord.word.trim().toLowerCase()}`
+            : undefined;
           const prevCachedUrl = prevWordKey ? audioCacheRef.current.get(prevWordKey) : null;
           if (prev !== prevCachedUrl) {
             URL.revokeObjectURL(prev);
@@ -913,7 +921,7 @@ export const DictionaryTab: React.FC = () => {
     } finally {
       setWordAudioLoading(false);
     }
-  }, [accessToken, selectedWord, wordAudioUrl, learningLanguage]);
+  }, [accessToken, selectedWord, wordAudioUrl, learningLanguage, ttsVoice]);
 
   // Synthesize audio for selected idiom (called by button)
   const synthesizeIdiomAudio = useCallback(async () => {
@@ -937,7 +945,7 @@ export const DictionaryTab: React.FC = () => {
     const phrase = selectedIdiom.phrase.trim();
     if (!phrase) return;
 
-    const phraseKey = `idiom:${phrase.toLowerCase()}`;
+    const phraseKey = `${ttsVoice}:idiom:${phrase.toLowerCase()}`;
 
     // Check cache first
     const cachedUrl = audioCacheRef.current.get(phraseKey);
@@ -949,7 +957,7 @@ export const DictionaryTab: React.FC = () => {
 
     setIdiomAudioLoading(true);
     try {
-      const url = await fetchTtsBlobUrl(accessToken, phrase, learningLanguage);
+      const url = await fetchTtsBlobUrl(accessToken, phrase, learningLanguage, ttsVoice);
 
       // Cache the URL
       audioCacheRef.current.set(phraseKey, url);
@@ -968,7 +976,7 @@ export const DictionaryTab: React.FC = () => {
     } finally {
       setIdiomAudioLoading(false);
     }
-  }, [accessToken, selectedIdiom, idiomAudioUrl, learningLanguage]);
+  }, [accessToken, selectedIdiom, idiomAudioUrl, learningLanguage, ttsVoice]);
 
   const synthesizePhrasalVerbAudio = useCallback(async () => {
     if (!accessToken || !selectedPhrasalVerb) return;
@@ -990,7 +998,7 @@ export const DictionaryTab: React.FC = () => {
     const phrase = selectedPhrasalVerb.phrase.trim();
     if (!phrase) return;
 
-    const phraseKey = `phrasal-verb:${phrase.toLowerCase()}`;
+    const phraseKey = `${ttsVoice}:phrasal-verb:${phrase.toLowerCase()}`;
     const cachedUrl = audioCacheRef.current.get(phraseKey);
     if (cachedUrl) {
       setPhrasalVerbAudioUrl(cachedUrl);
@@ -1000,7 +1008,7 @@ export const DictionaryTab: React.FC = () => {
 
     setPhrasalVerbAudioLoading(true);
     try {
-      const url = await fetchTtsBlobUrl(accessToken, phrase, learningLanguage);
+      const url = await fetchTtsBlobUrl(accessToken, phrase, learningLanguage, ttsVoice);
       audioCacheRef.current.set(phraseKey, url);
       setPhrasalVerbAudioUrl((prev) => {
         if (prev && prev !== url) URL.revokeObjectURL(prev);
@@ -1013,7 +1021,7 @@ export const DictionaryTab: React.FC = () => {
     } finally {
       setPhrasalVerbAudioLoading(false);
     }
-  }, [accessToken, selectedPhrasalVerb, phrasalVerbAudioUrl, learningLanguage]);
+  }, [accessToken, selectedPhrasalVerb, phrasalVerbAudioUrl, learningLanguage, ttsVoice]);
 
   // Category management functions
   const handleCreateCategory = useCallback(async () => {
@@ -1474,7 +1482,7 @@ export const DictionaryTab: React.FC = () => {
     const phrase = selectedIdiom.phrase.trim();
     if (!phrase) return;
 
-    const phraseKey = `idiom:${phrase.toLowerCase()}`;
+    const phraseKey = `${ttsVoice}:idiom:${phrase.toLowerCase()}`;
 
     // Check cache first
     const cachedUrl = audioCacheRef.current.get(phraseKey);
@@ -1491,7 +1499,7 @@ export const DictionaryTab: React.FC = () => {
       setIdiomAudioUrl(null);
       setIdiomAudioLoading(false);
     }
-  }, [selectedIdiom, idiomAudioUrl]);
+  }, [selectedIdiom, idiomAudioUrl, ttsVoice]);
 
   // Clean up phrasal verb audio when phrasal verb changes
   useEffect(() => {
@@ -1506,7 +1514,7 @@ export const DictionaryTab: React.FC = () => {
     const phrase = selectedPhrasalVerb.phrase.trim();
     if (!phrase) return;
 
-    const phraseKey = `phrasal-verb:${phrase.toLowerCase()}`;
+    const phraseKey = `${ttsVoice}:phrasal-verb:${phrase.toLowerCase()}`;
 
     // Check cache first
     const cachedUrl = audioCacheRef.current.get(phraseKey);
@@ -1523,7 +1531,7 @@ export const DictionaryTab: React.FC = () => {
       setPhrasalVerbAudioUrl(null);
       setPhrasalVerbAudioLoading(false);
     }
-  }, [selectedPhrasalVerb, phrasalVerbAudioUrl]);
+  }, [selectedPhrasalVerb, phrasalVerbAudioUrl, ttsVoice]);
 
   return (
     <div

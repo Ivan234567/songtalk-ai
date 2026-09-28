@@ -65,6 +65,7 @@ import {
 import { DEBATE_TOPICS, getTopicById } from '@/lib/debate-topics';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import { useTtsVoice } from '@/context/TtsVoiceContext';
 import { hasRoleplaySystemCatalog } from '@/lib/learning-language';
 import {
   buildAgentAuthHeaders,
@@ -91,12 +92,6 @@ function effectiveSpeechRate(base: number, scenario: RoleplayScenario | null): n
   if (!scenario) return base;
   return playModeSpeechRate(base, parsePlayMode(scenario.playMode));
 }
-
-const TTS_VOICE_OPTIONS: Array<{ value: 'onyx' | 'nova' | 'ballad'; label: string }> = [
-  { value: 'onyx', label: 'Мужской (Onyx)' },
-  { value: 'ballad', label: 'Ballad (попробовать)' },
-  { value: 'nova', label: 'Женский (Nova)' },
-];
 
 const ENGLISH_HINT_MODE_LABELS: Record<FreestyleHintMode, { label: string; desc: string }> = {
   simpler: { label: 'Проще', desc: 'Короче и легче по словам' },
@@ -268,6 +263,7 @@ function AgentOrbFace() {
 
 export function AgentTab() {
   const { learningLanguage } = useLearningLanguage();
+  const { ttsVoice } = useTtsVoice();
   const showSystemCatalog = hasRoleplaySystemCatalog(learningLanguage);
   const systemCatalogView = showSystemCatalog ? 'catalog' as const : 'create' as const;
   const router = useRouter();
@@ -352,7 +348,6 @@ export function AgentTab() {
   const aiChatResizeStartRef = useRef<{ x: number; y: number; startW: number; startH: number; handle: 'e' | 's' | 'se' } | null>(null);
   const aiChatSizeRef = useRef<{ width: number; height: number } | null>(null);
   const aiChatPositionRef = useRef<{ x: number; y: number } | null>(null);
-  const [ttsVoice, setTtsVoice] = useState<'onyx' | 'nova' | 'ballad'>('onyx');
   /** В ролевом режиме: пользователь нажал «Сохранить прогресс» — показываем экран «Прогресс сохранён». */
   const [goalReached, setGoalReached] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<SpeakingAssessmentResult | ZhSpeakingAssessmentResult | null>(null);
@@ -749,23 +744,6 @@ export function AgentTab() {
     setRoleplayCompletedStepIds([]);
     setZhSaidMustSay([]);
   }, [selectedScenario?.id]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const savedVoice = window.localStorage.getItem('agent_tts_voice');
-    if (savedVoice && TTS_VOICE_OPTIONS.some((opt) => opt.value === savedVoice)) {
-      setTtsVoice(savedVoice as 'onyx' | 'nova' | 'ballad');
-    } else {
-      setTtsVoice('onyx');
-      window.localStorage.setItem('agent_tts_voice', 'onyx');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('agent_tts_voice', ttsVoice);
-  }, [ttsVoice]);
-
 
   const loadAiChatSessionsList = useCallback(() => {
     if (!userId) return;

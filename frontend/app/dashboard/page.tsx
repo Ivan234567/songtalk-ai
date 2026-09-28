@@ -17,6 +17,8 @@ import { logSecurityEvent } from '@/lib/securityEvents';
 import { clearBackendToken } from '@/lib/backend-jwt';
 import { LearningLanguageProvider, useLearningLanguage } from '@/context/LearningLanguageContext';
 import { LanguageSwitch } from '@/components/header/LanguageSwitch';
+import { VoiceSwitch } from '@/components/header/VoiceSwitch';
+import { TtsVoiceProvider } from '@/context/TtsVoiceContext';
 import { LanguageToastStack } from '@/components/ui/LanguageToastStack';
 
 type TabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
@@ -180,7 +182,10 @@ function DashboardPageContent() {
       <main className={layoutStyles.mainShell}>
         <div className={layoutStyles.dashboardTopBar}>
           <span className={layoutStyles.learningLabel}>Изучаю: {label}</span>
-          <LanguageSwitch />
+          <div className={layoutStyles.topBarControls}>
+            <VoiceSwitch />
+            <LanguageSwitch />
+          </div>
         </div>
         {activeTab === 'dashboard' && (
           <header className={layoutStyles.header} data-language={learningLanguage}>
@@ -220,7 +225,9 @@ function DashboardPageContent() {
 export default function DashboardPage() {
   return (
     <LearningLanguageProvider>
-      <DashboardPageContent />
+      <TtsVoiceProvider>
+        <DashboardPageContent />
+      </TtsVoiceProvider>
     </LearningLanguageProvider>
   );
 }

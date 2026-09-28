@@ -35,6 +35,15 @@
   letter-spacing: 0.02em;
 }
 
+.topBarControls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-left: auto;
+}
+
 .header {
   display: flex;
   justify-content: space-between;

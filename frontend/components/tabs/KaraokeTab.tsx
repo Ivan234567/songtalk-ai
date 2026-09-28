@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import { useTtsVoice } from '@/context/TtsVoiceContext';
 import { getWordLevelBadge } from '@/lib/vocabulary';
 
 // YouTube IFrame API types
@@ -52,6 +53,7 @@ function getApiUrl() {
 
 export const KaraokeTab: React.FC = () => {
   const { learningLanguage } = useLearningLanguage();
+  const { ttsVoice } = useTtsVoice();
   const isChinese = learningLanguage === 'zh';
 
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -101,6 +103,13 @@ export const KaraokeTab: React.FC = () => {
   const [volume, setVolume] = useState(100);
   const [isMuted, setIsMuted] = useState(false);
   const [youtubeApiReady, setYoutubeApiReady] = useState(false);
+
+  useEffect(() => {
+    setWordAudioUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, [ttsVoice]);
 
   // Load YouTube IFrame API
   useEffect(() => {
@@ -901,7 +910,7 @@ export const KaraokeTab: React.FC = () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ text: selectedWord.trim() }),
+        body: JSON.stringify({ text: selectedWord.trim(), voice: ttsVoice }),
       });
 
       if (!resp.ok) {
