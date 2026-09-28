@@ -14,6 +14,7 @@ import { HowItWorksSection } from './HowItWorksSection';
 import { BenefitsSection } from './BenefitsSection';
 import { SocialProofSection } from './SocialProofSection';
 import { PricingSection } from './PricingSection';
+import { DeliverySection } from './DeliverySection';
 import { FinalCtaSection } from './FinalCtaSection';
 import { FaqSection } from './FaqSection';
 import { FooterSection } from './FooterSection';
@@ -353,6 +354,7 @@ function LandingPageInner() {
       <BenefitsSection />
       <SocialProofSection />
       <PricingSection />
+      <DeliverySection />
       <FinalCtaSection />
       <FaqSection />
       <FooterSection />

@@ -4846,3 +4846,49 @@
   height: 100%;
   border-radius: inherit;
 }
+
+.deliverySection {
+  padding: 4.5rem 1.5rem 5rem;
+}
+
+.deliveryInner {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.deliveryLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(var(--land-a), 0.9);
+  margin: 0 0 0.5rem;
+}
+
+.deliveryTitle {
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  line-height: 1.2;
+  margin: 0 0 0.75rem;
+}
+
+.deliveryLead,
+.deliveryNote {
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.6;
+  margin: 0 0 1rem;
+}
+
+.deliveryList {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.55;
+}
+
+.deliveryList li + li {
+  margin-top: 0.55rem;
+}
+
+.deliveryNote a {
+  color: rgba(var(--land-a), 0.95);
+}

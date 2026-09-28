@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
 import styles from './landing.module.css';
 import { useLandingPreviewLang } from './preview-lang';
+import { SELLER, SELLER_ROWS } from '@/lib/seller';
 
 const TELEGRAM_SUPPORT = 'https://t.me/SPEAKEASY_SUPPORT';
 
@@ -75,6 +76,7 @@ export function FooterSection() {
               <div className={styles.ftLegalLinks}>
                 <Link href="/legal/offer" className={styles.ftLink}>Оферта</Link>
                 <Link href="/legal/privacy" className={styles.ftLink}>Конфиденциальность</Link>
+                <Link href="/legal/offer#requisites" className={styles.ftLink}>Реквизиты</Link>
               </div>
             </div>
 
@@ -112,6 +114,12 @@ export function FooterSection() {
           {/* Нижняя строка */}
           <div className={styles.ftBottom}>
             <span className={styles.ftCopy}>© {new Date().getFullYear()} Speakeasy</span>
+            <span className={styles.ftCopy}>
+              {SELLER.legalName}
+              {SELLER_ROWS.filter((row) => row.label === 'ИНН' || row.label === 'ОГРНИП' || row.label === 'Эл. почта' || row.label === 'Телефон')
+                .map((row) => ` · ${row.label} ${row.value}`)
+                .join('')}
+            </span>
           </div>
         </div>
       </div>

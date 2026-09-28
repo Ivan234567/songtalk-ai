@@ -35,34 +35,34 @@ const TARIFFS = [
     id: 'start',
     name: 'Стартовый',
     price: 300,
-    dialogue: '≈ 1 час живого диалога',
+    dialogue: '≈ 2 часа разговора с агентом',
     rows: [
-      { model: 'GPT-4o-mini-tts (озвучка)', get: '32 600 символов', like: '30 минут аудиокниги (20 страниц текста)', Icon: IconTTS },
-      { model: 'Deepseek (генерация)', get: '~840 000 токенов', like: 'почти 1 том «Войны и мира»', Icon: IconBook },
-      { model: 'Whisper (распознавание)', get: '32 минуты', like: '2 интервью по 15 минут', Icon: IconWhisper },
+      { model: 'Диалог с агентом', get: 'до ~2 часов', like: 'сценарии, дебаты или свободный разговор', Icon: IconWhisper },
+      { model: 'Озвучка', get: 'до 800 озвучек', like: 'слова и фразы в словаре', Icon: IconTTS },
+      { model: 'Получение', get: 'сразу в аккаунте', like: 'сумма падает на баланс, доставки нет', Icon: IconBook },
     ],
   },
   {
     id: 'optimal',
     name: 'Оптимальный',
-    price: 700,
-    dialogue: '≈ 2,5 часа диалога',
+    price: 500,
+    dialogue: '≈ 3,5 часа практики',
     featured: true,
     rows: [
-      { model: 'GPT-4o-mini-tts (озвучка)', get: '76 000 символов', like: 'полнометражный мультфильм (70 мин эфира)', Icon: IconTTS },
-      { model: 'Deepseek (генерация)', get: '~1 950 000 токенов', like: 'более 2 томов «Войны и мира»', Icon: IconBook },
-      { model: 'Whisper (распознавание)', get: '76 минут', like: 'курс из 4 лекций', Icon: IconWhisper },
+      { model: 'Диалог с агентом', get: 'около 3,5 часов', like: 'тот же баланс на все разделы', Icon: IconWhisper },
+      { model: 'Озвучка', get: 'до 1 300 озвучек', like: 'произношение слов и фраз', Icon: IconTTS },
+      { model: 'Получение', get: 'сразу в аккаунте', like: 'после оплаты баланс обновляется в кабинете', Icon: IconBook },
     ],
   },
   {
     id: 'pro',
     name: 'Профессиональный',
-    price: 1500,
-    dialogue: '≈ 5,5 часов диалога',
+    price: 1000,
+    dialogue: '≈ 7 часов разговора',
     rows: [
-      { model: 'GPT-4o-mini-tts (озвучка)', get: '163 000 символов', like: 'аудиоспектакль (2,5 часа контента)', Icon: IconTTS },
-      { model: 'Deepseek (генерация)', get: '~4 200 000 токенов', like: 'почти 5 томов «Войны и мира» (больше всего романа!)', Icon: IconBook },
-      { model: 'Whisper (распознавание)', get: '163 минуты', like: 'полный аудиокурс (3 вебинара)', Icon: IconWhisper },
+      { model: 'Диалог с агентом', get: 'около 7 часов', like: 'длинная практика без подписки', Icon: IconWhisper },
+      { model: 'Озвучка', get: 'до 2 500 озвучек', like: 'или смесь диалога и озвучки', Icon: IconTTS },
+      { model: 'Получение', get: 'сразу в аккаунте', like: 'отдельный файл или письмо с заказом не приходит', Icon: IconBook },
     ],
   },
 ];
@@ -99,7 +99,7 @@ export function PricingSection() {
           Выбери объём практики
         </h2>
         <p className={styles.pricingSubtitle}>
-          Всё по тарифу: минуты диалога, озвучка и распознавание — в понятных объёмах
+          Фиксированные суммы 300, 500 и 1 000 ₽. После оплаты баланс сразу появляется в аккаунте, подписки нет.
         </p>
 
         <div className={styles.pricingGrid}>
