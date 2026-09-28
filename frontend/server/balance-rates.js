@@ -1,17 +1,21 @@
 /**
- * Тарифы монетизации: наценка 1,5× к закупке, 6% налог заложен в цену.
- * Цены за единицу (руб.): за 1M токенов, за 1M символов, за 60 сек.
- * Округление при списании — вверх до копеек (п. 11 плана).
+ * Тарифы монетизации.
+ * LLM и Whisper: наценка 3× к закупке AITunnel, налог УСН 6% в цене: (закупка × 3) / 0,94.
+ * Озвучка: без наценки. Если AITunnel прислал cost-rub, списание = cost-rub / 0,94.
+ * Ставка за 1M символов — запасной расчёт без заголовка: 7 950 / 0,94.
+ * Округление при списании — вверх до копеек.
  */
 
+const USN_KEEP_SHARE = 0.94
+
 const RATES = Object.freeze({
-  // deepseek-v3.2: вход/выход, руб. за 1M токенов
-  'deepseek-v3.2-in': 86.22,
-  'deepseek-v3.2-out': 129.34,
-  // gpt-4o-mini-tts: руб. за 1M символов
-  'gpt-4o-mini-tts': 4620.74,
-  // whisper-1: руб. за 60 сек
-  'whisper-1': 1.84,
+  // deepseek-v3.2: вход 53,8 ₽ и выход 80 ₽ за 1M, ×3 / 0,94
+  'deepseek-v3.2-in': 171.71,
+  'deepseek-v3.2-out': 255.32,
+  // gpt-4o-mini-tts: руб. за 1M символов, только если нет фактической стоимости
+  'gpt-4o-mini-tts': 8457.45,
+  // whisper-1: 1,2 ₽ за 60 сек, ×3 / 0,94
+  'whisper-1': 3.83,
 })
 
 /**
@@ -20,6 +24,28 @@ const RATES = Object.freeze({
 function roundUpRub(value) {
   if (value <= 0) return 0
   return Math.ceil(value * 100) / 100
+}
+
+/**
+ * Списание без наценки: закупка плюс налог 6%, чтобы после УСН выйти в ноль.
+ * @param {number} supplierRub — стоимость запроса у AITunnel
+ * @returns {number}
+ */
+export function chargeCoveringSupplierCost(supplierRub) {
+  const cost = Number(supplierRub)
+  if (!Number.isFinite(cost) || cost <= 0) return 0
+  return roundUpRub(cost / USN_KEEP_SHARE)
+}
+
+/**
+ * Озвучка: фактическая закупка из заголовка cost-rub, иначе ставка за символы.
+ * @param {{ characters?: number, chars?: number, supplierCostRub?: number }} usage
+ * @returns {number}
+ */
+export function ttsChargeRub(usage = {}) {
+  const supplier = Number(usage.supplierCostRub)
+  if (Number.isFinite(supplier) && supplier > 0) return chargeCoveringSupplierCost(supplier)
+  return getCost('gpt-4o-mini-tts', usage)
 }
 
 /**

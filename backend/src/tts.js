@@ -53,6 +53,15 @@ function stripLearningMetadata(text) {
   return out.trim()
 }
 
+function readSupplierCostRub(speech) {
+  const headers = speech?.headers
+  if (!headers || typeof headers.get !== 'function') return null
+  const raw = headers.get('cost-rub')
+  if (raw == null || String(raw).trim() === '') return null
+  const value = Number(String(raw).trim().replace(',', '.'))
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
 function prepareInput(text, options = {}) {
   const maxLength = options.maxLength ?? 2000
   const clean = stripLearningMetadata(text).replace(EMOJI_REGEX, '').trim()
@@ -89,10 +98,11 @@ export async function synthesize(text, options = {}) {
     throw new Error('Empty response from TTS API')
   }
 
+  const supplierCostRub = readSupplierCostRub(speech)
   const buffer = Buffer.from(await speech.arrayBuffer())
   if (!buffer || buffer.length === 0) {
     throw new Error('Empty audio buffer received from TTS API')
   }
 
-  return { buffer, characters: input.length }
+  return { buffer, characters: input.length, supplierCostRub }
 }

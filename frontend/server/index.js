@@ -17,7 +17,7 @@ import { Readable } from 'stream'
 import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
-import { getCost } from './balance-rates.js'
+import { getCost, ttsChargeRub } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
@@ -917,13 +917,13 @@ app.post('/api/tts', async (req, res) => {
         : undefined
 
     const startTime = Date.now()
-    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice), instructions })
+    const { buffer, characters, supplierCostRub } = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice), instructions })
     const duration = Date.now() - startTime
     console.log('[api/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
 
-    const costRub = getCost('gpt-4o-mini-tts', { characters })
+    const costRub = ttsChargeRub({ characters, supplierCostRub })
     if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'gpt-4o-mini-tts', { characters })
+      const deductResult = await deductBalance(supabase, userId, costRub, 'gpt-4o-mini-tts', { characters, supplier_cost_rub: supplierCostRub })
       if (!deductResult.ok) {
         console.error('[api/tts] Deduct failed:', deductResult.error)
         return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
@@ -1201,13 +1201,13 @@ app.post('/api/agent/tts', async (req, res) => {
     }
 
     const startTime = Date.now()
-    const { buffer, characters } = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice) })
+    const { buffer, characters, supplierCostRub } = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice) })
     const duration = Date.now() - startTime
     console.log('[api/agent/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
 
-    const costRub = getCost('gpt-4o-mini-tts', { characters })
+    const costRub = ttsChargeRub({ characters, supplierCostRub })
     if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'gpt-4o-mini-tts', { characters })
+      const deductResult = await deductBalance(supabase, userId, costRub, 'gpt-4o-mini-tts', { characters, supplier_cost_rub: supplierCostRub })
       if (!deductResult.ok) {
         console.error('[api/agent/tts] Deduct failed:', deductResult.error)
         return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
