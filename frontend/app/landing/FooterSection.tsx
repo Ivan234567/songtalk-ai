@@ -124,12 +124,6 @@ export function FooterSection() {
                 <dd className={styles.ftReqValue}>{SELLER.ogrnip}</dd>
               </div>
               <div className={styles.ftReqItem}>
-                <dt className={styles.ftReqLabel}>Телефон</dt>
-                <dd className={styles.ftReqValue}>
-                  <a href={`tel:${SELLER.phone.replace(/[^\d+]/g, '')}`}>{SELLER.phone}</a>
-                </dd>
-              </div>
-              <div className={styles.ftReqItem}>
                 <dt className={styles.ftReqLabel}>Почта</dt>
                 <dd className={styles.ftReqValue}>
                   <a href={`mailto:${SELLER.email}`}>{SELLER.email}</a>

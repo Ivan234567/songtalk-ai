@@ -2650,8 +2650,8 @@
 
 .ftRequisites {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  width: min(100%, 36rem);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(100%, 52rem);
   gap: 0.55rem;
   margin: 0.35rem 0 0;
   padding: 0;
@@ -2924,6 +2924,11 @@
     align-items: center;
   }
 
+  .ftRequisites {
+    grid-template-columns: 1fr;
+    width: min(100%, 22rem);
+  }
+
   .ftBanner {
     padding: 2.5rem 1rem;
   }
@@ -2931,12 +2936,6 @@
   .ftBannerWord {
     font-size: clamp(2.2rem, 13vw, 3.8rem);
     letter-spacing: 0.08em;
-  }
-}
-
-@media (max-width: 480px) {
-  .ftRequisites {
-    grid-template-columns: 1fr;
   }
 }
 
