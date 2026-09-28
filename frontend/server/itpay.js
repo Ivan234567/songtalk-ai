@@ -221,8 +221,14 @@ async function creditOrder(supabase, order, remoteAmount) {
   return { ok: true, already: Boolean(data.already), status: 'paid', newBalance: data.new_balance }
 }
 
+const ITPAY_TOPUP_ENABLED = false
+
 export function registerItpayRoutes(app, { supabase, asyncHandler, resolveUserId }) {
   app.post('/api/balance/topup', asyncHandler(async (req, res) => {
+    if (!ITPAY_TOPUP_ENABLED) {
+      return res.status(503).json({ error: 'Оплата временно недоступна' })
+    }
+
     const userId = await resolveUserId(req)
     if (!userId) return res.status(401).json({ error: 'Missing or invalid Authorization' })
     if (!itpayConfigured()) return res.status(503).json({ error: 'Оплата ещё не настроена' })

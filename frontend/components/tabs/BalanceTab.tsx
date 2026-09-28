@@ -17,9 +17,8 @@ const PERIOD_LABELS: Record<PeriodKey, string> = {
   custom: 'Свой период',
 };
 
-// Суммы и зачисления, и оплаты. 50 ₽ — временная проверка шлюза, потом убрать.
-const TOPUP_OPTIONS: { amount: number; label: string; sub: string; test?: boolean }[] = [
-  { amount: 50, label: 'Проверка оплаты', sub: 'временная сумма', test: true },
+// Номиналы пополнения. Оплата через ITPAY заморожена до подключения другого шлюза.
+const TOPUP_OPTIONS = [
   { amount: 300, label: '~2 часа с агентом', sub: 'или до 800 озвучек' },
   { amount: 500, label: '~3,5 часа практики', sub: 'или до 1 300 озвучек' },
   { amount: 1000, label: '~7 часов разговора', sub: 'или до 2 500 озвучек' },
@@ -129,8 +128,6 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
   const searchParams = useSearchParams();
   const topupId = searchParams.get('topup');
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [topupLoading, setTopupLoading] = useState<number | null>(null);
-  const [topupError, setTopupError] = useState<string | null>(null);
   const [confirmingTopup, setConfirmingTopup] = useState(false);
   const [balanceRub, setBalanceRub] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -285,30 +282,6 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
     };
   }, [accessToken, topupId, fetchBalance, replaceBalanceQuery]);
 
-  const handleTopup = async (amount: number) => {
-    if (!accessToken || topupLoading != null) return;
-    setTopupLoading(amount);
-    setTopupError(null);
-    try {
-      const res = await fetch(`${API_URL}/api/balance/topup`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ amount_rub: amount }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || typeof data.payment_url !== 'string') {
-        throw new Error(typeof data.error === 'string' ? data.error : 'Не удалось создать платёж');
-      }
-      window.location.href = data.payment_url;
-    } catch (e) {
-      setTopupError(e instanceof Error ? e.message : 'Не удалось создать платёж');
-      setTopupLoading(null);
-    }
-  };
-
   useEffect(() => {
     if (!accessToken) {
       setLoading(false);
@@ -449,7 +422,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
             <circle cx="12" cy="12" r="10" />
             <path d="M12 8v4M12 16h.01" />
           </svg>
-          <span>Баланс ниже {LOW_BALANCE_THRESHOLD} ₽. Пополните его, чтобы продолжить занятия.</span>
+          <span>Баланс ниже {LOW_BALANCE_THRESHOLD} ₽. Пополнение скоро снова откроется.</span>
         </div>
       )}
 
@@ -501,30 +474,17 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
             )}
           </div>
         ) : null}
-        {topupError && (
-          <div className={styles.errorBanner} role="alert">
-            {topupError}
-          </div>
-        )}
         {confirmingTopup && (
           <p className={styles.balanceHint}>Проверяем оплату…</p>
         )}
         <div className={styles.topupGrid}>
           {TOPUP_OPTIONS.map((opt) => (
-            <button
-              key={opt.amount}
-              type="button"
-              className={styles.topupCard}
-              disabled={topupLoading != null || !accessToken}
-              onClick={() => handleTopup(opt.amount)}
-            >
+            <div key={opt.amount} className={`${styles.topupCard} ${styles.topupCardStatic}`}>
               <span className={styles.topupAmount}>{opt.amount} ₽</span>
               <span className={styles.topupLabel}>{opt.label}</span>
               <span className={styles.topupLabel}>{opt.sub}</span>
-              <span className={styles.topupBadge}>
-                {topupLoading === opt.amount ? 'Создаём счёт…' : opt.test ? 'Тест' : 'Оплатить'}
-              </span>
-            </button>
+              <span className={styles.topupBadge}>Скоро</span>
+            </div>
           ))}
         </div>
       </section>
