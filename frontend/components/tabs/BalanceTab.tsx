@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { chargeKopecks, formatChargeRub, type TopupMethod } from '@/lib/topup-pricing';
 import styles from './balance.module.css';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -46,7 +47,7 @@ function IconWallet() {
   );
 }
 
-// Номиналы пополнения. Оплата через ITPAY заморожена до подключения другого шлюза.
+// Номиналы зачисления. К оплате добавляется комиссия ЮKassa, минимальная у СБП.
 const TOPUP_OPTIONS = [
   {
     amount: 300,
@@ -212,6 +213,8 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
   const [prevTransactions, setPrevTransactions] = useState<Transaction[]>([]);
   const initialLoadDoneRef = useRef(false);
   const confirmedTopupRef = useRef<string | null>(null);
+  const [payingKey, setPayingKey] = useState<string | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
 
   useEffect(() => {
     setHistoryVisibleCount(HISTORY_PAGE_SIZE);
@@ -343,6 +346,33 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
       if (!finished) confirmedTopupRef.current = null;
     };
   }, [accessToken, topupId, fetchBalance, replaceBalanceQuery]);
+
+  const startTopup = useCallback(async (amount: number, method: TopupMethod) => {
+    if (!accessToken || payingKey) return;
+    const key = `${amount}:${method}`;
+    setPayingKey(key);
+    setPayError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/balance/topup`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount_rub: amount, method }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || typeof data.payment_url !== 'string') {
+        setPayError(typeof data.error === 'string' ? data.error : 'Не удалось открыть оплату');
+        setPayingKey(null);
+        return;
+      }
+      window.location.assign(data.payment_url);
+    } catch {
+      setPayError('Не удалось открыть оплату. Проверьте сеть и попробуйте ещё раз.');
+      setPayingKey(null);
+    }
+  }, [accessToken, payingKey]);
 
   useEffect(() => {
     if (!accessToken) {
@@ -484,7 +514,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
             <circle cx="12" cy="12" r="10" />
             <path d="M12 8v4M12 16h.01" />
           </svg>
-          <span>Баланс ниже {LOW_BALANCE_THRESHOLD} ₽. Пополнение скоро снова откроется.</span>
+          <span>Баланс ниже {LOW_BALANCE_THRESHOLD} ₽. Пополните его ниже — дешевле через СБП.</span>
         </div>
       )}
 
@@ -546,50 +576,114 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
           <p className={styles.topupKicker}>Пакеты</p>
           <h3 id="topup-title" className={styles.topupTitle}>Выберите объём практики</h3>
           <p className={styles.topupLead}>
-            Фиксированные суммы 300, 500 и 1 000 ₽. Один баланс на все разделы, подписки нет.
+            На баланс зачисляется 300, 500 или 1 000 ₽. Один баланс на все разделы, подписки нет.
             Часы и число озвучек — ориентир: фактический расход зависит от длины реплик.
           </p>
         </div>
+        <aside className={styles.feeNote} aria-label="Комиссия способов оплаты">
+          <div className={styles.feeNoteCopy}>
+            <p className={styles.feeNoteKicker}>Комиссия ЮKassa</p>
+            <h4 className={styles.feeNoteTitle}>Дешевле через СБП</h4>
+            <p className={styles.feeNoteText}>
+              Комиссию платите вы. На баланс приходит сумма пакета, без неё.
+              На общей странице ЮKassa СБП тоже может быть в списке — там сумма уже с комиссией карты.
+              Для 0,7% нажимайте «Оплатить через СБП».
+            </p>
+          </div>
+          <div className={styles.feeCompare}>
+            <div className={styles.feeColBest}>
+              <span className={styles.feeColLabel}>СБП</span>
+              <span className={styles.feeColValue}>0,7%</span>
+              <span className={styles.feeColHint}>без НДС</span>
+            </div>
+            <div className={styles.feeCol}>
+              <span className={styles.feeColLabel}>Карта и другие</span>
+              <span className={styles.feeColValue}>3,5%</span>
+              <span className={styles.feeColHint}>плюс НДС 22% на комиссию</span>
+            </div>
+          </div>
+        </aside>
+        {payError && (
+          <div className={styles.errorBanner} role="alert">{payError}</div>
+        )}
         <div className={styles.topupGrid}>
-          {TOPUP_OPTIONS.map((opt) => (
-            <article
-              key={opt.amount}
-              className={`${styles.topupCard} ${opt.featured ? styles.topupCardFeatured : ''}`}
-            >
-              <div className={styles.topupCardHead}>
-                <div className={styles.topupCardTitleRow}>
-                  <h4 className={styles.topupName}>{opt.name}</h4>
-                  <span className={styles.topupBadge}>Скоро</span>
+          {TOPUP_OPTIONS.map((opt) => {
+            const sbpKey = `${opt.amount}:sbp`;
+            const otherKey = `${opt.amount}:other`;
+            const busy = payingKey !== null;
+            return (
+              <article
+                key={opt.amount}
+                className={`${styles.topupCard} ${opt.featured ? styles.topupCardFeatured : ''}`}
+              >
+                <div className={styles.topupCardHead}>
+                  <div className={styles.topupCardTitleRow}>
+                    <h4 className={styles.topupName}>{opt.name}</h4>
+                    {opt.featured && <span className={styles.topupBadge}>Популярный</span>}
+                  </div>
+                  <p className={styles.topupAmount}>
+                    <span className={styles.topupAmountValue}>{opt.amount}</span>
+                    <span className={styles.topupAmountCur}> ₽</span>
+                  </p>
+                  <p className={styles.topupCreditLabel}>зачислим на баланс</p>
+                  <p className={styles.topupDialogue}>{opt.dialogue}</p>
+                  <p className={styles.topupOr}>{opt.orLine}</p>
                 </div>
-                <p className={styles.topupAmount}>
-                  <span className={styles.topupAmountValue}>{opt.amount}</span>
-                  <span className={styles.topupAmountCur}> ₽</span>
-                </p>
-                <p className={styles.topupDialogue}>{opt.dialogue}</p>
-                <p className={styles.topupOr}>{opt.orLine}</p>
-              </div>
-              <ul className={styles.topupPerks}>
-                {opt.perks.map((perk) => {
-                  const Icon = perk.Icon;
-                  return (
-                    <li key={perk.title} className={styles.topupPerk}>
-                      <span className={styles.topupPerkIcon} aria-hidden>
-                        <Icon />
-                      </span>
-                      <span className={styles.topupPerkBody}>
-                        <span className={styles.topupPerkTitle}>{perk.title}</span>
-                        <span className={styles.topupPerkGet}>{perk.get}</span>
-                        <span className={styles.topupPerkHint}>{perk.hint}</span>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className={styles.topupFoot}>
-                <span className={styles.topupSoon}>Оплата скоро откроется</span>
-              </div>
-            </article>
-          ))}
+                <ul className={styles.topupPerks}>
+                  {opt.perks.map((perk) => {
+                    const Icon = perk.Icon;
+                    return (
+                      <li key={perk.title} className={styles.topupPerk}>
+                        <span className={styles.topupPerkIcon} aria-hidden>
+                          <Icon />
+                        </span>
+                        <span className={styles.topupPerkBody}>
+                          <span className={styles.topupPerkTitle}>{perk.title}</span>
+                          <span className={styles.topupPerkGet}>{perk.get}</span>
+                          <span className={styles.topupPerkHint}>{perk.hint}</span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className={styles.topupFoot}>
+                  <button
+                    type="button"
+                    className={styles.paySbp}
+                    disabled={!accessToken || busy}
+                    aria-busy={payingKey === sbpKey}
+                    onClick={() => startTopup(opt.amount, 'sbp')}
+                  >
+                    {payingKey === sbpKey ? (
+                      <span className={styles.paySpinner} aria-hidden />
+                    ) : (
+                      <>
+                        <span className={styles.paySbpLabel}>Оплатить через СБП</span>
+                        <span className={styles.paySbpPrice}>{formatChargeRub(chargeKopecks(opt.amount, 'sbp'))}</span>
+                        <span className={styles.paySbpHint}>комиссия 0,7%</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.payOther}
+                    disabled={!accessToken || busy}
+                    aria-busy={payingKey === otherKey}
+                    onClick={() => startTopup(opt.amount, 'other')}
+                  >
+                    {payingKey === otherKey ? (
+                      <span className={styles.paySpinner} aria-hidden />
+                    ) : (
+                      <>
+                        <span className={styles.payOtherLabel}>Другие способы</span>
+                        <span className={styles.payOtherPrice}>{formatChargeRub(chargeKopecks(opt.amount, 'other'))}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
 

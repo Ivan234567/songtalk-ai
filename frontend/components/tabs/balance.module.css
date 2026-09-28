@@ -377,23 +377,193 @@
   color: var(--text-muted);
 }
 
+.topupCreditLabel {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.feeNote {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 0.8fr);
+  gap: 1.25rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 1.15rem 1.2rem;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--stroke));
+  background:
+    radial-gradient(80% 120% at 0% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 55%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.feeNoteKicker {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.feeNoteTitle {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+.feeNoteText {
+  margin: 0.45rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.feeCompare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.feeCol,
+.feeColBest {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.feeColBest {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.feeColLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.feeColBest .feeColLabel {
+  color: var(--accent-fg);
+}
+
+.feeColValue {
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+}
+
+.feeColHint {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
 .topupFoot {
   margin-top: auto;
   padding: 0.15rem 1.15rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
 }
 
-.topupSoon {
+.paySbp,
+.payOther {
+  width: 100%;
+  border-radius: 14px;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+}
+
+.paySbp {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  padding: 0.75rem 1rem;
-  border-radius: 14px;
-  font-size: 0.88rem;
+  gap: 0.08rem;
+  min-height: 4.4rem;
+  padding: 0.7rem 1rem 0.75rem;
+  color: #10241b;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 70%, black);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.paySbp:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.paySbpLabel {
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.paySbpPrice {
+  font-size: 0.95rem;
   font-weight: 700;
-  color: var(--accent-fg);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 28%, transparent), color-mix(in srgb, var(--accent-strong) 18%, transparent));
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.paySbpHint {
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.82;
+}
+
+.payOther {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.7rem;
+  padding: 0.55rem 0.9rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--stroke);
+}
+
+.payOther:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--stroke));
+}
+
+.payOtherLabel {
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.payOtherPrice {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.paySbp:disabled,
+.payOther:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.paySpinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: balanceRefreshSpin 0.8s linear infinite;
 }
 
 /* Предупреждение низкий баланс */
@@ -1029,6 +1199,10 @@
 
 @media (max-width: 1100px) {
   .topupGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .feeNote {
     grid-template-columns: 1fr;
   }
 }

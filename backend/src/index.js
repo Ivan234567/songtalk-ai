@@ -22,7 +22,7 @@ import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSys
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
-import { registerItpayRoutes } from './itpay.js'
+import { registerYookassaRoutes } from './yookassa.js'
 import {
   buildZhRoleplayFeedbackSystem,
   buildZhRoleplayFeedbackUserPrompt,
@@ -583,7 +583,7 @@ app.post('/api/auth/exchange-supabase-token', asyncHandler(async (req, res) => {
 }))
 
 registerYandexAuthRoutes(app, { supabase, asyncHandler })
-registerItpayRoutes(app, { supabase, asyncHandler, resolveUserId })
+registerYookassaRoutes(app, { supabase, asyncHandler, resolveUserId })
 
 // Chat endpoint (AITUNNEL proxy) — requires backend JWT (independent of Supabase availability)
 app.post('/api/chat', asyncHandler(async (req, res) => {
