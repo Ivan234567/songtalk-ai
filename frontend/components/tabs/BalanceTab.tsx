@@ -17,11 +17,73 @@ const PERIOD_LABELS: Record<PeriodKey, string> = {
   custom: 'Свой период',
 };
 
+function IconMic() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
+  );
+}
+
+function IconTts() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+      <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+    </svg>
+  );
+}
+
+function IconWallet() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+      <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
+      <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
+    </svg>
+  );
+}
+
 // Номиналы пополнения. Оплата через ITPAY заморожена до подключения другого шлюза.
 const TOPUP_OPTIONS = [
-  { amount: 300, label: '~2 часа с агентом', sub: 'или до 800 озвучек' },
-  { amount: 500, label: '~3,5 часа практики', sub: 'или до 1 300 озвучек' },
-  { amount: 1000, label: '~7 часов разговора', sub: 'или до 2 500 озвучек' },
+  {
+    amount: 300,
+    name: 'Стартовый',
+    dialogue: '~2 часа с агентом',
+    orLine: 'или до 800 озвучек',
+    featured: false,
+    perks: [
+      { title: 'Диалог с агентом', get: 'до ~2 часов', hint: 'сценарии, дебаты или свободный разговор', Icon: IconMic },
+      { title: 'Озвучка', get: 'до 800 озвучек', hint: 'слова и фразы в словаре', Icon: IconTts },
+      { title: 'Один баланс', get: 'на все разделы', hint: 'подписки нет, сумма не сгорает', Icon: IconWallet },
+    ],
+  },
+  {
+    amount: 500,
+    name: 'Оптимальный',
+    dialogue: '~3,5 часа практики',
+    orLine: 'или до 1 300 озвучек',
+    featured: true,
+    perks: [
+      { title: 'Диалог с агентом', get: 'около 3,5 часов', hint: 'агент, словарь и караоке с одного баланса', Icon: IconMic },
+      { title: 'Озвучка', get: 'до 1 300 озвучек', hint: 'произношение слов и фраз', Icon: IconTts },
+      { title: 'Зачисление', get: 'сразу в кабинете', hint: 'после оплаты баланс обновляется сам', Icon: IconWallet },
+    ],
+  },
+  {
+    amount: 1000,
+    name: 'Профессиональный',
+    dialogue: '~7 часов разговора',
+    orLine: 'или до 2 500 озвучек',
+    featured: false,
+    perks: [
+      { title: 'Диалог с агентом', get: 'около 7 часов', hint: 'длинная практика без подписки', Icon: IconMic },
+      { title: 'Озвучка', get: 'до 2 500 озвучек', hint: 'или смесь диалога и озвучки', Icon: IconTts },
+      { title: 'Зачисление', get: 'сразу на баланс', hint: 'отдельный файл или письмо не приходит', Icon: IconWallet },
+    ],
+  },
 ];
 
 const LOW_BALANCE_THRESHOLD = 50;
@@ -477,14 +539,56 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
         {confirmingTopup && (
           <p className={styles.balanceHint}>Проверяем оплату…</p>
         )}
+      </section>
+
+      <section className={styles.topupSection} aria-labelledby="topup-title">
+        <div className={styles.topupSectionHead}>
+          <p className={styles.topupKicker}>Пакеты</p>
+          <h3 id="topup-title" className={styles.topupTitle}>Выберите объём практики</h3>
+          <p className={styles.topupLead}>
+            Фиксированные суммы 300, 500 и 1 000 ₽. Один баланс на все разделы, подписки нет.
+            Часы и число озвучек — ориентир: фактический расход зависит от длины реплик.
+          </p>
+        </div>
         <div className={styles.topupGrid}>
           {TOPUP_OPTIONS.map((opt) => (
-            <div key={opt.amount} className={`${styles.topupCard} ${styles.topupCardStatic}`}>
-              <span className={styles.topupAmount}>{opt.amount} ₽</span>
-              <span className={styles.topupLabel}>{opt.label}</span>
-              <span className={styles.topupLabel}>{opt.sub}</span>
-              <span className={styles.topupBadge}>Скоро</span>
-            </div>
+            <article
+              key={opt.amount}
+              className={`${styles.topupCard} ${opt.featured ? styles.topupCardFeatured : ''}`}
+            >
+              <div className={styles.topupCardHead}>
+                <div className={styles.topupCardTitleRow}>
+                  <h4 className={styles.topupName}>{opt.name}</h4>
+                  <span className={styles.topupBadge}>Скоро</span>
+                </div>
+                <p className={styles.topupAmount}>
+                  <span className={styles.topupAmountValue}>{opt.amount}</span>
+                  <span className={styles.topupAmountCur}> ₽</span>
+                </p>
+                <p className={styles.topupDialogue}>{opt.dialogue}</p>
+                <p className={styles.topupOr}>{opt.orLine}</p>
+              </div>
+              <ul className={styles.topupPerks}>
+                {opt.perks.map((perk) => {
+                  const Icon = perk.Icon;
+                  return (
+                    <li key={perk.title} className={styles.topupPerk}>
+                      <span className={styles.topupPerkIcon} aria-hidden>
+                        <Icon />
+                      </span>
+                      <span className={styles.topupPerkBody}>
+                        <span className={styles.topupPerkTitle}>{perk.title}</span>
+                        <span className={styles.topupPerkGet}>{perk.get}</span>
+                        <span className={styles.topupPerkHint}>{perk.hint}</span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className={styles.topupFoot}>
+                <span className={styles.topupSoon}>Оплата скоро откроется</span>
+              </div>
+            </article>
           ))}
         </div>
       </section>

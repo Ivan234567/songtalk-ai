@@ -160,69 +160,240 @@
   color: var(--text-primary);
 }
 
-.topupGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+.topupSection {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  margin-top: 1.5rem;
 }
 
-.topupCard {
+.topupSectionHead {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  width: 100%;
-  padding: 1rem 1.25rem;
-  border-radius: 12px;
-  border: 1px solid var(--stroke);
-  background: var(--card);
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  max-width: 62ch;
 }
 
-.topupCard:hover:not(:disabled) {
-  border-color: var(--stroke-strong);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-  transform: translateY(-2px);
-}
-
-.topupCard:disabled {
-  cursor: progress;
-  opacity: 0.72;
-}
-
-.topupCardStatic,
-.topupCardStatic:hover {
-  cursor: default;
-  transform: none;
-  box-shadow: none;
-}
-
-.topupAmount {
-  font-size: 1.25rem;
+.topupKicker {
+  margin: 0;
+  font-size: 0.72rem;
   font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.topupTitle {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   color: var(--text-primary);
 }
 
-.topupLabel {
-  font-size: 0.85rem;
+.topupLead {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
   color: var(--text-muted);
-  line-height: 1.3;
+}
+
+.topupGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.topupCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 22px;
+  border: 1px solid var(--stroke);
+  background:
+    radial-gradient(120% 80% at 100% 0%, var(--accent-soft), transparent 46%),
+    linear-gradient(165deg, rgba(255, 255, 255, 0.055) 0%, rgba(0, 0, 0, 0.28) 48%, rgba(255, 255, 255, 0.03) 100%);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.topupCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 70%, white), transparent);
+  opacity: 0.7;
+}
+
+.topupCard:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--stroke));
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.28), 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+  transform: translateY(-3px);
+}
+
+.topupCardFeatured {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  background:
+    radial-gradient(90% 70% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 58%),
+    linear-gradient(165deg, color-mix(in srgb, var(--accent) 12%, transparent) 0%, rgba(0, 0, 0, 0.22) 46%, rgba(255, 255, 255, 0.03) 100%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 20px 50px rgba(0, 0, 0, 0.28);
+}
+
+.topupCardFeatured::before {
+  opacity: 1;
+  background: linear-gradient(90deg, var(--accent-strong), var(--accent), var(--accent-strong));
+}
+
+.topupCardHead {
+  padding: 1.25rem 1.2rem 1rem;
+  border-bottom: 1px solid var(--stroke);
+}
+
+.topupCardTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+
+.topupName {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.topupAmount {
+  margin: 0;
+  line-height: 1;
+}
+
+.topupAmountValue {
+  font-size: 2.35rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+}
+
+.topupAmountCur {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.topupDialogue {
+  margin: 0.7rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent-fg);
+}
+
+.topupOr {
+  margin: 0.2rem 0 0;
+  font-size: 0.84rem;
+  color: var(--text-muted);
 }
 
 .topupBadge {
-  display: inline-block;
-  font-size: 0.7rem;
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+}
+
+.topupPerks {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 1.15rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.topupPerk {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.topupPerk:last-child {
+  border-bottom: none;
+}
+
+.topupPerkIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.topupPerkBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.topupPerkTitle {
+  font-size: 0.78rem;
   font-weight: 600;
-  padding: 0.2rem 0.5rem;
-  border-radius: 6px;
-  background: var(--sidebar-hover);
+  letter-spacing: 0.02em;
   color: var(--text-muted);
-  margin-top: 0.25rem;
-  align-self: flex-start;
+}
+
+.topupPerkGet {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.topupPerkHint {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.topupFoot {
+  margin-top: auto;
+  padding: 0.15rem 1.15rem 1.2rem;
+}
+
+.topupSoon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--accent-fg);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 28%, transparent), color-mix(in srgb, var(--accent-strong) 18%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* Предупреждение низкий баланс */
@@ -854,6 +1025,12 @@
   height: 36px;
   width: 100%;
   border-radius: 6px;
+}
+
+@media (max-width: 1100px) {
+  .topupGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Узкие экраны */
