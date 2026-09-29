@@ -15,5 +15,9 @@ fi
 if [ -d /app/frontend/node_modules ]; then
   cp -a /app/frontend/node_modules/. /app/.next/node_modules/
 fi
+if [ -L /app/.next/node_modules/next ]; then
+  rm -rf /app/.next/node_modules/next
+  cp -aL "$(readlink -f /app/frontend/node_modules/next || readlink -f /app/node_modules/next)" /app/.next/node_modules/next
+fi
 test -f /app/.next/node_modules/next/dist/bin/next
 echo "spaceweb-build: /app/.next ready"
