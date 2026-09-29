@@ -79,8 +79,8 @@ app.use(cors({
     if (allowedOrigins.some(allowed => origin.startsWith(allowed))) {
       callback(null, true)
     } else {
-      // Также разрешаем все поддомены vercel.app для preview деплоев
-      if (origin.includes('.vercel.app')) {
+      // Поддомены Vercel и SpaceWeb Serverless
+      if (origin.includes('.vercel.app') || origin.endsWith('.sl.swteh.ru')) {
         callback(null, true)
       } else {
         callback(new Error('Not allowed by CORS'))
