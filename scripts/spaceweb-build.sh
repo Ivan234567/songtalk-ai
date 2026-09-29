@@ -3,10 +3,9 @@ set -e
 cd /app/frontend
 npm install
 npm install --no-save @next/swc-linux-x64-gnu@14.0.4
-npm run build
-test -d /app/frontend/.next
+export NEXT_DIST_DIR=../.next
 rm -rf /app/.next
-cp -a /app/frontend/.next /app/.next
+npm run build
 test -f /app/.next/BUILD_ID
 mkdir -p /app/.next/node_modules
 if [ -d /app/node_modules ]; then
@@ -17,7 +16,7 @@ if [ -d /app/frontend/node_modules ]; then
 fi
 if [ -L /app/.next/node_modules/next ]; then
   rm -rf /app/.next/node_modules/next
-  cp -aL "$(readlink -f /app/frontend/node_modules/next || readlink -f /app/node_modules/next)" /app/.next/node_modules/next
+  cp -aL "$(readlink -f /app/node_modules/next || readlink -f /app/frontend/node_modules/next)" /app/.next/node_modules/next
 fi
 test -f /app/.next/node_modules/next/dist/bin/next
 echo "spaceweb-build: /app/.next ready"
