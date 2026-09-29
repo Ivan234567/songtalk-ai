@@ -87,6 +87,7 @@ const TOPUP_OPTIONS = [
   },
 ];
 
+const TEST_SBP_AMOUNT = 20;
 const LOW_BALANCE_THRESHOLD = 50;
 const MIN_BALANCE_PORTFOLIO = 10; // порог, ниже которого сервисы блокируются
 const HISTORY_PAGE_SIZE = 25;
@@ -606,6 +607,32 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
         {payError && (
           <div className={styles.errorBanner} role="alert">{payError}</div>
         )}
+        <div className={styles.testSlot}>
+          <div className={styles.testSlotCopy}>
+            <span className={styles.topupBadge}>Тест</span>
+            <div>
+              <p className={styles.testSlotTitle}>20 ₽ на баланс</p>
+              <p className={styles.testSlotHint}>Проверка оплаты. Зачисление только через СБП.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`${styles.paySbp} ${styles.testSlotPay}`}
+            disabled={!accessToken || payingKey !== null}
+            aria-busy={payingKey === `${TEST_SBP_AMOUNT}:sbp`}
+            onClick={() => startTopup(TEST_SBP_AMOUNT, 'sbp')}
+          >
+            {payingKey === `${TEST_SBP_AMOUNT}:sbp` ? (
+              <span className={styles.paySpinner} aria-hidden />
+            ) : (
+              <>
+                <span className={styles.paySbpLabel}>Оплатить через СБП</span>
+                <span className={styles.paySbpPrice}>{formatChargeRub(chargeKopecks(TEST_SBP_AMOUNT, 'sbp'))}</span>
+                <span className={styles.paySbpHint}>комиссия 0,7%</span>
+              </>
+            )}
+          </button>
+        </div>
         <div className={styles.topupGrid}>
           {TOPUP_OPTIONS.map((opt) => {
             const sbpKey = `${opt.amount}:sbp`;
