@@ -12,8 +12,7 @@
 import crypto from 'crypto'
 
 const YOOKASSA_API = 'https://api.yookassa.ru/v3'
-const ALLOWED_CREDITS = new Set([20, 300, 500, 1000])
-const SBP_ONLY_CREDITS = new Set([20])
+const ALLOWED_CREDITS = new Set([300, 500, 1000])
 const SBP_FEE_BPS = 70
 const CARD_FEE_BPS = 350
 const CARD_VAT_BPS = 2200
@@ -226,10 +225,7 @@ export function registerYookassaRoutes(app, { supabase, asyncHandler, resolveUse
     const creditRub = Number(req.body?.amount_rub)
     const method = req.body?.method === 'sbp' ? 'sbp' : req.body?.method === 'other' ? 'other' : ''
     if (!ALLOWED_CREDITS.has(creditRub) || !method) {
-      return res.status(400).json({ error: 'Доступны пакеты 20, 300, 500 и 1000 ₽, способ sbp или other' })
-    }
-    if (SBP_ONLY_CREDITS.has(creditRub) && method !== 'sbp') {
-      return res.status(400).json({ error: 'Тестовый пакет 20 ₽ доступен только через СБП' })
+      return res.status(400).json({ error: 'Доступны пакеты 300, 500 и 1000 ₽, способ sbp или other' })
     }
 
     const clientPaymentId = crypto.randomUUID()
