@@ -8,6 +8,7 @@ import {
 } from '@/lib/roleplay';
 import { createUserScenario, type UserScenarioLevel } from '@/lib/user-scenarios';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
+import { SpeechVoicePicker } from '@/components/roleplay/SpeechVoicePicker';
 import { hasRoleplaySystemCatalog, type LearningLanguage } from '@/lib/learning-language';
 import {
   PLAY_MODES,
@@ -38,12 +39,6 @@ const DIFFICULTY_BADGE: Record<'easy' | 'medium' | 'hard', string> = {
   easy: 'Easy',
   medium: 'Medium',
   hard: 'Hard',
-};
-
-const SLANG_LABELS: Record<SlangMode, string> = {
-  off: 'Без сленга',
-  light: 'Лёгкий сленг',
-  heavy: 'Живой сленг',
 };
 
 const PROFANITY_INTENSITY_LABELS: Record<ProfanityIntensity, string> = {
@@ -1362,77 +1357,19 @@ export function BriefingView({
             gap: '0.75rem',
           }}
         >
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.78, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Сленг и стиль речи
-          </span>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontSize: '0.78rem', color: 'var(--sidebar-text)', opacity: 0.78 }}>Стиль сленга</span>
-            <select
-              className="roleplay-modern-select"
-              value={slangMode}
-              onChange={(e) => setSlangMode(e.target.value as SlangMode)}
-              style={{
-                borderRadius: 8,
-                border: '1px solid rgba(148, 163, 184, 0.45)',
-                background: 'rgba(148, 163, 184, 0.14)',
-                color: 'var(--sidebar-text)',
-                fontSize: '0.8125rem',
-                padding: '0.5rem 2rem 0.5rem 0.65rem',
-              }}
-            >
-              {Object.entries(SLANG_LABELS).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
-            <input
-              type="checkbox"
-              checked={allowProfanity}
-              onChange={async (e) => {
-                const next = e.target.checked;
-                if (!next) {
-                  setAllowProfanity(false);
-                  setAiMayUseProfanity(false);
-                  return;
-                }
-                const confirmed = await ensureAdultConfirmation('roleplay_briefing');
-                if (!confirmed) return;
-                setAllowProfanity(true);
-              }}
-            />
-            Разрешить нецензурную лексику (18+)
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: allowProfanity ? 1 : 0.55 }}>
-            <input
-              type="checkbox"
-              checked={aiMayUseProfanity}
-              disabled={!allowProfanity}
-              onChange={(e) => setAiMayUseProfanity(e.target.checked)}
-            />
-            ИИ тоже может ругаться матом
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, opacity: allowProfanity ? 1 : 0.55 }}>
-            <span style={{ fontSize: '0.78rem', color: 'var(--sidebar-text)', opacity: 0.78 }}>Интенсивность</span>
-            <select
-              className="roleplay-modern-select"
-              value={profanityIntensity}
-              disabled={!allowProfanity}
-              onChange={(e) => setProfanityIntensity(e.target.value as ProfanityIntensity)}
-              style={{
-                borderRadius: 8,
-                border: '1px solid rgba(148, 163, 184, 0.45)',
-                background: 'rgba(148, 163, 184, 0.14)',
-                color: 'var(--sidebar-text)',
-                fontSize: '0.8125rem',
-                padding: '0.5rem 2rem 0.5rem 0.65rem',
-              }}
-            >
-              {Object.entries(PROFANITY_INTENSITY_LABELS).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
-              ))}
-            </select>
-          </label>
+          <SpeechVoicePicker
+            slangMode={slangMode}
+            allowProfanity={allowProfanity}
+            aiMayUseProfanity={aiMayUseProfanity}
+            profanityIntensity={profanityIntensity}
+            confirmSource="roleplay_briefing"
+            onChange={(next) => {
+              setSlangMode(next.slangMode);
+              setAllowProfanity(next.allowProfanity);
+              setAiMayUseProfanity(next.aiMayUseProfanity);
+              setProfanityIntensity(next.profanityIntensity);
+            }}
+          />
         </div>
         <button
           type="button"

@@ -20,7 +20,7 @@ import { LevelRequiredNotice } from '@/components/ui/HskLevelPicker';
 import { BriefingView } from './RoleplayModeUI';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 import { parsePlayMode, type PlayMode } from '@/lib/play-mode';
-import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
+import { SpeechVoicePicker } from '@/components/roleplay/SpeechVoicePicker';
 
 type SlangMode = 'off' | 'light' | 'heavy';
 type ProfanityIntensity = 'light' | 'medium' | 'hard';
@@ -34,18 +34,6 @@ const LEVELS: { value: UserScenarioLevel; label: string }[] = [
   { value: 'easy', label: 'Лёгкий' },
   { value: 'medium', label: 'Средний' },
   { value: 'hard', label: 'Сложный' },
-];
-
-const SLANG_OPTIONS: Array<{ value: SlangMode; label: string }> = [
-  { value: 'off', label: 'Без сленга' },
-  { value: 'light', label: 'Лёгкий сленг' },
-  { value: 'heavy', label: 'Живой сленг' },
-];
-
-const PROFANITY_OPTIONS: Array<{ value: ProfanityIntensity; label: string }> = [
-  { value: 'light', label: 'Light' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'hard', label: 'Hard' },
 ];
 
 function getScenarioStyleBadges(
@@ -1358,62 +1346,20 @@ export function PersonalScenariosUI({
                       ariaLabel="Уровень сценария"
                     />
                   </label>
-                  <div style={{ marginTop: '0.75rem', padding: '0.75rem', borderRadius: 10, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-bg)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                    <span style={{ ...createLabelStyle, marginBottom: 0, fontSize: '0.8125rem', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.75 }}>
-                      Сленг и 18+ настройки (необязательно)
-                    </span>
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <span style={{ ...createLabelStyle, marginBottom: 0, fontSize: '0.85rem' }}>Стиль сленга</span>
-                      <select
-                        value={createSlangMode}
-                        onChange={(e) => setCreateSlangMode(e.target.value as SlangMode)}
-                        style={{ ...inputStyle, padding: '0.55rem 0.75rem', fontSize: '0.9375rem' }}
-                      >
-                        {SLANG_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', color: 'var(--sidebar-text)' }}>
-                      <input
-                        type="checkbox"
-                        checked={createAllowProfanity}
-                        onChange={async (e) => {
-                          const next = e.target.checked;
-                          if (!next) {
-                            setCreateAllowProfanity(false);
-                            setCreateAiMayUseProfanity(false);
-                            return;
-                          }
-                          const confirmed = await ensureAdultConfirmation('personal_scenario_create');
-                          if (!confirmed) return;
-                          setCreateAllowProfanity(true);
-                        }}
-                      />
-                      Разрешить нецензурную лексику (18+)
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: createAllowProfanity ? 1 : 0.55 }}>
-                      <input
-                        type="checkbox"
-                        checked={createAiMayUseProfanity}
-                        disabled={!createAllowProfanity}
-                        onChange={(e) => setCreateAiMayUseProfanity(e.target.checked)}
-                      />
-                      ИИ тоже может ругаться матом
-                    </label>
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, opacity: createAllowProfanity ? 1 : 0.55 }}>
-                      <span style={{ ...createLabelStyle, marginBottom: 0, fontSize: '0.85rem' }}>Интенсивность</span>
-                      <select
-                        value={createProfanityIntensity}
-                        disabled={!createAllowProfanity}
-                        onChange={(e) => setCreateProfanityIntensity(e.target.value as ProfanityIntensity)}
-                        style={{ ...inputStyle, padding: '0.55rem 0.75rem', fontSize: '0.9375rem' }}
-                      >
-                        {PROFANITY_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </label>
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <SpeechVoicePicker
+                      slangMode={createSlangMode}
+                      allowProfanity={createAllowProfanity}
+                      aiMayUseProfanity={createAiMayUseProfanity}
+                      profanityIntensity={createProfanityIntensity}
+                      confirmSource="personal_scenario_create"
+                      onChange={(next) => {
+                        setCreateSlangMode(next.slangMode);
+                        setCreateAllowProfanity(next.allowProfanity);
+                        setCreateAiMayUseProfanity(next.aiMayUseProfanity);
+                        setCreateProfanityIntensity(next.profanityIntensity);
+                      }}
+                    />
                   </div>
                 </div>
                 <div>
@@ -1955,63 +1901,14 @@ export function PersonalScenariosUI({
                     </label>
                   </div>
                 </div>
-                <div>
-                  <span style={createSectionTitle}>Сленг и 18+ настройки (необязательно)</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Стиль сленга</span>
-                      <select
-                        value={(p.slangMode as SlangMode) ?? 'light'}
-                        onChange={(e) => setPayload({ slangMode: e.target.value as SlangMode })}
-                        style={{ ...inputStyle, padding: '0.6rem 0.75rem', fontSize: '0.95rem' }}
-                      >
-                        {SLANG_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.95rem', color: 'var(--sidebar-text)' }}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(p.allowProfanity)}
-                        onChange={async (e) => {
-                          const next = e.target.checked;
-                          if (next) {
-                            const confirmed = await ensureAdultConfirmation('personal_scenario_edit');
-                            if (!confirmed) return;
-                          }
-                          setPayload({
-                            allowProfanity: next,
-                            aiMayUseProfanity: next ? Boolean(p.aiMayUseProfanity) : false,
-                          });
-                        }}
-                      />
-                      Разрешить нецензурную лексику (18+)
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.95rem', color: 'var(--sidebar-text)', opacity: Boolean(p.allowProfanity) ? 1 : 0.55 }}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(p.aiMayUseProfanity)}
-                        disabled={!Boolean(p.allowProfanity)}
-                        onChange={(e) => setPayload({ aiMayUseProfanity: e.target.checked })}
-                      />
-                      ИИ тоже может ругаться матом
-                    </label>
-                    <label style={{ display: 'block', opacity: Boolean(p.allowProfanity) ? 1 : 0.55 }}>
-                      <span style={createLabelStyle}>Интенсивность</span>
-                      <select
-                        value={(p.profanityIntensity as ProfanityIntensity) ?? 'light'}
-                        disabled={!Boolean(p.allowProfanity)}
-                        onChange={(e) => setPayload({ profanityIntensity: e.target.value as ProfanityIntensity })}
-                        style={{ ...inputStyle, padding: '0.6rem 0.75rem', fontSize: '0.95rem' }}
-                      >
-                        {PROFANITY_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
+                <SpeechVoicePicker
+                  slangMode={(p.slangMode as SlangMode) ?? 'light'}
+                  allowProfanity={Boolean(p.allowProfanity)}
+                  aiMayUseProfanity={Boolean(p.aiMayUseProfanity)}
+                  profanityIntensity={(p.profanityIntensity as ProfanityIntensity) ?? 'light'}
+                  confirmSource="personal_scenario_edit"
+                  onChange={(next) => setPayload({ ...next })}
+                />
                 <div>
                   <span style={createSectionTitle}>Инструкция для ИИ-персонажа</span>
                   <p style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: 'var(--sidebar-text)', opacity: 0.7, lineHeight: 1.4 }}>
