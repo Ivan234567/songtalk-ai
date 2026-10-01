@@ -446,6 +446,67 @@ app.get('/api/balance/transactions', asyncHandler(async (req, res) => {
   return res.json(data || [])
 }))
 
+// Журнал пополнений: заказы оплаты и ручные зачисления.
+app.get('/api/balance/topups', asyncHandler(async (req, res) => {
+  const userId = await resolveUserId(req)
+  if (!userId) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization' })
+  }
+  const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 100), 200)
+
+  const [ordersResult, manualResult] = await Promise.all([
+    supabase
+      .from('payment_orders')
+      .select('id, credit_rub, charge_rub, status, payment_method, created_at, credited_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    supabase
+      .from('balance_transactions')
+      .select('id, amount_rub, created_at')
+      .eq('user_id', userId)
+      .eq('type', 'topup_manual')
+      .order('created_at', { ascending: false })
+      .limit(limit),
+  ])
+
+  if (ordersResult.error) throw ordersResult.error
+  if (manualResult.error) throw manualResult.error
+
+  const asNumber = (value) => {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
+  }
+
+  const gateway = (ordersResult.data || []).map((row) => ({
+    id: row.id,
+    created_at: row.created_at,
+    credited_at: row.credited_at,
+    credit_rub: asNumber(row.credit_rub) ?? 0,
+    charge_rub: asNumber(row.charge_rub),
+    status: row.status === 'paid' || row.status === 'failed' ? row.status : 'pending',
+    payment_method: row.payment_method === 'sbp' || row.payment_method === 'other' ? row.payment_method : null,
+    source: 'gateway',
+  }))
+
+  const manual = (manualResult.data || []).map((row) => ({
+    id: row.id,
+    created_at: row.created_at,
+    credited_at: row.created_at,
+    credit_rub: asNumber(row.amount_rub) ?? 0,
+    charge_rub: null,
+    status: 'paid',
+    payment_method: null,
+    source: 'manual',
+  }))
+
+  const items = [...gateway, ...manual]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit)
+
+  return res.json(items)
+}))
+
 // Admin: manual balance topup (no gateway). Requires ADMIN_BALANCE_SECRET in header X-Admin-Key or Authorization: Bearer <secret>.
 const ADMIN_BALANCE_SECRET = process.env.ADMIN_BALANCE_SECRET
 const MIN_TOPUP_RUB = 300

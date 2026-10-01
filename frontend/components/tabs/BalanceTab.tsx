@@ -90,6 +90,7 @@ const TOPUP_OPTIONS = [
 const LOW_BALANCE_THRESHOLD = 50;
 const MIN_BALANCE_PORTFOLIO = 10; // порог, ниже которого сервисы блокируются
 const HISTORY_PAGE_SIZE = 25;
+const TOPUP_PAGE_SIZE = 10;
 
 interface Transaction {
   id: string;
@@ -100,6 +101,19 @@ interface Transaction {
   created_at: string;
 }
 
+type TopupStatus = 'paid' | 'pending' | 'failed';
+
+interface TopupEntry {
+  id: string;
+  created_at: string;
+  credited_at: string | null;
+  credit_rub: number;
+  charge_rub: number | null;
+  status: TopupStatus;
+  payment_method: 'sbp' | 'other' | null;
+  source: 'gateway' | 'manual';
+}
+
 function formatDate(iso: string): string {
   const d = new Date(iso);
   const day = String(d.getDate()).padStart(2, '0');
@@ -108,6 +122,36 @@ function formatDate(iso: string): string {
   const h = String(d.getHours()).padStart(2, '0');
   const m = String(d.getMinutes()).padStart(2, '0');
   return `${day}.${month}.${year}, ${h}:${m}`;
+}
+
+function formatRub(value: number): string {
+  return `${new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)} ₽`;
+}
+
+function topupMethodLabel(entry: TopupEntry): string {
+  if (entry.source === 'manual') return 'Вручную';
+  if (entry.payment_method === 'sbp') return 'СБП';
+  if (entry.payment_method === 'other') return 'Карта и другие';
+  return '—';
+}
+
+function topupStatusLabel(status: TopupStatus): string {
+  if (status === 'paid') return 'Зачислено';
+  if (status === 'failed') return 'Не прошло';
+  return 'Ожидает';
+}
+
+function topupStatusClass(status: TopupStatus): string {
+  if (status === 'paid') return styles.statusPaid;
+  if (status === 'failed') return styles.statusFailed;
+  return styles.statusPending;
+}
+
+function topupWhen(entry: TopupEntry): string {
+  return formatDate(entry.status === 'paid' && entry.credited_at ? entry.credited_at : entry.created_at);
 }
 
 function getPeriodBounds(period: PeriodKey, customRange?: { from: string; to: string }): { from: string; to: string } {
@@ -210,6 +254,9 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
   const [historyDateFrom, setHistoryDateFrom] = useState<string>('');
   const [historyDateTo, setHistoryDateTo] = useState<string>('');
   const [historyVisibleCount, setHistoryVisibleCount] = useState(HISTORY_PAGE_SIZE);
+  const [topups, setTopups] = useState<TopupEntry[]>([]);
+  const [topupsError, setTopupsError] = useState<string | null>(null);
+  const [topupsVisibleCount, setTopupsVisibleCount] = useState(TOPUP_PAGE_SIZE);
   const [prevTransactions, setPrevTransactions] = useState<Transaction[]>([]);
   const initialLoadDoneRef = useRef(false);
   const confirmedTopupRef = useRef<string | null>(null);
@@ -279,13 +326,40 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
     }
   }, [accessToken, period]);
 
+  const fetchTopups = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const res = await fetch(`${API_URL}/api/balance/topups?limit=100`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error('Не удалось загрузить журнал пополнений');
+      const data = await res.json();
+      const rows: TopupEntry[] = Array.isArray(data)
+        ? data.map((row) => ({
+            id: String(row.id),
+            created_at: String(row.created_at),
+            credited_at: row.credited_at ? String(row.credited_at) : null,
+            credit_rub: Number(row.credit_rub) || 0,
+            charge_rub: row.charge_rub == null ? null : Number(row.charge_rub),
+            status: row.status === 'paid' || row.status === 'failed' ? row.status : 'pending',
+            payment_method: row.payment_method === 'sbp' || row.payment_method === 'other' ? row.payment_method : null,
+            source: row.source === 'manual' ? 'manual' : 'gateway',
+          }))
+        : [];
+      setTopups(rows);
+      setTopupsError(null);
+    } catch (e) {
+      setTopupsError(e instanceof Error ? e.message : 'Ошибка загрузки журнала');
+    }
+  }, [accessToken]);
+
   const handleRefresh = useCallback(async () => {
     if (!accessToken || refreshing) return;
     setRefreshing(true);
     setError(null);
-    await Promise.all([fetchBalance(), fetchTransactions(), fetchPreviousTransactions()]);
+    await Promise.all([fetchBalance(), fetchTransactions(), fetchPreviousTransactions(), fetchTopups()]);
     setRefreshing(false);
-  }, [accessToken, refreshing, fetchBalance, fetchTransactions, fetchPreviousTransactions]);
+  }, [accessToken, refreshing, fetchBalance, fetchTransactions, fetchPreviousTransactions, fetchTopups]);
 
   useEffect(() => {
     (async () => {
@@ -331,7 +405,10 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
         status = 'pending';
       }
       if (cancelled) return;
-      if (status === 'paid') await fetchBalance();
+      await Promise.all([
+        status === 'paid' ? fetchBalance() : Promise.resolve(),
+        fetchTopups(),
+      ]);
       if (cancelled) return;
       finished = true;
       setConfirmingTopup(false);
@@ -345,7 +422,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
       cancelled = true;
       if (!finished) confirmedTopupRef.current = null;
     };
-  }, [accessToken, topupId, fetchBalance, replaceBalanceQuery]);
+  }, [accessToken, topupId, fetchBalance, fetchTopups, replaceBalanceQuery]);
 
   const startTopup = useCallback(async (amount: number, method: TopupMethod) => {
     if (!accessToken || payingKey) return;
@@ -382,7 +459,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
     setError(null);
     if (!initialLoadDoneRef.current) {
       setLoading(true);
-      Promise.all([fetchBalance(), fetchTransactions(), fetchPreviousTransactions()]).finally(() => {
+      Promise.all([fetchBalance(), fetchTransactions(), fetchPreviousTransactions(), fetchTopups()]).finally(() => {
         setLoading(false);
         initialLoadDoneRef.current = true;
       });
@@ -390,7 +467,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
     }
     setStatsLoading(true);
     Promise.all([fetchTransactions(), fetchPreviousTransactions()]).finally(() => setStatsLoading(false));
-  }, [accessToken, period, customFrom, customTo, fetchBalance, fetchTransactions, fetchPreviousTransactions]);
+  }, [accessToken, period, customFrom, customTo, fetchBalance, fetchTransactions, fetchPreviousTransactions, fetchTopups]);
 
   const usageOnly = transactions.filter((t) => t.type === 'usage' && t.amount_rub < 0);
   const totalSpent = usageOnly.reduce((s, t) => s + Math.abs(Number(t.amount_rub)), 0);
@@ -458,6 +535,8 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
 
   const usageVisible = usageFilteredByDate.slice(0, historyVisibleCount);
   const hasMoreHistory = usageFilteredByDate.length > historyVisibleCount;
+  const topupsVisible = topups.slice(0, topupsVisibleCount);
+  const hasMoreTopups = topups.length > topupsVisibleCount;
 
   const downloadCsv = () => {
     const rows = [
@@ -488,7 +567,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
     <div className={styles.wrapper}>
       <header>
         <h2 className={styles.title}>Пополнение баланса</h2>
-        <p className={styles.subtitle}>Текущий баланс и статистика расходов по сервисам</p>
+        <p className={styles.subtitle}>Текущий баланс, журнал пополнений и статистика расходов</p>
       </header>
 
       {error && (
@@ -531,7 +610,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
             onClick={handleRefresh}
             disabled={refreshing}
             className={styles.refreshBtn}
-            title="Обновить баланс и историю"
+            title="Обновить баланс, пополнения и расходы"
           >
             {refreshing ? (
               <span className={styles.refreshBtnSpinner} aria-hidden />
@@ -569,6 +648,74 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
         {confirmingTopup && (
           <p className={styles.balanceHint}>Проверяем оплату…</p>
         )}
+      </section>
+
+      <section className={styles.journalSection} aria-labelledby="topup-journal-title">
+        <div>
+          <h3 id="topup-journal-title" className={styles.sectionTitle}>Журнал пополнений</h3>
+          <p className={styles.journalLead}>
+            Каждая оплата: сколько зачислили на баланс, сколько списали со счёта и дошёл ли платёж.
+          </p>
+        </div>
+        {topupsError && (
+          <div className={styles.errorBanner} role="alert">{topupsError}</div>
+        )}
+        {topups.length === 0 && !topupsError ? (
+          <div className={styles.emptyState}>
+            <h4 className={styles.emptyStateTitle}>Пополнений пока нет</h4>
+            <p className={styles.emptyStateText}>
+              Оплатите пакет ниже. После оплаты запись появится здесь: сумма, способ и статус.
+            </p>
+          </div>
+        ) : topups.length > 0 ? (
+          <>
+            <div className={styles.historyTableWrap}>
+              <div className={styles.historyTableScroll}>
+                <table className={`${styles.historyTable} ${styles.journalTable}`}>
+                  <thead>
+                    <tr>
+                      <th>Дата</th>
+                      <th className={styles.colAmount}>Зачислено</th>
+                      <th className={styles.colAmount}>Оплачено</th>
+                      <th>Способ</th>
+                      <th>Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topupsVisible.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{topupWhen(entry)}</td>
+                        <td className={`${styles.colAmount} ${entry.status === 'paid' ? styles.creditAmount : ''}`}>
+                          {entry.status === 'paid' ? `+${formatRub(entry.credit_rub)}` : formatRub(entry.credit_rub)}
+                        </td>
+                        <td className={styles.colAmount}>
+                          {entry.charge_rub == null ? '—' : formatRub(entry.charge_rub)}
+                        </td>
+                        <td>{topupMethodLabel(entry)}</td>
+                        <td>
+                          <span className={`${styles.statusPill} ${topupStatusClass(entry.status)}`}>
+                            {topupStatusLabel(entry.status)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {hasMoreTopups && (
+              <div className={styles.historyShowMoreWrap}>
+                <button
+                  type="button"
+                  onClick={() => setTopupsVisibleCount((n) => n + TOPUP_PAGE_SIZE)}
+                  className={styles.showMoreBtn}
+                >
+                  Показать ещё ({topups.length - topupsVisibleCount} из {topups.length})
+                </button>
+              </div>
+            )}
+          </>
+        ) : null}
       </section>
 
       <section className={styles.topupSection} aria-labelledby="topup-title">
