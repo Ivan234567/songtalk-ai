@@ -194,6 +194,53 @@ type SbiBlock = {
 };
 type FreestyleSlangMode = 'off' | 'light' | 'heavy';
 type FreestyleProfanityIntensity = 'light' | 'medium' | 'hard';
+type FreestyleVoiceId = 'calm' | 'friend' | 'raw';
+
+const FREESTYLE_VOICES: Array<{
+  id: FreestyleVoiceId;
+  title: string;
+  sample: string;
+  slang: FreestyleSlangMode;
+  allowProfanity: boolean;
+  aiMayUseProfanity: boolean;
+  intensity: FreestyleProfanityIntensity;
+  formality: number;
+  directness: number;
+}> = [
+  {
+    id: 'calm',
+    title: 'Спокойный',
+    sample: 'That\u2019s annoying. Want to talk about it?',
+    slang: 'off',
+    allowProfanity: false,
+    aiMayUseProfanity: false,
+    intensity: 'light',
+    formality: 50,
+    directness: 50,
+  },
+  {
+    id: 'friend',
+    title: 'Как друг',
+    sample: 'Yeah, that\u2019s kinda annoying. What happened?',
+    slang: 'light',
+    allowProfanity: false,
+    aiMayUseProfanity: false,
+    intensity: 'light',
+    formality: 30,
+    directness: 55,
+  },
+  {
+    id: 'raw',
+    title: 'Может материться',
+    sample: 'Oh for fuck\u2019s sake. What happened?',
+    slang: 'heavy',
+    allowProfanity: true,
+    aiMayUseProfanity: true,
+    intensity: 'medium',
+    formality: 25,
+    directness: 70,
+  },
+];
 type FreestyleHintMode = 'natural' | 'simpler' | 'more_native';
 type EnglishCefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 
@@ -478,10 +525,22 @@ export function AgentTab() {
     }),
     [freestyleToneFormality, freestyleToneDirectness]
   );
-  const freestyleSettingsSummary = useMemo(
+  const freestyleVoice = useMemo(
     () =>
-      `Сленг: ${freestyleSlangMode === 'off' ? 'выкл' : freestyleSlangMode === 'light' ? 'лёгкий' : 'активный'} · 18+: ${freestyleAllowProfanity ? 'вкл' : 'выкл'} · Тон: ${Math.round(freestyleToneFormality / 10)}/10`,
-    [freestyleSlangMode, freestyleAllowProfanity, freestyleToneFormality]
+      FREESTYLE_VOICES.find(
+        (voice) =>
+          voice.slang === freestyleSlangMode &&
+          voice.allowProfanity === freestyleAllowProfanity &&
+          voice.aiMayUseProfanity === freestyleAiMayUseProfanity &&
+          voice.intensity === freestyleProfanityIntensity &&
+          voice.formality === freestyleToneFormality &&
+          voice.directness === freestyleToneDirectness
+      ) ?? FREESTYLE_VOICES[0],
+    [freestyleSlangMode, freestyleAllowProfanity, freestyleAiMayUseProfanity, freestyleProfanityIntensity, freestyleToneFormality, freestyleToneDirectness]
+  );
+  const freestyleSettingsSummary = useMemo(
+    () => `Речь: ${freestyleVoice.title}`,
+    [freestyleVoice]
   );
   /** Payload китайских настроек для отправки на бэкенд */
   const chineseSettingsPayload = useMemo(
@@ -528,20 +587,6 @@ export function AgentTab() {
     const translation = englishShowTranslation ? 'перевод' : '';
     return [level, speed, translation].filter(Boolean).join(' · ');
   }, [lockedEnglishLevel, chineseSpeechSpeed, englishShowTranslation]);
-  const activeFreestylePreset = useMemo<string | null>(() => {
-    const s = freestyleSlangMode;
-    const p = freestyleAllowProfanity;
-    const ai = freestyleAiMayUseProfanity;
-    const pi = freestyleProfanityIntensity;
-    const f = freestyleToneFormality;
-    const d = freestyleToneDirectness;
-    if (s === 'off' && !p && !ai && pi === 'light' && f === 50 && d === 50) return 'neutral';
-    if (s === 'light' && !p && !ai && pi === 'light' && f === 35 && d === 50) return 'light_slang';
-    if (s === 'heavy' && !p && !ai && pi === 'light' && f === 25 && d === 60) return 'heavy_slang';
-    if (s === 'light' && p && !ai && pi === 'medium' && f === 40 && d === 65) return 'adult_user';
-    if (s === 'heavy' && p && ai && pi === 'medium' && f === 30 && d === 75) return 'adult_dual';
-    return null;
-  }, [freestyleSlangMode, freestyleAllowProfanity, freestyleAiMayUseProfanity, freestyleProfanityIntensity, freestyleToneFormality, freestyleToneDirectness]);
   const redirectToBalance = useCallback(() => {
     const base = pathname || '/dashboard';
     const next = new URLSearchParams(searchParams.toString());
@@ -2915,53 +2960,19 @@ export function AgentTab() {
     zhSaidMustSay,
   ]);
 
-  const applyFreestylePreset = useCallback(async (preset: 'neutral' | 'light_slang' | 'heavy_slang' | 'adult_user' | 'adult_dual') => {
-    if (preset === 'neutral') {
-      setFreestyleSlangMode('off');
-      setFreestyleAllowProfanity(false);
-      setFreestyleAiMayUseProfanity(false);
-      setFreestyleProfanityIntensity('light');
-      setFreestyleToneFormality(50);
-      setFreestyleToneDirectness(50);
-      return;
-    }
-    if (preset === 'light_slang') {
-      setFreestyleSlangMode('light');
-      setFreestyleAllowProfanity(false);
-      setFreestyleAiMayUseProfanity(false);
-      setFreestyleProfanityIntensity('light');
-      setFreestyleToneFormality(35);
-      setFreestyleToneDirectness(50);
-      return;
-    }
-    if (preset === 'heavy_slang') {
-      setFreestyleSlangMode('heavy');
-      setFreestyleAllowProfanity(false);
-      setFreestyleAiMayUseProfanity(false);
-      setFreestyleProfanityIntensity('light');
-      setFreestyleToneFormality(25);
-      setFreestyleToneDirectness(60);
-      return;
-    }
-    if (preset === 'adult_user') {
-      const confirmed = await ensureAdultConfirmation('freestyle_preset_user');
+  const applyFreestyleVoice = useCallback(async (id: FreestyleVoiceId) => {
+    const voice = FREESTYLE_VOICES.find((item) => item.id === id);
+    if (!voice) return;
+    if (voice.allowProfanity) {
+      const confirmed = await ensureAdultConfirmation('freestyle_voice_raw');
       if (!confirmed) return;
-      setFreestyleSlangMode('light');
-      setFreestyleAllowProfanity(true);
-      setFreestyleAiMayUseProfanity(false);
-      setFreestyleProfanityIntensity('medium');
-      setFreestyleToneFormality(40);
-      setFreestyleToneDirectness(65);
-      return;
     }
-    const confirmed = await ensureAdultConfirmation('freestyle_preset_dual');
-    if (!confirmed) return;
-    setFreestyleSlangMode('heavy');
-    setFreestyleAllowProfanity(true);
-    setFreestyleAiMayUseProfanity(true);
-    setFreestyleProfanityIntensity('medium');
-    setFreestyleToneFormality(30);
-    setFreestyleToneDirectness(75);
+    setFreestyleSlangMode(voice.slang);
+    setFreestyleAllowProfanity(voice.allowProfanity);
+    setFreestyleAiMayUseProfanity(voice.aiMayUseProfanity);
+    setFreestyleProfanityIntensity(voice.intensity);
+    setFreestyleToneFormality(voice.formality);
+    setFreestyleToneDirectness(voice.directness);
   }, []);
 
   const clearAssessment = useCallback(() => {
@@ -4455,166 +4466,40 @@ export function AgentTab() {
                       </div>
                       {agentMode === 'chat' && (
                         <>
-                        {/* --- Пресеты --- */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                           <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                            Быстрый выбор
+                            Как говорит бот
                           </span>
-                          <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                            {([
-                              { id: 'neutral', label: 'Нейтрально' },
-                              { id: 'light_slang', label: 'Лёгкий сленг' },
-                              { id: 'heavy_slang', label: 'Живой сленг' },
-                              { id: 'adult_user', label: '18+ (я)' },
-                              { id: 'adult_dual', label: '18+ (оба)' },
-                            ] as const).map((preset) => {
-                              const isActive = activeFreestylePreset === preset.id;
-                              return (
-                                <button
-                                  key={preset.id}
-                                  type="button"
-                                  onClick={() => applyFreestylePreset(preset.id)}
-                                  style={{
-                                    border: isActive ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid var(--sidebar-border)',
-                                    background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'var(--sidebar-bg)',
-                                    color: isActive ? 'rgb(129, 140, 248)' : 'var(--sidebar-text)',
-                                    borderRadius: 8,
-                                    padding: '0.3rem 0.6rem',
-                                    fontSize: '0.75rem',
-                                    fontWeight: isActive ? 700 : 500,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                    opacity: isActive ? 1 : 0.85,
-                                  }}
-                                >
-                                  {preset.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* --- Речевой стиль --- */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.5rem',
-                            padding: '0.625rem 0.75rem',
-                            borderRadius: 10,
-                            background: 'var(--sidebar-bg)',
-                            border: '1px solid var(--sidebar-border)',
-                          }}
-                        >
-                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                            Речевой стиль
-                          </span>
-                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
-                            <span style={{ opacity: 0.85 }}>Сленг</span>
-                            <select
-                              className="roleplay-modern-select"
-                              value={freestyleSlangMode}
-                              onChange={(e) => setFreestyleSlangMode(e.target.value as FreestyleSlangMode)}
-                              style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
-                            >
-                              <option value="off">Выключен</option>
-                              <option value="light">Лёгкий</option>
-                              <option value="heavy">Активный</option>
-                            </select>
-                          </label>
-                          <div style={{ height: 1, background: 'var(--sidebar-border)', opacity: 0.6 }} />
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
-                            <input
-                              type="checkbox"
-                              checked={freestyleAllowProfanity}
-                              onChange={async (e) => {
-                                const next = e.target.checked;
-                                if (!next) {
-                                  setFreestyleAllowProfanity(false);
-                                  setFreestyleAiMayUseProfanity(false);
-                                  return;
-                                }
-                                const confirmed = await ensureAdultConfirmation('freestyle_toggle');
-                                if (!confirmed) return;
-                                setFreestyleAllowProfanity(true);
-                              }}
-                              style={{ accentColor: 'rgb(99, 102, 241)' }}
-                            />
-                            <span>Нецензурная лексика (18+)</span>
-                          </label>
-                          {freestyleAllowProfanity && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', paddingLeft: '1.5rem' }}>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', cursor: 'pointer' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={freestyleAiMayUseProfanity}
-                                  onChange={(e) => setFreestyleAiMayUseProfanity(e.target.checked)}
-                                  style={{ accentColor: 'rgb(99, 102, 241)' }}
-                                />
-                                <span style={{ opacity: 0.9 }}>ИИ тоже может</span>
-                              </label>
-                              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
-                                <span style={{ opacity: 0.85 }}>Интенсивность</span>
-                                <select
-                                  className="roleplay-modern-select"
-                                  value={freestyleProfanityIntensity}
-                                  onChange={(e) => setFreestyleProfanityIntensity(e.target.value as FreestyleProfanityIntensity)}
-                                  style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.8125rem' }}
-                                >
-                                  <option value="light">Лёгкая</option>
-                                  <option value="medium">Средняя</option>
-                                  <option value="hard">Сильная</option>
-                                </select>
-                              </label>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* --- Тон общения --- */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.5rem',
-                            padding: '0.625rem 0.75rem',
-                            borderRadius: 10,
-                            background: 'var(--sidebar-bg)',
-                            border: '1px solid var(--sidebar-border)',
-                          }}
-                        >
-                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                            Тон общения
-                          </span>
-                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
-                              <span style={{ opacity: 0.85 }}>Формальность</span>
-                              <span style={{ fontSize: '0.75rem', opacity: 0.55, fontVariantNumeric: 'tabular-nums' }}>{freestyleToneFormality <= 30 ? 'разговорный' : freestyleToneFormality >= 70 ? 'формальный' : 'нейтральный'}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={100}
-                              step={1}
-                              value={freestyleToneFormality}
-                              onChange={(e) => setFreestyleToneFormality(Number(e.target.value))}
-                              style={{ width: '100%', accentColor: 'rgb(99, 102, 241)' }}
-                            />
-                          </label>
-                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8125rem', color: 'var(--sidebar-text)' }}>
-                              <span style={{ opacity: 0.85 }}>Прямота</span>
-                              <span style={{ fontSize: '0.75rem', opacity: 0.55, fontVariantNumeric: 'tabular-nums' }}>{freestyleToneDirectness <= 30 ? 'мягкий' : freestyleToneDirectness >= 70 ? 'прямой' : 'нейтральный'}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={100}
-                              step={1}
-                              value={freestyleToneDirectness}
-                              onChange={(e) => setFreestyleToneDirectness(Number(e.target.value))}
-                              style={{ width: '100%', accentColor: 'rgb(99, 102, 241)' }}
-                            />
-                          </label>
+                          {FREESTYLE_VOICES.map((voice) => {
+                            const isActive = freestyleVoice.id === voice.id;
+                            return (
+                              <button
+                                key={voice.id}
+                                type="button"
+                                onClick={() => applyFreestyleVoice(voice.id)}
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'flex-start',
+                                  gap: 2,
+                                  textAlign: 'left',
+                                  border: isActive ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid var(--sidebar-border)',
+                                  background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'var(--sidebar-bg)',
+                                  color: 'var(--sidebar-text)',
+                                  borderRadius: 10,
+                                  padding: '0.5rem 0.65rem',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <span style={{ fontSize: '0.8125rem', fontWeight: isActive ? 700 : 600, color: isActive ? 'rgb(129, 140, 248)' : 'var(--sidebar-text)' }}>
+                                  {voice.title}
+                                </span>
+                                <span style={{ fontSize: '0.75rem', opacity: 0.7, lineHeight: 1.35 }}>
+                                  {voice.sample}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                         </>
                       )}

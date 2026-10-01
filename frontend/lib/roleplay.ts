@@ -265,18 +265,17 @@ function buildProfanityInstruction(scenario: RoleplayScenario): string {
   if (!scenario.allowProfanity) {
     return 'Avoid profanity and obscenities. Keep language clean and natural.';
   }
+  if (!scenario.aiMayUseProfanity) {
+    return 'This is an adult (18+) conversation. The learner may swear. You reply without profanity and do not lecture them about it.';
+  }
   const intensity = scenario.profanityIntensity ?? 'light';
-  const canAiUseProfanity = Boolean(scenario.aiMayUseProfanity);
   const intensityRule =
     intensity === 'hard'
-      ? 'Intensity: hard. Profanity can be frequent in heated moments, but keep dialogue coherent and non-targeted.'
+      ? 'Hard: stronger swearing is allowed in heated moments (fuck and similar). No slurs and no insults aimed at the learner.'
       : intensity === 'medium'
-        ? 'Intensity: medium. Profanity can appear occasionally in emotional moments.'
-        : 'Intensity: light. Prefer rare, mild profanity only when it sounds natural.';
-  const aiRule = canAiUseProfanity
-    ? 'AI character may also use profanity, but avoid slurs and keep wording within context.'
-    : 'User may use profanity, but AI character should respond without profanity and keep tone controlled.';
-  return `${ADULT_PROFANITY_ALLOWED_INSTRUCTION} ${intensityRule} ${aiRule}`;
+        ? 'Medium: occasional swearing when the moment is emotional (shit, asshole, what the hell). No slurs.'
+        : 'Light: rare mild swearing only when it sounds natural (damn, hell, crap).';
+  return `${ADULT_PROFANITY_ALLOWED_INSTRUCTION} You may swear too. ${intensityRule}`;
 }
 
 /**

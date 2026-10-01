@@ -171,6 +171,22 @@ export function getFreestyleChatSystemPrompt(lang, options = {}) {
   return buildEnglishSystemPrompt(options)
 }
 
+/** Одна фраза вместо трёх флагов: кто матерится и насколько крепко, на английском. */
+export function buildEnglishProfanityPolicy({ allowProfanity = false, aiMayUseProfanity = false, profanityIntensity = 'light' } = {}) {
+  if (!allowProfanity) {
+    return 'Profanity is off. Do not swear, and do not echo the learner\'s swear words.'
+  }
+  if (!aiMayUseProfanity) {
+    return 'The learner may swear. Your own replies stay clean: no profanity. Do not scold them for swearing.'
+  }
+  const intensity = profanityIntensity === 'hard'
+    ? 'Hard: stronger swearing is allowed when the moment is heated (fuck and similar). No slurs, no insults aimed at the learner.'
+    : profanityIntensity === 'medium'
+      ? 'Medium: occasional swearing when the moment is emotional (shit, asshole, what the hell). No slurs.'
+      : 'Light: rare mild swearing only, when it sounds natural (damn, hell, crap).'
+  return `Both you and the learner may swear. ${intensity}`
+}
+
 function splitZhScenarioVocab(vocabulary = []) {
   const list = Array.isArray(vocabulary)
     ? vocabulary.filter((v) => v && (v.hanzi || v.word)).slice(0, 24)

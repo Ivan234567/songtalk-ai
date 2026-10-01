@@ -18,7 +18,7 @@ import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize } from './tts.js'
 import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
 import { getCost, ttsChargeRub } from './balance-rates.js'
-import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction, CEFR_LEVEL_INSTRUCTIONS } from './learning-language.js'
+import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction, buildEnglishProfanityPolicy, CEFR_LEVEL_INSTRUCTIONS } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
@@ -1362,7 +1362,11 @@ app.post('/api/agent/chat', async (req, res) => {
       role: 'system',
       content:
         'Safety and style policy: follow provided style settings and keep responses contextual. ' +
-        `slang_mode=${slangMode}; allow_profanity=${allowProfanity}; ai_may_use_profanity=${aiMayUseProfanity}; profanity_intensity=${profanityIntensity}. ` +
+        `slang_mode=${slangMode}. ` +
+        (req.learningLanguage === 'en'
+          ? buildEnglishProfanityPolicy({ allowProfanity, aiMayUseProfanity, profanityIntensity })
+          : `allow_profanity=${allowProfanity}; ai_may_use_profanity=${aiMayUseProfanity}; profanity_intensity=${profanityIntensity}.`) +
+        ' ' +
         'Never include prohibited content: sexual content involving minors/pedophilia, extremism/terrorism support, instructions for violent wrongdoing, non-consensual sexual violence, doxxing, or direct real-world threats. ' +
         'If the user requests prohibited content, refuse briefly and steer the dialogue to a safe alternative.',
     }
