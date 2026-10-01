@@ -1285,8 +1285,6 @@ export function PersonalScenariosUI({
                   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                   gap: '1rem 1.25rem',
                   maxWidth: 980,
-                  flex: 1,
-                  minHeight: 0,
                   alignContent: 'start',
                 }}
               >
@@ -1346,21 +1344,6 @@ export function PersonalScenariosUI({
                       ariaLabel="Уровень сценария"
                     />
                   </label>
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <SpeechVoicePicker
-                      slangMode={createSlangMode}
-                      allowProfanity={createAllowProfanity}
-                      aiMayUseProfanity={createAiMayUseProfanity}
-                      profanityIntensity={createProfanityIntensity}
-                      confirmSource="personal_scenario_create"
-                      onChange={(next) => {
-                        setCreateSlangMode(next.slangMode);
-                        setCreateAllowProfanity(next.allowProfanity);
-                        setCreateAiMayUseProfanity(next.aiMayUseProfanity);
-                        setCreateProfanityIntensity(next.profanityIntensity);
-                      }}
-                    />
-                  </div>
                 </div>
                 <div>
                   <span style={createSectionTitle}>Роль и цель</span>
@@ -1382,6 +1365,21 @@ export function PersonalScenariosUI({
                     </span>
                     <input type="text" value={goalStructured} onChange={(e) => { setGoalStructured(e.target.value); if (generated) patchGeneratedPayload({ goalRu: e.target.value }); }} placeholder="заказать такси до отеля" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'goal') }} />
                   </label>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <SpeechVoicePicker
+                    slangMode={createSlangMode}
+                    allowProfanity={createAllowProfanity}
+                    aiMayUseProfanity={createAiMayUseProfanity}
+                    profanityIntensity={createProfanityIntensity}
+                    confirmSource="personal_scenario_create"
+                    onChange={(next) => {
+                      setCreateSlangMode(next.slangMode);
+                      setCreateAllowProfanity(next.allowProfanity);
+                      setCreateAiMayUseProfanity(next.aiMayUseProfanity);
+                      setCreateProfanityIntensity(next.profanityIntensity);
+                    }}
+                  />
                 </div>
               </div>
               {generated && Array.isArray(generated.payload.steps) && (

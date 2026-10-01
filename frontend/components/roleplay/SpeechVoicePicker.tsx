@@ -75,7 +75,7 @@ export function SpeechVoicePicker({
   const active = matchSpeechVoice({ slangMode, allowProfanity, aiMayUseProfanity, profanityIntensity });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', position: 'relative', zIndex: 5, pointerEvents: 'auto' }}>
       <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
         Как говорит персонаж
       </span>
@@ -85,7 +85,10 @@ export function SpeechVoicePicker({
           <button
             key={voice.id}
             type="button"
-            onClick={async () => {
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
               if (voice.allowProfanity) {
                 const confirmed = await ensureAdultConfirmation(confirmSource);
                 if (!confirmed) return;
@@ -102,13 +105,17 @@ export function SpeechVoicePicker({
               flexDirection: 'column',
               alignItems: 'flex-start',
               gap: 2,
+              width: '100%',
               textAlign: 'left',
               border: isActive ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid var(--sidebar-border)',
-              background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'var(--sidebar-bg)',
+              background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'var(--sidebar-hover)',
               color: 'var(--sidebar-text)',
               borderRadius: 10,
               padding: '0.5rem 0.65rem',
               cursor: 'pointer',
+              pointerEvents: 'auto',
+              position: 'relative',
+              zIndex: 5,
             }}
           >
             <span style={{ fontSize: '0.8125rem', fontWeight: isActive ? 700 : 600, color: isActive ? 'rgb(129, 140, 248)' : 'var(--sidebar-text)' }}>

@@ -1165,7 +1165,15 @@ export function BriefingView({
     setAiMayUseProfanity(Boolean(scenario.aiMayUseProfanity));
     setProfanityIntensity(scenario.profanityIntensity ?? 'light');
     setPlayMode(parsePlayMode(initialPlayMode ?? scenario.playMode));
-  }, [scenario, initialPlayMode]);
+  }, [
+    scenario.id,
+    scenario.slangMode,
+    scenario.allowProfanity,
+    scenario.aiMayUseProfanity,
+    scenario.profanityIntensity,
+    scenario.playMode,
+    initialPlayMode,
+  ]);
   const styleBadges = getScenarioStyleBadges({
     slangMode,
     allowProfanity,
@@ -1223,7 +1231,7 @@ export function BriefingView({
         className="roleplay-briefing-grid"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) minmax(220px, 260px)',
+          gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, 340px)',
           gap: '1.5rem 2rem',
           alignItems: 'start',
         }}
