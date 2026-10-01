@@ -53,10 +53,12 @@ export function matchSpeechVoice(settings: {
   const intensity = settings.profanityIntensity === 'medium' || settings.profanityIntensity === 'hard'
     ? settings.profanityIntensity
     : 'light';
+  const allowProfanity = Boolean(settings.allowProfanity);
+  const aiMayUseProfanity = Boolean(settings.aiMayUseProfanity);
   return SPEECH_VOICES.find((voice) =>
     voice.slangMode === slang &&
-    voice.allowProfanity === Boolean(settings.allowProfanity) &&
-    voice.aiMayUseProfanity === Boolean(settings.allowProfanity) && Boolean(settings.aiMayUseProfanity) &&
+    voice.allowProfanity === allowProfanity &&
+    voice.aiMayUseProfanity === aiMayUseProfanity &&
     voice.profanityIntensity === intensity
   ) ?? null;
 }
