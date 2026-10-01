@@ -63,13 +63,37 @@ export function buildEnglishMetadataInstruction({ showTranslation = false } = {}
 }
 
 function buildEnglishSystemPrompt(options = {}) {
-  const { showTranslation, correctionMode, cefrLevel } = options
+  const {
+    showTranslation,
+    correctionMode,
+    cefrLevel,
+    slangMode = 'off',
+    allowProfanity = false,
+    aiMayUseProfanity = false,
+    profanityIntensity = 'light',
+  } = options
   const levelKey = normalizeEnglishLevel(cefrLevel)
-  let prompt = 'You are a friendly English conversation partner for language practice. ' +
-    'Speak ONLY in English. '
+  const rawVoice = Boolean(allowProfanity && aiMayUseProfanity)
+  let prompt = rawVoice
+    ? 'You are a blunt casual friend practicing spoken English with the learner. '
+    : 'You are a friendly English conversation partner for language practice. '
+  prompt += 'Speak ONLY in English. '
   if (CEFR_LEVEL_INSTRUCTIONS[levelKey]) {
     prompt += `\n\nCEFR LEVEL LOCK (mandatory): ${CEFR_LEVEL_INSTRUCTIONS[levelKey]}\n`
     prompt += 'Speak AT this level only: not harder, not easier. Do not upgrade vocabulary if the learner sounds fluent. Do not baby-talk below it.\n'
+    if (rawVoice || slangMode === 'light' || slangMode === 'heavy') {
+      prompt += 'This lock limits grammar and rare academic words. It does not ban everyday slang or the profanity allowed below.\n'
+    }
+  }
+  if (slangMode === 'heavy') {
+    prompt += 'Use clearly colloquial speech (yeah, kinda, gonna) when it fits. '
+  } else if (slangMode === 'light') {
+    prompt += 'Use a little colloquial speech (yeah, kinda, cool) when it fits. '
+  }
+  if (rawVoice) {
+    prompt += buildEnglishProfanityPolicy({ allowProfanity, aiMayUseProfanity, profanityIntensity }) + ' '
+  } else if (allowProfanity) {
+    prompt += 'The learner may swear. Your own replies stay clean. '
   }
   prompt += 'Keep replies concise (1-3 sentences unless the user asks for more). ' +
     'If the user writes in Russian, still reply in English. ' +
@@ -180,11 +204,11 @@ export function buildEnglishProfanityPolicy({ allowProfanity = false, aiMayUsePr
     return 'The learner may swear. Your own replies stay clean: no profanity. Do not scold them for swearing.'
   }
   const intensity = profanityIntensity === 'hard'
-    ? 'Hard: stronger swearing is allowed when the moment is heated (fuck and similar). No slurs, no insults aimed at the learner.'
+    ? 'Swear freely in ordinary replies, including stronger words (fuck and similar). No slurs, no insults aimed at the learner.'
     : profanityIntensity === 'medium'
-      ? 'Medium: occasional swearing when the moment is emotional (shit, asshole, what the hell). No slurs.'
-      : 'Light: rare mild swearing only, when it sounds natural (damn, hell, crap).'
-  return `Both you and the learner may swear. ${intensity}`
+      ? 'Casual swearing is part of how you talk, including in ordinary replies: shit, what the hell, for fuck\'s sake. Not in every sentence, but often enough that it is clearly your voice. No slurs, no insults aimed at the learner.'
+      : 'Use rare mild swearing when it sounds natural (damn, hell, crap).'
+  return `You do swear. ${intensity} Do not stay polite just because this is a language lesson.`
 }
 
 function splitZhScenarioVocab(vocabulary = []) {

@@ -1414,6 +1414,10 @@ app.post('/api/agent/chat', async (req, res) => {
           showTranslation: englishShowTranslation,
           correctionMode: englishCorrectionMode,
           cefrLevel: englishCefrLevel,
+          slangMode,
+          allowProfanity,
+          aiMayUseProfanity,
+          profanityIntensity,
         }),
     }
     : null
@@ -1462,6 +1466,10 @@ app.post('/api/agent/chat', async (req, res) => {
             toneFocus: chineseToneFocus,
             hskLevel: chineseHskLevel,
             cefrLevel: englishCefrLevel,
+            slangMode,
+            allowProfanity,
+            aiMayUseProfanity,
+            profanityIntensity,
           }),
         },
         ...messages,
