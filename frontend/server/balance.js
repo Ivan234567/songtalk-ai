@@ -45,6 +45,81 @@ export function readOperationId(...candidates) {
   return null
 }
 
+function reservationResult(data) {
+  const result = data || {}
+  return {
+    ok: Boolean(result.ok),
+    status: result.status || null,
+    already: Boolean(result.already),
+    error: result.error || null,
+    finalChargeRub: result.final_charge_rub != null ? Number(result.final_charge_rub) : null,
+    unusedRub: result.unused_rub != null ? Number(result.unused_rub) : null,
+    result: result.result || null,
+    availableRub: result.available_rub != null ? Number(result.available_rub) : null,
+  }
+}
+
+export async function reserveOperation(supabase, { userId, operationId, amountRub, service = null, metadata = null }) {
+  const { data, error } = await supabase.rpc('reserve_operation', {
+    p_user_id: userId,
+    p_operation_id: operationId,
+    p_amount_rub: amountRub,
+    p_service: service,
+    p_metadata: metadata,
+  })
+  if (error) throw error
+  return reservationResult(data)
+}
+
+export async function markOperationStarted(supabase, { userId, operationId }) {
+  const { data, error } = await supabase.rpc('mark_operation_started', {
+    p_user_id: userId,
+    p_operation_id: operationId,
+  })
+  if (error) throw error
+  return reservationResult(data)
+}
+
+export async function settleOperation(supabase, { userId, operationId, chargeRub, providerCostRub = null, result = null }) {
+  const { data, error } = await supabase.rpc('settle_operation', {
+    p_user_id: userId,
+    p_operation_id: operationId,
+    p_charge_rub: chargeRub,
+    p_provider_cost_rub: providerCostRub,
+    p_result: result,
+  })
+  if (error) throw error
+  return reservationResult(data)
+}
+
+export async function failOperation(supabase, { userId, operationId }) {
+  const { data, error } = await supabase.rpc('fail_operation', {
+    p_user_id: userId,
+    p_operation_id: operationId,
+  })
+  if (error) throw error
+  return reservationResult(data)
+}
+
+export async function abandonOperation(supabase, { userId, operationId }) {
+  const { data, error } = await supabase.rpc('abandon_operation', {
+    p_user_id: userId,
+    p_operation_id: operationId,
+  })
+  if (error) throw error
+  return reservationResult(data)
+}
+
+export function reservationDeps(supabase) {
+  return {
+    reserve: (args) => reserveOperation(supabase, args),
+    markStarted: (args) => markOperationStarted(supabase, args),
+    settle: (args) => settleOperation(supabase, args),
+    fail: (args) => failOperation(supabase, args),
+    abandon: (args) => abandonOperation(supabase, args),
+  }
+}
+
 export async function deductBalance(supabase, userId, amountRub, service = null, metadata = null, operationId = null) {
   if (!userId || amountRub <= 0) {
     return { ok: false, error: 'invalid_params' }

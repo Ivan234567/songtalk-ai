@@ -14,12 +14,11 @@ function getClient() {
   if (!client) {
     const baseURL = process.env.AITUNNEL_BASE_URL || 'https://api.aitunnel.ru/v1/'
     const timeoutMs = Number.parseInt(process.env.AITUNNEL_STT_TIMEOUT_MS || '1800000', 10)
-    const maxRetries = Number.parseInt(process.env.AITUNNEL_MAX_RETRIES || '1', 10)
     client = new OpenAI({
       apiKey,
       baseURL,
       timeout: Number.isFinite(timeoutMs) ? timeoutMs : 1800000,
-      maxRetries: Number.isFinite(maxRetries) ? maxRetries : 1,
+      maxRetries: 0,
     })
   }
   return client

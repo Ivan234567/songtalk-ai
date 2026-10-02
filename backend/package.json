@@ -7,7 +7,7 @@
     "dev": "node --watch src/index.js",
     "build": "echo \"Backend build complete\"",
     "start": "node src/index.js",
-    "test": "node --test src/balance-rates.test.js"
+    "test": "node --test src/balance-rates.test.js src/reservation-ledger.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.38.5",

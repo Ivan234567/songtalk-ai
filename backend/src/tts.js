@@ -19,12 +19,11 @@ function getClient() {
       process.env.AITUNNEL_TTS_TIMEOUT_MS || process.env.AITUNNEL_TIMEOUT_MS || '1800000',
       10
     )
-    const maxRetries = Number.parseInt(process.env.AITUNNEL_MAX_RETRIES || '1', 10)
     client = new OpenAI({
       apiKey,
       baseURL,
       timeout: Number.isFinite(timeoutMs) ? timeoutMs : 60000,
-      maxRetries: Number.isFinite(maxRetries) ? maxRetries : 1,
+      maxRetries: 0,
     })
   }
   return client
@@ -60,6 +59,10 @@ function readSupplierCostRub(speech) {
   if (raw == null || String(raw).trim() === '') return null
   const value = Number(String(raw).trim().replace(',', '.'))
   return Number.isFinite(value) && value > 0 ? value : null
+}
+
+export function ttsInputLength(text, options = {}) {
+  return prepareInput(text, options).length
 }
 
 function prepareInput(text, options = {}) {

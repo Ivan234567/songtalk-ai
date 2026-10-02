@@ -15,10 +15,11 @@ import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { Readable } from 'stream'
 import { transcribe as sttTranscribe } from './stt.js'
-import { synthesize as ttsSynthesize } from './tts.js'
-import { getBalance, deductBalance, topupBalance, readOperationId, BALANCE_THRESHOLD_RUB } from './balance.js'
-import { getCost, ttsChargeRub, billableSttSeconds } from './balance-rates.js'
-import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction } from './learning-language.js'
+import { synthesize as ttsSynthesize, ttsInputLength } from './tts.js'
+import { getBalance, deductBalance, topupBalance, readOperationId, reservationDeps, BALANCE_THRESHOLD_RUB } from './balance.js'
+import { getCost, prepareSttBilling, clampVoiceMaxTokens, llmCeilingRub, llmSettledChargeRub, ttsReservationRub, ttsSettledChargeRub, SERVER_MAX_OUTPUT_TOKENS } from './balance-rates.js'
+import { runReserved, runBillableChat, completionFromPaid } from './paid-call.js'
+import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction, buildEnglishProfanityPolicy, CEFR_LEVEL_INSTRUCTIONS } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
@@ -224,7 +225,7 @@ const AITUNNEL_TIMEOUT_MS = Number.parseInt(process.env.AITUNNEL_TIMEOUT_MS || '
 // Отдельный таймаут для STT запросов (транскрипция аудио может быть очень долгой для больших файлов)
 // По умолчанию 1800 секунд (30 минут), можно переопределить через переменную окружения AITUNNEL_STT_TIMEOUT_MS
 const AITUNNEL_STT_TIMEOUT_MS = Number.parseInt(process.env.AITUNNEL_STT_TIMEOUT_MS || '1800000', 10)
-const AITUNNEL_MAX_RETRIES = Number.parseInt(process.env.AITUNNEL_MAX_RETRIES || '1', 10)
+const AITUNNEL_MAX_RETRIES = 0
 const AITUNNEL_STT_MODEL = process.env.AITUNNEL_STT_MODEL || 'whisper-1'
 const AITUNNEL_TTS_MODEL = process.env.AITUNNEL_TTS_MODEL || 'gpt-4o-mini-tts'
 const TTS_VOICES = new Set(['onyx', 'nova'])
@@ -252,8 +253,35 @@ const llm = new OpenAI({
   apiKey: AITUNNEL_API_KEY,
   baseURL: AITUNNEL_BASE_URL,
   timeout: Number.isFinite(AITUNNEL_TIMEOUT_MS) ? AITUNNEL_TIMEOUT_MS : 60000,
-  maxRetries: Number.isFinite(AITUNNEL_MAX_RETRIES) ? AITUNNEL_MAX_RETRIES : 1,
+  maxRetries: AITUNNEL_MAX_RETRIES,
 })
+
+function billingDeps() {
+  return reservationDeps(supabase)
+}
+
+async function billableChatCreate(userId, operationId, { messages, max_tokens, temperature, metadata }) {
+  const cap = Math.max(1, Math.floor(Number(max_tokens) || SERVER_MAX_OUTPUT_TOKENS))
+  const ceiling = llmCeilingRub(messages, cap)
+  return runReserved({
+    userId,
+    operationId: operationId || crypto.randomUUID(),
+    ceilingRub: ceiling,
+    service: 'deepseek-v3.2',
+    metadata: metadata || null,
+    execute: async () => {
+      const completion = await llm.chat.completions.create({
+        model: AITUNNEL_MODEL,
+        messages,
+        max_tokens: cap,
+        ...(temperature != null ? { temperature } : {}),
+      })
+      const priced = llmSettledChargeRub(completion?.usage, messages, cap)
+      const text = completion?.choices?.[0]?.message?.content || ''
+      return { chargeRub: priced.charge, completion, result: { text } }
+    },
+  }, billingDeps())
+}
 
 function normalizeAitunnelError(err) {
   const e = err || {}
@@ -665,34 +693,25 @@ app.post('/api/chat', asyncHandler(async (req, res) => {
     }
     const userId = decoded.sub
 
-    const balance = await getBalance(supabase, userId)
-    if (balance < BALANCE_THRESHOLD_RUB) {
-      return res.status(402).json({ error: 'Пополните баланс' })
-    }
-
     const { messages, max_tokens } = req.body || {}
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'Body must include non-empty "messages" array' })
     }
 
-    const chatResult = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages,
-      max_tokens: typeof max_tokens === 'number' ? max_tokens : 1500,
-    })
-
-    const usage = chatResult?.usage
-    if (usage && (usage.input_tokens || usage.output_tokens)) {
-      const costRub = getCost('deepseek-v3.2', usage)
-      if (costRub > 0) {
-        const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { api_chat: true })
-        if (!deductResult.ok) {
-          console.error('[api/chat] Deduct failed:', deductResult.error)
-          return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
-        }
-      }
-    }
+    const paidChat = await billableChatCreate(
+      userId,
+      readOperationId(req.headers['x-operation-id'], req.body?.operation_id),
+      {
+        messages,
+        max_tokens: clampVoiceMaxTokens(max_tokens),
+        metadata: { api_chat: true },
+      },
+    )
+    if (!paidChat.ok) return res.status(paidChat.status).json({ error: paidChat.error })
+    const chatResult = paidChat.replay
+      ? { choices: [{ message: { content: paidChat.result?.text || '' } }], usage: null, model: AITUNNEL_MODEL }
+      : paidChat.outcome.completion
 
     const assistant = chatResult.choices?.[0]?.message
     return res.json({
@@ -788,11 +807,6 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     }
     const userId = decoded.sub
 
-    const balance = await getBalance(supabase, userId)
-    if (balance < BALANCE_THRESHOLD_RUB) {
-      return res.status(402).json({ error: 'Пополните баланс' })
-    }
-
     if (!req.file) {
       return res.status(400).json({ error: 'No audio or video file provided' })
     }
@@ -837,8 +851,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
       audioFilePath = pathWithExt
     }
 
-    // Используем реальный fs.ReadStream — путь уже с расширением, API распознает формат
-    const billed = billableSttSeconds({
+    const billed = prepareSttBilling({
       bytes: stats.size,
       durationMs: req.body?.duration_ms,
     })
@@ -848,42 +861,31 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
       })
     }
 
-    const fileStream = fs.createReadStream(audioFilePath)
-
-    fileStream.on('error', (streamErr) => {
-      console.error('[api/transcribe] File stream error:', streamErr)
-    })
-
-    const startTime = Date.now()
-    const { text } = await sttTranscribe(fileStream, { language: 'en' })
-    const duration = Date.now() - startTime
-    console.log('[api/transcribe] Request completed in', duration + 'ms')
-
-    const durationSec = billed.seconds
-    const costRub = getCost('whisper-1', { duration_sec: durationSec })
-    if (costRub > 0) {
-      const sttOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id)
-      const deductResult = await deductBalance(
-        supabase,
-        userId,
-        costRub,
-        'whisper-1',
-        { duration_sec: durationSec },
-        sttOperationId,
-      )
-      if (!deductResult.ok) {
-        console.error('[api/transcribe] Deduct failed:', deductResult.error)
-        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
-      }
-    }
+    const paidStt = await runReserved({
+      userId,
+      operationId: readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      ceilingRub: billed.reservationRub,
+      service: 'whisper-1',
+      metadata: { duration_sec: billed.seconds },
+      execute: async () => {
+        const fileStream = fs.createReadStream(audioFilePath)
+        fileStream.on('error', (streamErr) => {
+          console.error('[api/transcribe] File stream error:', streamErr)
+        })
+        const { text } = await sttTranscribe(fileStream, { language: 'en' })
+        return {
+          chargeRub: getCost('whisper-1', { duration_sec: billed.seconds }),
+          result: { text: text || '' },
+        }
+      },
+    }, billingDeps())
+    if (!paidStt.ok) return res.status(paidStt.status).json({ error: paidStt.error })
+    const text = paidStt.result?.text || ''
 
     if (!text) {
       console.warn('[api/transcribe] Empty transcription result')
       return res.json({ ok: true, text: '', language: 'en', segments: [] })
     }
-
-    // Не сохраняем голосовые записи пользователя в базу - они нужны только для транскрибирования
-    // Файл будет удален в блоке finally после транскрибирования
 
     return res.json({
       ok: true,
@@ -978,11 +980,6 @@ app.post('/api/tts', async (req, res) => {
       return res.status(401).json({ error: 'Invalid or expired token' })
     }
 
-    const balance = await getBalance(supabase, userId)
-    if (balance < BALANCE_THRESHOLD_RUB) {
-      return res.status(402).json({ error: 'Пополните баланс' })
-    }
-
     const { text, voice, language } = req.body || {}
 
     if (!text || typeof text !== 'string' || !text.trim()) {
@@ -995,27 +992,33 @@ app.post('/api/tts', async (req, res) => {
         ? 'Speak natural American English. This is a dictionary pronunciation of the given word or phrase: clear, moderately paced, no extra words.'
         : undefined
 
-    const startTime = Date.now()
-    const { buffer, characters, supplierCostRub } = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice), instructions })
-    const duration = Date.now() - startTime
-    console.log('[api/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
-
-    const costRub = ttsChargeRub({ characters, supplierCostRub })
-    if (costRub > 0) {
-      const ttsOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id)
-      const deductResult = await deductBalance(
-        supabase,
-        userId,
-        costRub,
-        'gpt-4o-mini-tts',
-        { characters, supplier_cost_rub: supplierCostRub },
-        ttsOperationId,
-      )
-      if (!deductResult.ok) {
-        console.error('[api/tts] Deduct failed:', deductResult.error)
-        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
-      }
+    const reservedChars = ttsInputLength(text, { maxLength: 2000 })
+    if (!reservedChars) return res.status(400).json({ error: 'Text is required and must be a non-empty string' })
+    const paidTts = await runReserved({
+      userId,
+      operationId: readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      ceilingRub: ttsReservationRub(reservedChars),
+      service: 'gpt-4o-mini-tts',
+      metadata: { characters: reservedChars },
+      execute: async () => {
+        const synthesized = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice), instructions })
+        const priced = ttsSettledChargeRub({
+          characters: synthesized.characters,
+          supplierCostRub: synthesized.supplierCostRub,
+        })
+        return {
+          chargeRub: priced.charge,
+          providerCostRub: synthesized.supplierCostRub,
+          buffer: synthesized.buffer,
+          result: { characters: synthesized.characters, exceeded: priced.exceeded },
+        }
+      },
+    }, billingDeps())
+    if (!paidTts.ok) return res.status(paidTts.status).json({ error: paidTts.error })
+    if (paidTts.replay || !paidTts.outcome?.buffer) {
+      return res.status(200).json({ ok: true, replay: true })
     }
+    const buffer = paidTts.outcome.buffer
 
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Content-Disposition', 'inline; filename="tts_audio.mp3"')
@@ -1102,11 +1105,6 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
     if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
     const userId = decoded.sub
 
-    const balance = await getBalance(supabase, userId)
-    if (balance < BALANCE_THRESHOLD_RUB) {
-      return res.status(402).json({ error: 'Пополните баланс' })
-    }
-
     if (!req.file) return res.status(400).json({ error: 'No audio file provided' })
     audioFilePath = getUploadPath(req)
 
@@ -1153,8 +1151,7 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
       audioFilePath = pathWithExt
     }
 
-    // Используем реальный fs.ReadStream — путь уже с расширением, API распознает формат
-    const billed = billableSttSeconds({
+    const billed = prepareSttBilling({
       bytes: stats.size,
       durationMs: req.body?.duration_ms,
     })
@@ -1164,35 +1161,27 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
       })
     }
 
-    const fileStream = fs.createReadStream(audioFilePath)
-
-    fileStream.on('error', (streamErr) => {
-      console.error('[api/agent/stt] File stream error:', streamErr)
-    })
-
-    const startTime = Date.now()
     const sttLanguage = req.learningLanguage === 'zh' ? 'zh' : undefined
-    const { text } = await sttTranscribe(fileStream, sttLanguage ? { language: sttLanguage } : {})
-    const duration = Date.now() - startTime
-    console.log('[api/agent/stt] Request completed in', duration + 'ms', { hasText: !!text, textLength: text?.length || 0 })
-
-    const durationSec = billed.seconds
-    const costRub = getCost('whisper-1', { duration_sec: durationSec })
-    if (costRub > 0) {
-      const sttOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id)
-      const deductResult = await deductBalance(
-        supabase,
-        userId,
-        costRub,
-        'whisper-1',
-        { duration_sec: durationSec },
-        sttOperationId,
-      )
-      if (!deductResult.ok) {
-        console.error('[api/agent/stt] Deduct failed:', deductResult.error)
-        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
-      }
-    }
+    const paidStt = await runReserved({
+      userId,
+      operationId: readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      ceilingRub: billed.reservationRub,
+      service: 'whisper-1',
+      metadata: { duration_sec: billed.seconds, agent_stt: true },
+      execute: async () => {
+        const fileStream = fs.createReadStream(audioFilePath)
+        fileStream.on('error', (streamErr) => {
+          console.error('[api/agent/stt] File stream error:', streamErr)
+        })
+        const { text } = await sttTranscribe(fileStream, sttLanguage ? { language: sttLanguage } : {})
+        return {
+          chargeRub: getCost('whisper-1', { duration_sec: billed.seconds }),
+          result: { text: text || '' },
+        }
+      },
+    }, billingDeps())
+    if (!paidStt.ok) return res.status(paidStt.status).json({ error: paidStt.error })
+    const text = paidStt.result?.text || ''
 
     if (!text) {
       console.warn('[api/agent/stt] Empty transcription result')
@@ -1295,37 +1284,38 @@ app.post('/api/agent/tts', async (req, res) => {
     if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
     const userId = decoded.sub
 
-    const balance = await getBalance(supabase, userId)
-    if (balance < BALANCE_THRESHOLD_RUB) {
-      return res.status(402).json({ error: 'Пополните баланс' })
-    }
-
     const { text, voice } = req.body || {}
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ error: 'Text is required' })
     }
 
-    const startTime = Date.now()
-    const { buffer, characters, supplierCostRub } = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice) })
-    const duration = Date.now() - startTime
-    console.log('[api/agent/tts] Request completed in', duration + 'ms', { audioSizeKB: (buffer.length / 1024).toFixed(2) })
-
-    const costRub = ttsChargeRub({ characters, supplierCostRub })
-    if (costRub > 0) {
-      const ttsOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id)
-      const deductResult = await deductBalance(
-        supabase,
-        userId,
-        costRub,
-        'gpt-4o-mini-tts',
-        { characters, supplier_cost_rub: supplierCostRub },
-        ttsOperationId,
-      )
-      if (!deductResult.ok) {
-        console.error('[api/agent/tts] Deduct failed:', deductResult.error)
-        return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
-      }
+    const reservedChars = ttsInputLength(text, { maxLength: 2000 })
+    if (!reservedChars) return res.status(400).json({ error: 'Text is required' })
+    const paidTts = await runReserved({
+      userId,
+      operationId: readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      ceilingRub: ttsReservationRub(reservedChars),
+      service: 'gpt-4o-mini-tts',
+      metadata: { characters: reservedChars, agent_tts: true },
+      execute: async () => {
+        const synthesized = await ttsSynthesize(text, { maxLength: 2000, voice: resolveTtsVoice(voice) })
+        const priced = ttsSettledChargeRub({
+          characters: synthesized.characters,
+          supplierCostRub: synthesized.supplierCostRub,
+        })
+        return {
+          chargeRub: priced.charge,
+          providerCostRub: synthesized.supplierCostRub,
+          buffer: synthesized.buffer,
+          result: { characters: synthesized.characters, exceeded: priced.exceeded },
+        }
+      },
+    }, billingDeps())
+    if (!paidTts.ok) return res.status(paidTts.status).json({ error: paidTts.error })
+    if (paidTts.replay || !paidTts.outcome?.buffer) {
+      return res.status(200).json({ ok: true, replay: true })
     }
+    const buffer = paidTts.outcome.buffer
 
     res.setHeader('Content-Type', 'audio/mpeg')
     res.setHeader('Content-Disposition', 'inline; filename="agent_tts.mp3"')
@@ -1401,11 +1391,6 @@ app.post('/api/agent/chat', async (req, res) => {
   if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
   const userId = decoded.sub
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context, chinese_settings, english_settings, scenario_vocabulary, annotate_chinese, annotate_english, text: annotateSourceText } = req.body || {}
   const chatOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID()
   const annotateChinese = Boolean(annotate_chinese) && req.learningLanguage === 'zh'
@@ -1431,7 +1416,7 @@ app.post('/api/agent/chat', async (req, res) => {
   if ((annotateChinese || annotateEnglish) && !annotateSource) {
     return res.status(400).json({ error: 'Expected { text: "..." }' })
   }
-  const maxTokens = typeof max_tokens === 'number' ? max_tokens : 1500
+  const maxTokens = clampVoiceMaxTokens(max_tokens)
   const steps = Array.isArray(scenario_steps) && scenario_steps.length > 0
     ? scenario_steps.filter((s) => s && typeof s.id === 'string')
     : []
@@ -1462,11 +1447,6 @@ app.post('/api/agent/chat', async (req, res) => {
     }
   }
 
-  res.setHeader('Content-Type', 'application/x-ndjson')
-  res.setHeader('Cache-Control', 'no-cache')
-  res.setHeader('Connection', 'keep-alive')
-  res.flushHeaders?.()
-
   const startTime = Date.now()
   let timeoutId = null
 
@@ -1476,7 +1456,11 @@ app.post('/api/agent/chat', async (req, res) => {
       role: 'system',
       content:
         'Safety and style policy: follow provided style settings and keep responses contextual. ' +
-        `slang_mode=${slangMode}; allow_profanity=${allowProfanity}; ai_may_use_profanity=${aiMayUseProfanity}; profanity_intensity=${profanityIntensity}. ` +
+        `slang_mode=${slangMode}. ` +
+        (req.learningLanguage === 'en'
+          ? buildEnglishProfanityPolicy({ allowProfanity, aiMayUseProfanity, profanityIntensity })
+          : `allow_profanity=${allowProfanity}; ai_may_use_profanity=${aiMayUseProfanity}; profanity_intensity=${profanityIntensity}.`) +
+        ' ' +
         'Never include prohibited content: sexual content involving minors/pedophilia, extremism/terrorism support, instructions for violent wrongdoing, non-consensual sexual violence, doxxing, or direct real-world threats. ' +
         'If the user requests prohibited content, refuse briefly and steer the dialogue to a safe alternative.',
     }
@@ -1524,6 +1508,10 @@ app.post('/api/agent/chat', async (req, res) => {
           showTranslation: englishShowTranslation,
           correctionMode: englishCorrectionMode,
           cefrLevel: englishCefrLevel,
+          slangMode,
+          allowProfanity,
+          aiMayUseProfanity,
+          profanityIntensity,
         }),
     }
     : null
@@ -1572,6 +1560,10 @@ app.post('/api/agent/chat', async (req, res) => {
             toneFocus: chineseToneFocus,
             hskLevel: chineseHskLevel,
             cefrLevel: englishCefrLevel,
+            slangMode,
+            allowProfanity,
+            aiMayUseProfanity,
+            profanityIntensity,
           }),
         },
         ...messages,
@@ -1594,51 +1586,62 @@ app.post('/api/agent/chat', async (req, res) => {
       baseURL: AITUNNEL_BASE_URL
     })
 
-    const stream = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: chatMessages,
-      max_tokens: maxTokens,
-      stream: true,
-    })
-
-    timeoutId = setTimeout(() => {
-      console.error('[api/agent/chat] Stream timeout exceeded:', {
-        timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
-        elapsed: Date.now() - startTime
-      })
-    }, AITUNNEL_TIMEOUT_MS)
-
-    let chunkCount = 0
-    let fullReply = ''
-    for await (const chunk of stream) {
-      const elapsed = Date.now() - startTime
-      if (elapsed > AITUNNEL_TIMEOUT_MS) {
-        throw new Error(`Stream timeout: ${elapsed}ms > ${AITUNNEL_TIMEOUT_MS}ms`)
-      }
-      const delta = chunk.choices?.[0]?.delta?.content ?? ''
-      if (delta) {
-        chunkCount++
-        fullReply += delta
-        send({ type: 'chunk', delta })
-      }
-    }
-
-    if (timeoutId) clearTimeout(timeoutId)
-    const duration = Date.now() - startTime
-    console.log('[api/agent/chat] Stream completed:', {
-      chunkCount,
-      duration: duration + 'ms',
-      durationSeconds: (duration / 1000).toFixed(2) + 's'
-    })
-
-    const inputTokens = Math.ceil(chatMessages.reduce((acc, m) => acc + (m.content || '').length, 0) / 4)
-    const outputTokens = Math.ceil((fullReply || '').length / 4)
-    const costRub = getCost('deepseek-v3.2', { input_tokens: inputTokens, output_tokens: outputTokens })
-    if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { input_tokens: inputTokens, output_tokens: outputTokens }, chatOperationId)
-      if (!deductResult.ok) {
-        console.error('[api/agent/chat] Deduct failed after stream:', deductResult.error)
-      }
+    const paidReply = await runReserved({
+      userId,
+      operationId: chatOperationId,
+      ceilingRub: llmCeilingRub(chatMessages, maxTokens),
+      service: 'deepseek-v3.2',
+      metadata: { agent_chat: true, max_tokens: maxTokens },
+      execute: async ({ noteProduced }) => {
+        const stream = await llm.chat.completions.create({
+          model: AITUNNEL_MODEL,
+          messages: chatMessages,
+          max_tokens: maxTokens,
+          stream: true,
+        })
+        res.setHeader('Content-Type', 'application/x-ndjson')
+        res.setHeader('Cache-Control', 'no-cache')
+        res.setHeader('Connection', 'keep-alive')
+        res.flushHeaders?.()
+        timeoutId = setTimeout(() => {
+          console.error('[api/agent/chat] Stream timeout exceeded:', {
+            timeout: AITUNNEL_TIMEOUT_MS / 1000 + ' seconds',
+            elapsed: Date.now() - startTime
+          })
+        }, AITUNNEL_TIMEOUT_MS)
+        let chunkCount = 0
+        let fullReply = ''
+        let streamUsage = null
+        for await (const chunk of stream) {
+          if (chunk?.usage) streamUsage = chunk.usage
+          const elapsed = Date.now() - startTime
+          if (elapsed > AITUNNEL_TIMEOUT_MS) {
+            throw new Error(`Stream timeout: ${elapsed}ms > ${AITUNNEL_TIMEOUT_MS}ms`)
+          }
+          const delta = chunk.choices?.[0]?.delta?.content ?? ''
+          if (delta) {
+            noteProduced()
+            chunkCount++
+            fullReply += delta
+            send({ type: 'chunk', delta })
+          }
+        }
+        if (timeoutId) clearTimeout(timeoutId)
+        console.log('[api/agent/chat] Stream completed:', {
+          chunkCount,
+          duration: (Date.now() - startTime) + 'ms',
+        })
+        const priced = llmSettledChargeRub(streamUsage, chatMessages, maxTokens)
+        return { chargeRub: priced.charge, result: { text: fullReply }, fullReply }
+      },
+    }, billingDeps())
+    if (!paidReply.ok) return res.status(paidReply.status).json({ error: paidReply.error })
+    const fullReply = paidReply.result?.text || ''
+    if (paidReply.replay) {
+      res.setHeader('Content-Type', 'application/x-ndjson')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      if (fullReply) send({ type: 'chunk', delta: fullReply })
     }
 
     if (steps.length > 0 && fullReply.trim()) {
@@ -1693,25 +1696,21 @@ Rules:
 - For "completedStepIds" use EITHER the exact "id" from the step list OR the position: "step1", "step2", "step3" for 1st/2nd/3rd step, or "1", "2", "3".
 - Output ONLY the JSON object, nothing else. Example: {"completedStepIds":["step1","step2"]} or {"completedStepIds":["pickup","destination"]}`
         const stepCheckUser = `Steps (what each step means):\n${stepList}\n\nUSER messages only (this is the evidence):\n${userOnlyText || '(none)'}\n\nFull conversation (context only):\n${conversationText}`
-        const stepCompletion = await llm.chat.completions.create({
-          model: AITUNNEL_MODEL,
-          messages: [
-            { role: 'system', content: stepCheckSystem },
-            { role: 'user', content: stepCheckUser },
-          ],
+        const stepMessages = [
+          { role: 'system', content: stepCheckSystem },
+          { role: 'user', content: stepCheckUser },
+        ]
+        const paidSteps = await billableChatCreate(userId, `${chatOperationId}:steps`, {
+          messages: stepMessages,
           max_tokens: 200,
-          stream: false,
+          metadata: { step_check: true },
         })
-        const stepUsage = stepCompletion?.usage
-        if (stepUsage && (stepUsage.input_tokens || stepUsage.output_tokens)) {
-          const stepCost = getCost('deepseek-v3.2', {
-            input_tokens: stepUsage.input_tokens || 0,
-            output_tokens: stepUsage.output_tokens || 0,
-          })
-          if (stepCost > 0) {
-            await deductBalance(supabase, userId, stepCost, 'deepseek-v3.2', { step_check: true }, `${chatOperationId}:steps`)
-          }
-        }
+        if (!paidSteps.ok) {
+          console.error('[api/agent/chat] step-check billing:', paidSteps.error)
+        } else {
+        const stepCompletion = paidSteps.replay
+          ? { choices: [{ message: { content: paidSteps.result?.text || '' } }] }
+          : paidSteps.outcome.completion
         const raw = stepCompletion.choices?.[0]?.message?.content?.trim() || ''
         console.log('[step-checker] LLM raw response:', raw)
         const jsonMatch = raw.match(/\{[\s\S]*\}/)
@@ -1740,6 +1739,7 @@ Rules:
           send({ type: 'steps', completedStepIds: completed })
         } else {
           console.log('[step-checker] No JSON found in LLM response')
+        }
         }
       } catch (stepErr) {
         console.error('[api/agent/chat] step-check error:', stepErr?.message)
@@ -1790,11 +1790,6 @@ app.post('/api/agent/roleplay-feedback', async (req, res) => {
   const decoded = verifyBackendJwt(rawToken)
   if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
   const userId = decoded.sub
-
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
 
   const { messages, scenario_id, scenario_title, goal, goal_ru, roleplay_settings, steps, completed_step_ids } = req.body || {}
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -1859,22 +1854,24 @@ ${userMessages.join('\n---\n')}
 Return JSON with "feedback" and "useful_phrase".`
 
   try {
-    const completion = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        { role: 'system', content: FEEDBACK_SYSTEM },
-        { role: 'user', content: userPrompt },
-      ],
+    const feedbackMessages = [
+      { role: 'system', content: FEEDBACK_SYSTEM },
+      { role: 'user', content: userPrompt },
+    ]
+    const paidFeedback = await billableChatCreate(
+      userId,
+      readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      {
+        messages: feedbackMessages,
         max_tokens: isZhFeedback ? 720 : 280,
-      temperature: 0.4,
-    })
-    const usage = completion?.usage
-    if (usage && (usage.input_tokens || usage.output_tokens)) {
-      const costRub = getCost('deepseek-v3.2', usage)
-      if (costRub > 0) {
-        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { roleplay_feedback: true })
-      }
-    }
+        temperature: 0.4,
+        metadata: { roleplay_feedback: true },
+      },
+    )
+    if (!paidFeedback.ok) return res.status(paidFeedback.status).json({ error: paidFeedback.error })
+    const completion = paidFeedback.replay
+      ? { choices: [{ message: { content: paidFeedback.result?.text || '' } }] }
+      : paidFeedback.outcome.completion
     const raw = completion.choices?.[0]?.message?.content?.trim() || ''
     let feedback = ''
     let useful_phrase = ''
@@ -1934,11 +1931,6 @@ app.post('/api/agent/debate-feedback', async (req, res) => {
   const decoded = verifyBackendJwt(rawToken)
   if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
   const userId = decoded.sub
-
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
 
   const { messages, topic, user_position, ai_position, roleplay_settings } = req.body || {}
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -2008,22 +2000,19 @@ ${userMessages.join('\n---\n')}
 Return JSON with the required keys: feedback_short_ru, strength_sbi, improvement_sbi, next_try_phrase_en, next_try_phrase_ru.`
 
   try {
-    const completion = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        { role: 'system', content: FEEDBACK_SYSTEM },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 420,
-      temperature: 0.4,
-    })
-    const usage = completion?.usage
-    if (usage && (usage.input_tokens || usage.output_tokens)) {
-      const costRub = getCost('deepseek-v3.2', usage)
-      if (costRub > 0) {
-        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { debate_feedback: true })
-      }
-    }
+    const debateMessages = [
+      { role: 'system', content: FEEDBACK_SYSTEM },
+      { role: 'user', content: userPrompt },
+    ]
+    const paidDebate = await billableChatCreate(
+      userId,
+      readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      { messages: debateMessages, max_tokens: 420, temperature: 0.4, metadata: { debate_feedback: true } },
+    )
+    if (!paidDebate.ok) return res.status(paidDebate.status).json({ error: paidDebate.error })
+    const completion = paidDebate.replay
+      ? { choices: [{ message: { content: paidDebate.result?.text || '' } }] }
+      : paidDebate.outcome.completion
     const raw = completion.choices?.[0]?.message?.content?.trim() || ''
     let feedbackShort = ''
     let useful_phrase = ''
@@ -2170,11 +2159,6 @@ app.post('/api/agent/debate-topic-generate', async (req, res) => {
   if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
   const userId = decoded.sub
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   const body = req.body || {}
   const difficulty = ['easy', 'medium', 'hard'].includes(body.difficulty) ? body.difficulty : 'medium'
   const seed = typeof body.seed === 'string' ? body.seed.trim().slice(0, 300) : ''
@@ -2194,28 +2178,25 @@ app.post('/api/agent/debate-topic-generate', async (req, res) => {
   ].filter(Boolean).join('\n')
 
   try {
-    const completion = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: `You write one English debate motion for language learners. Output ONLY valid JSON, no markdown.
+    const topicMessages = [
+      {
+        role: 'system',
+        content: `You write one English debate motion for language learners. Output ONLY valid JSON, no markdown.
 The motion is one declarative sentence a person can argue for or against. English only. 40–160 characters. No quotation marks around the sentence. No line breaks.
 Forbidden: sexual content involving minors, extremism or terrorism, violent crime instructions, non-consensual sexual violence, real-world threats, doxxing.
 If the learner note asks for a forbidden topic, ignore it and write a safe everyday motion instead.`,
-        },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 180,
-      temperature: 0.8,
-    })
-    const usage = completion?.usage
-    if (usage && (usage.input_tokens || usage.output_tokens)) {
-      const costRub = getCost('deepseek-v3.2', usage)
-      if (costRub > 0) {
-        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { debate_topic_generate: true })
-      }
-    }
+      },
+      { role: 'user', content: userPrompt },
+    ]
+    const paidTopic = await billableChatCreate(
+      userId,
+      readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      { messages: topicMessages, max_tokens: 180, temperature: 0.8, metadata: { debate_topic_generate: true } },
+    )
+    if (!paidTopic.ok) return res.status(paidTopic.status).json({ error: paidTopic.error })
+    const completion = paidTopic.replay
+      ? { choices: [{ message: { content: paidTopic.result?.text || '' } }] }
+      : paidTopic.outcome.completion
     const raw = completion.choices?.[0]?.message?.content?.trim() || ''
     const jsonStr = raw.replace(/^```json\s*|\s*```$/g, '').trim()
     let parsed
@@ -2245,11 +2226,6 @@ app.post('/api/agent/reply-hint', async (req, res) => {
   const decoded = verifyBackendJwt(rawToken)
   if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
   const userId = decoded.sub
-
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
 
   const {
     mode,
@@ -2509,22 +2485,19 @@ Rules:
       : hintMode === 'chat'
         ? chatUserContent
         : roleplayUserContent
-    const completion = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        { role: 'system', content: systemContent },
-        { role: 'user', content: userContent },
-      ],
-      max_tokens: 200,
-      temperature: 0.5,
-    })
-    const usage = completion?.usage
-    if (usage && (usage.input_tokens || usage.output_tokens)) {
-      const costRub = getCost('deepseek-v3.2', usage)
-      if (costRub > 0) {
-        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { reply_hint: true })
-      }
-    }
+    const hintMessages = [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userContent },
+    ]
+    const paidHint = await billableChatCreate(
+      userId,
+      readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      { messages: hintMessages, max_tokens: 200, temperature: 0.5, metadata: { reply_hint: true } },
+    )
+    if (!paidHint.ok) return res.status(paidHint.status).json({ error: paidHint.error })
+    const completion = paidHint.replay
+      ? { choices: [{ message: { content: paidHint.result?.text || '' } }] }
+      : paidHint.outcome.completion
     const hint = (completion.choices?.[0]?.message?.content ?? '').trim()
     res.json({ hint: hint || '' })
   } catch (err) {
@@ -2737,18 +2710,23 @@ Rules:
   parts.push(`AI may use profanity: ${aiMayUseProfanity ? 'yes' : 'no'}`)
   parts.push(`Profanity intensity: ${profanityIntensity}`)
   parts.push('Hard forbidden themes: pedophilia/minors sexual content, extremism/terrorism promotion, violent wrongdoing instructions, non-consensual sexual violence, direct real-world threats, doxxing.')
-  const userPrompt = `${parts.join('\n')}\n\nLevel: ${level}. ${levelHint}\n\nGenerate the scenario JSON now (only the JSON object, no other text).`
+  const levelLock = CEFR_LEVEL_INSTRUCTIONS[level] || levelHint
+  const userPrompt = `${parts.join('\n')}\n\nMANDATORY LEVEL: ${level} only. ${levelLock}\nWrite the dialogue so a learner at ${level} can say it. Do not use a higher level and do not drop below it.\n\nGenerate the scenario JSON now (only the JSON object, no other text).`
 
   try {
-    const completion = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 2200,
-      temperature: 0.5,
-    })
+    const scenarioMessages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: userPrompt },
+    ]
+    const paidScenario = await billableChatCreate(
+      userId,
+      readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      { messages: scenarioMessages, max_tokens: 2200, temperature: 0.5, metadata: { scenario_generate: true } },
+    )
+    if (!paidScenario.ok) return res.status(paidScenario.status).json({ error: paidScenario.error })
+    const completion = paidScenario.replay
+      ? { choices: [{ message: { content: paidScenario.result?.text || '' } }] }
+      : paidScenario.outcome.completion
     const raw = completion.choices?.[0]?.message?.content?.trim() || ''
     const jsonStr = raw.replace(/^```json\s*|\s*```$/g, '').trim()
     let payload
@@ -2781,6 +2759,113 @@ Rules:
   } catch (err) {
     console.error('[api/user-scenarios/generate] error:', err?.message)
     res.status(500).json({ error: err?.message || 'Scenario generation failed' })
+  }
+})
+
+function replacePromptBlock(prompt, label, body) {
+  if (!prompt || !body) return prompt || ''
+  const re = new RegExp(`(${label}:\\s*)([\\s\\S]*?)(?=\\n\\n(?:Character|Situation|Goal|Style|First line):|$)`)
+  if (!re.test(prompt)) return prompt
+  return prompt.replace(re, `$1${String(body).trim()}`)
+}
+
+app.post('/api/user-scenarios/generate-field', async (req, res) => {
+  const userId = requireUserScenarioAuth(req, res)
+  if (!userId) return
+
+  const body = req.body || {}
+  const field = body.field
+  if (!['topic', 'place', 'role', 'goal', 'steps'].includes(field)) {
+    return res.status(400).json({ error: 'field должен быть topic, place, role, goal или steps' })
+  }
+  const level = USER_SCENARIO_LEVELS.includes(body.level) ? body.level : 'medium'
+  const topic = typeof body.topic === 'string' ? body.topic.trim() : ''
+  const place = typeof body.place === 'string' ? body.place.trim() : ''
+  const userRole = typeof body.userRole === 'string' ? body.userRole.trim() : ''
+  const goal = typeof body.goal === 'string' ? body.goal.trim() : ''
+  const avoid = typeof body.avoid === 'string' ? body.avoid.trim() : ''
+  const systemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : ''
+
+  const want = {
+    topic: 'Rewrite ONLY the topic. Keep the same place, role and goal. JSON: {"text":"короткая тема по-русски","scenarioTextRu":"одно предложение ситуации по-русски","scenarioText":"one English sentence","situationBlock":"one English sentence for the Situation block"}',
+    place: 'Rewrite ONLY the place. Keep the same topic, role and goal. JSON: {"text":"место по-русски","settingRu":"место по-русски","setting":"place in English","situationBlock":"one English sentence, same goal, new place"}',
+    role: 'Rewrite ONLY the learner role. Keep the same topic, place and goal. JSON: {"text":"роль по-русски","yourRoleRu":"роль по-русски","yourRole":"role in English"}',
+    goal: 'Rewrite ONLY the dialogue goal. Keep the same topic, place and role. JSON: {"text":"цель по-русски","goalRu":"цель по-русски","goal":"goal in English","goalBlock":"one English sentence for the Goal block"}',
+    steps: 'Rewrite ONLY the steps (2–4). Keep the same situation and goal. JSON: {"steps":[{"id":"step1","order":1,"titleRu":"шаг по-русски","titleEn":"step in English"}]}',
+  }[field]
+
+  const levelLock = `MANDATORY LEVEL: ${level} only. ${CEFR_LEVEL_INSTRUCTIONS[level] || 'Use natural everyday English at this level.'} The learner lines must be speakable at ${level}.`
+  const userPrompt = [
+    levelLock,
+    `Level: ${level}`,
+    topic ? `Topic: ${topic}` : '',
+    place ? `Place: ${place}` : '',
+    userRole ? `Learner role: ${userRole}` : '',
+    goal ? `Goal: ${goal}` : '',
+    avoid ? `Do not repeat this current value: ${avoid}` : '',
+    want,
+    'Everyday spoken situation. Russian UI strings, English dialogue strings. JSON only.',
+  ].filter(Boolean).join('\n')
+
+  try {
+    const fieldMessages = [
+      { role: 'system', content: 'You rewrite one field of an English roleplay scenario for Russian-speaking learners. Output ONLY valid JSON, no markdown. The user message states one level. English lines must stay inside that level only.' },
+      { role: 'user', content: userPrompt },
+    ]
+    const paidField = await billableChatCreate(
+      userId,
+      readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      { messages: fieldMessages, max_tokens: 700, temperature: 0.7, metadata: { scenario_generate_field: true } },
+    )
+    if (!paidField.ok) return res.status(paidField.status).json({ error: paidField.error })
+    const completion = paidField.replay
+      ? { choices: [{ message: { content: paidField.result?.text || '' } }] }
+      : paidField.outcome.completion
+    const raw = completion.choices?.[0]?.message?.content?.trim() || ''
+    const jsonStr = raw.replace(/^```json\s*|\s*```$/g, '').trim()
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStr)
+    } catch {
+      return res.status(422).json({ error: 'Не удалось разобрать ответ ИИ, попробуйте ещё раз' })
+    }
+
+    const patch = {}
+    if (field === 'steps') {
+      const steps = Array.isArray(parsed.steps) ? parsed.steps.slice(0, 4).map((step, index) => ({
+        id: typeof step?.id === 'string' && step.id.trim() ? step.id.trim() : `step${index + 1}`,
+        order: index + 1,
+        titleRu: typeof step?.titleRu === 'string' ? step.titleRu.trim() : '',
+        titleEn: typeof step?.titleEn === 'string' ? step.titleEn.trim() : '',
+      })).filter((step) => step.titleRu) : []
+      if (!steps.length) return res.status(422).json({ error: 'ИИ не вернул шаги, попробуйте ещё раз' })
+      patch.steps = steps
+    } else {
+      const text = typeof parsed.text === 'string' ? parsed.text.trim() : ''
+      if (!text) return res.status(422).json({ error: 'ИИ не вернул поле, попробуйте ещё раз' })
+      patch.text = text
+      if (field === 'topic') {
+        if (parsed.scenarioTextRu) patch.scenarioTextRu = String(parsed.scenarioTextRu).trim()
+        if (parsed.scenarioText) patch.scenarioText = String(parsed.scenarioText).trim()
+        if (parsed.situationBlock) patch.systemPrompt = replacePromptBlock(systemPrompt, 'Situation', parsed.situationBlock)
+      } else if (field === 'place') {
+        patch.settingRu = String(parsed.settingRu || text).trim()
+        if (parsed.setting) patch.setting = String(parsed.setting).trim()
+        if (parsed.situationBlock) patch.systemPrompt = replacePromptBlock(systemPrompt, 'Situation', parsed.situationBlock)
+      } else if (field === 'role') {
+        patch.yourRoleRu = String(parsed.yourRoleRu || text).trim()
+        if (parsed.yourRole) patch.yourRole = String(parsed.yourRole).trim()
+      } else if (field === 'goal') {
+        patch.goalRu = String(parsed.goalRu || text).trim()
+        if (parsed.goal) patch.goal = String(parsed.goal).trim()
+        if (parsed.goalBlock) patch.systemPrompt = replacePromptBlock(systemPrompt, 'Goal', parsed.goalBlock)
+      }
+    }
+
+    res.json({ field, patch })
+  } catch (err) {
+    console.error('[api/user-scenarios/generate-field] error:', err?.message)
+    res.status(500).json({ error: err?.message || 'Field generation failed' })
   }
 })
 
@@ -2961,11 +3046,6 @@ app.post('/api/agent/assess-speaking', async (req, res) => {
   if (!decoded || !decoded.sub) return res.status(401).json({ error: 'Invalid or expired token' })
   const userId = decoded.sub
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   const { messages, scenario_id, scenario_title, format, agent_session_id, goal, steps, completed_step_ids, topic, user_position, micro_goals, roleplay_settings } = req.body || {}
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'Expected { messages: [{role, content}, ...] }' })
@@ -2999,22 +3079,20 @@ app.post('/api/agent/assess-speaking', async (req, res) => {
       userMessages,
     })
     try {
-      const completion = await llm.chat.completions.create({
-        model: AITUNNEL_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 1100,
+      const assessMessages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ]
+      const paidAssess = await runBillableChat(billingDeps(), llm, AITUNNEL_MODEL, {
+        userId,
+        operationId: readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+        messages: assessMessages,
+        maxTokens: 1100,
         temperature: 0.3,
+        metadata: { assess_speaking: true, language: 'zh' },
       })
-      const usage = completion?.usage
-      if (usage && (usage.input_tokens || usage.output_tokens)) {
-        const costRub = getCost('deepseek-v3.2', usage)
-        if (costRub > 0) {
-          await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { assess_speaking: true, language: 'zh' })
-        }
-      }
+      if (!paidAssess.ok) return res.status(paidAssess.status).json({ error: paidAssess.error })
+      const completion = completionFromPaid(paidAssess)
       const raw = completion.choices?.[0]?.message?.content?.trim() || ''
       let json
       const m = raw.match(/\{[\s\S]*\}/)
@@ -3206,24 +3284,20 @@ ${userText}
 Evaluate and return JSON only.`
 
   try {
-    const completion = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        { role: 'system', content: ASSESSMENT_SYSTEM },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 800,
+    const assessMessages = [
+      { role: 'system', content: ASSESSMENT_SYSTEM },
+      { role: 'user', content: userPrompt },
+    ]
+    const paidAssess = await runBillableChat(billingDeps(), llm, AITUNNEL_MODEL, {
+      userId,
+      operationId: readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID(),
+      messages: assessMessages,
+      maxTokens: 800,
       temperature: 0.3,
+      metadata: { assess_speaking: true },
     })
-
-    const usage = completion?.usage
-    if (usage && (usage.input_tokens || usage.output_tokens)) {
-      const costRub = getCost('deepseek-v3.2', usage)
-      if (costRub > 0) {
-        await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { assess_speaking: true })
-      }
-    }
-
+    if (!paidAssess.ok) return res.status(paidAssess.status).json({ error: paidAssess.error })
+    const completion = completionFromPaid(paidAssess)
     const raw = completion.choices?.[0]?.message?.content?.trim() || ''
     let json
     const m = raw.match(/\{[\s\S]*\}/)
@@ -3991,7 +4065,7 @@ function extractWordsFromText(text, segments = null) {
 // Получение определения слова через AI
 // ВНИМАНИЕ: Эта функция вызывает AI и тратит токены!
 // Вызывать только по явному запросу пользователя (клик на слово, добавление в словарь)
-async function getWordDefinitionFromAI(word, language = 'en') {
+async function getWordDefinitionFromAI(word, language = 'en', userId = null) {
   try {
     const isChinese = language === 'zh'
 
@@ -4047,23 +4121,26 @@ async function getWordDefinitionFromAI(word, language = 'en') {
       ? 'Ты эксперт по китайскому языку и HSK. Отвечай строго в формате JSON без дополнительных комментариев.'
       : 'Ты эксперт по английскому языку. Отвечай строго в формате JSON без дополнительных комментариев.'
 
-    const chatResult = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: systemMessage
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      max_tokens: 1000,
-      temperature: 0.3 // Низкая температура для более точных результатов
+    const defineMessages = [
+      { role: 'system', content: systemMessage },
+      { role: 'user', content: prompt },
+    ]
+    const paidDefine = await runBillableChat(billingDeps(), llm, AITUNNEL_MODEL, {
+      userId,
+      operationId: crypto.randomUUID(),
+      messages: defineMessages,
+      maxTokens: 1000,
+      temperature: 0.3,
+      metadata: { vocabulary_define: true },
     })
+    if (!paidDefine.ok) {
+      const billingError = new Error(paidDefine.error)
+      billingError.billingStatus = paidDefine.status
+      throw billingError
+    }
+    const chatResult = completionFromPaid(paidDefine)
 
-    const usage = chatResult?.usage || null
+    const usage = null
     const responseText = chatResult.choices?.[0]?.message?.content?.trim() || '{}'
 
     // Пытаемся извлечь JSON из ответа (может быть обернут в markdown code blocks)
@@ -4128,7 +4205,7 @@ async function getWordDefinitionFromAI(word, language = 'en') {
   }
 }
 
-async function getChineseMnemonicFromAI(word, { pinyin = null, translations = [] } = {}) {
+async function getChineseMnemonicFromAI(word, { pinyin = null, translations = [] } = {}, userId = null) {
   const gloss = (Array.isArray(translations) ? translations : [])
     .map((item) => (typeof item === 'string' ? item : item?.translation))
     .filter(Boolean)
@@ -4136,22 +4213,25 @@ async function getChineseMnemonicFromAI(word, { pinyin = null, translations = []
     .join(', ')
   const hint = [pinyin, gloss].filter(Boolean).join(' — ')
   try {
-    const chatResult = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: 'Ты преподаватель китайского. Отвечай одной короткой русской мнемоникой без кавычек и без пояснений.',
-        },
-        {
-          role: 'user',
-          content: `Слово «${word}»${hint ? ` (${hint})` : ''}. Дай одну ассоциацию, чтобы запомнить иероглифы. Одно предложение, до 140 символов.`,
-        },
-      ],
-      max_tokens: 120,
+    const mnemonicMessages = [
+      { role: 'system', content: 'Ты преподаватель китайского. Отвечай одной короткой русской мнемоникой без кавычек и без пояснений.' },
+      { role: 'user', content: `Слово «${word}»${hint ? ` (${hint})` : ''}. Дай одну ассоциацию, чтобы запомнить иероглифы. Одно предложение, до 140 символов.` },
+    ]
+    const paidMnemonic = await runBillableChat(billingDeps(), llm, AITUNNEL_MODEL, {
+      userId,
+      operationId: crypto.randomUUID(),
+      messages: mnemonicMessages,
+      maxTokens: 120,
       temperature: 0.6,
+      metadata: { mnemonic: true },
     })
-    const usage = chatResult?.usage || null
+    if (!paidMnemonic.ok) {
+      const billingError = new Error(paidMnemonic.error)
+      billingError.billingStatus = paidMnemonic.status
+      throw billingError
+    }
+    const chatResult = completionFromPaid(paidMnemonic)
+    const usage = null
     const mnemonic = (chatResult.choices?.[0]?.message?.content || '')
       .replace(/^["«]+|["»]+$/g, '')
       .trim()
@@ -4163,7 +4243,7 @@ async function getChineseMnemonicFromAI(word, { pinyin = null, translations = []
   }
 }
 
-async function getEnglishMnemonicFromAI(word, { translations = [], partOfSpeech = null } = {}) {
+async function getEnglishMnemonicFromAI(word, { translations = [], partOfSpeech = null } = {}, userId = null) {
   const gloss = (Array.isArray(translations) ? translations : [])
     .map((item) => (typeof item === 'string' ? item : item?.translation))
     .filter(Boolean)
@@ -4171,22 +4251,25 @@ async function getEnglishMnemonicFromAI(word, { translations = [], partOfSpeech 
     .join(', ')
   const hint = [partOfSpeech, gloss].filter(Boolean).join(' — ')
   try {
-    const chatResult = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: 'Ты преподаватель английского. Отвечай одной короткой русской мнемоникой без кавычек и без пояснений.',
-        },
-        {
-          role: 'user',
-          content: `Слово «${word}»${hint ? ` (${hint})` : ''}. Дай одну ассоциацию, чтобы запомнить слово. Одно предложение, до 140 символов.`,
-        },
-      ],
-      max_tokens: 120,
+    const mnemonicMessages = [
+      { role: 'system', content: 'Ты преподаватель английского. Отвечай одной короткой русской мнемоникой без кавычек и без пояснений.' },
+      { role: 'user', content: `Слово «${word}»${hint ? ` (${hint})` : ''}. Дай одну ассоциацию, чтобы запомнить слово. Одно предложение, до 140 символов.` },
+    ]
+    const paidMnemonic = await runBillableChat(billingDeps(), llm, AITUNNEL_MODEL, {
+      userId,
+      operationId: crypto.randomUUID(),
+      messages: mnemonicMessages,
+      maxTokens: 120,
       temperature: 0.6,
+      metadata: { mnemonic: true },
     })
-    const usage = chatResult?.usage || null
+    if (!paidMnemonic.ok) {
+      const billingError = new Error(paidMnemonic.error)
+      billingError.billingStatus = paidMnemonic.status
+      throw billingError
+    }
+    const chatResult = completionFromPaid(paidMnemonic)
+    const usage = null
     const mnemonic = (chatResult.choices?.[0]?.message?.content || '')
       .replace(/^["«]+|["»]+$/g, '')
       .trim()
@@ -4198,13 +4281,11 @@ async function getEnglishMnemonicFromAI(word, { translations = [], partOfSpeech 
   }
 }
 
-async function getEnglishPhraseAssistFromAI(phrase, kind = 'idiom') {
+async function getEnglishPhraseAssistFromAI(phrase, kind = 'idiom', userId = null) {
   const isIdiom = kind !== 'phrasal-verb'
   const label = isIdiom ? 'идиому' : 'фразовый глагол'
   try {
-    const chatResult = await llm.chat.completions.create({
-      model: AITUNNEL_MODEL,
-      messages: [
+    const phraseMessages = [
         {
           role: 'system',
           content: isIdiom
@@ -4228,11 +4309,22 @@ async function getEnglishPhraseAssistFromAI(phrase, kind = 'idiom') {
 
 Отвечай только JSON.`,
         },
-      ],
-      max_tokens: 400,
+    ]
+    const paidPhrase = await runBillableChat(billingDeps(), llm, AITUNNEL_MODEL, {
+      userId,
+      operationId: crypto.randomUUID(),
+      messages: phraseMessages,
+      maxTokens: 400,
       temperature: 0.3,
+      metadata: { phrase_assist: true },
     })
-    const usage = chatResult?.usage || null
+    if (!paidPhrase.ok) {
+      const billingError = new Error(paidPhrase.error)
+      billingError.billingStatus = paidPhrase.status
+      throw billingError
+    }
+    const chatResult = completionFromPaid(paidPhrase)
+    const usage = null
     let jsonText = (chatResult.choices?.[0]?.message?.content || '').trim() || '{}'
     const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
     if (jsonMatch) jsonText = jsonMatch[1]
@@ -4334,23 +4426,25 @@ ${text}
     ? 'Ты преподаватель китайского языка и эксперт по 成语. Отвечай строго в формате JSON, без дополнительного текста и без markdown.'
     : 'Ты преподаватель английского языка. Отвечай строго в формате JSON, без дополнительного текста и без markdown.'
 
-  const chatResult = await llm.chat.completions.create({
-    model: AITUNNEL_MODEL,
-    messages: [
-      {
-        role: 'system',
-        content: systemMessage
-      },
-      {
-        role: 'user',
-        content: prompt
-      }
-    ],
-    max_tokens: 1200,
-    temperature: 0.4
+  const idiomMessages = [
+    { role: 'system', content: systemMessage },
+    { role: 'user', content: prompt },
+  ]
+  const paidIdioms = await runBillableChat(billingDeps(), llm, AITUNNEL_MODEL, {
+    userId: options.userId,
+    operationId: crypto.randomUUID(),
+    messages: idiomMessages,
+    maxTokens: 1200,
+    temperature: 0.4,
+    metadata: { idioms_analyze: true },
   })
-
-  const usage = chatResult?.usage || null
+  if (!paidIdioms.ok) {
+    const billingError = new Error(paidIdioms.error)
+    billingError.billingStatus = paidIdioms.status
+    throw billingError
+  }
+  const chatResult = completionFromPaid(paidIdioms)
+  const usage = null
   const raw = chatResult.choices?.[0]?.message?.content?.trim() || '[]'
 
   // На всякий случай пытаемся вытащить JSON из markdown-кода, если модель так ответит
@@ -4419,23 +4513,25 @@ ${text}
 
 Отвечай СТРОГО в формате JSON массива, без пояснений и без markdown.`
 
-  const chatResult = await llm.chat.completions.create({
-    model: AITUNNEL_MODEL,
-    messages: [
-      {
-        role: 'system',
-        content: 'Ты преподаватель английского языка, специализирующийся на фразовых глаголах. Отвечай строго в формате JSON, без дополнительного текста и без markdown.'
-      },
-      {
-        role: 'user',
-        content: prompt
-      }
-    ],
-    max_tokens: 1200,
-    temperature: 0.4
+  const phrasalMessages = [
+    { role: 'system', content: 'Ты преподаватель английского языка, специализирующийся на фразовых глаголах. Отвечай строго в формате JSON, без дополнительного текста и без markdown.' },
+    { role: 'user', content: prompt },
+  ]
+  const paidPhrasal = await runBillableChat(billingDeps(), llm, AITUNNEL_MODEL, {
+    userId: options.userId,
+    operationId: crypto.randomUUID(),
+    messages: phrasalMessages,
+    maxTokens: 1200,
+    temperature: 0.4,
+    metadata: { phrasal_verbs_analyze: true },
   })
-
-  const usage = chatResult?.usage || null
+  if (!paidPhrasal.ok) {
+    const billingError = new Error(paidPhrasal.error)
+    billingError.billingStatus = paidPhrasal.status
+    throw billingError
+  }
+  const chatResult = completionFromPaid(paidPhrasal)
+  const usage = null
   const raw = chatResult.choices?.[0]?.message?.content?.trim() || '[]'
 
   // На всякий случай пытаемся вытащить JSON из markdown-кода, если модель так ответит
@@ -4476,7 +4572,7 @@ ${text}
 // Получение или создание определения слова (с кэшированием)
 // ВНИМАНИЕ: Вызывает AI только если слова нет в кэше!
 // Использовать только когда пользователь явно запросил определение (клик на слово, добавление)
-async function getOrCreateWordDefinition(word, language = 'en') {
+async function getOrCreateWordDefinition(word, language = 'en', userId = null) {
   const normalizedWord = normalizeWord(word)
   if (!normalizedWord) {
     throw new Error('Invalid word')
@@ -4498,7 +4594,7 @@ async function getOrCreateWordDefinition(word, language = 'en') {
   }
 
   // Если нет в кэше, получаем через AI
-  const { definition, usage } = await getWordDefinitionFromAI(normalizedWord, language)
+  const { definition, usage } = await getWordDefinitionFromAI(normalizedWord, language, userId)
 
   // Сохраняем в кэш (используем сервисный ключ, который обходит RLS)
   const { error: insertError } = await safeSupabaseCall(
@@ -4808,18 +4904,13 @@ app.get('/api/vocabulary/define', asyncHandler(async (req, res) => {
   }
   const userId = userData.user.id
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   const word = req.query.word
   if (!word || typeof word !== 'string') {
     return res.status(400).json({ error: 'Word parameter is required' })
   }
 
   try {
-    const definition = await getOrCreateWordDefinition(word)
+    const definition = await getOrCreateWordDefinition(word, 'en', userId)
     if (definition.usage) {
       const costRub = getCost('deepseek-v3.2', definition.usage)
       if (costRub > 0) {
@@ -4887,11 +4978,6 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
   }
   const userId = userData.user.id
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   const { data: assistProfile } = await safeSupabaseCall(
     () => supabase
       .from('user_profiles')
@@ -4945,7 +5031,7 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
     }
 
     if (needsLexicon || fields.includes('notes')) {
-      definition = await getOrCreateWordDefinition(targetWord, language)
+      definition = await getOrCreateWordDefinition(targetWord, language, userId)
       if (definition.usage) {
         const costRub = getCost('deepseek-v3.2', definition.usage)
         if (costRub > 0) {
@@ -4968,11 +5054,11 @@ app.post('/api/vocabulary/assist', asyncHandler(async (req, res) => {
         ? await getChineseMnemonicFromAI(targetWord, {
             pinyin: definition.pinyin,
             translations: definition.definitions,
-          })
+          }, userId)
         : await getEnglishMnemonicFromAI(targetWord, {
             translations: definition.definitions,
             partOfSpeech: definition.part_of_speech,
-          })
+          }, userId)
       mnemonic = extra.mnemonic
       if (extra.usage) {
         const costRub = getCost('deepseek-v3.2', extra.usage)
@@ -5046,11 +5132,6 @@ app.post('/api/vocabulary/phrases/assist', asyncHandler(async (req, res) => {
   }
   const userId = userData.user.id
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   const { phrase, kind: rawKind, fields: rawFields } = req.body || {}
   const kind = rawKind === 'phrasal-verb' ? 'phrasal-verb' : 'idiom'
   const target = typeof phrase === 'string' ? phrase.trim() : ''
@@ -5071,7 +5152,7 @@ app.post('/api/vocabulary/phrases/assist', asyncHandler(async (req, res) => {
   }
 
   try {
-    const { suggestion, usage } = await getEnglishPhraseAssistFromAI(target, kind)
+    const { suggestion, usage } = await getEnglishPhraseAssistFromAI(target, kind, userId)
     if (usage) {
       const costRub = getCost('deepseek-v3.2', usage)
       if (costRub > 0) {
@@ -5137,11 +5218,6 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' })
   }
   const userId = userData.user.id
-
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
 
   const {
     word,
@@ -5214,7 +5290,7 @@ app.post('/api/vocabulary/add', asyncHandler(async (req, res) => {
       usage: null,
     }
   } else {
-    definition = await getOrCreateWordDefinition(normalizedWord, language)
+    definition = await getOrCreateWordDefinition(normalizedWord, language, userId)
     if (definition.usage) {
       const costRub = getCost('deepseek-v3.2', definition.usage)
       if (costRub > 0) {
@@ -5616,11 +5692,6 @@ app.post('/api/vocabulary/characters/add', asyncHandler(async (req, res) => {
   }
   const userId = userData.user.id
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   const { character, word, video_id, context, pinyin, translations, radical, stroke_count, hsk_level } = req.body || {}
   const raw = character || word
   const hanzi = extractHanzi(raw || '')
@@ -5636,7 +5707,7 @@ app.post('/api/vocabulary/characters/add', asyncHandler(async (req, res) => {
   let usage = null
   const needsAi = !pinyin || !translations || !Array.isArray(translations) || translations.length === 0
   if (needsAi) {
-    const result = await getOrCreateWordDefinition(hanzi, 'zh')
+    const result = await getOrCreateWordDefinition(hanzi, 'zh', userId)
     definition = result
     usage = result?.usage || null
     if (usage) {
@@ -7263,11 +7334,6 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
   }
   const userId = userData.user.id
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   // Получаем язык пользователя из профиля
   const { data: profile } = await safeSupabaseCall(
     () => supabase
@@ -7326,7 +7392,8 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
   // Вызываем AI для анализа идиом с учетом языка
   const { idioms, usage: idiomsUsage } = await analyzeIdiomsWithAI(cleanedText, {
     maxIdioms: max_idioms,
-    language: language
+    language: language,
+    userId,
   })
   if (idiomsUsage) {
     const costRub = getCost('deepseek-v3.2', idiomsUsage)
@@ -7383,7 +7450,7 @@ app.post('/api/vocabulary/idioms/analyze', asyncHandler(async (req, res) => {
           hskLevel = cached.hsk_level
         } else {
           // Уровня нет в кеше, получаем через AI
-          const def = await getWordDefinitionFromAI(normalized, language)
+          const def = await getWordDefinitionFromAI(normalized, language, userId)
           if (def?.definition?.difficulty_level) {
             difficultyLevel = def.definition.difficulty_level
           }
@@ -7470,11 +7537,6 @@ app.post('/api/vocabulary/phrasal-verbs/analyze', asyncHandler(async (req, res) 
   }
   const userId = userData.user.id
 
-  const balance = await getBalance(supabase, userId)
-  if (balance < BALANCE_THRESHOLD_RUB) {
-    return res.status(402).json({ error: 'Пополните баланс' })
-  }
-
   const { video_id, text, force = false, max_phrasal_verbs = 20 } = req.body || {}
 
   if (!video_id && (!text || typeof text !== 'string')) {
@@ -7520,7 +7582,7 @@ app.post('/api/vocabulary/phrasal-verbs/analyze', asyncHandler(async (req, res) 
   const cleanedText = textToProcess.slice(0, 8000)
 
   // Вызываем AI для анализа фразовых глаголов
-  const { phrasalVerbs, usage: pvUsage } = await analyzePhrasalVerbsWithAI(cleanedText, { maxPhrasalVerbs: max_phrasal_verbs })
+  const { phrasalVerbs, usage: pvUsage } = await analyzePhrasalVerbsWithAI(cleanedText, { maxPhrasalVerbs: max_phrasal_verbs, userId })
   if (pvUsage) {
     const costRub = getCost('deepseek-v3.2', pvUsage)
     if (costRub > 0) {
@@ -7573,7 +7635,7 @@ app.post('/api/vocabulary/phrasal-verbs/analyze', asyncHandler(async (req, res) 
           difficultyLevel = cached.difficulty_level
         } else {
           // Уровня нет в кеше, получаем через AI
-          const def = await getWordDefinitionFromAI(normalized)
+          const def = await getWordDefinitionFromAI(normalized, 'en', userId)
           if (def?.definition?.difficulty_level) {
             difficultyLevel = def.definition.difficulty_level
           }

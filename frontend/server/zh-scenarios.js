@@ -3,6 +3,10 @@
  * Генерация ИИ — этап 3.
  */
 
+import { HSK_LEVEL_INSTRUCTIONS } from './learning-language.js'
+import { runBillableChat, completionFromPaid } from './paid-call.js'
+import { reservationDeps } from './balance.js'
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -497,11 +501,12 @@ Rules:
 - Always include stress_twist_ru: one realistic snag that does NOT change the outcome (they misheard, they are in a hurry, the slot is taken).
 - No profanity. No English spoken lines.`
 
-const ZH_GENERATE_PART_SYSTEM = `You update ONE part of an existing Simplified Chinese roleplay scenario for Russian-speaking learners (HSK 1–6).
+const ZH_GENERATE_PART_SYSTEM = `You update ONE part of an existing Simplified Chinese roleplay scenario for Russian-speaking learners.
 Output ONLY valid JSON, no markdown, no code fence.
-Keep the same HSK, situation, and roles. Do not rewrite parts you were not asked to change.
+Keep the situation and roles unless that exact field was requested. Do not rewrite parts you were not asked to change.
 Dialogue Chinese fields: Simplified Chinese only. UI strings: Russian.
-Pinyin must include tone marks.`
+Pinyin must include tone marks.
+The user message states one HSK level. That level is mandatory for this rewrite: Chinese lines use only that level, and Russian tasks must be doable with only that level's words.`
 
 export function registerZhScenarioRoutes(app, {
   supabase,
@@ -515,6 +520,23 @@ export function registerZhScenarioRoutes(app, {
   getCost,
   BALANCE_THRESHOLD_RUB,
 }) {
+  async function paidModelChat(chatUserId, messages, maxTokens, temperature, metadata) {
+    const paid = await runBillableChat(reservationDeps(supabase), llm, model, {
+      userId: chatUserId,
+      operationId: crypto.randomUUID(),
+      messages,
+      maxTokens,
+      temperature,
+      metadata,
+    })
+    if (!paid.ok) {
+      const billingError = new Error(paid.error)
+      billingError.billingStatus = paid.status
+      throw billingError
+    }
+    return completionFromPaid(paid)
+  }
+
   function requireAuth(req, res) {
     const rawToken = getBearerToken(req)
     if (!rawToken) {
@@ -537,13 +559,6 @@ export function registerZhScenarioRoutes(app, {
     if (!userId) return
     if (!llm || !model) {
       return res.status(500).json({ error: 'Generation is not configured' })
-    }
-
-    if (typeof getBalance === 'function' && BALANCE_THRESHOLD_RUB != null) {
-      const balance = await getBalance(supabase, userId)
-      if (balance < BALANCE_THRESHOLD_RUB) {
-        return res.status(402).json({ error: 'Пополните баланс' })
-      }
     }
 
     const body = req.body || {}
@@ -596,15 +611,10 @@ export function registerZhScenarioRoutes(app, {
     const userPrompt = `${parts.join('\n')}\n\nGenerate the scenario JSON now.`
 
     async function runOnce() {
-      return llm.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: fromLife ? ZH_GENERATE_LIFE_SYSTEM : ZH_GENERATE_SYSTEM },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 2500,
-        temperature: 0.4,
-      })
+      return paidModelChat(userId, [
+        { role: 'system', content: fromLife ? ZH_GENERATE_LIFE_SYSTEM : ZH_GENERATE_SYSTEM },
+        { role: 'user', content: userPrompt },
+      ], 2500, 0.4, { zh_scenario_generate: true })
     }
 
     try {
@@ -614,8 +624,7 @@ export function registerZhScenarioRoutes(app, {
       try {
         parsed = parseLlmJson(raw)
       } catch {
-        completion = await runOnce()
-        raw = completion.choices?.[0]?.message?.content?.trim() || ''
+        return res.status(422).json({ error: 'Не удалось разобрать ответ ИИ, попробуйте ещё раз' })
         try {
           parsed = parseLlmJson(raw)
         } catch {
@@ -668,13 +677,6 @@ export function registerZhScenarioRoutes(app, {
       const title = asTrimmed(parsed.title, 200) || 'Новый сценарий'
       const hskOut = asHsk(parsed.hsk_level) || hsk
 
-      const usage = completion?.usage
-      if (usage && typeof deductBalance === 'function' && typeof getCost === 'function') {
-        const costRub = getCost(model, usage)
-        if (costRub > 0) {
-          await deductBalance(supabase, userId, costRub, model, { zh_scenario_generate: true })
-        }
-      }
 
       res.json({
         title,
@@ -697,23 +699,17 @@ export function registerZhScenarioRoutes(app, {
       return res.status(500).json({ error: 'Generation is not configured' })
     }
 
-    if (typeof getBalance === 'function' && BALANCE_THRESHOLD_RUB != null) {
-      const balance = await getBalance(supabase, userId)
-      if (balance < BALANCE_THRESHOLD_RUB) {
-        return res.status(402).json({ error: 'Пополните баланс' })
-      }
-    }
-
     const body = req.body || {}
     const part = body.part
-    if (!['vocabulary', 'steps', 'openings'].includes(part)) {
-      return res.status(400).json({ error: 'part должен быть vocabulary, steps или openings' })
+    if (!['vocabulary', 'steps', 'openings', 'situation', 'goal', 'place', 'user_role', 'ai_role', 'personality_note', 'goal_item', 'step_item'].includes(part)) {
+      return res.status(400).json({ error: 'Неизвестная часть сценария' })
     }
     const src = body.scenario && typeof body.scenario === 'object' ? body.scenario : {}
     const payload = buildPayload(src, src)
     const title = asTrimmed(src.title, 200) || 'Сценарий'
     const hsk = asHsk(src.hsk_level ?? src.hskLevel ?? payload.hsk_level) || 3
     const note = asTrimmed(body.note, 400)
+    const itemIndex = Number.isInteger(Number(body.index)) && Number(body.index) >= 0 ? Number(body.index) : 0
 
     const snapshot = {
       title,
@@ -726,6 +722,7 @@ export function registerZhScenarioRoutes(app, {
       user_role: payload.user_role,
       ai_role: payload.ai_role,
       ai_personality: payload.ai_personality,
+      ai_personality_note: payload.ai_personality_note,
       grammar_focus: payload.grammar_focus,
       setting_ru: payload.setting_ru,
       scenario_text_ru: payload.scenario_text_ru,
@@ -737,19 +734,44 @@ export function registerZhScenarioRoutes(app, {
     }
 
     const fromLife = payload.from_life === true
+    const hskLock = [
+      `MANDATORY LEVEL: HSK ${hsk} only.`,
+      HSK_LEVEL_INSTRUCTIONS[hsk] || HSK_LEVEL_INSTRUCTIONS[3],
+      `Every Chinese string you write (hanzi, example_zh, character_opening, suggested_first_line, keywords) must be speakable at HSK ${hsk}.`,
+      `Russian fields must describe a task the learner can finish with HSK ${hsk} words. Do not invent a harder scene than this level can say.`,
+    ].join(' ')
     let want = ''
     if (part === 'vocabulary') {
       want = fromLife
-        ? 'Regenerate ONLY vocabulary (4–8 pocket phrases). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1,"usage":"pocket"}]}. ' +
-          'Every item usage=pocket. These are phrases the learner might need if they freeze, not lesson words and not lines for you to teach. Stay at or below the HSK.'
-        : 'Regenerate ONLY vocabulary (4–12 items). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":1,"usage":"must_say"}]}. ' +
-          'Mark 3–6 core lesson words usage=must_say; the rest usage=model. Stay at or below the HSK.'
+        ? `Regenerate ONLY vocabulary (4–8 pocket phrases). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":${hsk},"usage":"pocket"}]}. ` +
+          `Every item usage=pocket. These are phrases the learner might need if they freeze, not lesson words and not lines for you to teach. Words must be HSK ${hsk} only. Set each hsk_level to ${hsk} or lower, never higher.`
+        : `Regenerate ONLY vocabulary (4–12 items). JSON: {"vocabulary":[{"hanzi":"","pinyin":"","translation_ru":"","hsk_level":${hsk},"usage":"must_say"}]}. ` +
+          `Mark 3–6 core lesson words usage=must_say; the rest usage=model. Words must be HSK ${hsk} only. Set each hsk_level to ${hsk} or lower, never higher.`
     } else if (part === 'steps') {
       want = fromLife
         ? 'Regenerate ONLY steps (3–5). JSON: {"steps":[{"id":"step1","order":1,"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}]}. ' +
           'Each step is one outcome of this conversation, not a vocabulary drill. Keep the same real-life scene.'
         : 'Regenerate ONLY steps (2–6). JSON: {"steps":[{"id":"step1","order":1,"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}]}. ' +
           'Each step is one learner action. Keep the same scene.'
+    } else if (part === 'situation') {
+      want = 'Regenerate ONLY the situation text. JSON: {"scenario_text_ru":""}. One or two Russian sentences. Keep the same roles, place and goal. Do not repeat the current situation wording.'
+    } else if (part === 'goal') {
+      want = fromLife
+        ? 'Regenerate ONLY the goals. JSON: {"goals":["практический результат по-русски"]}. 1–3 outcomes. Keep the same real-life scene.'
+        : 'Regenerate ONLY the goals. JSON: {"goals":["цель урока по-русски"]}. 1–3 outcomes. Keep the same scene and HSK.'
+    } else if (part === 'place') {
+      want = 'Rewrite ONLY the place. JSON: {"setting_ru":"короткое место по-русски"}. Keep the same situation and roles. Do not repeat the current place.'
+    } else if (part === 'user_role') {
+      want = 'Rewrite ONLY the learner role. JSON: {"user_role":"короткая роль ученика по-русски"}. Keep the scene and a complementary AI role. Do not repeat the current role.'
+    } else if (part === 'ai_role') {
+      want = 'Rewrite ONLY the AI character role. JSON: {"ai_role":"короткая роль собеседника по-русски"}. Keep the scene and the learner role. Do not repeat the current role.'
+    } else if (part === 'personality_note') {
+      want = 'Rewrite ONLY the personality note. JSON: {"ai_personality_note":"короткая фраза по-русски"}. It must fit the current ai_personality. Do not change the role. Do not repeat the current note.'
+    } else if (part === 'goal_item') {
+      want = `Rewrite ONLY goal number ${itemIndex + 1}. JSON: {"goal":"одна новая цель по-русски"}. Keep the same scene. Do not repeat this goal. Do not write the other goals.`
+    } else if (part === 'step_item') {
+      want = `Rewrite ONLY step number ${itemIndex + 1}. JSON: {"title_ru":"","expected_user_action":"","ai_context":"","keywords":[],"example_zh":""}. ` +
+        'title_ru and expected_user_action in Russian. example_zh in Simplified Chinese if you include it. Keep the same scene and the other steps. Do not repeat this step.'
     } else {
       want = fromLife
         ? 'Regenerate ONLY opening lines. JSON: {"character_opening":"","suggested_first_line":"","suggested_first_line_pinyin":""}. ' +
@@ -759,6 +781,7 @@ export function registerZhScenarioRoutes(app, {
     }
 
     const userPrompt = [
+      hskLock,
       `Current scenario JSON:\n${JSON.stringify(snapshot)}`,
       want,
       note ? `Extra instruction from the author: ${note}` : '',
@@ -768,15 +791,10 @@ export function registerZhScenarioRoutes(app, {
       .join('\n\n')
 
     async function runOnce() {
-      return llm.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: ZH_GENERATE_PART_SYSTEM },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 1800,
-        temperature: 0.45,
-      })
+      return paidModelChat(userId, [
+        { role: 'system', content: ZH_GENERATE_PART_SYSTEM },
+        { role: 'user', content: userPrompt },
+      ], 1800, 0.45, { zh_scenario_generate_part: true })
     }
 
     try {
@@ -786,9 +804,7 @@ export function registerZhScenarioRoutes(app, {
       try {
         parsed = parseLlmJson(raw)
       } catch {
-        completion = await runOnce()
-        raw = completion.choices?.[0]?.message?.content?.trim() || ''
-        parsed = parseLlmJson(raw)
+        return res.status(422).json({ error: 'Не удалось разобрать ответ ИИ, попробуйте ещё раз' })
       }
 
       let patch = {}
@@ -806,6 +822,56 @@ export function registerZhScenarioRoutes(app, {
           return res.status(422).json({ error: 'ИИ не вернул шаги, попробуйте ещё раз' })
         }
         patch = { steps }
+      } else if (part === 'situation') {
+        const scenario_text_ru = asTrimmed(parsed.scenario_text_ru, 500)
+        if (!scenario_text_ru) {
+          return res.status(422).json({ error: 'ИИ не вернул ситуацию, попробуйте ещё раз' })
+        }
+        patch = { scenario_text_ru }
+      } else if (part === 'goal') {
+        const goals = Array.isArray(parsed.goals)
+          ? parsed.goals.map((item) => asTrimmed(item, 200)).filter(Boolean).slice(0, 3)
+          : []
+        if (!goals.length) {
+          return res.status(422).json({ error: 'ИИ не вернул цель, попробуйте ещё раз' })
+        }
+        patch = { goals }
+      } else if (part === 'place') {
+        const setting_ru = asTrimmed(parsed.setting_ru, 200)
+        if (!setting_ru) return res.status(422).json({ error: 'ИИ не вернул место, попробуйте ещё раз' })
+        patch = { setting_ru }
+      } else if (part === 'user_role') {
+        const user_role = asTrimmed(parsed.user_role, 120)
+        if (!user_role) return res.status(422).json({ error: 'ИИ не вернул роль, попробуйте ещё раз' })
+        patch = { user_role }
+      } else if (part === 'ai_role') {
+        const ai_role = asTrimmed(parsed.ai_role, 120)
+        if (!ai_role) return res.status(422).json({ error: 'ИИ не вернул роль, попробуйте ещё раз' })
+        patch = { ai_role }
+      } else if (part === 'personality_note') {
+        const ai_personality_note = asTrimmed(parsed.ai_personality_note, 200)
+        if (!ai_personality_note) return res.status(422).json({ error: 'ИИ не вернул уточнение, попробуйте ещё раз' })
+        patch = { ai_personality_note }
+      } else if (part === 'goal_item') {
+        const goal = asTrimmed(parsed.goal, 200)
+        if (!goal) return res.status(422).json({ error: 'ИИ не вернул цель, попробуйте ещё раз' })
+        patch = { goal, index: itemIndex }
+      } else if (part === 'step_item') {
+        const title_ru = asTrimmed(parsed.title_ru, 200)
+        const expected_user_action = asTrimmed(parsed.expected_user_action, 500)
+        if (!title_ru && !expected_user_action) {
+          return res.status(422).json({ error: 'ИИ не вернул шаг, попробуйте ещё раз' })
+        }
+        patch = {
+          index: itemIndex,
+          step: {
+            title_ru,
+            expected_user_action,
+            ai_context: asTrimmed(parsed.ai_context, 1000),
+            keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
+            example_zh: asTrimmed(parsed.example_zh, 300),
+          },
+        }
       } else {
         const character_opening = asTrimmed(parsed.character_opening, 300)
         const suggested_first_line = asTrimmed(parsed.suggested_first_line, 300)
@@ -816,13 +882,6 @@ export function registerZhScenarioRoutes(app, {
         patch = { character_opening, suggested_first_line, suggested_first_line_pinyin }
       }
 
-      const usage = completion?.usage
-      if (usage && typeof deductBalance === 'function' && typeof getCost === 'function') {
-        const costRub = getCost(model, usage)
-        if (costRub > 0) {
-          await deductBalance(supabase, userId, costRub, model, { zh_scenario_generate_part: true, part })
-        }
-      }
 
       res.json({ part, patch })
     } catch (err) {

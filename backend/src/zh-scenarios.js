@@ -4,6 +4,8 @@
  */
 
 import { HSK_LEVEL_INSTRUCTIONS } from './learning-language.js'
+import { runBillableChat, completionFromPaid } from './paid-call.js'
+import { reservationDeps } from './balance.js'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -518,6 +520,23 @@ export function registerZhScenarioRoutes(app, {
   getCost,
   BALANCE_THRESHOLD_RUB,
 }) {
+  async function paidModelChat(chatUserId, messages, maxTokens, temperature, metadata) {
+    const paid = await runBillableChat(reservationDeps(supabase), llm, model, {
+      userId: chatUserId,
+      operationId: crypto.randomUUID(),
+      messages,
+      maxTokens,
+      temperature,
+      metadata,
+    })
+    if (!paid.ok) {
+      const billingError = new Error(paid.error)
+      billingError.billingStatus = paid.status
+      throw billingError
+    }
+    return completionFromPaid(paid)
+  }
+
   function requireAuth(req, res) {
     const rawToken = getBearerToken(req)
     if (!rawToken) {
@@ -540,13 +559,6 @@ export function registerZhScenarioRoutes(app, {
     if (!userId) return
     if (!llm || !model) {
       return res.status(500).json({ error: 'Generation is not configured' })
-    }
-
-    if (typeof getBalance === 'function' && BALANCE_THRESHOLD_RUB != null) {
-      const balance = await getBalance(supabase, userId)
-      if (balance < BALANCE_THRESHOLD_RUB) {
-        return res.status(402).json({ error: 'Пополните баланс' })
-      }
     }
 
     const body = req.body || {}
@@ -599,15 +611,10 @@ export function registerZhScenarioRoutes(app, {
     const userPrompt = `${parts.join('\n')}\n\nGenerate the scenario JSON now.`
 
     async function runOnce() {
-      return llm.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: fromLife ? ZH_GENERATE_LIFE_SYSTEM : ZH_GENERATE_SYSTEM },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 2500,
-        temperature: 0.4,
-      })
+      return paidModelChat(userId, [
+        { role: 'system', content: fromLife ? ZH_GENERATE_LIFE_SYSTEM : ZH_GENERATE_SYSTEM },
+        { role: 'user', content: userPrompt },
+      ], 2500, 0.4, { zh_scenario_generate: true })
     }
 
     try {
@@ -617,8 +624,7 @@ export function registerZhScenarioRoutes(app, {
       try {
         parsed = parseLlmJson(raw)
       } catch {
-        completion = await runOnce()
-        raw = completion.choices?.[0]?.message?.content?.trim() || ''
+        return res.status(422).json({ error: 'Не удалось разобрать ответ ИИ, попробуйте ещё раз' })
         try {
           parsed = parseLlmJson(raw)
         } catch {
@@ -671,13 +677,6 @@ export function registerZhScenarioRoutes(app, {
       const title = asTrimmed(parsed.title, 200) || 'Новый сценарий'
       const hskOut = asHsk(parsed.hsk_level) || hsk
 
-      const usage = completion?.usage
-      if (usage && typeof deductBalance === 'function' && typeof getCost === 'function') {
-        const costRub = getCost(model, usage)
-        if (costRub > 0) {
-          await deductBalance(supabase, userId, costRub, model, { zh_scenario_generate: true })
-        }
-      }
 
       res.json({
         title,
@@ -698,13 +697,6 @@ export function registerZhScenarioRoutes(app, {
     if (!userId) return
     if (!llm || !model) {
       return res.status(500).json({ error: 'Generation is not configured' })
-    }
-
-    if (typeof getBalance === 'function' && BALANCE_THRESHOLD_RUB != null) {
-      const balance = await getBalance(supabase, userId)
-      if (balance < BALANCE_THRESHOLD_RUB) {
-        return res.status(402).json({ error: 'Пополните баланс' })
-      }
     }
 
     const body = req.body || {}
@@ -799,15 +791,10 @@ export function registerZhScenarioRoutes(app, {
       .join('\n\n')
 
     async function runOnce() {
-      return llm.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: ZH_GENERATE_PART_SYSTEM },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 1800,
-        temperature: 0.45,
-      })
+      return paidModelChat(userId, [
+        { role: 'system', content: ZH_GENERATE_PART_SYSTEM },
+        { role: 'user', content: userPrompt },
+      ], 1800, 0.45, { zh_scenario_generate_part: true })
     }
 
     try {
@@ -817,9 +804,7 @@ export function registerZhScenarioRoutes(app, {
       try {
         parsed = parseLlmJson(raw)
       } catch {
-        completion = await runOnce()
-        raw = completion.choices?.[0]?.message?.content?.trim() || ''
-        parsed = parseLlmJson(raw)
+        return res.status(422).json({ error: 'Не удалось разобрать ответ ИИ, попробуйте ещё раз' })
       }
 
       let patch = {}
@@ -897,13 +882,6 @@ export function registerZhScenarioRoutes(app, {
         patch = { character_opening, suggested_first_line, suggested_first_line_pinyin }
       }
 
-      const usage = completion?.usage
-      if (usage && typeof deductBalance === 'function' && typeof getCost === 'function') {
-        const costRub = getCost(model, usage)
-        if (costRub > 0) {
-          await deductBalance(supabase, userId, costRub, model, { zh_scenario_generate_part: true, part })
-        }
-      }
 
       res.json({ part, patch })
     } catch (err) {

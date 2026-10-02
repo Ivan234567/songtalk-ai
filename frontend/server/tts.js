@@ -19,12 +19,11 @@ function getClient() {
       process.env.AITUNNEL_TTS_TIMEOUT_MS || process.env.AITUNNEL_TIMEOUT_MS || '1800000',
       10
     )
-    const maxRetries = Number.parseInt(process.env.AITUNNEL_MAX_RETRIES || '1', 10)
     client = new OpenAI({
       apiKey,
       baseURL,
       timeout: Number.isFinite(timeoutMs) ? timeoutMs : 60000,
-      maxRetries: Number.isFinite(maxRetries) ? maxRetries : 1,
+      maxRetries: 0,
     })
   }
   return client
@@ -62,6 +61,10 @@ function readSupplierCostRub(speech) {
   return Number.isFinite(value) && value > 0 ? value : null
 }
 
+export function ttsInputLength(text, options = {}) {
+  return prepareInput(text, options).length
+}
+
 function prepareInput(text, options = {}) {
   const maxLength = options.maxLength ?? 2000
   const clean = stripLearningMetadata(text).replace(EMOJI_REGEX, '').trim()
@@ -71,7 +74,7 @@ function prepareInput(text, options = {}) {
 /**
  * Синтезирует речь из текста.
  * @param {string} text — исходный текст (эмодзи будут удалены, длина ограничена)
- * @param {{ maxLength?: number, voice?: string }} [options] — maxLength (по умолчанию 2000), voice (по умолчанию 'nova')
+ * @param {{ maxLength?: number, voice?: string, instructions?: string }} [options] — maxLength (по умолчанию 2000), voice (по умолчанию 'nova'), instructions для gpt-4o-mini-tts
  * @returns {Promise<Buffer>} — аудио buffer (audio/mpeg)
  */
 export async function synthesize(text, options = {}) {
@@ -83,12 +86,16 @@ export async function synthesize(text, options = {}) {
   const ttsClient = getClient()
   const model = getModel()
   const voice = options.voice ?? 'nova'
-
-  const speech = await ttsClient.audio.speech.create({
+  const payload = {
     model,
     input,
     voice,
-  })
+  }
+  if (options.instructions && String(model).includes('gpt-4o')) {
+    payload.instructions = options.instructions
+  }
+
+  const speech = await ttsClient.audio.speech.create(payload)
 
   if (!speech) {
     throw new Error('Empty response from TTS API')
