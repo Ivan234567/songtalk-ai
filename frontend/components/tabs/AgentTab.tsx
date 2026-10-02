@@ -3086,7 +3086,12 @@ export function AgentTab() {
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
-      const mr = new MediaRecorder(stream);
+      let mr: MediaRecorder;
+      try {
+        mr = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 128000 });
+      } catch {
+        mr = new MediaRecorder(stream);
+      }
       mediaRecorderRef.current = mr;
       mr.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
@@ -3126,6 +3131,8 @@ export function AgentTab() {
         try {
           const fd = new FormData();
           fd.append('audio', blob, 'recording.webm');
+          fd.append('duration_ms', String(duration));
+          fd.append('operation_id', crypto.randomUUID());
           const resp = await fetch(`${getApiUrl()}/api/agent/stt`, {
             method: 'POST',
             headers: buildAgentAuthHeaders(token, learningLanguage),

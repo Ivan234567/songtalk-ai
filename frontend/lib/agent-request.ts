@@ -24,6 +24,11 @@ export function buildAgentAuthHeaders(
 export function withLearningLanguageBody<T extends Record<string, unknown>>(
   body: T,
   learningLanguage: LearningLanguage,
-): T & { learningLanguage: LearningLanguage } {
-  return { ...body, learningLanguage };
+): T & { learningLanguage: LearningLanguage; operation_id: string } {
+  const existing = typeof body.operation_id === 'string' ? body.operation_id.trim() : '';
+  return {
+    ...body,
+    learningLanguage,
+    operation_id: existing || crypto.randomUUID(),
+  };
 }

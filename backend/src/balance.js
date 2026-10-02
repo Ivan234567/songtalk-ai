@@ -36,7 +36,16 @@ export const BALANCE_THRESHOLD_RUB = 10
  * @param {object} [metadata] — опционально: request_id, usage_units и т.д.
  * @returns {Promise<{ ok: true, newBalance: number } | { ok: false, error: string, currentBalance?: number }>}
  */
-export async function deductBalance(supabase, userId, amountRub, service = null, metadata = null) {
+export function readOperationId(...candidates) {
+  for (const value of candidates) {
+    if (typeof value !== 'string') continue
+    const id = value.trim()
+    if (id && id.length <= 128) return id
+  }
+  return null
+}
+
+export async function deductBalance(supabase, userId, amountRub, service = null, metadata = null, operationId = null) {
   if (!userId || amountRub <= 0) {
     return { ok: false, error: 'invalid_params' }
   }
@@ -46,13 +55,14 @@ export async function deductBalance(supabase, userId, amountRub, service = null,
     p_amount_rub: amountRub,
     p_service: service ?? null,
     p_metadata: metadata ?? null,
+    p_operation_id: operationId ?? null,
   })
 
   if (error) throw error
 
   const result = data
   if (result.ok) {
-    return { ok: true, newBalance: Number(result.new_balance) }
+    return { ok: true, already: Boolean(result.already), newBalance: Number(result.new_balance) }
   }
   return {
     ok: false,

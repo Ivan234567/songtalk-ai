@@ -16,8 +16,8 @@ import { dirname } from 'path'
 import { Readable } from 'stream'
 import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize } from './tts.js'
-import { getBalance, deductBalance, topupBalance, BALANCE_THRESHOLD_RUB } from './balance.js'
-import { getCost, ttsChargeRub } from './balance-rates.js'
+import { getBalance, deductBalance, topupBalance, readOperationId, BALANCE_THRESHOLD_RUB } from './balance.js'
+import { getCost, ttsChargeRub, billableSttSeconds } from './balance-rates.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction, buildEnglishProfanityPolicy, CEFR_LEVEL_INSTRUCTIONS } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
@@ -838,6 +838,16 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     }
 
     // Используем реальный fs.ReadStream — путь уже с расширением, API распознает формат
+    const billed = billableSttSeconds({
+      bytes: stats.size,
+      durationMs: req.body?.duration_ms,
+    })
+    if (!billed.ok) {
+      return res.status(400).json({
+        error: billed.error === 'too_long' ? 'Запись длиннее одной минуты' : 'Пустая запись',
+      })
+    }
+
     const fileStream = fs.createReadStream(audioFilePath)
 
     fileStream.on('error', (streamErr) => {
@@ -849,10 +859,18 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     const duration = Date.now() - startTime
     console.log('[api/transcribe] Request completed in', duration + 'ms')
 
-    const durationSec = Math.max(1, Math.ceil(stats.size / (128 * 1024)))
+    const durationSec = billed.seconds
     const costRub = getCost('whisper-1', { duration_sec: durationSec })
     if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'whisper-1', { duration_sec: durationSec })
+      const sttOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id)
+      const deductResult = await deductBalance(
+        supabase,
+        userId,
+        costRub,
+        'whisper-1',
+        { duration_sec: durationSec },
+        sttOperationId,
+      )
       if (!deductResult.ok) {
         console.error('[api/transcribe] Deduct failed:', deductResult.error)
         return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
@@ -984,7 +1002,15 @@ app.post('/api/tts', async (req, res) => {
 
     const costRub = ttsChargeRub({ characters, supplierCostRub })
     if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'gpt-4o-mini-tts', { characters, supplier_cost_rub: supplierCostRub })
+      const ttsOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id)
+      const deductResult = await deductBalance(
+        supabase,
+        userId,
+        costRub,
+        'gpt-4o-mini-tts',
+        { characters, supplier_cost_rub: supplierCostRub },
+        ttsOperationId,
+      )
       if (!deductResult.ok) {
         console.error('[api/tts] Deduct failed:', deductResult.error)
         return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
@@ -1128,6 +1154,16 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
     }
 
     // Используем реальный fs.ReadStream — путь уже с расширением, API распознает формат
+    const billed = billableSttSeconds({
+      bytes: stats.size,
+      durationMs: req.body?.duration_ms,
+    })
+    if (!billed.ok) {
+      return res.status(400).json({
+        error: billed.error === 'too_long' ? 'Запись длиннее одной минуты' : 'Пустая запись',
+      })
+    }
+
     const fileStream = fs.createReadStream(audioFilePath)
 
     fileStream.on('error', (streamErr) => {
@@ -1140,10 +1176,18 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
     const duration = Date.now() - startTime
     console.log('[api/agent/stt] Request completed in', duration + 'ms', { hasText: !!text, textLength: text?.length || 0 })
 
-    const durationSec = Math.max(1, Math.ceil(stats.size / (128 * 1024)))
+    const durationSec = billed.seconds
     const costRub = getCost('whisper-1', { duration_sec: durationSec })
     if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'whisper-1', { duration_sec: durationSec })
+      const sttOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id)
+      const deductResult = await deductBalance(
+        supabase,
+        userId,
+        costRub,
+        'whisper-1',
+        { duration_sec: durationSec },
+        sttOperationId,
+      )
       if (!deductResult.ok) {
         console.error('[api/agent/stt] Deduct failed:', deductResult.error)
         return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
@@ -1268,7 +1312,15 @@ app.post('/api/agent/tts', async (req, res) => {
 
     const costRub = ttsChargeRub({ characters, supplierCostRub })
     if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'gpt-4o-mini-tts', { characters, supplier_cost_rub: supplierCostRub })
+      const ttsOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id)
+      const deductResult = await deductBalance(
+        supabase,
+        userId,
+        costRub,
+        'gpt-4o-mini-tts',
+        { characters, supplier_cost_rub: supplierCostRub },
+        ttsOperationId,
+      )
       if (!deductResult.ok) {
         console.error('[api/agent/tts] Deduct failed:', deductResult.error)
         return res.status(402).json({ error: 'Недостаточно средств. Пополните баланс.' })
@@ -1355,6 +1407,7 @@ app.post('/api/agent/chat', async (req, res) => {
   }
 
   const { messages, max_tokens, scenario_steps, roleplay_settings, freestyle_context, chinese_settings, english_settings, scenario_vocabulary, annotate_chinese, annotate_english, text: annotateSourceText } = req.body || {}
+  const chatOperationId = readOperationId(req.headers['x-operation-id'], req.body?.operation_id) || crypto.randomUUID()
   const annotateChinese = Boolean(annotate_chinese) && req.learningLanguage === 'zh'
   const annotateEnglish = Boolean(annotate_english) && req.learningLanguage === 'en'
   if (!annotateChinese && !annotateEnglish && (!Array.isArray(messages) || messages.length === 0)) {
@@ -1594,7 +1647,7 @@ app.post('/api/agent/chat', async (req, res) => {
     const outputTokens = Math.ceil((fullReply || '').length / 4)
     const costRub = getCost('deepseek-v3.2', { input_tokens: inputTokens, output_tokens: outputTokens })
     if (costRub > 0) {
-      const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { input_tokens: inputTokens, output_tokens: outputTokens })
+      const deductResult = await deductBalance(supabase, userId, costRub, 'deepseek-v3.2', { input_tokens: inputTokens, output_tokens: outputTokens }, chatOperationId)
       if (!deductResult.ok) {
         console.error('[api/agent/chat] Deduct failed after stream:', deductResult.error)
       }
@@ -1668,7 +1721,7 @@ Rules:
             output_tokens: stepUsage.output_tokens || 0,
           })
           if (stepCost > 0) {
-            await deductBalance(supabase, userId, stepCost, 'deepseek-v3.2', { step_check: true })
+            await deductBalance(supabase, userId, stepCost, 'deepseek-v3.2', { step_check: true }, `${chatOperationId}:steps`)
           }
         }
         const raw = stepCompletion.choices?.[0]?.message?.content?.trim() || ''

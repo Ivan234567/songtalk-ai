@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { chargeKopecks, formatChargeRub, type TopupMethod } from '@/lib/topup-pricing';
+import { formatPracticeRemaining } from '@/lib/practice-time';
 import styles from './balance.module.css';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -52,11 +53,11 @@ const TOPUP_OPTIONS = [
   {
     amount: 300,
     name: 'Стартовый',
-    dialogue: '~1 час с агентом',
+    dialogue: '≈ 1 ч 30 мин практики',
     orLine: 'или до 400 озвучек',
     featured: false,
     perks: [
-      { title: 'Диалог с агентом', get: 'до ~1 часа', hint: 'сценарии, дебаты или свободный разговор', Icon: IconMic },
+      { title: 'Диалог с агентом', get: '≈ 1 ч 30 мин', hint: 'сценарии, дебаты или свободный разговор', Icon: IconMic },
       { title: 'Озвучка', get: 'до 400 озвучек', hint: 'слова и фразы в словаре', Icon: IconTts },
       { title: 'Один баланс', get: 'на все разделы', hint: 'подписки нет, сумма не сгорает', Icon: IconWallet },
     ],
@@ -64,11 +65,11 @@ const TOPUP_OPTIONS = [
   {
     amount: 500,
     name: 'Оптимальный',
-    dialogue: '~1,5 часа практики',
+    dialogue: '≈ 2 ч 30 мин практики',
     orLine: 'или до 700 озвучек',
     featured: true,
     perks: [
-      { title: 'Диалог с агентом', get: 'около 1,5 часа', hint: 'агент, словарь и караоке с одного баланса', Icon: IconMic },
+      { title: 'Диалог с агентом', get: '≈ 2 ч 30 мин', hint: 'агент, словарь и караоке с одного баланса', Icon: IconMic },
       { title: 'Озвучка', get: 'до 700 озвучек', hint: 'произношение слов и фраз', Icon: IconTts },
       { title: 'Зачисление', get: 'сразу в кабинете', hint: 'после оплаты баланс обновляется сам', Icon: IconWallet },
     ],
@@ -76,11 +77,11 @@ const TOPUP_OPTIONS = [
   {
     amount: 1000,
     name: 'Профессиональный',
-    dialogue: '~3,5 часа разговора',
+    dialogue: '≈ 5 ч практики',
     orLine: 'или до 1 400 озвучек',
     featured: false,
     perks: [
-      { title: 'Диалог с агентом', get: 'около 3,5 часов', hint: 'длинная практика без подписки', Icon: IconMic },
+      { title: 'Диалог с агентом', get: '≈ 5 ч', hint: 'длинная практика без подписки', Icon: IconMic },
       { title: 'Озвучка', get: 'до 1 400 озвучек', hint: 'или смесь диалога и озвучки', Icon: IconTts },
       { title: 'Зачисление', get: 'сразу на баланс', hint: 'отдельный файл или письмо не приходит', Icon: IconWallet },
     ],
@@ -567,7 +568,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
     <div className={styles.wrapper}>
       <header>
         <h2 className={styles.title}>Пополнение баланса</h2>
-        <p className={styles.subtitle}>Текущий баланс, журнал пополнений и статистика расходов</p>
+        <p className={styles.subtitle}>Ориентир оставшейся практики, пополнение и статистика расходов</p>
       </header>
 
       {error && (
@@ -593,16 +594,16 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
             <circle cx="12" cy="12" r="10" />
             <path d="M12 8v4M12 16h.01" />
           </svg>
-          <span>Баланс ниже {LOW_BALANCE_THRESHOLD} ₽. Пополните его ниже — дешевле через СБП.</span>
+          <span>Осталось меньше 15 минут практики. Пополните баланс ниже — дешевле через СБП.</span>
         </div>
       )}
 
       <section className={styles.balanceHero}>
         <div className={styles.balanceHeroHead}>
           <div>
-            <p className={styles.balanceLabel}>Текущий баланс</p>
+            <p className={styles.balanceLabel}>Осталось</p>
             <p className={`${styles.balanceValue} ${isLowBalance ? styles.balanceValueLow : ''}`}>
-              {balanceRub != null ? `${balanceRub.toFixed(2)} ₽` : '—'}
+              {balanceRub != null ? formatPracticeRemaining(balanceRub) : '—'}
             </p>
           </div>
           <button
@@ -628,14 +629,14 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
           <div className={styles.balanceProgressBlock}>
             {balanceRub != null && balanceRub < MIN_BALANCE_PORTFOLIO && (
               <div className={styles.progressRow}>
-                <span className={styles.progressLabel}>До минимума {MIN_BALANCE_PORTFOLIO} ₽</span>
+                <span className={styles.progressLabel}>Практика почти закончилась</span>
                 <div className={styles.progressTrack}>
                   <div
                     className={styles.progressFill}
                     style={{ width: `${Math.min(100, (balanceRub / MIN_BALANCE_PORTFOLIO) * 100)}%` }}
                   />
                 </div>
-                <span className={styles.progressValue}>{balanceRub.toFixed(0)} / {MIN_BALANCE_PORTFOLIO} ₽</span>
+                <span className={styles.progressValue}>{formatPracticeRemaining(balanceRub)}</span>
               </div>
             )}
             {balanceRub != null && balanceRub >= MIN_BALANCE_PORTFOLIO && requestCount > 0 && avgPerRequest > 0 && (
