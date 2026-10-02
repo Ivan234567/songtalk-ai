@@ -3866,10 +3866,11 @@ export function AgentTab() {
                     initialBriefingId={progressDeepLink?.id}
                     initialPlayMode={progressDeepLink?.playMode}
                     onSelectScenario={(s) => {
-                      setSelectedScenario(s);
+                      handleSelectScenario(s);
                       setScenarioModalOpen(false);
                       setHighlightedUserScenarioId(null);
                       setProgressDeepLink(null);
+                      progressTargetHandledRef.current = null;
                     }}
                     onClose={closeScenarioCatalog}
                   />

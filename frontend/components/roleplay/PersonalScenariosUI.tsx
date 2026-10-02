@@ -980,10 +980,10 @@ export function PersonalScenariosUI({
   };
 
   const handleStartFromBriefing = (scenarioWithSettings: RoleplayScenario) => {
-    if (briefingScenario) {
-      onSelectScenario(scenarioWithSettings);
-      onClose();
-    }
+    if (!briefingScenario) return;
+    // Только onSelectScenario: родитель закрывает модал. Не вызывать onClose() —
+    // там сброс в freestyle при selectedScenario ещё null (гонка setState).
+    onSelectScenario(scenarioWithSettings);
   };
 
   const handleArchive = async (id: string, archive: boolean) => {

@@ -1547,10 +1547,10 @@ function ScenarioModal({
   };
 
   const handleStartDialog = (scenarioWithSettings: RoleplayScenario) => {
-    if (briefingScenario) {
-      onSelect(scenarioWithSettings);
-      onClose();
-    }
+    if (!briefingScenario) return;
+    // Только onSelect: он уже закрывает модал. Не вызывать onClose() —
+    // там сброс в freestyle при selectedScenario ещё null (гонка setState).
+    onSelect(scenarioWithSettings);
   };
 
   const handleSaveToMine = async (scenario: RoleplayScenario) => {
