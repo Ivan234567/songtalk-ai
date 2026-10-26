@@ -24,6 +24,24 @@ import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
 import { registerYookassaRoutes } from './yookassa.js'
+import { registerVocabSrsDueRoute } from './vocab-srs-routes.js'
+import {
+  registerVocabDialogueRoutes,
+  assertChatPracticeRequest,
+  assertRoleplayPracticeRequest,
+  loadActiveChatPractice,
+  buildChatPracticeInstruction,
+  buildRoleplayPracticeInstruction,
+  replyContainsTarget,
+  fallbackPracticeReply,
+  loadChatPracticeHint,
+  saveDialogueHint,
+  buildChatPracticeHintInstruction,
+  buildRoleplayPracticeHintInstruction,
+  classifyPracticeHint,
+  DialogueRouteError,
+} from './vocab-dialogue-routes.js'
+import { createDialogueAssessmentHandler, latestUserText, recordChatPracticeExchange } from './vocab-dialogue-assessment.js'
 import {
   buildZhRoleplayFeedbackSystem,
   buildZhRoleplayFeedbackUserPrompt,
@@ -1577,6 +1595,50 @@ app.post('/api/agent/chat', async (req, res) => {
       ...baseMessages,
     ]
 
+  let practiceTargets = null
+  const requestedDialogueId = typeof req.body?.dialogue_session_id === 'string'
+    ? req.body.dialogue_session_id.trim()
+    : ''
+  try {
+    const practiceMode = req.body?.practice_mode === 'roleplay' ? 'roleplay' : 'chat'
+    const attachPractice = practiceMode === 'roleplay'
+      ? assertRoleplayPracticeRequest({
+        dialogueSessionId: requestedDialogueId,
+        stepCount: steps.length,
+        annotate: Boolean(annotateMessages),
+      })
+      : assertChatPracticeRequest({
+        dialogueSessionId: requestedDialogueId,
+        stepCount: steps.length,
+        annotate: Boolean(annotateMessages),
+      })
+    if (attachPractice) {
+      const practice = await loadActiveChatPractice({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        language: req.learningLanguage === 'zh' ? 'zh' : 'en',
+        dialogueSessionId: requestedDialogueId,
+        agentSessionId: req.body?.agent_session_id,
+        expectedMode: practiceMode,
+      })
+      practiceTargets = practice.targets
+      chatMessages.unshift({
+        role: 'system',
+        content: practiceMode === 'roleplay'
+          ? buildRoleplayPracticeInstruction(practiceTargets)
+          : buildChatPracticeInstruction(practiceTargets),
+      })
+    }
+  } catch (err) {
+    const status = err instanceof DialogueRouteError ? err.status : 500
+    console.error('[api/agent/chat] practice targets rejected')
+    return res.status(status).json({
+      error: err instanceof DialogueRouteError ? err.message : 'Failed to load practice targets',
+    })
+  }
+  const holdPracticeReply = Array.isArray(practiceTargets) && practiceTargets.length > 0
+
   try {
     console.log('[api/agent/chat] Starting chat request:', {
       model: AITUNNEL_MODEL,
@@ -1623,10 +1685,33 @@ app.post('/api/agent/chat', async (req, res) => {
             noteProduced()
             chunkCount++
             fullReply += delta
-            send({ type: 'chunk', delta })
+            if (!holdPracticeReply) send({ type: 'chunk', delta })
           }
         }
         if (timeoutId) clearTimeout(timeoutId)
+        if (holdPracticeReply && replyContainsTarget(fullReply, practiceTargets)) {
+          fullReply = fallbackPracticeReply(req.learningLanguage === 'zh' ? 'zh' : 'en', practiceTargets)
+        }
+        if (holdPracticeReply && fullReply) send({ type: 'chunk', delta: fullReply })
+        if (holdPracticeReply && fullReply.trim()) {
+          const practiceUserText = latestUserText(messages)
+          if (practiceUserText) {
+            try {
+              await recordChatPracticeExchange({
+                supabase,
+                safeSupabaseCall,
+                userId,
+                language: req.learningLanguage === 'zh' ? 'zh' : 'en',
+                dialogueSessionId: requestedDialogueId,
+                userText: practiceUserText,
+                assistantText: fullReply.trim(),
+              })
+            } catch {
+              console.error('[api/agent/chat] practice exchange was not stored')
+              send({ type: 'practice_store', ok: false })
+            }
+          }
+        }
         console.log('[api/agent/chat] Stream completed:', {
           chunkCount,
           duration: (Date.now() - startTime) + 'ms',
@@ -2449,6 +2534,27 @@ Rules:
     `\n\nAssistant's latest message:\n${agentMessage}\n\nSuggest the user's next reply.`
 
   try {
+    let practiceHintContext = null
+    const requestedDialogueId = typeof req.body?.dialogue_session_id === 'string'
+      ? req.body.dialogue_session_id.trim()
+      : ''
+    if (requestedDialogueId) {
+      if (hintMode !== 'chat' && hintMode !== 'roleplay') {
+        return res.status(409).json({ error: 'Practice hint belongs to free chat or roleplay only' })
+      }
+      practiceHintContext = await loadChatPracticeHint({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        language: req.learningLanguage === 'zh' ? 'zh' : 'en',
+        dialogueSessionId: requestedDialogueId,
+        agentSessionId: req.body?.agent_session_id,
+        expectedMode: hintMode,
+      })
+      if (practiceHintContext.existingHint) {
+        return res.json({ hint: practiceHintContext.existingHint })
+      }
+    }
     const zhHintSystem = req.learningLanguage === 'zh'
       ? buildReplyHintChatSystemZh({
         levelText,
@@ -2486,7 +2592,14 @@ Rules:
         ? chatUserContent
         : roleplayUserContent
     const hintMessages = [
-      { role: 'system', content: systemContent },
+      {
+        role: 'system',
+        content: practiceHintContext
+          ? `${systemContent}\n\n${hintMode === 'roleplay'
+            ? buildRoleplayPracticeHintInstruction(practiceHintContext.targets)
+            : buildChatPracticeHintInstruction(practiceHintContext.targets)}`
+          : systemContent,
+      },
       { role: 'user', content: userContent },
     ]
     const paidHint = await billableChatCreate(
@@ -2499,8 +2612,24 @@ Rules:
       ? { choices: [{ message: { content: paidHint.result?.text || '' } }] }
       : paidHint.outcome.completion
     const hint = (completion.choices?.[0]?.message?.content ?? '').trim()
+    if (practiceHintContext) {
+      const classified = classifyPracticeHint(hint, practiceHintContext.targets)
+      if (!classified.ok) return res.status(classified.status).json({ error: classified.error })
+      const saved = await saveDialogueHint({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        dialogueSessionId: practiceHintContext.dialogueSessionId,
+        turnIndex: practiceHintContext.turnIndex,
+        hintText: classified.hint,
+      })
+      return res.json({ hint: saved.hint })
+    }
     res.json({ hint: hint || '' })
   } catch (err) {
+    if (err instanceof DialogueRouteError) {
+      return res.status(err.status).json({ error: err.message })
+    }
     console.error('[api/agent/reply-hint] error:', err?.message)
     res.status(500).json({ error: err?.message || 'Reply hint failed' })
   }
@@ -3037,6 +3166,64 @@ registerZhVoiceTaskRoutes(app, {
   getCost,
   BALANCE_THRESHOLD_RUB,
 })
+
+registerVocabSrsDueRoute(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+})
+
+registerVocabDialogueRoutes(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+})
+
+app.post('/api/vocabulary/srs/dialogue/assess', asyncHandler(createDialogueAssessmentHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  judgeSenses: async ({ userId, items }) => {
+    const paid = await billableChatCreate(
+      userId,
+      crypto.randomUUID(),
+      {
+        messages: [
+          {
+            role: 'system',
+            content: 'You judge whether a learner used a target meaning. Return JSON only: {"items":[{"sense_id":"...","verdict":"produced|wrong_sense|mentioned"}]}. produced means the quote uses that meaning. wrong_sense means the word is used for a different meaning. mentioned means the meaning is not clear. Do not add words.',
+          },
+          { role: 'user', content: JSON.stringify({ items }) },
+        ],
+        max_tokens: 300,
+        temperature: 0,
+        metadata: { vocab_dialogue_assessment: true },
+      },
+    )
+    if (!paid.ok) {
+      const error = new Error(paid.error || 'Practice assessment did not confirm the meaning')
+      error.status = paid.status || 502
+      throw error
+    }
+    const raw = String(paid.result?.text || paid.outcome?.completion?.choices?.[0]?.message?.content || '').trim()
+    const jsonStart = raw.indexOf('{')
+    const jsonEnd = raw.lastIndexOf('}')
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw)
+    } catch {
+      const error = new Error('Practice assessment did not confirm the meaning')
+      error.status = 502
+      throw error
+    }
+    return Array.isArray(parsed?.items) ? parsed.items : []
+  },
+})))
 
 // Speaking assessment — AI evaluates user speech by rubric (fluency, vocabulary, grammar, pronunciation, completeness, dialogue)
 app.post('/api/agent/assess-speaking', async (req, res) => {

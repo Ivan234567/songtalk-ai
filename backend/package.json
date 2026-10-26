@@ -7,7 +7,7 @@
     "dev": "node --watch src/index.js",
     "build": "echo \"Backend build complete\"",
     "start": "node src/index.js",
-    "test": "node --test src/balance-rates.test.js src/reservation-ledger.test.js"
+    "test": "node --test src/balance-rates.test.js src/reservation-ledger.test.js src/srs.test.js src/vocab-cycle-migration.test.js src/vocab-senses.test.js src/vocab-sense-sync.test.js src/vocab-srs-routes.test.js src/vocab-srs-rpc-migration.test.js src/vocab-dialogue-routes.test.js src/vocab-dialogue-assessment.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.38.5",

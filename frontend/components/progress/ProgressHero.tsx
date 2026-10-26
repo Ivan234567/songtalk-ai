@@ -95,7 +95,7 @@ export function ProgressHero({
             <button
               type="button"
               className={styles.btn}
-              onClick={() => router.push('/dashboard?tab=dictionary')}
+              onClick={() => router.push('/dashboard?tab=dictionary&review=1')}
             >
               Повторить слова
             </button>

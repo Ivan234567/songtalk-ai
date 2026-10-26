@@ -20,6 +20,7 @@ import {
   type ZhVoiceTaskEvaluateResult,
 } from '@/lib/zh-voice-tasks';
 import { RoleplayScenarioProgress } from '@/components/roleplay/RoleplayScenarioProgress';
+import { ChatPracticeWords, PracticeSpeechReport, type ChatPracticeSense } from '@/components/agent/ChatPracticeWords';
 import { ZhAfterSessionReview } from '@/components/roleplay/ZhAfterSessionReview';
 import { EnAfterSessionReview } from '@/components/roleplay/EnAfterSessionReview';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
@@ -336,6 +337,18 @@ export function AgentTab() {
   const [zhListenReview, setZhListenReview] = useState<ZhListenReview | null>(null);
   const [zhRevealedMeta, setZhRevealedMeta] = useState<Record<number, boolean>>({});
   const [agentMode, setAgentMode] = useState<'chat' | 'roleplay' | 'debate'>('chat');
+  const [chatPracticeSenses, setChatPracticeSenses] = useState<ChatPracticeSense[]>([]);
+  const [chatPracticeLocked, setChatPracticeLocked] = useState(false);
+  const [chatDialogueSessionId, setChatDialogueSessionId] = useState<string | null>(null);
+  const [chatPracticeAgentSessionId, setChatPracticeAgentSessionId] = useState<string | null>(null);
+  const [chatPracticeRequestId, setChatPracticeRequestId] = useState<string | null>(null);
+  const [chatPracticeRevealed, setChatPracticeRevealed] = useState<Record<string, boolean>>({});
+  const [chatPracticeAssessing, setChatPracticeAssessing] = useState(false);
+  const [chatPracticeAssessError, setChatPracticeAssessError] = useState<string | null>(null);
+  const [chatPracticeStoreWarning, setChatPracticeStoreWarning] = useState<string | null>(null);
+  const [chatPracticeResults, setChatPracticeResults] = useState<Array<{ senseId: string; verdict: string; intervalDays?: number | null }> | null>(null);
+  const chatPracticeAssessRequestRef = useRef<string | null>(null);
+  const roleplayPracticeScenarioRef = useRef<string>('');
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
   const [scenarioView, setScenarioView] = useState<'catalog' | 'create' | 'my'>('catalog');
   const [exitDialogueConfirmOpen, setExitDialogueConfirmOpen] = useState(false);
@@ -699,6 +712,60 @@ export function AgentTab() {
     [debateSettings]
   );
   const messagesRef = useRef<Message[]>([]);
+  const sessionsRef = useRef<Session[]>([]);
+  const chatPracticeSensesRef = useRef<ChatPracticeSense[]>([]);
+  const chatDialogueSessionIdRef = useRef<string | null>(null);
+  const chatPracticeAgentSessionIdRef = useRef<string | null>(null);
+  const chatPracticeRequestIdRef = useRef<string | null>(null);
+  const chatPracticeLevelRef = useRef('B1');
+  const practiceSensesLinkRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const raw = searchParams.get('senses');
+    if (!raw || !token || tokenLoading || practiceSensesLinkRef.current === raw) return;
+    practiceSensesLinkRef.current = raw;
+    const ids = [...new Set(raw.split(',').map((part) => part.trim()))]
+      .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))
+      .slice(0, 5);
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('senses');
+    next.set('tab', 'agent');
+    router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
+    if (!ids.length || chatPracticeLocked) return;
+    void (async () => {
+      try {
+        const resp = await fetch(`${getApiUrl()}/api/vocabulary/srs/senses`, {
+          headers: buildAgentAuthHeaders(token, learningLanguage),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !Array.isArray(data?.items)) throw new Error('senses');
+        const byId = new Map(data.items.flatMap((item: { sense_id?: unknown; headword?: unknown; gloss_ru?: unknown }) => {
+          const senseId = typeof item?.sense_id === 'string' ? item.sense_id : '';
+          const headword = typeof item?.headword === 'string' ? item.headword.trim() : '';
+          const glossRu = typeof item?.gloss_ru === 'string' ? item.gloss_ru.trim() : '';
+          return senseId && headword && glossRu ? [[senseId, { senseId, headword, glossRu }]] : [];
+        }));
+        const selected = ids.flatMap((id) => {
+          const sense = byId.get(id);
+          return sense ? [sense] : [];
+        });
+        if (!selected.length) {
+          setError('Не удалось взять слова в практику');
+          return;
+        }
+        const requestId = crypto.randomUUID();
+        chatPracticeSensesRef.current = selected;
+        chatPracticeRequestIdRef.current = requestId;
+        setChatPracticeSenses(selected);
+        setChatPracticeRequestId(requestId);
+        setChatPracticeLocked(false);
+        setChatPracticeRevealed({});
+        setAgentMode('chat');
+      } catch {
+        setError('Не удалось взять слова в практику');
+      }
+    })();
+  }, [searchParams, token, tokenLoading, chatPracticeLocked, learningLanguage, pathname, router]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -777,6 +844,12 @@ export function AgentTab() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+  sessionsRef.current = sessions;
+  chatPracticeSensesRef.current = chatPracticeSenses;
+  chatDialogueSessionIdRef.current = chatDialogueSessionId;
+  chatPracticeAgentSessionIdRef.current = chatPracticeAgentSessionId;
+  chatPracticeRequestIdRef.current = chatPracticeRequestId;
+  chatPracticeLevelRef.current = learningLanguage === 'zh' ? `HSK${chineseHskLevel}` : englishCefrLevel;
   useEffect(() => {
     selectedVoiceTaskRef.current = selectedVoiceTask;
   }, [selectedVoiceTask]);
@@ -1017,7 +1090,72 @@ export function AgentTab() {
     }
   }, [token, ttsVoice, learningLanguage, chineseSpeechSpeed]);
 
+  const clearChatPractice = useCallback(() => {
+    setChatPracticeSenses([]);
+    setChatPracticeLocked(false);
+    setChatDialogueSessionId(null);
+    setChatPracticeAgentSessionId(null);
+    setChatPracticeRequestId(null);
+    setChatPracticeRevealed({});
+    setChatPracticeAssessing(false);
+    setChatPracticeAssessError(null);
+    setChatPracticeStoreWarning(null);
+    setChatPracticeResults(null);
+    chatPracticeAssessRequestRef.current = null;
+    chatPracticeSensesRef.current = [];
+    chatDialogueSessionIdRef.current = null;
+    chatPracticeAgentSessionIdRef.current = null;
+    chatPracticeRequestIdRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!chatPracticeAgentSessionId) return;
+    if (currentSessionId && currentSessionId !== chatPracticeAgentSessionId) clearChatPractice();
+  }, [currentSessionId, chatPracticeAgentSessionId, clearChatPractice]);
+
+  useEffect(() => {
+    if (agentMode !== 'roleplay') return;
+    const scenarioId = selectedScenario?.id || '';
+    if (roleplayPracticeScenarioRef.current === scenarioId) return;
+    const hadPractice = chatPracticeSensesRef.current.length > 0 || Boolean(chatDialogueSessionIdRef.current);
+    roleplayPracticeScenarioRef.current = scenarioId;
+    if (hadPractice) clearChatPractice();
+  }, [agentMode, selectedScenario?.id, clearChatPractice]);
+
+  const assessChatPractice = useCallback(async () => {
+    if (!token || !chatDialogueSessionId || chatPracticeAssessing) return;
+    const requestId = chatPracticeAssessRequestRef.current || crypto.randomUUID();
+    chatPracticeAssessRequestRef.current = requestId;
+    setChatPracticeAssessing(true);
+    setChatPracticeAssessError(null);
+    try {
+      const resp = await fetch(`${getApiUrl()}/api/vocabulary/srs/dialogue/assess`, {
+        method: 'POST',
+        headers: buildAgentJsonHeaders(token, learningLanguage),
+        body: JSON.stringify(withLearningLanguageBody({
+          dialogue_session_id: chatDialogueSessionId,
+          request_id: requestId,
+        }, learningLanguage)),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !Array.isArray(data?.items)) {
+        setChatPracticeAssessError(typeof data?.error === 'string' ? data.error : 'Не удалось разобрать слова');
+        return;
+      }
+      setChatPracticeResults(data.items.flatMap((item: { sense_id?: string; verdict?: string; interval_days?: number | null }) => {
+        const senseId = typeof item?.sense_id === 'string' ? item.sense_id : '';
+        const verdict = typeof item?.verdict === 'string' ? item.verdict : '';
+        return senseId && verdict ? [{ senseId, verdict, intervalDays: item.interval_days }] : [];
+      }));
+    } catch {
+      setChatPracticeAssessError('Не удалось разобрать слова');
+    } finally {
+      setChatPracticeAssessing(false);
+    }
+  }, [token, chatDialogueSessionId, chatPracticeAssessing, learningLanguage]);
+
   const beginVoiceTask = useCallback((task: ZhVoiceTask) => {
+    clearChatPractice();
     setAgentMode('chat');
     setSelectedScenario(null);
     setGoalReached(false);
@@ -1037,7 +1175,7 @@ export function AgentTab() {
       setChineseHskLevel(task.hsk_level as ChineseHskLevel);
     }
     void playVoiceTaskStimulus(task);
-  }, [playVoiceTaskStimulus, resetVoiceTaskPlay]);
+  }, [playVoiceTaskStimulus, resetVoiceTaskPlay, clearChatPractice]);
 
   const finishVoiceTaskTake = useCallback(async (userText: string, durationMs: number) => {
     const task = selectedVoiceTaskRef.current;
@@ -1189,6 +1327,7 @@ export function AgentTab() {
 
       setState('thinking');
       setError(null);
+      if (chatPracticeSensesRef.current.length > 0) setChatPracticeStoreWarning(null);
       const history: Message[] = [...messagesRef.current, { role: 'user', content: userText }];
       setMessages((prev) => [...prev, { role: 'user', content: userText }]);
       if (agentMode === 'roleplay' && learningLanguage === 'zh' && selectedScenario?.scenarioVocabulary?.length) {
@@ -1200,6 +1339,124 @@ export function AgentTab() {
       let fullReply = '';
 
       try {
+        let persistedSessionId = currentSessionId;
+        let practiceDialogueId: string | null = null;
+        const practiceRoleplay = agentMode === 'roleplay' && Boolean(selectedScenario);
+        if ((agentMode === 'chat' || practiceRoleplay) && !selectedVoiceTaskRef.current && chatPracticeSensesRef.current.length > 0) {
+          const existingDialogueId = chatDialogueSessionIdRef.current;
+          const existingAgentId = chatPracticeAgentSessionIdRef.current;
+          if (existingDialogueId && existingAgentId) {
+            if (persistedSessionId && persistedSessionId !== existingAgentId) {
+              setMessages((prev) => prev.slice(0, -1));
+              setError('Эти слова относятся к другому разговору');
+              setState('idle');
+              return;
+            }
+            persistedSessionId = existingAgentId;
+            practiceDialogueId = existingDialogueId;
+          } else if (!userId) {
+            setMessages((prev) => prev.slice(0, -1));
+            setError('Не удалось закрепить слова за этим разговором');
+            setState('idle');
+            return;
+          } else {
+            let agentSessionId = persistedSessionId;
+            let createdAgent = false;
+            const known = sessionsRef.current.find((session) => session.id === agentSessionId);
+            const scenarioMismatch = practiceRoleplay
+              ? known?.scenario_id !== selectedScenario?.id
+              : Boolean(known?.scenario_id);
+            if (!agentSessionId || scenarioMismatch) {
+              const firstUser = history.find((message) => message.role === 'user');
+              const title = firstUser ? trimTitle(firstUser.content) : 'Разговор';
+              const inserted = await supabase
+                .from('agent_sessions')
+                .insert({
+                  user_id: userId,
+                  title: practiceRoleplay && selectedScenario?.title ? selectedScenario.title : title,
+                  messages: history,
+                  language: learningLanguage,
+                  ...(practiceRoleplay && selectedScenario
+                    ? { scenario_id: selectedScenario.id, scenario_title: selectedScenario.title }
+                    : {}),
+                })
+                .select('id, title, messages, created_at')
+                .single();
+              if (inserted.error || !inserted.data?.id) {
+                setMessages((prev) => prev.slice(0, -1));
+                setError('Не удалось закрепить слова за этим разговором');
+                setState('idle');
+                return;
+              }
+              agentSessionId = inserted.data.id;
+              createdAgent = true;
+            }
+            const requestId = chatPracticeRequestIdRef.current || crypto.randomUUID();
+            chatPracticeRequestIdRef.current = requestId;
+            setChatPracticeRequestId(requestId);
+            let dialogueData: { dialogue_session_id?: string; agent_session_id?: string; targets?: Array<{ sense_id?: string; position?: number; headword?: string; gloss_ru?: string }> } = {};
+            try {
+              const dialogueResp = await fetch(`${getApiUrl()}/api/vocabulary/srs/dialogue`, {
+                method: 'POST',
+                headers: buildAgentJsonHeaders(token, learningLanguage),
+                body: JSON.stringify(withLearningLanguageBody({
+                  agent_session_id: agentSessionId,
+                  sense_ids: chatPracticeSensesRef.current.map((sense) => sense.senseId),
+                  request_id: requestId,
+                  level_snapshot: chatPracticeLevelRef.current,
+                  mode: practiceRoleplay ? 'roleplay' : 'chat',
+                }, learningLanguage)),
+              });
+              dialogueData = await dialogueResp.json().catch(() => ({}));
+              if (!dialogueResp.ok) dialogueData = {};
+            } catch {
+              dialogueData = {};
+            }
+            const serverSenses = Array.isArray(dialogueData.targets)
+              ? dialogueData.targets
+                .slice()
+                .sort((a, b) => (a.position || 0) - (b.position || 0))
+                .flatMap((target) => {
+                  const senseId = typeof target.sense_id === 'string' ? target.sense_id : '';
+                  const headword = typeof target.headword === 'string' ? target.headword.trim() : '';
+                  const glossRu = typeof target.gloss_ru === 'string' ? target.gloss_ru.trim() : '';
+                  return senseId && headword && glossRu ? [{ senseId, headword, glossRu }] : [];
+                })
+              : [];
+            if (!dialogueData.dialogue_session_id || serverSenses.length === 0) {
+              if (createdAgent && agentSessionId) {
+                await supabase.from('agent_sessions').delete().eq('id', agentSessionId).eq('user_id', userId);
+              }
+              setMessages((prev) => prev.slice(0, -1));
+              setError('Не удалось закрепить слова за этим разговором');
+              setState('idle');
+              return;
+            }
+            persistedSessionId = dialogueData.agent_session_id || agentSessionId;
+            practiceDialogueId = dialogueData.dialogue_session_id;
+            chatDialogueSessionIdRef.current = practiceDialogueId;
+            chatPracticeAgentSessionIdRef.current = persistedSessionId;
+            chatPracticeSensesRef.current = serverSenses;
+            setChatPracticeSenses(serverSenses);
+            setChatDialogueSessionId(practiceDialogueId);
+            setChatPracticeAgentSessionId(persistedSessionId);
+            setChatPracticeLocked(true);
+            setCurrentSessionId(persistedSessionId);
+            if (createdAgent && persistedSessionId) {
+              const firstUser = history.find((message) => message.role === 'user');
+              const title = firstUser ? trimTitle(firstUser.content) : 'Разговор';
+              setSessions((prev) => [{
+                id: persistedSessionId,
+                title: practiceRoleplay && selectedScenario?.title ? selectedScenario.title : title,
+                messages: history,
+                createdAt: Date.now(),
+                ...(practiceRoleplay && selectedScenario
+                  ? { scenario_id: selectedScenario.id, scenario_title: selectedScenario.title }
+                  : {}),
+              }, ...prev.filter((session) => session.id !== persistedSessionId)].slice(0, MAX_SESSIONS));
+            }
+          }
+        }
         const resp = await fetch(`${getApiUrl()}/api/agent/chat`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
@@ -1266,6 +1523,13 @@ export function AgentTab() {
               agentMode === 'roleplay' && selectedScenario?.scenarioVocabulary?.length
                 ? selectedScenario.scenarioVocabulary
                 : undefined,
+            ...(practiceDialogueId
+              ? {
+                dialogue_session_id: practiceDialogueId,
+                agent_session_id: persistedSessionId,
+                ...(agentMode === 'roleplay' ? { practice_mode: 'roleplay' } : {}),
+              }
+              : {}),
           }, learningLanguage)),
         });
 
@@ -1305,6 +1569,8 @@ export function AgentTab() {
                   lastCompletedStepIds = data.completedStepIds;
                   setDebateCompletedStepIds(data.completedStepIds);
                 }
+              } else if (data.type === 'practice_store' && data.ok === false) {
+                setChatPracticeStoreWarning('Последняя реплика не попала в разбор. Скажите её ещё раз.');
               } else if (data.type === 'done') {
                 break;
               } else if (data.type === 'error') {
@@ -1377,15 +1643,15 @@ export function AgentTab() {
               agentMode === 'roleplay' && selectedScenario?.steps?.length
                 ? { completed_step_ids: lastCompletedStepIds }
                 : {};
-            if (currentSessionId) {
+            if (persistedSessionId) {
               await supabase
                 .from('agent_sessions')
                 .update({ title, messages: newMessages, ...scenarioPayload, ...stepsPayload })
-                .eq('id', currentSessionId)
+                .eq('id', persistedSessionId)
                 .eq('user_id', userId);
               setSessions((prev) =>
                 prev.map((s) =>
-                  s.id === currentSessionId
+                  s.id === persistedSessionId
                     ? { ...s, title, messages: newMessages, ...scenarioPayload, ...stepsPayload }
                     : s
                 )
@@ -1758,6 +2024,7 @@ export function AgentTab() {
     (mode: 'chat' | 'roleplay' | 'debate') => {
       if (mode === 'debate' && learningLanguage === 'zh') return;
       setAgentMode(mode);
+      if (mode === 'debate' || chatPracticeLocked) clearChatPractice();
       setSelectedVoiceTask(null);
       resetVoiceTaskPlay();
       if (mode === 'chat') {
@@ -1821,7 +2088,7 @@ export function AgentTab() {
         // Модал открывается через dropdown, не автоматически
       }
     },
-    [debateStarted, learningLanguage, resetVoiceTaskPlay]
+    [debateStarted, learningLanguage, resetVoiceTaskPlay, clearChatPractice, chatPracticeLocked]
   );
 
   useEffect(() => {
@@ -2367,6 +2634,7 @@ export function AgentTab() {
 
   /** Сброс (выход) из диалога досрочно — возврат в свободный диалог */
   const handleExitDialogue = useCallback(() => {
+    clearChatPractice();
     setExitDialogueConfirmOpen(false);
     cancelRequestedRef.current = true;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -2401,7 +2669,7 @@ export function AgentTab() {
     setProgressDeepLink(null);
     progressTargetHandledRef.current = null;
     handleModeChange('chat');
-  }, [handleModeChange]);
+  }, [handleModeChange, clearChatPractice]);
 
   useEffect(() => {
     if (!exitDialogueConfirmOpen) return;
@@ -2882,6 +3150,12 @@ export function AgentTab() {
             ? missingMustSay
             : undefined,
           ...stepsPayload,
+          ...(chatDialogueSessionIdRef.current && chatPracticeAgentSessionIdRef.current
+            ? {
+              dialogue_session_id: chatDialogueSessionIdRef.current,
+              agent_session_id: chatPracticeAgentSessionIdRef.current,
+            }
+            : {}),
         };
       } else if (agentMode === 'debate') {
         if (!debateStarted || !debateTopic || !debateUserPosition || !debateAIPosition) return;
@@ -2915,6 +3189,12 @@ export function AgentTab() {
           hint_mode: freestyleHintMode,
           chinese_settings: learningLanguage === 'zh' ? chineseSettingsPayload : undefined,
           english_settings: learningLanguage !== 'zh' ? englishSettingsPayload : undefined,
+          ...(chatDialogueSessionIdRef.current && chatPracticeAgentSessionIdRef.current
+            ? {
+              dialogue_session_id: chatDialogueSessionIdRef.current,
+              agent_session_id: chatPracticeAgentSessionIdRef.current,
+            }
+            : {}),
         };
       } else {
         return;
@@ -3662,6 +3942,15 @@ export function AgentTab() {
                   </div>
                 );
               })}
+              <PracticeSpeechReport
+                senses={chatPracticeSenses}
+                results={chatPracticeResults}
+                assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
+                assessing={chatPracticeAssessing}
+                assessError={chatPracticeAssessError}
+                storeWarning={chatPracticeStoreWarning}
+                onAssess={() => { void assessChatPractice(); }}
+              />
             </div>
           )}
         </div>
@@ -3958,6 +4247,31 @@ export function AgentTab() {
                     </button>
                   </div>
                 </div>
+              )}
+              {(agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario)) && !selectedVoiceTask && token && (
+                <ChatPracticeWords
+                  apiUrl={getApiUrl()}
+                  token={token}
+                  learningLanguage={learningLanguage}
+                  senses={chatPracticeSenses}
+                  locked={chatPracticeLocked}
+                  revealed={chatPracticeRevealed}
+                  onConfirm={(next) => {
+                    setChatPracticeSenses(next);
+                    setChatPracticeRequestId(crypto.randomUUID());
+                    setChatPracticeRevealed({});
+                  }}
+                  onClear={clearChatPractice}
+                  onToggleReveal={(senseId) => {
+                    setChatPracticeRevealed((prev) => ({ ...prev, [senseId]: !prev[senseId] }));
+                  }}
+                  assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
+                  assessing={chatPracticeAssessing}
+                  assessError={chatPracticeAssessError}
+                  storeWarning={chatPracticeStoreWarning}
+                  results={chatPracticeResults}
+                  onAssess={() => { void assessChatPractice(); }}
+                />
               )}
               {/* Настройки обучения для английского — единая панель во всех режимах */}
               {learningLanguage !== 'zh' && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || (agentMode === 'debate' && debateStarted)) && (
@@ -5367,6 +5681,17 @@ export function AgentTab() {
               <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
                 Не удалось получить короткий фидбек — можно попробовать оценку речи.
               </p>
+            )}
+            {chatPracticeLocked && chatPracticeSenses.length > 0 && (
+              <PracticeSpeechReport
+                senses={chatPracticeSenses}
+                results={chatPracticeResults}
+                assessable={messages.some((message) => message.role === 'user')}
+                assessing={chatPracticeAssessing}
+                assessError={chatPracticeAssessError}
+                storeWarning={chatPracticeStoreWarning}
+                onAssess={() => { void assessChatPractice(); }}
+              />
             )}
             {learningLanguage === 'zh' && (
               <ZhAfterSessionReview

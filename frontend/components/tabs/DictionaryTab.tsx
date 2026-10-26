@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
@@ -202,12 +203,14 @@ const ChevronUpIcon = () => (
 );
 
 export const DictionaryTab: React.FC = () => {
+  const router = useRouter();
   const { learningLanguage, isLanguageReady } = useLearningLanguage();
   const { ttsVoice } = useTtsVoice();
   const isChinese = learningLanguage === 'zh';
   const levelOptions = useMemo(() => getLevelOptions(learningLanguage), [learningLanguage]);
 
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [dueCount, setDueCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -383,6 +386,25 @@ export const DictionaryTab: React.FC = () => {
       audioCacheRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${getApiUrl()}/api/vocabulary/srs/due`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!cancelled && resp.ok && Array.isArray(data?.items)) setDueCount(data.items.length);
+      } catch {
+        if (!cancelled) setDueCount(0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   // Measure trigger for category portal dropdown position
   useLayoutEffect(() => {
@@ -1633,6 +1655,15 @@ export const DictionaryTab: React.FC = () => {
               alignItems: 'center',
             }}
           >
+            {dueCount > 0 && (
+            <button
+              type="button"
+              className="zh-add-open-btn"
+              onClick={() => router.push('/dashboard?tab=dictionary&review=1')}
+            >
+              Повторить {dueCount}
+            </button>
+            )}
             {isChinese && (
             <button
               type="button"

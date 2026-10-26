@@ -8,6 +8,7 @@ import { DashboardTab } from '@/components/tabs/DashboardTab';
 import layoutStyles from './dashboard.module.css';
 import { KaraokeTab } from '@/components/tabs/KaraokeTab';
 import { DictionaryTab } from '@/components/tabs/DictionaryTab';
+import { RecognitionReview } from '@/components/dictionary/RecognitionReview';
 import { AgentTab } from '@/components/tabs/AgentTab';
 import { ProgressTab } from '@/components/tabs/ProgressTab';
 import { BalanceTab } from '@/components/tabs/BalanceTab';
@@ -41,12 +42,15 @@ function DashboardPageContent() {
   const handleTabChange = (nextTab: TabKey) => {
     setActiveTab(nextTab);
     const currentTab = searchParams.get('tab');
-    if (currentTab === nextTab) return;
+    const leavingReview = nextTab === 'dictionary' && searchParams.get('review') === '1';
+    if (currentTab === nextTab && !leavingReview) return;
     const next = new URLSearchParams(searchParams.toString());
     next.set('tab', nextTab);
     if (nextTab !== 'balance') {
       next.delete('balance_notice');
     }
+    next.delete('review');
+    next.delete('senses');
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   };
 
@@ -127,7 +131,7 @@ function DashboardPageContent() {
         if (learningLanguage === 'zh') return <DashboardTab />;
         return <KaraokeTab />;
       case 'dictionary':
-        return <DictionaryTab />;
+        return searchParams.get('review') === '1' ? <RecognitionReview /> : <DictionaryTab />;
       case 'agent':
         return <AgentTab />;
       case 'progress':
