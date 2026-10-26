@@ -79,6 +79,15 @@ export const DashboardTab: React.FC = () => {
     router.replace(`${base}?${next.toString()}`, { scroll: false });
   };
 
+  const openListen = () => {
+    const base = pathname || '/';
+    const next = new URLSearchParams(searchParams.toString());
+    next.set('tab', 'dictionary');
+    next.set('review', '1');
+    next.delete('senses');
+    router.replace(`${base}?${next.toString()}`, { scroll: false });
+  };
+
   const weeklyGoalProgress = Math.min(100, Math.round((metrics.weekMinutes / WEEKLY_GOAL_MINUTES) * 100));
   const weekMinutesLeft = Math.max(0, WEEKLY_GOAL_MINUTES - metrics.weekMinutes);
   const conversationShare = metrics.conversationMinutes > 0
@@ -216,6 +225,28 @@ export const DashboardTab: React.FC = () => {
               Открыть детальный прогресс
             </button>
           </div>
+        </div>
+      </section>
+
+      <section className={styles.wordsSection} aria-label="Как учить слова">
+        <h2 className={styles.wordsLead}>Сначала послушай. Потом скажи сам.</h2>
+        <div className={styles.wordsGrid}>
+          <article className={`${styles.card} ${styles.wordsStep}`}>
+            <p className={styles.wordsStepMark}>Шаг 1</p>
+            <h3 className={styles.wordsStepTitle}>Послушай</h3>
+            <p className={styles.wordsStepText}>Услышь слово и реши, знаешь ли ты его.</p>
+            <button type="button" className={styles.wordsStepButton} onClick={openListen}>
+              Послушать слова
+            </button>
+          </article>
+          <article className={`${styles.card} ${styles.wordsStep}`}>
+            <p className={styles.wordsStepMark}>Шаг 2</p>
+            <h3 className={styles.wordsStepTitle}>Скажи сам</h3>
+            <p className={styles.wordsStepText}>Назови слова своим голосом в разговоре.</p>
+            <button type="button" className={styles.wordsStepButton} onClick={() => goToTab('agent')}>
+              Сказать слова
+            </button>
+          </article>
         </div>
       </section>
 

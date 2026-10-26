@@ -1570,7 +1570,7 @@ export function AgentTab() {
                   setDebateCompletedStepIds(data.completedStepIds);
                 }
               } else if (data.type === 'practice_store' && data.ok === false) {
-                setChatPracticeStoreWarning('Последняя реплика не попала в разбор. Скажите её ещё раз.');
+                setChatPracticeStoreWarning('Эту фразу не получилось запомнить. Скажи её ещё раз.');
               } else if (data.type === 'done') {
                 break;
               } else if (data.type === 'error') {

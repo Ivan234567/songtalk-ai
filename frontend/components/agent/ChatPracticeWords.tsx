@@ -13,12 +13,12 @@ export type ChatPracticeSense = {
 const PRACTICE_LIMIT = 5;
 
 const VERDICT_LABELS: Record<string, string> = {
-  produced: 'Сказано самостоятельно',
-  wrong_sense: 'Смысл не тот',
-  echoed: 'Повторено за собеседником',
-  hinted: 'После подсказки',
-  mentioned: 'Смысл не подтверждён',
-  unused: 'Не сказано',
+  produced: 'Ты сказал сам',
+  wrong_sense: 'Смысл другой',
+  echoed: 'Ты повторил за собеседником',
+  hinted: 'Сказал после подсказки',
+  mentioned: 'Неясно, то ли слово',
+  unused: 'Ты это не сказал',
 };
 
 export type PracticeVerdict = { senseId: string; verdict: string; intervalDays?: number | null };
@@ -72,7 +72,7 @@ export function PracticeSpeechReport({
       })}
       {showButton && (
         <button type="button" className="agent-toolbar-btn" style={{ height: 32 }} disabled={assessing} onClick={onAssess}>
-          {assessing ? 'Разбираем…' : 'Разобрать слова'}
+          {assessing ? 'Слушаю…' : 'Проверить, сказал ли я сам'}
         </button>
       )}
       {assessError && <p style={{ margin: 0, fontSize: '0.75rem' }}>{assessError}</p>}
@@ -180,16 +180,16 @@ export function ChatPracticeWords({
           boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         }}
       >
-        <div style={{ fontSize: '0.8125rem', fontWeight: 700 }}>Слова этого разговора</div>
-        <p style={{ margin: '0.35rem 0 0', fontSize: '0.75rem', lineHeight: 1.4, opacity: 0.7 }}>
+        <div style={{ fontSize: '1rem', fontWeight: 700 }}>Скажи сам</div>
+        <p style={{ margin: '0.35rem 0 0', fontSize: '0.85rem', lineHeight: 1.4, opacity: 0.85 }}>
           {locked
-            ? 'Состав этого разговора зафиксирован. Пока это только цель разговора.'
+            ? 'Назови эти слова своим голосом.'
             : senses.length > 0
-              ? 'Можно изменить до первой реплики.'
-              : 'Разговор можно начать и без слов.'}
+              ? 'Назови эти слова сам. Нажми на слово, если хочешь увидеть перевод.'
+              : 'Выбери слова и назови их своим голосом.'}
         </p>
         {senses.length === 0 ? (
-          <button type="button" className="agent-toolbar-btn" style={{ marginTop: 10, height: 32 }} onClick={() => setOpen(true)}>
+          <button type="button" className="agent-toolbar-btn" style={{ marginTop: 10, height: 36 }} onClick={() => setOpen(true)}>
             Выбрать слова
           </button>
         ) : (
@@ -227,10 +227,10 @@ export function ChatPracticeWords({
             {!locked && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" className="agent-toolbar-btn" style={{ height: 32 }} onClick={() => setOpen(true)}>
-                  Изменить
+                  Другие слова
                 </button>
                 <button type="button" className="agent-toolbar-btn" style={{ height: 32 }} onClick={onClear}>
-                  Убрать тренировку
+                  Убрать слова
                 </button>
               </div>
             )}
@@ -263,7 +263,8 @@ export function ChatPracticeWords({
               padding: '1rem',
             }}
           >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Выбрать слова</div>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Какие слова скажешь?</div>
+            <p style={{ margin: '0 0 8px', fontSize: '0.85rem', opacity: 0.8 }}>Можно выбрать до пяти. Потом назови их сам.</p>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -282,7 +283,7 @@ export function ChatPracticeWords({
             {catalogState === 'loading' && <p style={{ margin: 0, fontSize: '0.8125rem' }}>Собираем слова</p>}
             {catalogState === 'error' && <p style={{ margin: 0, fontSize: '0.8125rem' }}>Не удалось открыть словарь</p>}
             {catalogState === 'idle' && visible.length === 0 && (
-              <p style={{ margin: 0, fontSize: '0.8125rem' }}>В словаре пока нет значений с переводом</p>
+              <p style={{ margin: 0, fontSize: '0.8125rem' }}>В словаре пока нет слов с переводом</p>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {visible.map((item) => {
@@ -315,7 +316,7 @@ export function ChatPracticeWords({
                   setOpen(false);
                 }}
               >
-                Оставить {draft.length} из {PRACTICE_LIMIT}
+                Буду их говорить
               </button>
               <button type="button" className="agent-toolbar-btn" style={{ height: 32 }} onClick={() => setOpen(false)}>
                 Закрыть

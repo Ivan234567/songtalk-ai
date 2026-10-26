@@ -382,6 +382,75 @@
   transform: translateY(-1px);
 }
 
+.wordsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wordsLead {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.wordsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.wordsStep {
+  z-index: 1;
+  padding: 1.2rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.wordsStepMark {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.wordsStepTitle {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.wordsStepText {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.wordsStepButton {
+  margin-top: 0.7rem;
+  border: 1px solid rgba(157, 170, 255, 0.55);
+  background: rgba(157, 170, 255, 0.18);
+  color: #dbe4ff;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.wordsStepButton:hover {
+  background: rgba(157, 170, 255, 0.28);
+}
+
 .metricsSection {
   display: flex;
   flex-direction: column;
@@ -726,7 +795,8 @@
   }
 
   .kpiGrid,
-  .quickAccessGrid {
+  .quickAccessGrid,
+  .wordsGrid {
     grid-template-columns: 1fr;
   }
 

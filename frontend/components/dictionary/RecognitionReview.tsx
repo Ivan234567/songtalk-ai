@@ -17,9 +17,9 @@ type DueCard = {
 };
 
 const RATINGS: Array<{ rating: Rating; label: string; key: string }> = [
-  { rating: 'again', label: 'Снова', key: '1' },
-  { rating: 'hard', label: 'Трудно', key: '2' },
-  { rating: 'good', label: 'Хорошо', key: '3' },
+  { rating: 'again', label: 'Не знаю', key: '1' },
+  { rating: 'hard', label: 'С трудом', key: '2' },
+  { rating: 'good', label: 'Знаю', key: '3' },
   { rating: 'easy', label: 'Легко', key: '4' },
 ];
 
@@ -67,6 +67,7 @@ export function RecognitionReview() {
   const [phase, setPhase] = useState<'loading' | 'error' | 'empty' | 'card' | 'done'>('loading');
   const [cards, setCards] = useState<DueCard[]>([]);
   const [index, setIndex] = useState(0);
+  const [heard, setHeard] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export function RecognitionReview() {
     if (!keepMessage) setMessage(null);
     setCanRetry(false);
     setAuthBlocked(false);
+    setHeard(false);
     setRevealed(false);
     setIndex(0);
     requestIdRef.current = null;
@@ -104,7 +106,7 @@ export function RecognitionReview() {
         return;
       }
       if (!resp.ok) {
-        setMessage('Не удалось собрать слова');
+        setMessage('Не удалось найти слова');
         setPhase('error');
         return;
       }
@@ -112,7 +114,7 @@ export function RecognitionReview() {
       setCards(next);
       setPhase(next.length ? 'card' : 'empty');
     } catch {
-      setMessage('Не удалось собрать слова');
+      setMessage('Не удалось найти слова');
       setPhase('error');
     }
   }, []);
@@ -139,12 +141,14 @@ export function RecognitionReview() {
 
   const finishBatch = useCallback(() => {
     requestIdRef.current = null;
+    setHeard(false);
     setRevealed(false);
     setPhase('done');
   }, []);
 
   const advance = useCallback((from: number, list: DueCard[]) => {
     requestIdRef.current = null;
+    setHeard(false);
     setRevealed(false);
     setCanRetry(false);
     if (from + 1 >= list.length) finishBatch();
@@ -214,7 +218,7 @@ export function RecognitionReview() {
     const card = cards[index];
     if (!card || !token || speaking) return;
     setSpeaking(true);
-    setMessage((prev) => (prev === 'Не удалось озвучить' ? null : prev));
+    setMessage((prev) => (prev === 'Не получилось произнести' ? null : prev));
     try {
       const resp = await fetch(`${getApiUrl()}/api/tts`, {
         method: 'POST',
@@ -234,8 +238,9 @@ export function RecognitionReview() {
       audioRef.current.pause();
       audioRef.current.src = url;
       await audioRef.current.play();
+      setHeard(true);
     } catch {
-      setMessage('Не удалось озвучить');
+      setMessage('Не получилось произнести');
     } finally {
       setSpeaking(false);
     }
@@ -253,11 +258,15 @@ export function RecognitionReview() {
       if (phase !== 'card' || savingRef.current || authBlocked) return;
       if (event.key === 'Enter') {
         event.preventDefault();
+        if (!heard) {
+          void speak();
+          return;
+        }
         setMessage(null);
         setRevealed(true);
         return;
       }
-      if (!revealed) return;
+      if (!heard || !revealed) return;
       const rating = RATINGS.find((item) => item.key === event.key);
       if (!rating) return;
       event.preventDefault();
@@ -265,7 +274,7 @@ export function RecognitionReview() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [authBlocked, leave, phase, revealed, submit]);
+  }, [authBlocked, heard, leave, phase, revealed, speak, submit]);
 
   const card = cards[index];
   const practiceIds = cards.slice(0, 5).map((item) => item.senseId).join(',');
@@ -286,7 +295,7 @@ export function RecognitionReview() {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: '1.1rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Повторение</h2>
+          <h2 style={{ margin: 0, fontSize: '1.35rem' }}>Послушай</h2>
           <button type="button" onClick={leave} disabled={saving} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: saving ? 'default' : 'pointer' }}>
             К словарю
           </button>
@@ -294,7 +303,7 @@ export function RecognitionReview() {
 
         {phase === 'loading' && (
           <div>
-            <p style={{ margin: '0 0 0.75rem', color: 'var(--text-muted)' }}>Собираем слова</p>
+            <p style={{ margin: '0 0 0.75rem', color: 'var(--text-muted)' }}>Ищем слова, которые пора послушать</p>
             {[0, 1, 2].map((bar) => (
               <div key={bar} style={{ height: 14, borderRadius: 8, background: 'var(--stroke)', marginBottom: 8, opacity: 0.7 }} />
             ))}
@@ -303,7 +312,7 @@ export function RecognitionReview() {
 
         {phase === 'error' && (
           <div>
-            <p style={{ margin: 0 }}>{message || 'Не удалось собрать слова'}</p>
+            <p style={{ margin: 0 }}>{message || 'Не удалось найти слова'}</p>
             {!authBlocked && (
               <button type="button" onClick={() => token && void loadQueue(token)} style={{ ...buttonStyle, marginTop: 12 }}>
                 Попробовать снова
@@ -314,18 +323,19 @@ export function RecognitionReview() {
 
         {phase === 'empty' && (
           <div>
-            <p style={{ margin: 0 }}>Сейчас нечего повторять</p>
+            <p style={{ margin: 0 }}>Пока нечего слушать. Добавь слово в словарь, и его можно будет услышать.</p>
             <button type="button" onClick={leave} style={{ ...buttonStyle, marginTop: 12 }}>К словарю</button>
           </div>
         )}
 
         {phase === 'done' && (
           <div>
-            <p style={{ margin: 0 }}>На сегодня слова разобраны</p>
+            <p style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700 }}>Ты послушал слова.</p>
+            <p style={{ margin: 0, color: 'var(--text-muted)' }}>Теперь скажи их сам.</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               {practiceIds && (
-                <button type="button" onClick={() => router.push(`/dashboard?tab=agent&senses=${practiceIds}`)} style={buttonStyle}>
-                  Сказать эти слова
+                <button type="button" onClick={() => router.push(`/dashboard?tab=agent&senses=${practiceIds}`)} style={{ ...buttonStyle, fontWeight: 700 }}>
+                  Сказать их сам
                 </button>
               )}
               <button type="button" onClick={leave} style={buttonStyle}>К словарю</button>
@@ -335,33 +345,50 @@ export function RecognitionReview() {
 
         {phase === 'card' && card && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>{index + 1} из {cards.length}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ fontSize: '2rem', fontWeight: 700, lineHeight: 1.2 }}>{card.headword}</div>
-              <button type="button" onClick={() => void speak()} disabled={speaking || !token} aria-label="Озвучить слово" style={{ ...buttonStyle, width: 40, height: 40, borderRadius: '50%', padding: 0 }}>
-                {speaking ? '…' : '♪'}
-              </button>
-            </div>
-            {card.partOfSpeech && <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>{card.partOfSpeech}</p>}
-            {card.contextText && <p style={{ margin: 0, fontSize: '0.95rem' }}>{card.contextText}</p>}
-            {!revealed ? (
-              <button type="button" onClick={() => { setMessage(null); setRevealed(true); }} disabled={authBlocked} style={buttonStyle}>Показать перевод</button>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Слово {index + 1} из {cards.length}</p>
+            {!heard ? (
+              <>
+                <p style={{ margin: 0, fontSize: '1.15rem' }}>Сначала послушай.</p>
+                <button type="button" onClick={() => void speak()} disabled={speaking || !token} style={{ ...buttonStyle, fontWeight: 700, fontSize: '1.05rem', padding: '0.85rem 1rem' }}>
+                  {speaking ? 'Слушай…' : 'Послушать'}
+                </button>
+                {message === 'Не получилось произнести' && (
+                  <button type="button" onClick={() => { setMessage(null); setHeard(true); }} style={buttonStyle}>
+                    Показать слово
+                  </button>
+                )}
+              </>
             ) : (
               <>
-                <p style={{ margin: 0, paddingTop: 8, borderTop: '1px solid var(--stroke)' }}>{card.glossRu}</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                  {RATINGS.map((item) => (
-                    <button key={item.rating} type="button" disabled={saving || authBlocked} onClick={() => void submit(item.rating)} style={{ ...buttonStyle, width: '100%' }}>
-                      {saving && pendingRatingRef.current === item.rating ? 'Сохраняем…' : item.label}
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 700, lineHeight: 1.2 }}>{card.headword}</div>
+                  <button type="button" onClick={() => void speak()} disabled={speaking || !token} style={buttonStyle}>
+                    {speaking ? 'Слушай…' : 'Послушать ещё раз'}
+                  </button>
                 </div>
+                {card.partOfSpeech && <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>{card.partOfSpeech}</p>}
+                {card.contextText && <p style={{ margin: 0, fontSize: '0.95rem' }}>{card.contextText}</p>}
+                {!revealed ? (
+                  <button type="button" onClick={() => { setMessage(null); setRevealed(true); }} disabled={authBlocked} style={buttonStyle}>Что это значит?</button>
+                ) : (
+                  <>
+                    <p style={{ margin: 0, paddingTop: 8, borderTop: '1px solid var(--stroke)' }}>{card.glossRu}</p>
+                    <p style={{ margin: 0, fontWeight: 700 }}>Ты это знаешь?</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                      {RATINGS.map((item) => (
+                        <button key={item.rating} type="button" disabled={saving || authBlocked} onClick={() => void submit(item.rating)} style={{ ...buttonStyle, width: '100%' }}>
+                          {saving && pendingRatingRef.current === item.rating ? 'Запоминаю…' : item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </>
             )}
             {message && <p style={{ margin: 0, fontSize: '0.85rem' }}>{message}</p>}
             {canRetry && (
               <button type="button" disabled={saving} onClick={() => void submit(pendingRatingRef.current)} style={buttonStyle}>
-                Отправить ещё раз
+                Попробовать ещё раз
               </button>
             )}
           </div>

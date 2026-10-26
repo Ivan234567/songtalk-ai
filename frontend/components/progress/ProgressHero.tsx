@@ -97,7 +97,7 @@ export function ProgressHero({
               className={styles.btn}
               onClick={() => router.push('/dashboard?tab=dictionary&review=1')}
             >
-              Повторить слова
+              Послушать слова
             </button>
           </div>
         </div>

@@ -1655,15 +1655,13 @@ export const DictionaryTab: React.FC = () => {
               alignItems: 'center',
             }}
           >
-            {dueCount > 0 && (
             <button
               type="button"
               className="zh-add-open-btn"
               onClick={() => router.push('/dashboard?tab=dictionary&review=1')}
             >
-              Повторить {dueCount}
+              Послушать слова{dueCount > 0 ? ` · ${dueCount}` : ''}
             </button>
-            )}
             {isChinese && (
             <button
               type="button"
