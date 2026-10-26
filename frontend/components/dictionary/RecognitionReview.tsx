@@ -32,6 +32,18 @@ const buttonStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const primaryButtonStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '1.15rem 1.25rem',
+  borderRadius: 16,
+  border: 'none',
+  background: 'var(--accent)',
+  color: 'var(--accent-fg)',
+  fontSize: '1.35rem',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
 function getApiUrl() {
   const url = process.env.NEXT_PUBLIC_API_URL || '';
   return url.endsWith('/') ? url.slice(0, -1) : url;
@@ -280,7 +292,7 @@ export function RecognitionReview() {
   const practiceIds = cards.slice(0, 5).map((item) => item.senseId).join(',');
 
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', width: '100%' }}>
+    <div style={{ maxWidth: 640, margin: '0 auto', width: '100%' }}>
       <section
         style={{
           borderRadius: '1.75rem',
@@ -334,7 +346,7 @@ export function RecognitionReview() {
             <p style={{ margin: 0, color: 'var(--text-muted)' }}>Теперь скажи их сам.</p>
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               {practiceIds && (
-                <button type="button" onClick={() => router.push(`/dashboard?tab=agent&senses=${practiceIds}`)} style={{ ...buttonStyle, fontWeight: 700 }}>
+                <button type="button" onClick={() => router.push(`/dashboard?tab=agent&senses=${practiceIds}`)} style={primaryButtonStyle}>
                   Сказать их сам
                 </button>
               )}
@@ -349,7 +361,7 @@ export function RecognitionReview() {
             {!heard ? (
               <>
                 <p style={{ margin: 0, fontSize: '1.15rem' }}>Сначала послушай.</p>
-                <button type="button" onClick={() => void speak()} disabled={speaking || !token} style={{ ...buttonStyle, fontWeight: 700, fontSize: '1.05rem', padding: '0.85rem 1rem' }}>
+                <button type="button" onClick={() => void speak()} disabled={speaking || !token} style={{ ...primaryButtonStyle, opacity: speaking ? 0.7 : 1 }}>
                   {speaking ? 'Слушай…' : 'Послушать'}
                 </button>
                 {message === 'Не получилось произнести' && (

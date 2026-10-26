@@ -22,14 +22,13 @@ import { VoiceSwitch } from '@/components/header/VoiceSwitch';
 import { TtsVoiceProvider } from '@/context/TtsVoiceContext';
 import { LanguageToastStack } from '@/components/ui/LanguageToastStack';
 
-type TabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
+type TabKey = 'words' | 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
 
 function isTabKey(value: string | null): value is TabKey {
-  return value === 'dashboard' || value === 'karaoke' || value === 'dictionary' || value === 'agent' || value === 'progress' || value === 'balance' || value === 'faq' || value === 'account';
+  return value === 'words' || value === 'dashboard' || value === 'karaoke' || value === 'dictionary' || value === 'agent' || value === 'progress' || value === 'balance' || value === 'faq' || value === 'account';
 }
 
 function DashboardPageContent() {
-  const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const { learningLanguage, label, toasts, dismissToast, isLanguageReady } = useLearningLanguage();
   const [loggingOut, setLoggingOut] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -37,6 +36,8 @@ function DashboardPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : 'words');
   const balanceNotice = searchParams.get('balance_notice');
 
   const handleTabChange = (nextTab: TabKey) => {
@@ -58,6 +59,13 @@ function DashboardPageContent() {
     if (!isLanguageReady) return;
 
     const tabParam = searchParams.get('tab');
+    if (!tabParam) {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set('tab', 'words');
+      router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
+      setActiveTab('words');
+      return;
+    }
     if (isTabKey(tabParam)) {
       if (tabParam === 'karaoke' && learningLanguage === 'zh') {
         handleTabChange('dashboard');
@@ -130,6 +138,12 @@ function DashboardPageContent() {
       case 'karaoke':
         if (learningLanguage === 'zh') return <DashboardTab />;
         return <KaraokeTab />;
+      case 'words':
+        return (
+          <div style={{ padding: '1.5rem 1.25rem 2.5rem' }}>
+            <RecognitionReview />
+          </div>
+        );
       case 'dictionary':
         return searchParams.get('review') === '1' ? <RecognitionReview /> : <DictionaryTab />;
       case 'agent':
@@ -148,7 +162,7 @@ function DashboardPageContent() {
     }
   };
 
-  const shouldEnableScroll = activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account';
+  const shouldEnableScroll = activeTab === 'words' || activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account';
   const usernameFromEmail = userEmail?.split('@')[0];
   const displayName = usernameFromEmail
     ? usernameFromEmail.charAt(0).toUpperCase() + usernameFromEmail.slice(1).toLowerCase()
@@ -191,6 +205,18 @@ function DashboardPageContent() {
             <LanguageSwitch />
           </div>
         </div>
+        {activeTab === 'words' && (
+          <header className={layoutStyles.header} data-language={learningLanguage}>
+            <div className={layoutStyles.headerInner}>
+              <span className={layoutStyles.greetingLabel}>Слова</span>
+              <div className={layoutStyles.greetingRow}>
+                <p className={layoutStyles.greeting}>Сначала послушай.</p>
+                <span className={layoutStyles.greetingDot} aria-hidden="true" />
+                <p className={layoutStyles.greetingHint}>Потом скажи это слово сам.</p>
+              </div>
+            </div>
+          </header>
+        )}
         {activeTab === 'dashboard' && (
           <header className={layoutStyles.header} data-language={learningLanguage}>
             <div className={layoutStyles.headerInner}>
