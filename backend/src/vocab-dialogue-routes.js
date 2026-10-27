@@ -38,6 +38,33 @@ export function assertRoleplayPracticeRequest({ dialogueSessionId, annotate }) {
   return true
 }
 
+export function assertDebatePracticeRequest({ dialogueSessionId, annotate }) {
+  const id = typeof dialogueSessionId === 'string' ? dialogueSessionId.trim() : ''
+  if (!id || annotate) return false
+  return true
+}
+
+export function normalizePracticeMode(raw) {
+  if (raw === 'roleplay' || raw === 'debate') return raw
+  if (raw == null || raw === 'chat') return 'chat'
+  return ''
+}
+
+export function buildDebatePracticeInstruction(targets) {
+  const lines = targets.map((target, index) => (
+    `${index + 1}. headword: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
+  ))
+  return [
+    'Hidden practice for this debate only.',
+    'The learner should use each meaning naturally in their arguments.',
+    'Do not say, spell, or translate the headword before the learner uses it.',
+    'Do not list the headwords. Create pressure or a question where that meaning helps the argument.',
+    'Keep debate rules, positions, and tone.',
+    'Targets still unused:',
+    ...lines,
+  ].join('\n')
+}
+
 export function buildRoleplayPracticeInstruction(targets) {
   const lines = targets.map((target, index) => (
     `${index + 1}. headword: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
@@ -48,7 +75,7 @@ export function buildRoleplayPracticeInstruction(targets) {
     'Do not say, spell, or translate the headword before the learner uses it.',
     'Do not list the headwords. Keep the scenario steps, goal, and persona.',
     'Scenario lesson words stay separate from these hidden targets.',
-    'Targets:',
+    'Targets still unused:',
     ...lines,
   ].join('\n')
 }
@@ -63,7 +90,22 @@ export function buildChatPracticeInstruction(targets) {
     'Do not say, spell, or translate the headword before the learner uses it.',
     'Do not list the headwords. Build a natural situation where that meaning is useful.',
     'Keep every other chat rule, persona, level, and tone.',
-    'Targets:',
+    'Targets still unused:',
+    ...lines,
+  ].join('\n')
+}
+
+export function buildDebatePracticeHintInstruction(targets) {
+  const lines = targets.map((target, index) => (
+    `${index + 1}. meaning: ${JSON.stringify(target.gloss_ru)} forbidden word: ${JSON.stringify(target.headword)}`
+  ))
+  return [
+    'The learner is practicing hidden words inside a debate.',
+    'Write the hint in Russian only.',
+    'Describe the argument angle or the meaning so they can recall the expression themselves.',
+    'Do not write any forbidden word, its spelling, or a foreign-language example containing it.',
+    'Do not output the suggested reply in the target language.',
+    'Keep the hint useful for the current debate without naming the hidden word.',
     ...lines,
   ].join('\n')
 }
@@ -266,7 +308,7 @@ export async function loadActiveChatPractice({
   agentSessionId,
   expectedMode = 'chat',
 }) {
-  if (expectedMode !== 'chat' && expectedMode !== 'roleplay') {
+  if (expectedMode !== 'chat' && expectedMode !== 'roleplay' && expectedMode !== 'debate') {
     throw new DialogueRouteError(400, 'Practice mode is invalid')
   }
   if (!isUuid(dialogueSessionId) || !isUuid(agentSessionId)) {
@@ -294,7 +336,9 @@ export async function loadActiveChatPractice({
   if (session.language !== language || session.mode !== expectedMode || session.status !== 'active' || session.agent_session_id !== agentSessionId) {
     throw new DialogueRouteError(409, expectedMode === 'roleplay'
       ? 'Practice session does not belong to this roleplay'
-      : 'Practice session does not belong to this free chat')
+      : expectedMode === 'debate'
+        ? 'Practice session does not belong to this debate'
+        : 'Practice session does not belong to this free chat')
   }
   const agentResult = await callSupabase(
     safeSupabaseCall,
@@ -312,10 +356,14 @@ export async function loadActiveChatPractice({
     throw new DialogueRouteError(404, 'Practice session was not found')
   }
   const scenarioId = typeof agent.scenario_id === 'string' ? agent.scenario_id.trim() : ''
-  if (agent.language !== language || (expectedMode === 'chat' ? Boolean(scenarioId) : !scenarioId)) {
+  // roleplay требует scenario_id; chat и debate — без него
+  const scenarioOk = expectedMode === 'roleplay' ? Boolean(scenarioId) : !scenarioId
+  if (agent.language !== language || !scenarioOk) {
     throw new DialogueRouteError(409, expectedMode === 'roleplay'
       ? 'Practice session does not belong to this roleplay'
-      : 'Practice session does not belong to this free chat')
+      : expectedMode === 'debate'
+        ? 'Practice session does not belong to this debate'
+        : 'Practice session does not belong to this free chat')
   }
   const targets = await loadTargets(deps, dialogueSessionId, userId)
   if (targets.length < 1 || targets.length > DIALOGUE_TARGET_LIMIT) {
@@ -465,7 +513,9 @@ async function reuseOrReject(deps, existing, { userId, language, agentSessionId,
   ) {
     throw new DialogueRouteError(409, mode === 'roleplay'
       ? 'Practice session does not belong to this roleplay'
-      : 'Practice session does not belong to this free chat')
+      : mode === 'debate'
+        ? 'Practice session does not belong to this debate'
+        : 'Practice session does not belong to this free chat')
   }
   const targets = await loadTargets(deps, existing.id, userId)
   if (!sameSenseOrder(targets, senseIds)) {
@@ -558,8 +608,8 @@ export function createDialogueSessionHandler({
       const agentSessionId = req.body?.agent_session_id
       const requestId = typeof req.body?.request_id === 'string' ? req.body.request_id.trim() : ''
       const levelSnapshot = typeof req.body?.level_snapshot === 'string' ? req.body.level_snapshot.trim() : ''
-      const mode = req.body?.mode === 'roleplay' ? 'roleplay' : req.body?.mode == null || req.body?.mode === 'chat' ? 'chat' : ''
-      if (mode !== 'chat' && mode !== 'roleplay') throw new DialogueRouteError(400, 'Practice mode is invalid')
+      const mode = normalizePracticeMode(req.body?.mode)
+      if (!mode) throw new DialogueRouteError(400, 'Practice mode is invalid')
       if (!isUuid(agentSessionId)) throw new DialogueRouteError(400, 'Chat session is invalid')
       if (!requestId || requestId.length > DIALOGUE_REQUEST_ID_MAX) {
         throw new DialogueRouteError(400, 'Practice request is invalid')
@@ -580,10 +630,13 @@ export function createDialogueSessionHandler({
       const agent = agentResult.data
       if (!agent || agent.user_id !== userId) throw new DialogueRouteError(404, 'Chat session was not found')
       const scenarioId = typeof agent.scenario_id === 'string' ? agent.scenario_id.trim() : ''
-      if (agent.language !== language || (mode === 'chat' ? Boolean(scenarioId) : !scenarioId)) {
+      const scenarioOk = mode === 'roleplay' ? Boolean(scenarioId) : !scenarioId
+      if (agent.language !== language || !scenarioOk) {
         throw new DialogueRouteError(409, mode === 'roleplay'
           ? 'Practice session does not belong to this roleplay'
-          : 'Practice session does not belong to this free chat')
+          : mode === 'debate'
+            ? 'Practice session does not belong to this debate'
+            : 'Practice session does not belong to this free chat')
       }
 
       const byRequest = await findDialogueBy(deps, 'request_id', requestId, userId)
@@ -678,6 +731,66 @@ export function createDialogueSessionHandler({
       if (status === 500) console.error('[api/vocabulary/srs/dialogue] failed to start practice session')
       res.status(status).json({
         error: err instanceof DialogueRouteError ? err.message : 'Failed to start practice session',
+      })
+    }
+  }
+}
+
+export function createDialogueProgressHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall = (fn) => fn(),
+  loadProgress,
+}) {
+  if (typeof loadProgress !== 'function') {
+    throw new Error('createDialogueProgressHandler requires loadProgress')
+  }
+  return async function dialogueProgressHandler(req, res) {
+    const userId = await requireUser(req, res, { getBearerToken, resolveUserId })
+    if (!userId) return
+    try {
+      const dialogueSessionId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+      const agentSessionId = typeof req.query?.agent_session_id === 'string'
+        ? req.query.agent_session_id.trim()
+        : ''
+      const mode = normalizePracticeMode(req.query?.mode)
+      if (!mode) throw new DialogueRouteError(400, 'Practice mode is invalid')
+      const language = await loadLearningLanguage({ supabase, safeSupabaseCall, userId })
+      const practice = await loadActiveChatPractice({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        language,
+        dialogueSessionId,
+        agentSessionId,
+        expectedMode: mode,
+      })
+      const snapshot = await loadProgress({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        dialogueSessionId: practice.dialogueSessionId,
+        targets: practice.targets,
+      })
+      res.status(200).json({
+        dialogue_session_id: practice.dialogueSessionId,
+        used_count: snapshot.used_count,
+        total_count: snapshot.total_count,
+        items: snapshot.items.map((item) => ({
+          sense_id: item.sense_id,
+          headword: item.headword,
+          gloss_ru: item.gloss_ru,
+          status: item.status,
+          verdict: item.verdict,
+        })),
+      })
+    } catch (err) {
+      if (res.headersSent) return
+      const status = err instanceof DialogueRouteError ? err.status : 500
+      if (status === 500) console.error('[api/vocabulary/srs/dialogue/:id/progress] failed')
+      res.status(status).json({
+        error: err instanceof DialogueRouteError ? err.message : 'Failed to read practice progress',
       })
     }
   }

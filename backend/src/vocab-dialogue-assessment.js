@@ -146,6 +146,78 @@ async function readRows(safeSupabaseCall, fn) {
   }
 }
 
+/**
+ * Live-прогресс без SM-2 и без LLM.
+ * used = форма найдена у пользователя без эха/подсказки.
+ */
+export function buildPracticeProgressItems(targets, classified) {
+  const byId = new Map((Array.isArray(classified) ? classified : []).map((row) => [row.sense_id, row]))
+  return (Array.isArray(targets) ? targets : []).map((target) => {
+    const row = byId.get(target.sense_id)
+    const verdict = row?.verdict || 'unused'
+    let status = 'waiting'
+    if (verdict === 'produced') status = 'used'
+    else if (verdict === 'unused') status = 'waiting'
+    else status = 'not_counted'
+    return {
+      sense_id: target.sense_id,
+      headword: target.headword,
+      gloss_ru: target.gloss_ru,
+      status,
+      verdict,
+      evidence_text: row?.evidence_text || null,
+    }
+  })
+}
+
+export function remainingPracticeTargets(targets, progressItems) {
+  const used = new Set(
+    (Array.isArray(progressItems) ? progressItems : [])
+      .filter((item) => item.status === 'used')
+      .map((item) => item.sense_id),
+  )
+  return (Array.isArray(targets) ? targets : []).filter((target) => !used.has(target.sense_id))
+}
+
+export async function loadDialogueProgressSnapshot({
+  supabase,
+  safeSupabaseCall = (fn) => fn(),
+  userId,
+  dialogueSessionId,
+  targets,
+}) {
+  const turns = await readRows(
+    safeSupabaseCall,
+    () => supabase
+      .from('vocab_dialogue_turns')
+      .select('turn_index, role, content')
+      .eq('dialogue_session_id', dialogueSessionId)
+      .eq('user_id', userId)
+      .order('turn_index', { ascending: true }),
+  )
+  const hints = await readRows(
+    safeSupabaseCall,
+    () => supabase
+      .from('vocab_dialogue_hints')
+      .select('turn_index, hint_text')
+      .eq('dialogue_session_id', dialogueSessionId)
+      .eq('user_id', userId),
+  )
+  const classified = classifyDialogueTargets({
+    targets,
+    turns: Array.isArray(turns) ? turns : [],
+    hints: Array.isArray(hints) ? hints : [],
+  })
+  const items = buildPracticeProgressItems(targets, classified)
+  const usedCount = items.filter((item) => item.status === 'used').length
+  return {
+    items,
+    used_count: usedCount,
+    total_count: items.length,
+    remaining_targets: remainingPracticeTargets(targets, items),
+  }
+}
+
 export async function recordChatPracticeExchange({
   supabase,
   safeSupabaseCall = (fn) => fn(),
@@ -224,7 +296,11 @@ export function createDialogueAssessmentHandler({
           .maybeSingle(),
       )
       if (!session || session.user_id !== userId) throw new DialogueRouteError(404, 'Practice session was not found')
-      if (session.language !== language || (session.mode !== 'chat' && session.mode !== 'roleplay') || (session.status !== 'active' && session.status !== 'assessed')) {
+      if (
+        session.language !== language
+        || (session.mode !== 'chat' && session.mode !== 'roleplay' && session.mode !== 'debate')
+        || (session.status !== 'active' && session.status !== 'assessed')
+      ) {
         throw new DialogueRouteError(409, 'Practice session does not belong to this conversation')
       }
 

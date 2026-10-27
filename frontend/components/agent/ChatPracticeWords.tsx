@@ -96,6 +96,8 @@ type ChatPracticeWordsProps = {
   assessError?: string | null;
   results?: PracticeVerdict[] | null;
   storeWarning?: string | null;
+  usedCount?: number;
+  totalCount?: number;
   onAssess?: () => void;
 };
 
@@ -114,6 +116,8 @@ export function ChatPracticeWords({
   assessError = null,
   results = null,
   storeWarning = null,
+  usedCount,
+  totalCount,
   onAssess,
 }: ChatPracticeWordsProps) {
   const [open, setOpen] = useState(false);
@@ -180,10 +184,19 @@ export function ChatPracticeWords({
           boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         }}
       >
-        <div style={{ fontSize: '1rem', fontWeight: 700 }}>Скажи сам</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ fontSize: '1rem', fontWeight: 700 }}>Скажи сам</div>
+          {locked && senses.length > 0 && (
+            <span style={{ fontSize: '0.75rem', fontWeight: 650, opacity: 0.7, fontVariantNumeric: 'tabular-nums' }}>
+              {usedCount ?? 0}/{totalCount ?? senses.length}
+            </span>
+          )}
+        </div>
         <p style={{ margin: '0.35rem 0 0', fontSize: '0.85rem', lineHeight: 1.4, opacity: 0.85 }}>
           {locked
-            ? 'Назови эти слова своим голосом.'
+            ? (results && results.length > 0
+              ? 'Разбор готов — смотри, что засчиталось.'
+              : 'Назови эти слова своим голосом. В конце можно проверить.')
             : senses.length > 0
               ? 'Назови эти слова сам. Нажми на слово, если хочешь увидеть перевод.'
               : 'Выбери слова и назови их своим голосом.'}

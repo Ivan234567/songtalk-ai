@@ -4,10 +4,12 @@ import fs from 'node:fs'
 import {
   applyJudgeVerdicts,
   buildAssessmentItems,
+  buildPracticeProgressItems,
   classifyDialogueTargets,
   createDialogueAssessmentHandler,
   evidenceQuote,
   latestUserText,
+  remainingPracticeTargets,
 } from './vocab-dialogue-assessment.js'
 import { DialogueRouteError } from './vocab-dialogue-routes.js'
 
@@ -32,6 +34,27 @@ test('цитата берётся из реплики пользователя �
   assert.match(inflected, /running/i)
   const reverse = evidenceQuote('I run every day.', 'running')
   assert.match(reverse, /\brun\b/i)
+})
+
+test('live-прогресс отмечает produced как used и оставляет unused в anti-spoil', () => {
+  const targets = [
+    { sense_id: SENSE_A, headword: 'apple', gloss_ru: 'яблоко' },
+    { sense_id: '33333333-3333-4333-8333-333333333333', headword: 'run', gloss_ru: 'бежать' },
+  ]
+  const classified = classifyDialogueTargets({
+    targets,
+    turns: [
+      { turn_index: 0, role: 'user', content: 'I ate an apple' },
+      { turn_index: 0, role: 'assistant', content: 'Nice' },
+    ],
+    hints: [],
+  })
+  const items = buildPracticeProgressItems(targets, classified)
+  assert.equal(items[0].status, 'used')
+  assert.equal(items[1].status, 'waiting')
+  const remaining = remainingPracticeTargets(targets, items)
+  assert.equal(remaining.length, 1)
+  assert.equal(remaining[0].headword, 'run')
 })
 
 test('эхо, подсказка, молчание и самостоятельное слово различаются по серверным репликам', () => {
@@ -252,7 +275,7 @@ test('миграция разбора пишет только карточку �
   assert.match(index, /recordChatPracticeExchange\(/)
   assert.match(index, /createDialogueAssessmentHandler\(/)
   assert.match(assessment, /commit_vocab_dialogue_assessment/)
-  assert.match(assessment, /session\.mode !== 'chat' && session\.mode !== 'roleplay'/)
+  assert.match(assessment, /session\.mode !== 'chat' && session\.mode !== 'roleplay' && session\.mode !== 'debate'/)
   assert.doesNotMatch(assessment, /card_type', 'recognition'|card_type = 'recognition'/)
   const roleplaySql = fs.readFileSync(new URL('../../supabase/migrations/20261026190000_allow_roleplay_dialogue_assessment.sql', import.meta.url), 'utf8')
   assert.equal(roleplaySql.match(/v_session\.mode NOT IN \('chat', 'roleplay'\)/g)?.length, 2)
@@ -265,4 +288,8 @@ test('миграция разбора пишет только карточку �
   assert.match(formsSql, /public\.vocab_text_contains_headword\(v_evidence, v_target\.headword\) IS NOT TRUE/)
   assert.doesNotMatch(formsSql, /pg_catalog\.(nullif|coalesce)/i)
   assert.match(formsSql, /GRANT EXECUTE ON FUNCTION public\.vocab_text_contains_headword\(TEXT, TEXT\) TO service_role/)
+  const debateSql = fs.readFileSync(new URL('../../supabase/migrations/20261027180000_allow_debate_dialogue_assessment.sql', import.meta.url), 'utf8')
+  assert.equal(debateSql.match(/v_session\.mode NOT IN \('chat', 'roleplay', 'debate'\)/g)?.length, 2)
+  assert.match(debateSql, /append_vocab_dialogue_exchange/)
+  assert.match(debateSql, /commit_vocab_dialogue_assessment/)
 })

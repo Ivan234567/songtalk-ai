@@ -21,6 +21,17 @@ import {
 } from '@/lib/zh-voice-tasks';
 import { RoleplayScenarioProgress } from '@/components/roleplay/RoleplayScenarioProgress';
 import { ChatPracticeWords, PracticeSpeechReport, type ChatPracticeSense } from '@/components/agent/ChatPracticeWords';
+import {
+  ChatWordsInviteStrip,
+  ChatWordsSoftAsk,
+  PracticeWordsGate,
+} from '@/components/agent/PracticeWordsGate';
+import {
+  PracticeWordsProgress,
+  mapPracticeProgressPayload,
+  type PracticeProgressItem,
+} from '@/components/agent/PracticeWordsProgress';
+import { PracticeWordsSummary } from '@/components/agent/PracticeWordsSummary';
 import { ZhAfterSessionReview } from '@/components/roleplay/ZhAfterSessionReview';
 import { EnAfterSessionReview } from '@/components/roleplay/EnAfterSessionReview';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
@@ -347,7 +358,16 @@ export function AgentTab() {
   const [chatPracticeAssessError, setChatPracticeAssessError] = useState<string | null>(null);
   const [chatPracticeStoreWarning, setChatPracticeStoreWarning] = useState<string | null>(null);
   const [chatPracticeResults, setChatPracticeResults] = useState<Array<{ senseId: string; verdict: string; intervalDays?: number | null }> | null>(null);
+  const [chatPracticeProgress, setChatPracticeProgress] = useState<PracticeProgressItem[] | null>(null);
+  const [chatPracticeProgressCounts, setChatPracticeProgressCounts] = useState<{ used: number; total: number } | null>(null);
   const chatPracticeAssessRequestRef = useRef<string | null>(null);
+  const chatPracticeAutoAssessRef = useRef<string | null>(null);
+  const [wordsGateMode, setWordsGateMode] = useState<'roleplay' | 'debate' | 'chat' | null>(null);
+  const [wordsGateSkipped, setWordsGateSkipped] = useState<{ roleplay?: boolean; debate?: boolean }>({});
+  const [chatInviteDismissed, setChatInviteDismissed] = useState(false);
+  const [chatSoftAskOpen, setChatSoftAskOpen] = useState(false);
+  const [chatSoftAskDone, setChatSoftAskDone] = useState(false);
+  const startMicAfterWordsRef = useRef(false);
   const roleplayPracticeScenarioRef = useRef<string>('');
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
   const [scenarioView, setScenarioView] = useState<'catalog' | 'create' | 'my'>('catalog');
@@ -760,6 +780,9 @@ export function AgentTab() {
         setChatPracticeRequestId(requestId);
         setChatPracticeLocked(false);
         setChatPracticeRevealed({});
+        setChatInviteDismissed(true);
+        setChatSoftAskDone(true);
+        setWordsGateSkipped({ roleplay: true, debate: true });
         setAgentMode('chat');
       } catch {
         setError('Не удалось взять слова в практику');
@@ -1101,26 +1124,62 @@ export function AgentTab() {
     setChatPracticeAssessError(null);
     setChatPracticeStoreWarning(null);
     setChatPracticeResults(null);
+    setChatPracticeProgress(null);
+    setChatPracticeProgressCounts(null);
     chatPracticeAssessRequestRef.current = null;
+    chatPracticeAutoAssessRef.current = null;
     chatPracticeSensesRef.current = [];
     chatDialogueSessionIdRef.current = null;
     chatPracticeAgentSessionIdRef.current = null;
     chatPracticeRequestIdRef.current = null;
   }, []);
 
+  const applyPracticeProgress = useCallback((payload: unknown) => {
+    const mapped = mapPracticeProgressPayload(payload as Parameters<typeof mapPracticeProgressPayload>[0]);
+    if (!mapped) return;
+    setChatPracticeProgress(mapped.items);
+    setChatPracticeProgressCounts({ used: mapped.usedCount, total: mapped.totalCount });
+  }, []);
+
   useEffect(() => {
+    if (agentMode === 'debate') return;
     if (!chatPracticeAgentSessionId) return;
     if (currentSessionId && currentSessionId !== chatPracticeAgentSessionId) clearChatPractice();
-  }, [currentSessionId, chatPracticeAgentSessionId, clearChatPractice]);
+  }, [agentMode, currentSessionId, chatPracticeAgentSessionId, clearChatPractice]);
 
   useEffect(() => {
     if (agentMode !== 'roleplay') return;
     const scenarioId = selectedScenario?.id || '';
     if (roleplayPracticeScenarioRef.current === scenarioId) return;
-    const hadPractice = chatPracticeSensesRef.current.length > 0 || Boolean(chatDialogueSessionIdRef.current);
     roleplayPracticeScenarioRef.current = scenarioId;
-    if (hadPractice) clearChatPractice();
-  }, [agentMode, selectedScenario?.id, clearChatPractice]);
+    // Сбрасываем слова только если практика уже запущена (есть сессия / lock).
+    if (chatPracticeLocked || chatDialogueSessionIdRef.current) clearChatPractice();
+  }, [agentMode, selectedScenario?.id, chatPracticeLocked, clearChatPractice]);
+
+  useEffect(() => {
+    if (!token || !chatDialogueSessionId || !chatPracticeAgentSessionId || !chatPracticeLocked) return;
+    const mode = agentMode === 'roleplay' ? 'roleplay' : agentMode === 'debate' ? 'debate' : 'chat';
+    let cancelled = false;
+    fetch(
+      `${getApiUrl()}/api/vocabulary/srs/dialogue/${encodeURIComponent(chatDialogueSessionId)}/progress?agent_session_id=${encodeURIComponent(chatPracticeAgentSessionId)}&mode=${encodeURIComponent(mode)}`,
+      { headers: buildAgentAuthHeaders(token, learningLanguage) },
+    )
+      .then(async (resp) => {
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || cancelled) return;
+        applyPracticeProgress(data);
+      })
+      .catch(() => { /* live progress is optional until the next turn */ });
+    return () => { cancelled = true; };
+  }, [
+    token,
+    chatDialogueSessionId,
+    chatPracticeAgentSessionId,
+    chatPracticeLocked,
+    agentMode,
+    learningLanguage,
+    applyPracticeProgress,
+  ]);
 
   const assessChatPractice = useCallback(async () => {
     if (!token || !chatDialogueSessionId || chatPracticeAssessing) return;
@@ -1153,6 +1212,29 @@ export function AgentTab() {
       setChatPracticeAssessing(false);
     }
   }, [token, chatDialogueSessionId, chatPracticeAssessing, learningLanguage]);
+
+  useEffect(() => {
+    const finished =
+      (goalReached && agentMode === 'roleplay')
+      || (debateCompleted && agentMode === 'debate');
+    if (!finished) return;
+    if (!chatPracticeLocked || !chatDialogueSessionId) return;
+    if (chatPracticeResults || chatPracticeAssessing) return;
+    if (!messages.some((message) => message.role === 'user')) return;
+    if (chatPracticeAutoAssessRef.current === chatDialogueSessionId) return;
+    chatPracticeAutoAssessRef.current = chatDialogueSessionId;
+    void assessChatPractice();
+  }, [
+    goalReached,
+    debateCompleted,
+    agentMode,
+    chatPracticeLocked,
+    chatDialogueSessionId,
+    chatPracticeResults,
+    chatPracticeAssessing,
+    messages,
+    assessChatPractice,
+  ]);
 
   const beginVoiceTask = useCallback((task: ZhVoiceTask) => {
     clearChatPractice();
@@ -1342,11 +1424,12 @@ export function AgentTab() {
         let persistedSessionId = currentSessionId;
         let practiceDialogueId: string | null = null;
         const practiceRoleplay = agentMode === 'roleplay' && Boolean(selectedScenario);
-        if ((agentMode === 'chat' || practiceRoleplay) && !selectedVoiceTaskRef.current && chatPracticeSensesRef.current.length > 0) {
+        const practiceDebate = agentMode === 'debate' && debateStarted;
+        if ((agentMode === 'chat' || practiceRoleplay || practiceDebate) && !selectedVoiceTaskRef.current && chatPracticeSensesRef.current.length > 0) {
           const existingDialogueId = chatDialogueSessionIdRef.current;
           const existingAgentId = chatPracticeAgentSessionIdRef.current;
           if (existingDialogueId && existingAgentId) {
-            if (persistedSessionId && persistedSessionId !== existingAgentId) {
+            if (!practiceDebate && persistedSessionId && persistedSessionId !== existingAgentId) {
               setMessages((prev) => prev.slice(0, -1));
               setError('Эти слова относятся к другому разговору');
               setState('idle');
@@ -1360,7 +1443,7 @@ export function AgentTab() {
             setState('idle');
             return;
           } else {
-            let agentSessionId = persistedSessionId;
+            let agentSessionId = practiceDebate ? existingAgentId : persistedSessionId;
             let createdAgent = false;
             const known = sessionsRef.current.find((session) => session.id === agentSessionId);
             const scenarioMismatch = practiceRoleplay
@@ -1369,11 +1452,18 @@ export function AgentTab() {
             if (!agentSessionId || scenarioMismatch) {
               const firstUser = history.find((message) => message.role === 'user');
               const title = firstUser ? trimTitle(firstUser.content) : 'Разговор';
+              const debateTitle = debateTopic
+                ? (debateTopic.length > 50 ? `${debateTopic.slice(0, 50)}…` : debateTopic)
+                : 'Дебат';
               const inserted = await supabase
                 .from('agent_sessions')
                 .insert({
                   user_id: userId,
-                  title: practiceRoleplay && selectedScenario?.title ? selectedScenario.title : title,
+                  title: practiceRoleplay && selectedScenario?.title
+                    ? selectedScenario.title
+                    : practiceDebate
+                      ? debateTitle
+                      : title,
                   messages: history,
                   language: learningLanguage,
                   ...(practiceRoleplay && selectedScenario
@@ -1394,6 +1484,7 @@ export function AgentTab() {
             const requestId = chatPracticeRequestIdRef.current || crypto.randomUUID();
             chatPracticeRequestIdRef.current = requestId;
             setChatPracticeRequestId(requestId);
+            const practiceMode = practiceRoleplay ? 'roleplay' : practiceDebate ? 'debate' : 'chat';
             let dialogueData: { dialogue_session_id?: string; agent_session_id?: string; targets?: Array<{ sense_id?: string; position?: number; headword?: string; gloss_ru?: string }> } = {};
             try {
               const dialogueResp = await fetch(`${getApiUrl()}/api/vocabulary/srs/dialogue`, {
@@ -1404,7 +1495,7 @@ export function AgentTab() {
                   sense_ids: chatPracticeSensesRef.current.map((sense) => sense.senseId),
                   request_id: requestId,
                   level_snapshot: chatPracticeLevelRef.current,
-                  mode: practiceRoleplay ? 'roleplay' : 'chat',
+                  mode: practiceMode,
                 }, learningLanguage)),
               });
               dialogueData = await dialogueResp.json().catch(() => ({}));
@@ -1441,8 +1532,12 @@ export function AgentTab() {
             setChatDialogueSessionId(practiceDialogueId);
             setChatPracticeAgentSessionId(persistedSessionId);
             setChatPracticeLocked(true);
-            setCurrentSessionId(persistedSessionId);
-            if (createdAgent && persistedSessionId) {
+            setChatPracticeProgress(null);
+            setChatPracticeProgressCounts({ used: 0, total: serverSenses.length });
+            if (!practiceDebate) {
+              setCurrentSessionId(persistedSessionId);
+            }
+            if (createdAgent && persistedSessionId && !practiceDebate) {
               const firstUser = history.find((message) => message.role === 'user');
               const title = firstUser ? trimTitle(firstUser.content) : 'Разговор';
               setSessions((prev) => [{
@@ -1527,7 +1622,11 @@ export function AgentTab() {
               ? {
                 dialogue_session_id: practiceDialogueId,
                 agent_session_id: persistedSessionId,
-                ...(agentMode === 'roleplay' ? { practice_mode: 'roleplay' } : {}),
+                ...(agentMode === 'roleplay'
+                  ? { practice_mode: 'roleplay' }
+                  : agentMode === 'debate'
+                    ? { practice_mode: 'debate' }
+                    : {}),
               }
               : {}),
           }, learningLanguage)),
@@ -1571,6 +1670,8 @@ export function AgentTab() {
                 }
               } else if (data.type === 'practice_store' && data.ok === false) {
                 setChatPracticeStoreWarning('Эту фразу не получилось запомнить. Скажи её ещё раз.');
+              } else if (data.type === 'practice_progress') {
+                applyPracticeProgress(data);
               } else if (data.type === 'done') {
                 break;
               } else if (data.type === 'error') {
@@ -1801,6 +1902,8 @@ export function AgentTab() {
       zhRewindHint,
       finishVoiceTaskTake,
       englishSettingsPayload,
+      debateStarted,
+      applyPracticeProgress,
     ]
   );
 
@@ -2024,10 +2127,12 @@ export function AgentTab() {
     (mode: 'chat' | 'roleplay' | 'debate') => {
       if (mode === 'debate' && learningLanguage === 'zh') return;
       setAgentMode(mode);
-      if (mode === 'debate' || chatPracticeLocked) clearChatPractice();
+      // Слова сохраняем при входе в сценарий/дебат, пока практика ещё не начата.
+      if (chatPracticeLocked) clearChatPractice();
       setSelectedVoiceTask(null);
       resetVoiceTaskPlay();
       if (mode === 'chat') {
+        setWordsGateSkipped({});
         setEnglishSettingsOpen(true);
         setSelectedScenario(null);
         setDebateStarted(false);
@@ -3177,6 +3282,12 @@ export function AgentTab() {
             titleEn: s.titleEn,
           })),
           completed_step_ids: debateCompletedStepIds,
+          ...(chatDialogueSessionIdRef.current && chatPracticeAgentSessionIdRef.current
+            ? {
+              dialogue_session_id: chatDialogueSessionIdRef.current,
+              agent_session_id: chatPracticeAgentSessionIdRef.current,
+            }
+            : {}),
         };
       } else if (agentMode === 'chat') {
         bodyPayload = {
@@ -3478,10 +3589,33 @@ export function AgentTab() {
 
   const handleRecordClick = useCallback(
     () => {
-      if (state === 'idle') startRecording();
-      else if (state === 'listening') stopRecording();
+      if (state === 'listening') {
+        stopRecording();
+        return;
+      }
+      if (state !== 'idle') return;
+      if (
+        agentMode === 'chat'
+        && !selectedVoiceTask
+        && chatPracticeSenses.length === 0
+        && !chatSoftAskDone
+        && !chatPracticeLocked
+      ) {
+        setChatSoftAskOpen(true);
+        return;
+      }
+      void startRecording();
     },
-    [state, startRecording, stopRecording]
+    [
+      state,
+      startRecording,
+      stopRecording,
+      agentMode,
+      selectedVoiceTask,
+      chatPracticeSenses.length,
+      chatSoftAskDone,
+      chatPracticeLocked,
+    ]
   );
 
   const selectSession = useCallback((id: string) => {
@@ -4113,7 +4247,17 @@ export function AgentTab() {
                   onSelectScenario={handleSelectScenario}
                   onClearScenario={() => setSelectedScenario(null)}
                   scenarioModalOpen={scenarioModalOpen}
-                  onScenarioModalOpenChange={setScenarioModalOpen}
+                  onScenarioModalOpenChange={(open) => {
+                    if (!open) {
+                      setScenarioModalOpen(false);
+                      return;
+                    }
+                    if (chatPracticeSenses.length > 0 || wordsGateSkipped.roleplay) {
+                      setScenarioModalOpen(true);
+                      return;
+                    }
+                    setWordsGateMode('roleplay');
+                  }}
                   scenarioView={scenarioView}
                   onScenarioViewChange={handleScenarioViewChange}
                   onCopyToMineSuccess={(id) => {
@@ -4123,7 +4267,17 @@ export function AgentTab() {
                   initialScenarioId={learningLanguage !== 'zh' ? progressDeepLink?.id : undefined}
                   initialPlayMode={learningLanguage !== 'zh' ? progressDeepLink?.playMode : undefined}
                   debateSetupOpen={debateSetupOpen}
-                  onDebateSetupOpenChange={setDebateSetupOpen}
+                  onDebateSetupOpenChange={(open) => {
+                    if (!open) {
+                      setDebateSetupOpen(false);
+                      return;
+                    }
+                    if (chatPracticeSenses.length > 0 || wordsGateSkipped.debate) {
+                      setDebateSetupOpen(true);
+                      return;
+                    }
+                    setWordsGateMode('debate');
+                  }}
                   debateView={debateView}
                   onDebateViewChange={handleDebateViewChange}
                 />
@@ -4248,7 +4402,13 @@ export function AgentTab() {
                   </div>
                 </div>
               )}
-              {(agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario)) && !selectedVoiceTask && token && (
+              {agentMode === 'chat' && !selectedVoiceTask && token && chatPracticeSenses.length === 0 && !chatInviteDismissed && !chatPracticeLocked && (
+                <ChatWordsInviteStrip
+                  onChoose={() => setWordsGateMode('chat')}
+                  onDismiss={() => setChatInviteDismissed(true)}
+                />
+              )}
+              {(agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || (agentMode === 'debate' && debateStarted)) && !selectedVoiceTask && token && chatPracticeSenses.length > 0 && (
                 <ChatPracticeWords
                   apiUrl={getApiUrl()}
                   token={token}
@@ -4270,6 +4430,8 @@ export function AgentTab() {
                   assessError={chatPracticeAssessError}
                   storeWarning={chatPracticeStoreWarning}
                   results={chatPracticeResults}
+                  usedCount={chatPracticeProgressCounts?.used}
+                  totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
                   onAssess={() => { void assessChatPractice(); }}
                 />
               )}
@@ -4359,6 +4521,33 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
+                      {chatPracticeSenses.length > 0 && (
+                        chatPracticeResults || (chatPracticeLocked && messages.some((message) => message.role === 'user'))
+                          ? (
+                            <PracticeWordsSummary
+                              variant="plain"
+                              senses={chatPracticeSenses}
+                              progressItems={chatPracticeProgress}
+                              usedCount={chatPracticeProgressCounts?.used}
+                              totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
+                              results={chatPracticeResults}
+                              assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
+                              assessing={chatPracticeAssessing}
+                              assessError={chatPracticeAssessError}
+                              storeWarning={chatPracticeStoreWarning}
+                              onAssess={() => { void assessChatPractice(); }}
+                            />
+                          )
+                          : (
+                            <PracticeWordsProgress
+                              senses={chatPracticeSenses}
+                              items={chatPracticeProgress}
+                              usedCount={chatPracticeProgressCounts?.used}
+                              totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
+                              locked={chatPracticeLocked}
+                            />
+                          )
+                      )}
                       {agentMode === 'roleplay' && selectedScenario && (
                         <>
                           <RoleplayScenarioProgress
@@ -4919,6 +5108,33 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
+                      {chatPracticeSenses.length > 0 && (
+                        chatPracticeResults || (chatPracticeLocked && messages.some((message) => message.role === 'user'))
+                          ? (
+                            <PracticeWordsSummary
+                              variant="plain"
+                              senses={chatPracticeSenses}
+                              progressItems={chatPracticeProgress}
+                              usedCount={chatPracticeProgressCounts?.used}
+                              totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
+                              results={chatPracticeResults}
+                              assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
+                              assessing={chatPracticeAssessing}
+                              assessError={chatPracticeAssessError}
+                              storeWarning={chatPracticeStoreWarning}
+                              onAssess={() => { void assessChatPractice(); }}
+                            />
+                          )
+                          : (
+                            <PracticeWordsProgress
+                              senses={chatPracticeSenses}
+                              items={chatPracticeProgress}
+                              usedCount={chatPracticeProgressCounts?.used}
+                              totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
+                              locked={chatPracticeLocked}
+                            />
+                          )
+                      )}
                       {selectedVoiceTask && (
                         <section
                           style={{
@@ -5683,8 +5899,11 @@ export function AgentTab() {
               </p>
             )}
             {chatPracticeLocked && chatPracticeSenses.length > 0 && (
-              <PracticeSpeechReport
+              <PracticeWordsSummary
                 senses={chatPracticeSenses}
+                progressItems={chatPracticeProgress}
+                usedCount={chatPracticeProgressCounts?.used}
+                totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
                 results={chatPracticeResults}
                 assessable={messages.some((message) => message.role === 'user')}
                 assessing={chatPracticeAssessing}
@@ -5962,10 +6181,25 @@ export function AgentTab() {
                 Не удалось получить короткий фидбек — можно попробовать оценку речи.
               </p>
             )}
+            {chatPracticeLocked && chatPracticeSenses.length > 0 && (
+              <PracticeWordsSummary
+                senses={chatPracticeSenses}
+                progressItems={chatPracticeProgress}
+                usedCount={chatPracticeProgressCounts?.used}
+                totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
+                results={chatPracticeResults}
+                assessable={messages.some((message) => message.role === 'user')}
+                assessing={chatPracticeAssessing}
+                assessError={chatPracticeAssessError}
+                storeWarning={chatPracticeStoreWarning}
+                onAssess={() => { void assessChatPractice(); }}
+              />
+            )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'center' }}>
               <button
                 type="button"
                 onClick={() => {
+                  clearChatPractice();
                   setDebateCompleted(false);
                   setDebateStarted(false);
                   setDebateTopic(null);
@@ -5991,6 +6225,7 @@ export function AgentTab() {
                   setDebateCompletedStepIds([]);
                   setDebateView(systemCatalogView);
                   setDebateSetupOpen(true);
+                  setWordsGateSkipped((prev) => ({ ...prev, debate: false }));
                 }}
                 style={{
                   padding: '0.75rem 1.5rem',
@@ -6576,6 +6811,78 @@ export function AgentTab() {
               setAgentMode('chat');
             }
             setDebateSetupOpen(false);
+          }}
+        />
+      )}
+      {wordsGateMode && token && (
+        <PracticeWordsGate
+          apiUrl={getApiUrl()}
+          token={token}
+          learningLanguage={learningLanguage}
+          mode={wordsGateMode}
+          initialSenses={chatPracticeSenses}
+          onContinue={(senses) => {
+            const requestId = crypto.randomUUID();
+            setChatPracticeSenses(senses);
+            setChatPracticeRequestId(requestId);
+            setChatPracticeRevealed({});
+            chatPracticeSensesRef.current = senses;
+            chatPracticeRequestIdRef.current = requestId;
+            const gate = wordsGateMode;
+            setWordsGateMode(null);
+            setChatInviteDismissed(true);
+            setChatSoftAskDone(true);
+            if (gate === 'roleplay') {
+              setScenarioModalOpen(true);
+            } else if (gate === 'debate') {
+              setDebateSetupOpen(true);
+            } else if (startMicAfterWordsRef.current) {
+              startMicAfterWordsRef.current = false;
+              void startRecording();
+            }
+          }}
+          onSkip={() => {
+            const gate = wordsGateMode;
+            setWordsGateMode(null);
+            if (gate === 'roleplay') {
+              setWordsGateSkipped((prev) => ({ ...prev, roleplay: true }));
+              setScenarioModalOpen(true);
+            } else if (gate === 'debate') {
+              setWordsGateSkipped((prev) => ({ ...prev, debate: true }));
+              setDebateSetupOpen(true);
+            } else {
+              setChatSoftAskDone(true);
+              setChatInviteDismissed(true);
+              if (startMicAfterWordsRef.current) {
+                startMicAfterWordsRef.current = false;
+                void startRecording();
+              }
+            }
+          }}
+          onClose={() => {
+            const gate = wordsGateMode;
+            setWordsGateMode(null);
+            startMicAfterWordsRef.current = false;
+            if (gate === 'roleplay' || gate === 'debate') {
+              setAgentMode('chat');
+              setScenarioModalOpen(false);
+              setDebateSetupOpen(false);
+            }
+          }}
+        />
+      )}
+      {chatSoftAskOpen && (
+        <ChatWordsSoftAsk
+          onChoose={() => {
+            startMicAfterWordsRef.current = true;
+            setChatSoftAskOpen(false);
+            setWordsGateMode('chat');
+          }}
+          onSkip={() => {
+            setChatSoftAskOpen(false);
+            setChatSoftAskDone(true);
+            setChatInviteDismissed(true);
+            void startRecording();
           }}
         />
       )}

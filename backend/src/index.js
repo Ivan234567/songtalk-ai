@@ -32,19 +32,28 @@ import {
   registerVocabDialogueRoutes,
   assertChatPracticeRequest,
   assertRoleplayPracticeRequest,
+  assertDebatePracticeRequest,
   loadActiveChatPractice,
   buildChatPracticeInstruction,
   buildRoleplayPracticeInstruction,
+  buildDebatePracticeInstruction,
   replyContainsTarget,
   fallbackPracticeReply,
   loadChatPracticeHint,
   saveDialogueHint,
   buildChatPracticeHintInstruction,
   buildRoleplayPracticeHintInstruction,
+  buildDebatePracticeHintInstruction,
   classifyPracticeHint,
+  createDialogueProgressHandler,
   DialogueRouteError,
 } from './vocab-dialogue-routes.js'
-import { createDialogueAssessmentHandler, latestUserText, recordChatPracticeExchange } from './vocab-dialogue-assessment.js'
+import {
+  createDialogueAssessmentHandler,
+  latestUserText,
+  recordChatPracticeExchange,
+  loadDialogueProgressSnapshot,
+} from './vocab-dialogue-assessment.js'
 import {
   buildZhRoleplayFeedbackSystem,
   buildZhRoleplayFeedbackUserPrompt,
@@ -1598,23 +1607,32 @@ app.post('/api/agent/chat', async (req, res) => {
       ...baseMessages,
     ]
 
-  let practiceTargets = null
+  let practiceAllTargets = null
+  let practiceAntiSpoilTargets = null
+  let practiceDialogueSessionId = null
   const requestedDialogueId = typeof req.body?.dialogue_session_id === 'string'
     ? req.body.dialogue_session_id.trim()
     : ''
   try {
-    const practiceMode = req.body?.practice_mode === 'roleplay' ? 'roleplay' : 'chat'
+    const rawPracticeMode = req.body?.practice_mode
+    const practiceMode = rawPracticeMode === 'roleplay' || rawPracticeMode === 'debate'
+      ? rawPracticeMode
+      : 'chat'
     const attachPractice = practiceMode === 'roleplay'
       ? assertRoleplayPracticeRequest({
         dialogueSessionId: requestedDialogueId,
-        stepCount: steps.length,
         annotate: Boolean(annotateMessages),
       })
-      : assertChatPracticeRequest({
-        dialogueSessionId: requestedDialogueId,
-        stepCount: steps.length,
-        annotate: Boolean(annotateMessages),
-      })
+      : practiceMode === 'debate'
+        ? assertDebatePracticeRequest({
+          dialogueSessionId: requestedDialogueId,
+          annotate: Boolean(annotateMessages),
+        })
+        : assertChatPracticeRequest({
+          dialogueSessionId: requestedDialogueId,
+          stepCount: steps.length,
+          annotate: Boolean(annotateMessages),
+        })
     if (attachPractice) {
       const practice = await loadActiveChatPractice({
         supabase,
@@ -1625,13 +1643,26 @@ app.post('/api/agent/chat', async (req, res) => {
         agentSessionId: req.body?.agent_session_id,
         expectedMode: practiceMode,
       })
-      practiceTargets = practice.targets
-      chatMessages.unshift({
-        role: 'system',
-        content: practiceMode === 'roleplay'
-          ? buildRoleplayPracticeInstruction(practiceTargets)
-          : buildChatPracticeInstruction(practiceTargets),
+      practiceAllTargets = practice.targets
+      practiceDialogueSessionId = practice.dialogueSessionId
+      const progress = await loadDialogueProgressSnapshot({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        dialogueSessionId: practice.dialogueSessionId,
+        targets: practice.targets,
       })
+      practiceAntiSpoilTargets = progress.remaining_targets
+      if (practiceAntiSpoilTargets.length > 0) {
+        chatMessages.unshift({
+          role: 'system',
+          content: practiceMode === 'roleplay'
+            ? buildRoleplayPracticeInstruction(practiceAntiSpoilTargets)
+            : practiceMode === 'debate'
+              ? buildDebatePracticeInstruction(practiceAntiSpoilTargets)
+              : buildChatPracticeInstruction(practiceAntiSpoilTargets),
+        })
+      }
     }
   } catch (err) {
     const status = err instanceof DialogueRouteError ? err.status : 500
@@ -1640,7 +1671,7 @@ app.post('/api/agent/chat', async (req, res) => {
       error: err instanceof DialogueRouteError ? err.message : 'Failed to load practice targets',
     })
   }
-  const holdPracticeReply = Array.isArray(practiceTargets) && practiceTargets.length > 0
+  const holdPracticeReply = Array.isArray(practiceAntiSpoilTargets) && practiceAntiSpoilTargets.length > 0
 
   try {
     console.log('[api/agent/chat] Starting chat request:', {
@@ -1692,11 +1723,11 @@ app.post('/api/agent/chat', async (req, res) => {
           }
         }
         if (timeoutId) clearTimeout(timeoutId)
-        if (holdPracticeReply && replyContainsTarget(fullReply, practiceTargets)) {
-          fullReply = fallbackPracticeReply(req.learningLanguage === 'zh' ? 'zh' : 'en', practiceTargets)
+        if (holdPracticeReply && replyContainsTarget(fullReply, practiceAntiSpoilTargets)) {
+          fullReply = fallbackPracticeReply(req.learningLanguage === 'zh' ? 'zh' : 'en', practiceAntiSpoilTargets)
         }
         if (holdPracticeReply && fullReply) send({ type: 'chunk', delta: fullReply })
-        if (holdPracticeReply && fullReply.trim()) {
+        if (Array.isArray(practiceAllTargets) && practiceAllTargets.length > 0 && fullReply.trim()) {
           const practiceUserText = latestUserText(messages)
           if (practiceUserText) {
             try {
@@ -1705,10 +1736,33 @@ app.post('/api/agent/chat', async (req, res) => {
                 safeSupabaseCall,
                 userId,
                 language: req.learningLanguage === 'zh' ? 'zh' : 'en',
-                dialogueSessionId: requestedDialogueId,
+                dialogueSessionId: practiceDialogueSessionId || requestedDialogueId,
                 userText: practiceUserText,
                 assistantText: fullReply.trim(),
               })
+              try {
+                const progress = await loadDialogueProgressSnapshot({
+                  supabase,
+                  safeSupabaseCall,
+                  userId,
+                  dialogueSessionId: practiceDialogueSessionId || requestedDialogueId,
+                  targets: practiceAllTargets,
+                })
+                send({
+                  type: 'practice_progress',
+                  used_count: progress.used_count,
+                  total_count: progress.total_count,
+                  items: progress.items.map((item) => ({
+                    sense_id: item.sense_id,
+                    headword: item.headword,
+                    gloss_ru: item.gloss_ru,
+                    status: item.status,
+                    verdict: item.verdict,
+                  })),
+                })
+              } catch {
+                console.error('[api/agent/chat] practice progress was not computed')
+              }
             } catch {
               console.error('[api/agent/chat] practice exchange was not stored')
               send({ type: 'practice_store', ok: false })
@@ -2542,8 +2596,8 @@ Rules:
       ? req.body.dialogue_session_id.trim()
       : ''
     if (requestedDialogueId) {
-      if (hintMode !== 'chat' && hintMode !== 'roleplay') {
-        return res.status(409).json({ error: 'Practice hint belongs to free chat or roleplay only' })
+      if (hintMode !== 'chat' && hintMode !== 'roleplay' && hintMode !== 'debate') {
+        return res.status(409).json({ error: 'Practice hint belongs to free chat, roleplay, or debate only' })
       }
       practiceHintContext = await loadChatPracticeHint({
         supabase,
@@ -2600,7 +2654,9 @@ Rules:
         content: practiceHintContext
           ? `${systemContent}\n\n${hintMode === 'roleplay'
             ? buildRoleplayPracticeHintInstruction(practiceHintContext.targets)
-            : buildChatPracticeHintInstruction(practiceHintContext.targets)}`
+            : hintMode === 'debate'
+              ? buildDebatePracticeHintInstruction(practiceHintContext.targets)
+              : buildChatPracticeHintInstruction(practiceHintContext.targets)}`
           : systemContent,
       },
       { role: 'user', content: userContent },
@@ -3195,6 +3251,14 @@ registerVocabDialogueRoutes(app, {
   safeSupabaseCall,
   asyncHandler,
 })
+
+app.get('/api/vocabulary/srs/dialogue/:id/progress', asyncHandler(createDialogueProgressHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  loadProgress: loadDialogueProgressSnapshot,
+})))
 
 app.post('/api/vocabulary/srs/dialogue/assess', asyncHandler(createDialogueAssessmentHandler({
   supabase,

@@ -4,7 +4,9 @@ import fs from 'node:fs'
 import {
   assertChatPracticeRequest,
   assertRoleplayPracticeRequest,
+  assertDebatePracticeRequest,
   buildRoleplayPracticeInstruction,
+  buildDebatePracticeInstruction,
   buildChatPracticeInstruction,
   buildChatPracticeHintInstruction,
   classifyPracticeHint,
@@ -221,6 +223,9 @@ test('запрос без учебной сессии не подключает 
   assert.equal(assertRoleplayPracticeRequest({ dialogueSessionId: '', annotate: false }), false)
   assert.equal(assertRoleplayPracticeRequest({ dialogueSessionId: 'session', annotate: false }), true)
   assert.equal(assertRoleplayPracticeRequest({ dialogueSessionId: 'session', annotate: true }), false)
+  assert.equal(assertDebatePracticeRequest({ dialogueSessionId: '', annotate: false }), false)
+  assert.equal(assertDebatePracticeRequest({ dialogueSessionId: 'session', annotate: false }), true)
+  assert.equal(assertDebatePracticeRequest({ dialogueSessionId: 'session', annotate: true }), false)
 })
 
 test('инструкция чата содержит форму из базы и запрещает произнести её', () => {
@@ -228,6 +233,7 @@ test('инструкция чата содержит форму из базы и
   assert.match(text, /apple/)
   assert.match(text, /яблоко/)
   assert.match(text, /Do not say/)
+  assert.match(text, /Targets still unused/)
   const hint = buildChatPracticeHintInstruction([{ headword: 'apple', gloss_ru: 'яблоко' }])
   assert.match(hint, /Russian only/)
   assert.match(hint, /forbidden word/)
@@ -235,6 +241,10 @@ test('инструкция чата содержит форму из базы и
   assert.match(roleplay, /roleplay/)
   assert.match(roleplay, /Do not say/)
   assert.match(roleplay, /scenario steps/)
+  const debate = buildDebatePracticeInstruction([{ headword: 'apple', gloss_ru: 'яблоко' }])
+  assert.match(debate, /debate/)
+  assert.match(debate, /Do not say/)
+  assert.match(debate, /Targets still unused/)
 })
 
 test('ответ с целевым словом заменяется одной безопасной репликой', () => {
@@ -401,15 +411,42 @@ test('чужое значение, другой язык, сценарий и ш
   }), roleplay)
   assert.equal(roleplay.statusCode, 409)
 
-  const debate = mockRes()
+  const badMode = mockRes()
   await dialogue(authedReq({
     agent_session_id: AGENT_ID,
     sense_ids: [SENSE_A],
-    request_id: 'debate',
+    request_id: 'bad-mode',
+    level_snapshot: 'B1',
+    mode: 'lecture',
+  }), badMode)
+  assert.equal(badMode.statusCode, 400)
+
+  const debateOnScenario = mockRes()
+  await handlers(scenario).dialogue(authedReq({
+    agent_session_id: AGENT_ID,
+    sense_ids: [SENSE_A],
+    request_id: 'debate-on-scenario',
     level_snapshot: 'B1',
     mode: 'debate',
-  }), debate)
-  assert.equal(debate.statusCode, 400)
+  }), debateOnScenario)
+  assert.equal(debateOnScenario.statusCode, 409)
+})
+
+test('дебат закрепляет слова за сессией без сценария', async () => {
+  const { store, supabase } = createStore()
+  const { dialogue } = handlers(supabase)
+  const res = mockRes()
+  await dialogue(authedReq({
+    agent_session_id: AGENT_ID,
+    sense_ids: [SENSE_A],
+    request_id: 'debate-ok',
+    level_snapshot: 'medium',
+    mode: 'debate',
+  }), res)
+  assert.equal(res.statusCode, 200)
+  assert.equal(res.body.mode, 'debate')
+  assert.equal(store.sessions[0].mode, 'debate')
+  assert.equal(store.targets.length, 1)
 })
 
 test('ролевой сценарий закрепляет слова только за сессией этого сценария', async () => {
@@ -464,12 +501,16 @@ test('модуль практики не трогает карточки SRS, ч
   assert.doesNotMatch(source, /vocab_srs_states|vocab_review_events|commit_vocab_srs_review/)
   assert.match(index, /assertChatPracticeRequest\(/)
   assert.match(index, /assertRoleplayPracticeRequest\(/)
+  assert.match(index, /assertDebatePracticeRequest\(/)
   assert.match(index, /expectedMode: practiceMode/)
   assert.match(index, /expectedMode: hintMode/)
   assert.match(index, /practice_store/)
+  assert.match(index, /practice_progress/)
+  assert.match(index, /practiceAntiSpoilTargets/)
   assert.doesNotMatch(index, /historyList\.filter\(\(message\) => message\.role === 'user'\)\.length/)
   assert.match(index, /loadActiveChatPractice\(/)
-  assert.match(index, /replyContainsTarget\(fullReply, practiceTargets\)/)
+  assert.match(index, /replyContainsTarget\(fullReply, practiceAntiSpoilTargets\)/)
   assert.match(index, /classifyPracticeHint\(/)
   assert.match(index, /saveDialogueHint\(/)
+  assert.match(index, /dialogue\/:id\/progress/)
 })
