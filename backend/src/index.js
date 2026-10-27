@@ -26,6 +26,7 @@ import { registerYandexAuthRoutes } from './yandex-auth.js'
 import { registerYookassaRoutes } from './yookassa.js'
 import { registerVocabSrsDueRoute } from './vocab-srs-routes.js'
 import { registerVocabListsRoutes } from './vocab-lists-routes.js'
+import { registerVocabularySystemListRoutes } from './vocabulary-system-lists.js'
 import {
   registerVocabDialogueRoutes,
   assertChatPracticeRequest,
@@ -3233,6 +3234,14 @@ app.post('/api/vocabulary/srs/dialogue/assess', asyncHandler(createDialogueAsses
     return Array.isArray(parsed?.items) ? parsed.items : []
   },
 })))
+
+registerVocabularySystemListRoutes(app, {
+  supabase,
+  safeSupabaseCall,
+  getBearerToken,
+  resolveVocabularyLanguage,
+  normalizeWord,
+})
 
 // Speaking assessment — AI evaluates user speech by rubric (fluency, vocabulary, grammar, pronunciation, completeness, dialogue)
 app.post('/api/agent/assess-speaking', async (req, res) => {

@@ -24,6 +24,7 @@ import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
 import { registerYookassaRoutes } from './yookassa.js'
+import { registerVocabularySystemListRoutes } from './vocabulary-system-lists.js'
 import {
   buildZhRoleplayFeedbackSystem,
   buildZhRoleplayFeedbackUserPrompt,
@@ -3036,6 +3037,14 @@ registerZhVoiceTaskRoutes(app, {
   deductBalance,
   getCost,
   BALANCE_THRESHOLD_RUB,
+})
+
+registerVocabularySystemListRoutes(app, {
+  supabase,
+  safeSupabaseCall,
+  getBearerToken,
+  resolveVocabularyLanguage,
+  normalizeWord,
 })
 
 // Speaking assessment — AI evaluates user speech by rubric (fluency, vocabulary, grammar, pronunciation, completeness, dialogue)

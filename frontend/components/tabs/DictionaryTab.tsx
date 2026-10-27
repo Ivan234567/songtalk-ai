@@ -18,6 +18,7 @@ import {
 } from '@/components/InteractiveChineseWord';
 import { ChineseCharactersDictionary } from '@/components/tabs/ChineseCharactersDictionary';
 import { AddChineseWordModal } from '@/components/tabs/AddChineseWordModal';
+import { CreateWordListModal } from '@/components/tabs/CreateWordListModal';
 import type { AddedChineseWord } from '@/components/tabs/AddChineseWordModal';
 import { AddEnglishWordModal } from '@/components/tabs/AddEnglishWordModal';
 import type { AddedEnglishWord } from '@/components/tabs/AddEnglishWordModal';
@@ -276,6 +277,7 @@ export const DictionaryTab: React.FC = () => {
   const [showAddEnglishWord, setShowAddEnglishWord] = useState(false);
   const [showAddEnglishPhrase, setShowAddEnglishPhrase] = useState(false);
   const [addPhraseKind, setAddPhraseKind] = useState<PhraseKind>('idiom');
+  const [showCreateListModal, setShowCreateListModal] = useState(false);
   const [characterGlossMap, setCharacterGlossMap] = useState<
     Record<string, { translation?: string | null; pinyin?: string | null }>
   >({});
@@ -1708,6 +1710,27 @@ export const DictionaryTab: React.FC = () => {
               <PlusIcon /> Добавить фразовый глагол
             </button>
             )}
+            <button
+              type="button"
+              onClick={() => setShowCreateListModal(true)}
+              style={{
+                padding: '0.4rem 0.8rem',
+                borderRadius: '0.6rem',
+                border: '1px solid var(--stroke)',
+                background: 'var(--card)',
+                color: 'var(--text-primary)',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+              }}
+              title="Системные списки и новый список"
+            >
+              <PlusIcon /> Создать список
+            </button>
             <div ref={exportDropdownRef} style={{ position: 'relative' }}>
               <button
                 type="button"
@@ -2934,9 +2957,16 @@ export const DictionaryTab: React.FC = () => {
                         </div>
                         <p>
                           {isChinese
-                            ? 'Словарь пока пуст. Добавьте первое слово вручную — с пиньинем и переводом.'
-                            : 'Словарь пока пуст. Добавьте первое слово вручную — с переводом и уровнем CEFR.'}
+                            ? 'Словарь пока пуст. Возьмите системный набор или добавьте первое слово вручную — с пиньинем и переводом.'
+                            : 'Словарь пока пуст. Возьмите системный набор или добавьте первое слово вручную — с переводом и уровнем CEFR.'}
                         </p>
+                        <button
+                          type="button"
+                          className="zh-add-empty-btn"
+                          onClick={() => setShowCreateListModal(true)}
+                        >
+                          <PlusIcon /> Создать список
+                        </button>
                         <button
                           type="button"
                           className="zh-add-empty-btn"
@@ -4754,6 +4784,26 @@ export const DictionaryTab: React.FC = () => {
           </div>
         </div>
       )}
+      <CreateWordListModal
+        open={showCreateListModal}
+        accessToken={accessToken}
+        apiUrl={getApiUrl()}
+        isChinese={isChinese}
+        language={learningLanguage}
+        onClose={() => setShowCreateListModal(false)}
+        onOpenList={async (nextCategoryId) => {
+          setShowCreateListModal(false);
+          setViewMode('words');
+          await reloadCategories();
+          setCategoryId(nextCategoryId);
+        }}
+        onCreatedEmpty={async (nextCategoryId) => {
+          setShowCreateListModal(false);
+          setViewMode('words');
+          await reloadCategories();
+          setCategoryId(nextCategoryId);
+        }}
+      />
       {isChinese ? (
         <AddChineseWordModal
           open={showAddChineseWord}

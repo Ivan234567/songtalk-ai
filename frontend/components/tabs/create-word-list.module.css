@@ -1,0 +1,325 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(4, 8, 16, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.modal {
+  width: min(920px, 100%);
+  max-height: min(90vh, 820px);
+  overflow: auto;
+  border-radius: 1.35rem;
+  border: 1px solid rgba(148, 175, 214, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(86, 130, 210, 0.12), transparent 34%),
+    linear-gradient(180deg, #152033 0%, #101929 100%);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+  color: #e8eef8;
+  padding: 1.15rem 1.25rem 1.35rem;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 1.1rem;
+}
+
+.tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: rgba(196, 208, 226, 0.62);
+  cursor: pointer;
+  padding: 0.7rem 0.4rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  position: relative;
+}
+
+.tabNum {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+
+.tabLabel {
+  font-size: 0.92rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tabActive {
+  color: #f4f7fb;
+}
+
+.tabActive::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 99px;
+  background: #7ec8ff;
+  box-shadow: 0 0 12px rgba(126, 200, 255, 0.55);
+}
+
+.proBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f6c453, #f59e0b);
+  color: #3b2504;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.intro {
+  margin: 0 0 1.1rem;
+  color: rgba(214, 224, 238, 0.78);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  max-width: 46rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.card {
+  appearance: none;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(18, 28, 46, 0.92), rgba(13, 22, 36, 0.96));
+  border-radius: 1rem;
+  padding: 0.95rem 0.9rem 0.85rem;
+  min-height: 148px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  position: relative;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(126, 200, 255, 0.35);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
+}
+
+.card:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.cardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.iconWrap {
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.7rem;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.iconWrap svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.count {
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(196, 208, 226, 0.7);
+  font-weight: 700;
+}
+
+.libraryBadge {
+  position: absolute;
+  top: 0.72rem;
+  left: 3.3rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  padding: 0.16rem 0.4rem;
+  border-radius: 0.35rem;
+  color: #d7efe4;
+  background: rgba(74, 222, 128, 0.16);
+  border: 1px solid rgba(74, 222, 128, 0.32);
+}
+
+.cardTitle {
+  margin: 0.35rem 0 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.cardSubtitle {
+  margin: 0;
+  color: rgba(196, 208, 226, 0.68);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.openHint {
+  margin-top: auto;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: rgba(180, 214, 255, 0.86);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 36rem;
+}
+
+.label {
+  display: block;
+  font-size: 0.78rem;
+  color: rgba(196, 208, 226, 0.72);
+  margin-bottom: 0.35rem;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 14, 24, 0.55);
+  color: #eef3fa;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.92rem;
+}
+
+.textarea {
+  min-height: 10rem;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.hint {
+  margin: 0;
+  color: rgba(196, 208, 226, 0.68);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+
+.secondary,
+.primary {
+  appearance: none;
+  border-radius: 0.75rem;
+  padding: 0.62rem 0.95rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: #d7e2f2;
+}
+
+.primary {
+  border: 0;
+  background: linear-gradient(180deg, #7ad7a7, #58c18f);
+  color: #08301c;
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.error {
+  color: #fca5a5;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.close {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.95rem;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(214, 224, 238, 0.7);
+  cursor: pointer;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.modalWrap {
+  position: relative;
+}
+
+.skeleton {
+  height: 148px;
+  border-radius: 1rem;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+  background-size: 200% 100%;
+  animation: shine 1.2s linear infinite;
+}
+
+@keyframes shine {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (max-width: 860px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .modal {
+    padding: 1rem 0.85rem 1.1rem;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .tabs {
+    grid-template-columns: 1fr;
+  }
+}
