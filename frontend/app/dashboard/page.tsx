@@ -7,8 +7,8 @@ import { Sidebar } from '@/components/sidebar/Sidebar';
 import { DashboardTab } from '@/components/tabs/DashboardTab';
 import layoutStyles from './dashboard.module.css';
 import { KaraokeTab } from '@/components/tabs/KaraokeTab';
-import { DictionaryTab } from '@/components/tabs/DictionaryTab';
 import { RecognitionReview } from '@/components/dictionary/RecognitionReview';
+import { VocabLibrary } from '@/components/dictionary/VocabLibrary';
 import { AgentTab } from '@/components/tabs/AgentTab';
 import { ProgressTab } from '@/components/tabs/ProgressTab';
 import { BalanceTab } from '@/components/tabs/BalanceTab';
@@ -52,6 +52,8 @@ function DashboardPageContent() {
     }
     next.delete('review');
     next.delete('senses');
+    next.delete('list');
+    next.delete('create');
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   };
 
@@ -145,7 +147,7 @@ function DashboardPageContent() {
           </div>
         );
       case 'dictionary':
-        return searchParams.get('review') === '1' ? <RecognitionReview /> : <DictionaryTab />;
+        return searchParams.get('review') === '1' ? <RecognitionReview /> : <VocabLibrary />;
       case 'agent':
         return <AgentTab />;
       case 'progress':
@@ -162,7 +164,7 @@ function DashboardPageContent() {
     }
   };
 
-  const shouldEnableScroll = activeTab === 'words' || activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account';
+  const shouldEnableScroll = activeTab === 'words' || activeTab === 'dictionary' || activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account';
   const usernameFromEmail = userEmail?.split('@')[0];
   const displayName = usernameFromEmail
     ? usernameFromEmail.charAt(0).toUpperCase() + usernameFromEmail.slice(1).toLowerCase()

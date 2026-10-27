@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useTtsVoice } from '@/context/TtsVoiceContext';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
@@ -73,6 +73,8 @@ function readCards(payload: unknown): DueCard[] {
 
 export function RecognitionReview() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const listId = searchParams.get('list');
   const { ttsVoice } = useTtsVoice();
   const { learningLanguage } = useLearningLanguage();
   const [token, setToken] = useState<string | null>(null);
@@ -94,8 +96,9 @@ export function RecognitionReview() {
 
   const leave = useCallback(() => {
     if (savingRef.current) return;
-    router.replace('/dashboard?tab=dictionary');
-  }, [router]);
+    if (listId) router.replace(`/dashboard?tab=dictionary&list=${listId}`);
+    else router.replace('/dashboard?tab=dictionary');
+  }, [listId, router]);
 
   const loadQueue = useCallback(async (accessToken: string, keepMessage = false) => {
     setPhase('loading');
@@ -107,7 +110,10 @@ export function RecognitionReview() {
     setIndex(0);
     requestIdRef.current = null;
     try {
-      const resp = await fetch(`${getApiUrl()}/api/vocabulary/srs/due`, {
+      const endpoint = listId
+        ? `${getApiUrl()}/api/vocabulary/lists/${listId}/listen`
+        : `${getApiUrl()}/api/vocabulary/srs/due`;
+      const resp = await fetch(endpoint, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const data = await resp.json().catch(() => ({}));
@@ -129,7 +135,7 @@ export function RecognitionReview() {
       setMessage('Не удалось найти слова');
       setPhase('error');
     }
-  }, []);
+  }, [listId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -350,7 +356,7 @@ export function RecognitionReview() {
                   Сказать их сам
                 </button>
               )}
-              <button type="button" onClick={leave} style={buttonStyle}>К словарю</button>
+              <button type="button" onClick={leave} style={buttonStyle}>{listId ? 'К списку' : 'К словарю'}</button>
             </div>
           </div>
         )}

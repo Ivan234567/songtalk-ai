@@ -25,6 +25,7 @@ import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
 import { registerYookassaRoutes } from './yookassa.js'
 import { registerVocabSrsDueRoute } from './vocab-srs-routes.js'
+import { registerVocabListsRoutes } from './vocab-lists-routes.js'
 import {
   registerVocabDialogueRoutes,
   assertChatPracticeRequest,
@@ -3168,6 +3169,14 @@ registerZhVoiceTaskRoutes(app, {
 })
 
 registerVocabSrsDueRoute(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+})
+
+registerVocabListsRoutes(app, {
   supabase,
   resolveUserId,
   getBearerToken,
