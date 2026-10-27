@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { useTtsVoice } from '@/context/TtsVoiceContext';
+import styles from './vocab-library.module.css';
 
 type ListStats = { new: number; learning: number; due: number; mastered: number };
 
@@ -24,6 +25,7 @@ type StarterPack = {
   key: string;
   title: string;
   description: string;
+  level: string;
   icon: string;
   word_count: number;
   in_library: boolean;
@@ -90,6 +92,8 @@ export function VocabLibrary() {
   const [wordQuery, setWordQuery] = useState('');
   const [wordFilter, setWordFilter] = useState<'all' | ListWord['status']>('all');
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [newWord, setNewWord] = useState('');
+  const [newGloss, setNewGloss] = useState('');
 
   const setParams = useCallback((patch: Record<string, string | null>) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -176,11 +180,11 @@ export function VocabLibrary() {
         body: JSON.stringify({ title: emptyTitle.trim() }),
       });
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data?.error || 'create');
+      if (!resp.ok || !data?.item?.id) throw new Error(data?.error || 'create');
       setEmptyTitle('');
       openList(data.item.id);
-    } catch {
-      setError('Не удалось создать список');
+    } catch (err) {
+      setError(err instanceof Error && err.message !== 'create' ? err.message : 'Не удалось создать список');
     } finally {
       setBusyKey(null);
     }
@@ -238,6 +242,31 @@ export function VocabLibrary() {
     router.push(`/dashboard?tab=words&list=${listId}`);
   };
 
+  const addWord = async () => {
+    if (!token || !listId || !newWord.trim() || !newGloss.trim()) return;
+    setBusyKey('add-word');
+    setError(null);
+    try {
+      const resp = await fetch(`${getApiUrl()}/api/vocabulary/lists/${listId}/words`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ word: newWord.trim(), gloss: newGloss.trim() }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || 'add');
+      setNewWord('');
+      setNewGloss('');
+      await loadDetail(token, listId);
+    } catch (err) {
+      setError(err instanceof Error && err.message !== 'add' ? err.message : 'Не удалось добавить слово');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const sayList = () => {
     if (!detail) return;
     const senseIds = detail.words.flatMap((word) => word.sense_ids).slice(0, 5);
@@ -269,8 +298,8 @@ export function VocabLibrary() {
           <button type="button" onClick={closeCreate} style={ghostBtn}>← К словарям</button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '0.08em' }}>ВЫБЕРИТЕ СТАРТОВЫЙ НАБОР</span>
         </div>
-        <h1 style={{ margin: '0 0 1rem', fontSize: '2rem', fontFamily: 'Georgia, serif' }}>
-          Восемь базовых <span style={{ color: '#7dd3fc' }}>слов для начала.</span>
+        <h1 className={styles.title}>
+          Пять демо-списков <span>A1–A2</span>
         </h1>
         <div style={{ display: 'flex', gap: 18, marginBottom: 16, borderBottom: '1px solid var(--stroke)' }}>
           {([
@@ -287,7 +316,8 @@ export function VocabLibrary() {
                 background: 'transparent',
                 color: createTab === key ? 'var(--text-primary)' : 'var(--text-muted)',
                 padding: '0.6rem 0',
-                borderBottom: createTab === key ? '2px solid #38bdf8' : '2px solid transparent',
+                borderBottom: createTab === key ? '2px solid var(--accent)' : '2px solid transparent',
+                fontFamily: 'inherit',
                 cursor: 'pointer',
               }}
             >
@@ -314,7 +344,7 @@ export function VocabLibrary() {
                   style={{ ...cardBtn, textAlign: 'left', minHeight: 160 }}
                 >
                   {pack.in_library && (
-                    <div style={{ fontSize: '0.7rem', color: '#7dd3fc', marginBottom: 8 }}>В БИБЛИОТЕКЕ</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--accent)', marginBottom: 8 }}>В БИБЛИОТЕКЕ · {pack.level}</div>
                   )}
                   <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{pack.title}</div>
                   <div style={{ marginTop: 8, fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pack.word_count} слов</div>
@@ -329,7 +359,7 @@ export function VocabLibrary() {
         )}
         {createTab === 'empty' && (
           <div style={{ maxWidth: 420 }}>
-            <p style={{ color: 'var(--text-muted)' }}>Создайте пустой список и добавляйте слова сами.</p>
+            <p style={{ color: 'var(--text-muted)' }}>Свой список: дайте имя, затем добавляйте слова и переводы.</p>
             <input
               value={emptyTitle}
               onChange={(event) => setEmptyTitle(event.target.value)}
@@ -344,8 +374,7 @@ export function VocabLibrary() {
         {createTab === 'custom' && (
           <div style={{ maxWidth: 520 }}>
             <p style={{ color: 'var(--text-muted)' }}>
-              Настраиваемый список будет бесплатным. Сейчас можно взять быстрый старт или пустой список.
-              Фильтры по уровню и контексту подключим следующим шагом.
+              Свой список уже бесплатный. Уровень, контекст и часть речи для автоподбора слов подключим следующим шагом.
             </p>
             <button type="button" onClick={() => setCreateTab('empty')} style={primaryBtn}>Сделать пустой список</button>
           </div>
@@ -359,7 +388,7 @@ export function VocabLibrary() {
     return (
       <div style={{ maxWidth: 1100, margin: '0 auto', width: '100%', padding: '0.5rem 0 2rem' }}>
         <button type="button" onClick={backToLibrary} style={ghostBtn}>← Назад к словарям</button>
-        <h1 style={{ margin: '1rem 0 0.75rem', fontSize: '2.2rem', fontFamily: 'Georgia, serif' }}>{item?.title || 'Список'}</h1>
+        <h1 className={styles.title}>{item?.title || 'Список'}</h1>
         {item && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 14 }}>
             {[
@@ -380,6 +409,19 @@ export function VocabLibrary() {
           <button type="button" onClick={listenList} style={primaryBtn}>Послушать</button>
           <button type="button" onClick={sayList} style={secondaryBtn}>Сказать сам</button>
         </div>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void addWord();
+          }}
+          style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}
+        >
+          <input value={newWord} onChange={(event) => setNewWord(event.target.value)} placeholder="Слово" style={{ ...inputStyle, margin: 0, flex: 1, minWidth: 140 }} />
+          <input value={newGloss} onChange={(event) => setNewGloss(event.target.value)} placeholder="Перевод" style={{ ...inputStyle, margin: 0, flex: 1, minWidth: 140 }} />
+          <button type="submit" disabled={!newWord.trim() || !newGloss.trim() || busyKey === 'add-word'} style={primaryBtn}>
+            {busyKey === 'add-word' ? 'Добавляем…' : '+ Добавить слово'}
+          </button>
+        </form>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           <input
             value={wordQuery}
@@ -394,8 +436,9 @@ export function VocabLibrary() {
               onClick={() => setWordFilter(key)}
               style={{
                 ...chipBtn,
-                background: wordFilter === key ? '#38bdf8' : 'transparent',
-                color: wordFilter === key ? '#0b1220' : 'var(--text-muted)',
+                background: wordFilter === key ? 'var(--accent)' : 'transparent',
+                color: wordFilter === key ? '#121614' : 'var(--text-muted)',
+                fontFamily: 'inherit',
               }}
             >
               {key === 'all' ? 'Все' : STATUS_LABEL[key]}
@@ -451,9 +494,9 @@ export function VocabLibrary() {
               <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: 6 }}>
                 {learningLanguage === 'zh' ? 'КИТАЙСКИЙ' : 'АНГЛИЙСКИЙ'}
               </div>
-              <h1 style={{ margin: 0, fontSize: '2.1rem', fontFamily: 'Georgia, serif' }}>
+              <h1 className={styles.title}>
                 Мои словари{' '}
-                <span style={badge}>{library ? `${library.count} / ${library.limit_free} списков` : '…'}</span>
+                <span style={badge}>{library ? `${library.count} ${listWord(library.count)}` : '…'}</span>
               </h1>
               <p style={{ margin: '0.45rem 0 0', color: 'var(--text-muted)' }}>
                 Создавайте списки слов и управляйте ими здесь
@@ -486,11 +529,36 @@ export function VocabLibrary() {
           {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
           {loading && <p style={{ color: 'var(--text-muted)' }}>Загружаем библиотеку…</p>}
 
+          {(library?.starter_packs || []).length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 8, color: 'var(--text-muted)', fontSize: '0.78rem', letterSpacing: '0.08em' }}>ДЕМО A1–A2</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+                {library.starter_packs.map((pack) => (
+                  <button
+                    key={pack.key}
+                    type="button"
+                    disabled={busyKey === pack.key}
+                    onClick={() => void (pack.in_library
+                      ? openList(library.items.find((item) => item.system_key === pack.key)?.id || '')
+                      : addStarter(pack.key))}
+                    style={{ ...cardBtn, textAlign: 'left', minHeight: 120 }}
+                  >
+                    <div style={{ color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 700 }}>{pack.level}</div>
+                    <div style={{ fontWeight: 700, marginTop: 4 }}>{pack.title}</div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 6 }}>{pack.word_count} слов</div>
+                    <div style={{ marginTop: 10, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {pack.in_library ? 'Открыть' : busyKey === pack.key ? 'Добавляем…' : 'Добавить в библиотеку'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
             {lists.map((item) => (
               <button key={item.id} type="button" onClick={() => openList(item.id)} style={{ ...cardBtn, textAlign: 'left', minHeight: 170 }}>
                 {item.source === 'system' && (
-                  <div style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0, borderLeft: '28px solid transparent', borderTop: '28px solid #38bdf8' }} />
+                  <div style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0, borderLeft: '28px solid transparent', borderTop: '28px solid var(--accent)' }} />
                 )}
                 <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{item.title}</div>
                 <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: '0.85rem' }}>{item.word_count} слов</div>
@@ -500,7 +568,7 @@ export function VocabLibrary() {
                       width: `${item.word_count ? Math.min(100, Math.round((item.stats.mastered / item.word_count) * 100)) : 0}%`,
                       height: '100%',
                       borderRadius: 99,
-                      background: '#38bdf8',
+                      background: 'var(--accent)',
                     }}
                     />
                   </div>
@@ -519,6 +587,14 @@ export function VocabLibrary() {
       </div>
     </div>
   );
+}
+
+function listWord(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'список';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'списка';
+  return 'списков';
 }
 
 function SideItem({ label, count, active = false }: { label: string; count: number; active?: boolean }) {
@@ -570,9 +646,10 @@ const ghostBtn: React.CSSProperties = {
 
 const primaryBtn: React.CSSProperties = {
   border: 'none',
-  borderRadius: 12,
-  background: '#38bdf8',
-  color: '#0b1220',
+  borderRadius: 14,
+  background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent) 78%, #fff) 0%, var(--accent) 48%, var(--accent-strong) 100%)',
+  color: '#121614',
+  fontFamily: 'inherit',
   fontWeight: 700,
   padding: '0.75rem 1rem',
   cursor: 'pointer',

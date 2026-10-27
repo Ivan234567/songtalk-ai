@@ -8,12 +8,15 @@ import { registerVocabListsRoutes } from './vocab-lists-routes.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
 
-test('стартовые наборы английского содержат числа и приветствия', () => {
+test('пять демо-списков A1–A2 по 20 слов', () => {
   const packs = listStarterPacks('en')
-  assert.equal(packs.length, 4)
-  assert.ok(packs.some((pack) => pack.key === 'numbers' && pack.word_count === 21))
-  assert.ok(findStarterPack('greetings', 'en'))
-  assert.equal(findStarterPack('numbers', 'zh'), null)
+  assert.equal(packs.length, 5)
+  for (const pack of packs) {
+    assert.equal(pack.word_count, 20)
+    assert.ok(pack.level === 'A1' || pack.level === 'A2')
+  }
+  assert.ok(findStarterPack('intro', 'en'))
+  assert.equal(findStarterPack('intro', 'zh'), null)
 })
 
 test('маршруты библиотеки списков зарегистрированы', () => {
@@ -34,6 +37,7 @@ test('маршруты библиотеки списков зарегистри�
     ['POST', '/api/vocabulary/lists'],
     ['POST', '/api/vocabulary/lists/starter'],
     ['GET', '/api/vocabulary/lists/:id'],
+    ['POST', '/api/vocabulary/lists/:id/words'],
     ['GET', '/api/vocabulary/lists/:id/listen'],
   ])
 })
