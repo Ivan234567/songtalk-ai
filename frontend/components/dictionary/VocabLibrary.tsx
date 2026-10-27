@@ -398,6 +398,12 @@ export function VocabLibrary() {
     setWordCardLoading(false);
   };
 
+  const visibleWords = detail ? sortListWords(detail.words || [], sortMode) : [];
+  const wordCardIndex = wordCard
+    ? visibleWords.findIndex((word) => word.vocabulary_id === wordCard.vocabulary_id)
+    : -1;
+  const wordCardMeta = wordCardIndex >= 0 ? visibleWords[wordCardIndex] : null;
+
   const chosenWords = () => {
     const words = detail?.words || [];
     if (!selecting || selected.size === 0) return words;
@@ -654,7 +660,7 @@ export function VocabLibrary() {
 
   if (listId) {
     const item = detail?.item;
-    const words = sortListWords(detail?.words || [], sortMode);
+    const words = visibleWords;
     const canSave = resolved.some((itemRow) => itemRow.selected && !itemRow.in_list);
     const listenCount = listenCandidates().length;
     const listenLabel = selecting && selected.size > 0
@@ -910,11 +916,28 @@ export function VocabLibrary() {
             loading={wordCardLoading}
             error={wordCardError}
             speaking={Boolean(wordCard && speakingId === wordCard.vocabulary_id)}
+            status={wordCardMeta?.status || null}
+            progress={wordCardMeta?.progress ?? null}
+            index={Math.max(0, wordCardIndex)}
+            total={visibleWords.length}
             onClose={closeWordCard}
             onSpeak={() => {
               if (!wordCard) return;
               void speakText(wordCard.headword, wordCard.vocabulary_id);
             }}
+            onPrev={wordCardIndex > 0
+              ? () => void openWordCard(visibleWords[wordCardIndex - 1].vocabulary_id)
+              : undefined}
+            onNext={wordCardIndex >= 0 && wordCardIndex < visibleWords.length - 1
+              ? () => void openWordCard(visibleWords[wordCardIndex + 1].vocabulary_id)
+              : undefined}
+            onRemove={wordCard
+              ? () => {
+                const id = wordCard.vocabulary_id;
+                closeWordCard();
+                void removeWord(id);
+              }
+              : undefined}
           />
         )}
       </div>

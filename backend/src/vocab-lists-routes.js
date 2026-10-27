@@ -1194,7 +1194,7 @@ export function createListWordCardHandler(deps) {
       const { data: vocabulary, error: vocabError } = await safeSupabaseCall(
         () => supabase
           .from('user_vocabulary')
-          .select('id, word, translations, part_of_speech, pinyin, contexts')
+          .select('id, word, translations, part_of_speech, pinyin, contexts, difficulty_level')
           .eq('id', vocabularyId)
           .eq('user_id', userId)
           .maybeSingle(),
@@ -1237,7 +1237,7 @@ export function createListWordCardHandler(deps) {
       const { data: cache } = await safeSupabaseCall(
         () => supabase
           .from('word_definitions_cache')
-          .select('definitions, example_sentences, phonetic_transcription, pinyin, part_of_speech')
+          .select('definitions, example_sentences, phonetic_transcription, pinyin, part_of_speech, difficulty_level')
           .eq('word', vocabulary.word)
           .eq('language', language)
           .maybeSingle(),
@@ -1245,7 +1245,7 @@ export function createListWordCardHandler(deps) {
       const { data: freshVocab } = await safeSupabaseCall(
         () => supabase
           .from('user_vocabulary')
-          .select('id, word, translations, part_of_speech, pinyin, contexts')
+          .select('id, word, translations, part_of_speech, pinyin, contexts, difficulty_level')
           .eq('id', vocabularyId)
           .eq('user_id', userId)
           .maybeSingle(),
