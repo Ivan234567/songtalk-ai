@@ -123,7 +123,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  min-height: 150px;
+  min-height: 0;
   border-radius: 16px;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.03);
@@ -134,23 +134,33 @@
   font-family: inherit;
 }
 
+.listCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
 .listCardTitle {
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 700;
 }
 
 .listCardMeta {
-  margin-top: 8px;
+  margin-top: 6px;
   color: var(--text-muted);
   font-size: 0.85rem;
 }
 
-.dueBadge {
-  margin-top: auto;
-  padding-top: 16px;
-  color: #f87171;
-  font-size: 0.8rem;
+.dueChip {
+  flex: none;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
   font-weight: 700;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.16);
 }
 
 .empty {
@@ -283,7 +293,19 @@
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
   margin-bottom: 14px;
+  padding: 0.75rem;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: #12161c;
+}
+
+.assistHint {
+  width: 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 .grid {
@@ -295,11 +317,10 @@
 .wordCard {
   display: flex;
   flex-direction: column;
-  min-height: 148px;
   border-radius: 16px;
   border: 1px solid var(--stroke);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 0.9rem 0.95rem 0.8rem;
+  background: #151a22;
+  padding: 0.85rem 0.9rem 0.8rem;
   color: var(--text-primary);
 }
 
@@ -344,18 +365,20 @@
 }
 
 .gloss {
-  margin-top: 8px;
+  margin-top: 6px;
   font-size: 0.95rem;
 }
 
-.status {
-  display: flex;
+.statusChip {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: auto;
-  padding-top: 12px;
-  color: var(--text-muted);
-  font-size: 0.78rem;
+  align-self: center;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .check {
@@ -365,17 +388,19 @@
 
 .more {
   position: relative;
+  z-index: 40;
 }
 
 .moreMenu {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  z-index: 8;
+  z-index: 40;
   min-width: 220px;
   border: 1px solid var(--stroke);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--card) 92%, #000);
+  background: #12161c;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
   padding: 0.75rem;
   display: flex;
   flex-direction: column;
@@ -395,6 +420,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin: -4px 0 14px;
 }
 
 .chip {
@@ -419,4 +445,73 @@
 
 .error {
   color: #fca5a5;
+}
+
+.createPanel {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--stroke);
+  background: #12161c;
+}
+
+.previewList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.previewRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: #151a22;
+}
+
+.previewRow[data-in-list='true'] {
+  opacity: 0.65;
+}
+
+.remove {
+  margin-left: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 99px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: none;
+}
+
+.wordCard[data-flash='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.titleInput {
+  font: inherit;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 0.25rem 0.55rem;
+  max-width: 420px;
+}
+
+.danger {
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: transparent;
+  color: #fca5a5;
+  border-radius: 14px;
+  font-family: inherit;
+  font-weight: 700;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
 }

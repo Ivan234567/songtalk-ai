@@ -37,6 +37,8 @@ test('маршруты библиотеки списков зарегистри�
   const app = {
     get(path) { routes.push(['GET', path]) },
     post(path) { routes.push(['POST', path]) },
+    patch(path) { routes.push(['PATCH', path]) },
+    delete(path) { routes.push(['DELETE', path]) },
   }
   registerVocabListsRoutes(app, {
     supabase: {},
@@ -49,8 +51,13 @@ test('маршруты библиотеки списков зарегистри�
     ['GET', '/api/vocabulary/lists'],
     ['POST', '/api/vocabulary/lists'],
     ['POST', '/api/vocabulary/lists/starter'],
+    ['PATCH', '/api/vocabulary/lists/:id'],
+    ['DELETE', '/api/vocabulary/lists/:id'],
     ['GET', '/api/vocabulary/lists/:id'],
+    ['POST', '/api/vocabulary/lists/:id/words/resolve'],
+    ['POST', '/api/vocabulary/lists/:id/words/bulk'],
     ['POST', '/api/vocabulary/lists/:id/words'],
+    ['DELETE', '/api/vocabulary/lists/:id/words/:vocabularyId'],
     ['GET', '/api/vocabulary/lists/:id/listen'],
   ])
 })

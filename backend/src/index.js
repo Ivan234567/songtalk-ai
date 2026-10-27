@@ -26,6 +26,7 @@ import { registerYandexAuthRoutes } from './yandex-auth.js'
 import { registerYookassaRoutes } from './yookassa.js'
 import { registerVocabSrsDueRoute } from './vocab-srs-routes.js'
 import { registerVocabListsRoutes } from './vocab-lists-routes.js'
+import { createResolveListEntries } from './vocab-list-ai.js'
 import { registerVocabularySystemListRoutes } from './vocabulary-system-lists.js'
 import {
   registerVocabDialogueRoutes,
@@ -3183,6 +3184,7 @@ registerVocabListsRoutes(app, {
   getBearerToken,
   safeSupabaseCall,
   asyncHandler,
+  resolveListEntries: createResolveListEntries({ billableChatCreate }),
 })
 
 registerVocabDialogueRoutes(app, {

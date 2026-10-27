@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
@@ -50,6 +50,16 @@ type ListWord = {
   progress: number;
   next_review_at: string | null;
   sense_ids: string[];
+};
+
+type ResolvedItem = {
+  word: string;
+  gloss: string;
+  phonetic: string | null;
+  part_of_speech: string | null;
+  pinyin: string | null;
+  in_list?: boolean;
+  selected?: boolean;
 };
 
 function getApiUrl() {
@@ -112,13 +122,19 @@ export function VocabLibrary() {
   const [wordQuery, setWordQuery] = useState('');
   const [wordFilter, setWordFilter] = useState<'all' | ListWord['status']>('all');
   const [speakingId, setSpeakingId] = useState<string | null>(null);
-  const [newWord, setNewWord] = useState('');
-  const [newGloss, setNewGloss] = useState('');
+  const [draft, setDraft] = useState('');
   const [addOpen, setAddOpen] = useState(false);
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [assistHint, setAssistHint] = useState<string | null>(null);
+  const [resolved, setResolved] = useState<ResolvedItem[]>([]);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<'due' | 'alpha' | 'new'>('due');
   const [moreOpen, setMoreOpen] = useState(false);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const moreRef = useRef<HTMLDivElement | null>(null);
 
   const setParams = useCallback((patch: Record<string, string | null>) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -188,11 +204,79 @@ export function VocabLibrary() {
   }, [token, listId, loadDetail, loadLibrary, query, learningLanguage]);
 
   useEffect(() => {
+    if (!flashId) return;
+    const timer = window.setTimeout(() => setFlashId(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [flashId]);
+
+  useEffect(() => {
     setSelecting(false);
     setSelected(new Set());
     setAddOpen(false);
     setMoreOpen(false);
+    setDraft('');
+    setResolved([]);
+    setAssistHint(null);
+    setEditingTitle(false);
   }, [listId]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [moreOpen]);
+
+  useEffect(() => {
+    if (!addOpen || !token || !listId) return;
+    const text = draft.trim();
+    if (text.length < 2) {
+      setResolved([]);
+      setAssistHint(null);
+      setAssistBusy(false);
+      return;
+    }
+    let cancelled = false;
+    setAssistBusy(true);
+    setAssistHint('ИИ разбирает ввод…');
+    const timer = window.setTimeout(async () => {
+      try {
+        const resp = await fetch(apiPath(`/api/vocabulary/lists/${listId}/words/resolve`), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ text }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!resp.ok) throw new Error(data?.error || 'resolve');
+        const items: ResolvedItem[] = (data.items || []).map((item: ResolvedItem) => ({
+          ...item,
+          selected: !item.in_list,
+        }));
+        setResolved(items);
+        if (!items.length) setAssistHint('ИИ не нашёл слов. Измените ввод.');
+        else if (items.length === 1 && items[0].in_list) setAssistHint('Это слово уже в списке');
+        else setAssistHint(items.length === 1 ? 'Перевод от ИИ — можно сохранить' : `Нашёл ${items.length} слов. Отметьте нужные.`);
+      } catch (err) {
+        if (cancelled) return;
+        setResolved([]);
+        setAssistHint(err instanceof Error ? err.message : 'Не удалось разобрать ввод');
+      } finally {
+        if (!cancelled) setAssistBusy(false);
+      }
+    }, 550);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [addOpen, draft, listId, token]);
 
   const openCreate = (tab: 'starter' | 'empty' = 'starter') => {
     setCreateTab(tab);
@@ -298,26 +382,103 @@ export function VocabLibrary() {
     openListen(listId, selecting && selected.size > 0 ? senseIds : undefined);
   };
 
-  const addWord = async () => {
-    if (!token || !listId || !newWord.trim() || !newGloss.trim()) return;
+  const saveResolved = async () => {
+    if (!token || !listId) return;
+    const items = resolved.filter((item) => item.selected && !item.in_list);
+    if (!items.length) {
+      const existing = resolved.find((item) => item.in_list);
+      if (existing) {
+        const found = detail?.words.find((word) => word.headword === existing.word);
+        if (found) setFlashId(found.vocabulary_id);
+        setAssistHint('Это слово уже в списке');
+      }
+      return;
+    }
     setBusyKey('add-word');
     setError(null);
     try {
-      const resp = await fetch(apiPath(`/api/vocabulary/lists/${listId}/words`), {
+      const resp = await fetch(apiPath(`/api/vocabulary/lists/${listId}/words/bulk`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ word: newWord.trim(), gloss: newGloss.trim() }),
+        body: JSON.stringify({ items }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data?.error || 'add');
-      setNewWord('');
-      setNewGloss('');
+      const alreadyId = data.existing?.[0]?.vocabulary_id;
+      setDraft('');
+      setResolved([]);
+      setAssistHint(null);
+      setAddOpen(false);
       await loadDetail(token, listId);
+      if (alreadyId) setFlashId(alreadyId);
+      else if (data.added?.[0]?.vocabulary_id) setFlashId(data.added[0].vocabulary_id);
     } catch (err) {
-      setError(err instanceof Error && err.message !== 'add' ? err.message : 'Не удалось добавить слово');
+      setError(err instanceof Error ? err.message : 'Не удалось добавить слово');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const renameList = async () => {
+    if (!token || !listId || !titleDraft.trim()) return;
+    setBusyKey('rename');
+    try {
+      const resp = await fetch(apiPath(`/api/vocabulary/lists/${listId}`), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: titleDraft.trim() }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || 'rename');
+      setDetail((current) => current ? { ...current, item: { ...current.item, title: data.item.title } } : current);
+      setEditingTitle(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось переименовать');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const deleteList = async () => {
+    if (!token || !listId) return;
+    if (!window.confirm('Удалить этот список? Слова в вашей библиотеке останутся.')) return;
+    setBusyKey('delete-list');
+    try {
+      const resp = await fetch(apiPath(`/api/vocabulary/lists/${listId}`), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || 'delete');
+      backToLibrary();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить список');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const removeWord = async (vocabularyId: string) => {
+    if (!token || !listId) return;
+    setBusyKey(`rm-${vocabularyId}`);
+    try {
+      const resp = await fetch(apiPath(`/api/vocabulary/lists/${listId}/words/${vocabularyId}`), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || 'remove');
+      setDetail((current) => current
+        ? { ...current, words: current.words.filter((word) => word.vocabulary_id !== vocabularyId) }
+        : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось убрать слово');
     } finally {
       setBusyKey(null);
     }
@@ -342,110 +503,122 @@ export function VocabLibrary() {
     });
   };
 
-  if (createMode) {
-    const packs = library?.starter_packs || [];
-    return (
-      <div className={styles.page}>
-        <button type="button" onClick={closeCreate} className={styles.ghost}>← К словарям</button>
-        <h1 className={styles.title} style={{ marginTop: 12 }}>Создать список</h1>
-        <div className={styles.createTabs}>
-          <button
-            type="button"
-            className={`${styles.createTab} ${createTab === 'starter' ? styles.createTabActive : ''}`}
-            onClick={() => setCreateTab('starter')}
-          >
-            Наборы
-          </button>
-          <button
-            type="button"
-            className={`${styles.createTab} ${createTab === 'empty' ? styles.createTabActive : ''}`}
-            onClick={() => setCreateTab('empty')}
-          >
-            Пустой
-          </button>
-        </div>
-        {error && <p className={styles.error}>{error}</p>}
-        {createTab === 'starter' && (
-          <>
-            {loading && <p className={styles.muted}>Загружаем наборы…</p>}
-            {!loading && packs.length === 0 && (
-              <p className={styles.muted}>
-                {learningLanguage === 'zh'
-                  ? 'Наборов для китайского пока нет. Создайте пустой список.'
-                  : 'Наборов пока нет. Создайте пустой список.'}
-              </p>
-            )}
-            <div className={styles.packGrid}>
-              {packs.map((pack) => {
-                const look = PACK_LOOK[pack.key] || { color: '#7ad7a7', icon: 'spark', subtitle: pack.description };
-                const existingId = library?.items.find((item) => item.system_key === pack.key)?.id;
-                return (
-                  <button
-                    key={pack.key}
-                    type="button"
-                    className={styles.packCard}
-                    disabled={busyKey === pack.key}
-                    onClick={() => void (pack.in_library && existingId
-                      ? openList(existingId)
-                      : addStarter(pack.key))}
-                  >
-                    {pack.in_library && <span className={styles.libraryBadge}>В библиотеке</span>}
-                    <div className={styles.packTop}>
-                      <span className={styles.iconWrap} style={{ background: `${look.color}22` }}>
-                        <ListIcon name={look.icon} color={look.color} />
-                      </span>
-                      <span className={styles.packCount}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
-                    </div>
-                    <strong>{pack.title}</strong>
-                    <span className={styles.muted}>{look.subtitle}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-        {createTab === 'empty' && (
-          <form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createEmpty();
-            }}
-          >
-            <div>
-              <label className={styles.label} htmlFor="empty-list-name">Название списка</label>
-              <input
-                id="empty-list-name"
-                className={styles.search}
-                value={emptyTitle}
-                onChange={(event) => setEmptyTitle(event.target.value)}
-                placeholder="Например, Путешествия"
-              />
-            </div>
-            <div className={styles.actions}>
-              <button type="button" className={styles.secondary} onClick={closeCreate}>Отмена</button>
-              <button type="submit" className={styles.primary} disabled={!emptyTitle.trim() || busyKey === 'empty'}>
-                {busyKey === 'empty' ? 'Создаём…' : 'Создать список'}
-              </button>
-            </div>
-          </form>
-        )}
+  const createPanel = (
+    <div className={styles.createPanel}>
+      <div className={styles.createTabs}>
+        <button
+          type="button"
+          className={`${styles.createTab} ${createTab === 'starter' ? styles.createTabActive : ''}`}
+          onClick={() => setCreateTab('starter')}
+        >
+          Наборы
+        </button>
+        <button
+          type="button"
+          className={`${styles.createTab} ${createTab === 'empty' ? styles.createTabActive : ''}`}
+          onClick={() => setCreateTab('empty')}
+        >
+          Пустой
+        </button>
       </div>
-    );
-  }
+      {createTab === 'starter' && (
+        <>
+          {loading && <p className={styles.muted}>Загружаем наборы…</p>}
+          {!loading && !(library?.starter_packs || []).length && (
+            <p className={styles.muted}>
+              {learningLanguage === 'zh'
+                ? 'Наборов для китайского пока нет. Создайте пустой список.'
+                : 'Наборов пока нет. Создайте пустой список.'}
+            </p>
+          )}
+          <div className={styles.packGrid}>
+            {(library?.starter_packs || []).map((pack) => {
+              const look = PACK_LOOK[pack.key] || { color: '#7ad7a7', icon: 'spark', subtitle: pack.description };
+              const existingId = library?.items.find((item) => item.system_key === pack.key)?.id;
+              return (
+                <button
+                  key={pack.key}
+                  type="button"
+                  className={styles.packCard}
+                  disabled={busyKey === pack.key}
+                  onClick={() => void (pack.in_library && existingId
+                    ? openList(existingId)
+                    : addStarter(pack.key))}
+                >
+                  {pack.in_library && <span className={styles.libraryBadge}>В библиотеке</span>}
+                  <div className={styles.packTop}>
+                    <span className={styles.iconWrap} style={{ background: `${look.color}22` }}>
+                      <ListIcon name={look.icon} color={look.color} />
+                    </span>
+                    <span className={styles.packCount}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
+                  </div>
+                  <strong>{pack.title}</strong>
+                  <span className={styles.muted}>{look.subtitle}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {createTab === 'empty' && (
+        <form
+          className={styles.form}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createEmpty();
+          }}
+        >
+          <div>
+            <label className={styles.label} htmlFor="empty-list-name">Название списка</label>
+            <input
+              id="empty-list-name"
+              className={styles.search}
+              value={emptyTitle}
+              onChange={(event) => setEmptyTitle(event.target.value)}
+              placeholder="Например, Путешествия"
+            />
+          </div>
+          <div className={styles.actions}>
+            <button type="button" className={styles.secondary} onClick={closeCreate}>Отмена</button>
+            <button type="submit" className={styles.primary} disabled={!emptyTitle.trim() || busyKey === 'empty'}>
+              {busyKey === 'empty' ? 'Создаём…' : 'Создать список'}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
 
   if (listId) {
     const item = detail?.item;
     const words = sortListWords(detail?.words || [], sortMode);
+    const canSave = resolved.some((itemRow) => itemRow.selected && !itemRow.in_list);
     return (
       <div className={styles.page}>
         <div className={styles.header}>
           <div className={styles.headerText}>
             <button type="button" onClick={backToLibrary} className={styles.ghost}>← Назад</button>
-            <h1 className={styles.title}>
-              {item?.title || 'Список'}
-              {item?.level ? <span> {item.level}</span> : null}
-            </h1>
+            {editingTitle ? (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void renameList();
+                }}
+              >
+                <input
+                  className={styles.titleInput}
+                  value={titleDraft}
+                  onChange={(event) => setTitleDraft(event.target.value)}
+                  autoFocus
+                  onBlur={() => void renameList()}
+                />
+              </form>
+            ) : (
+              <h1 className={styles.title}>
+                {item?.title || 'Список'}
+                {item?.level ? <span> {item.level}</span> : null}
+              </h1>
+            )}
           </div>
           <div className={styles.actions}>
             <button type="button" onClick={listenList} className={styles.primary}>Послушать</button>
@@ -461,12 +634,16 @@ export function VocabLibrary() {
           />
           <button
             type="button"
-            onClick={() => setAddOpen((open) => !open)}
+            onClick={() => {
+              setAddOpen((open) => !open);
+              setAssistHint(null);
+              setResolved([]);
+            }}
             className={`${styles.primary} ${styles.compact}`}
           >
             + Добавить
           </button>
-          <div className={styles.more}>
+          <div className={styles.more} ref={moreRef}>
             <button
               type="button"
               className={`${styles.secondary} ${styles.compact}`}
@@ -494,49 +671,85 @@ export function VocabLibrary() {
                       if (on) setSelected(new Set());
                       return !on;
                     });
+                    setMoreOpen(false);
                   }}
                 >
                   {selecting ? 'Снять выбор' : 'Выбрать'}
                 </button>
-                <div className={styles.filters}>
-                  {(['all', 'due', 'new', 'learning', 'mastered'] as const).map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`${styles.chip} ${wordFilter === key ? styles.chipActive : ''}`}
-                      onClick={() => setWordFilter(key)}
-                    >
-                      {key === 'all' ? 'Все' : STATUS_LABEL[key]}
-                    </button>
-                  ))}
-                </div>
+                <button
+                  type="button"
+                  className={styles.secondary}
+                  onClick={() => {
+                    setTitleDraft(item?.title || '');
+                    setEditingTitle(true);
+                    setMoreOpen(false);
+                  }}
+                >
+                  Переименовать
+                </button>
+                <button type="button" className={styles.danger} onClick={() => void deleteList()}>
+                  Удалить список
+                </button>
               </div>
             )}
           </div>
+        </div>
+        <div className={styles.filters}>
+          {(['all', 'due', 'new', 'learning', 'mastered'] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={`${styles.chip} ${wordFilter === key ? styles.chipActive : ''}`}
+              onClick={() => setWordFilter(key)}
+            >
+              {key === 'all' ? 'Все' : STATUS_LABEL[key]}
+            </button>
+          ))}
         </div>
         {addOpen && (
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              void addWord();
+              void saveResolved();
             }}
             className={styles.addForm}
           >
-            <input
-              value={newWord}
-              onChange={(event) => setNewWord(event.target.value)}
-              placeholder="Слово"
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={learningLanguage === 'zh'
+                ? '汉字, перевод или несколько слов'
+                : 'room, комната или window, table, chair'}
               className={styles.search}
+              rows={2}
+              autoFocus
             />
-            <input
-              value={newGloss}
-              onChange={(event) => setNewGloss(event.target.value)}
-              placeholder="Перевод"
-              className={styles.search}
-            />
-            <button type="submit" disabled={!newWord.trim() || !newGloss.trim() || busyKey === 'add-word'} className={styles.primary}>
-              {busyKey === 'add-word' ? 'Добавляем…' : 'Сохранить'}
+            <button type="submit" disabled={!canSave || busyKey === 'add-word' || assistBusy} className={styles.primary}>
+              {busyKey === 'add-word' ? 'Добавляем…' : resolved.length > 1 ? 'Добавить отмеченные' : 'Сохранить'}
             </button>
+            {assistHint && <p className={styles.assistHint}>{assistHint}</p>}
+            {resolved.length > 0 && (
+              <div className={styles.previewList}>
+                {resolved.map((itemRow) => (
+                  <label key={itemRow.word} className={styles.previewRow} data-in-list={itemRow.in_list ? 'true' : 'false'}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(itemRow.selected)}
+                      disabled={itemRow.in_list}
+                      onChange={() => {
+                        setResolved((current) => current.map((row) => (
+                          row.word === itemRow.word ? { ...row, selected: !row.selected } : row
+                        )));
+                      }}
+                    />
+                    <strong>{itemRow.word}</strong>
+                    <span className={styles.muted}>{itemRow.phonetic || itemRow.pinyin || itemRow.part_of_speech || ''}</span>
+                    <span>{itemRow.gloss}</span>
+                    {itemRow.in_list && <span className={styles.muted}>уже в списке</span>}
+                  </label>
+                ))}
+              </div>
+            )}
           </form>
         )}
         {error && <p className={styles.error}>{error}</p>}
@@ -547,6 +760,7 @@ export function VocabLibrary() {
               key={word.vocabulary_id}
               className={styles.wordCard}
               data-selected={selected.has(word.vocabulary_id) ? 'true' : 'false'}
+              data-flash={flashId === word.vocabulary_id ? 'true' : 'false'}
               onClick={() => {
                 if (selecting) toggleSelected(word.vocabulary_id);
               }}
@@ -563,6 +777,12 @@ export function VocabLibrary() {
                   />
                 )}
                 <strong>{word.headword}</strong>
+                <span
+                  className={styles.statusChip}
+                  style={{ color: STATUS_COLOR[word.status], background: `${STATUS_COLOR[word.status]}22` }}
+                >
+                  {STATUS_LABEL[word.status]}
+                </span>
                 <button
                   type="button"
                   className={styles.speaker}
@@ -575,16 +795,23 @@ export function VocabLibrary() {
                 >
                   {speakingId === word.vocabulary_id ? '…' : <SpeakerIcon />}
                 </button>
+                <button
+                  type="button"
+                  className={styles.remove}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void removeWord(word.vocabulary_id);
+                  }}
+                  aria-label={`Убрать ${word.headword}`}
+                >
+                  ×
+                </button>
               </div>
               <div className={styles.ipa}>
                 {word.phonetic || '—'}
                 {word.part_of_speech ? <span>{word.part_of_speech}</span> : null}
               </div>
               <div className={styles.gloss}>{word.gloss_ru || '—'}</div>
-              <div className={styles.status}>
-                <span style={{ width: 7, height: 7, borderRadius: 99, background: STATUS_COLOR[word.status], flex: 'none' }} />
-                {STATUS_LABEL[word.status]}
-              </div>
             </article>
           ))}
         </div>
@@ -606,7 +833,9 @@ export function VocabLibrary() {
           <span className={styles.countBadge}>{library ? `${library.count} ${listWord(library.count)}` : '…'}</span>
         </h1>
         <div className={styles.actions}>
-          <button type="button" onClick={() => openCreate('starter')} className={styles.primary}>Создать</button>
+          <button type="button" onClick={() => (createMode ? closeCreate() : openCreate('starter'))} className={styles.primary}>
+            {createMode ? 'Закрыть' : 'Создать'}
+          </button>
           {dueCount > 0 && (
             <button type="button" onClick={() => openListen()} className={styles.secondary}>
               Послушать · {dueCount}
@@ -614,6 +843,8 @@ export function VocabLibrary() {
           )}
         </div>
       </div>
+
+      {createMode && createPanel}
 
       <div className={styles.searchRow}>
         <input
@@ -627,7 +858,7 @@ export function VocabLibrary() {
       {error && <p className={styles.error}>{error}</p>}
       {loading && <p className={styles.muted}>Загружаем библиотеку…</p>}
 
-      {!loading && lists.length === 0 && (
+      {!loading && lists.length === 0 && !createMode && (
         <div className={styles.empty}>
           <h2>Пока нет списков</h2>
           <p>Возьмите готовый набор или начните с пустого.</p>
@@ -641,11 +872,13 @@ export function VocabLibrary() {
       <div className={styles.listGrid}>
         {lists.map((item) => (
           <button key={item.id} type="button" onClick={() => openList(item.id)} className={styles.listCard}>
-            <div className={styles.listCardTitle}>{item.title}</div>
+            <div className={styles.listCardHead}>
+              <div className={styles.listCardTitle}>{item.title}</div>
+              {item.stats.due > 0 && (
+                <span className={styles.dueChip}>{item.stats.due} к повторению</span>
+              )}
+            </div>
             <div className={styles.listCardMeta}>{item.word_count} {wordCountLabel(item.word_count)}</div>
-            {item.stats.due > 0 && (
-              <div className={styles.dueBadge}>{item.stats.due} к повторению</div>
-            )}
           </button>
         ))}
       </div>

@@ -887,6 +887,155 @@ export function createListListenIdsHandler(deps) {
   }
 }
 
+function normalizeHeadword(raw, language) {
+  const trimmed = typeof raw === 'string' ? raw.trim() : ''
+  if (!trimmed || trimmed.length > 80) return ''
+  if (language === 'zh') return trimmed.replace(/\s+/g, '')
+  return trimmed.toLowerCase()
+}
+
+async function loadOwnedList(deps, { userId, language, listId }) {
+  const { data, error } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('vocab_lists')
+      .select('id, title, source')
+      .eq('user_id', userId)
+      .eq('language', language)
+      .eq('id', listId)
+      .maybeSingle(),
+  )
+  if (error) throw error
+  return data || null
+}
+
+async function cachePhonetic(deps, { language, word, phonetic, pinyin, partOfSpeech, gloss }) {
+  if (!phonetic && !pinyin) return
+  try {
+    await deps.safeSupabaseCall(
+      () => deps.supabase
+        .from('word_definitions_cache')
+        .upsert({
+          word,
+          language,
+          definitions: gloss ? [gloss] : [],
+          phonetic_transcription: phonetic || null,
+          pinyin: pinyin || null,
+          part_of_speech: partOfSpeech || null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'word,language' }),
+    )
+  } catch {
+    // кэш не обязателен для добавления
+  }
+}
+
+async function addWordToList(deps, {
+  userId,
+  language,
+  listId,
+  word: rawWord,
+  gloss: rawGloss,
+  phonetic,
+  part_of_speech: partOfSpeech,
+  pinyin,
+}) {
+  const word = language === 'zh' ? normalizeHeadword(rawWord, 'zh') : (normalizeListWord(rawWord) || normalizeHeadword(rawWord, language))
+  const gloss = typeof rawGloss === 'string' ? rawGloss.trim() : ''
+  if (!word || !gloss || gloss.length > 200) {
+    const err = new Error('Нужны слово и перевод')
+    err.status = 400
+    throw err
+  }
+
+  const { data: found, error: foundError } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('user_vocabulary')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('language', language)
+      .eq('word', word)
+      .maybeSingle(),
+  )
+  if (foundError) throw foundError
+
+  let vocabularyId = found?.id
+  if (!vocabularyId) {
+    const payload = {
+      user_id: userId,
+      language,
+      word,
+      translations: [gloss],
+      difficulty_level: 'A1',
+      part_of_speech: typeof partOfSpeech === 'string' && partOfSpeech.trim() ? partOfSpeech.trim().slice(0, 40) : null,
+    }
+    if (language === 'zh' && typeof pinyin === 'string' && pinyin.trim()) payload.pinyin = pinyin.trim().slice(0, 80)
+    const { data: inserted, error: insertError } = await deps.safeSupabaseCall(
+      () => deps.supabase.from('user_vocabulary').insert(payload).select('id').single(),
+    )
+    if (insertError) throw insertError
+    vocabularyId = inserted.id
+  } else if (partOfSpeech || pinyin) {
+    const patch = {}
+    if (partOfSpeech) patch.part_of_speech = String(partOfSpeech).trim().slice(0, 40)
+    if (language === 'zh' && pinyin) patch.pinyin = String(pinyin).trim().slice(0, 80)
+    if (Object.keys(patch).length) {
+      await deps.safeSupabaseCall(
+        () => deps.supabase.from('user_vocabulary').update(patch).eq('id', vocabularyId).eq('user_id', userId),
+      )
+    }
+  }
+
+  if (phonetic || pinyin) {
+    await cachePhonetic(deps, {
+      language,
+      word,
+      phonetic: typeof phonetic === 'string' ? phonetic.trim() : null,
+      pinyin: typeof pinyin === 'string' ? pinyin.trim() : null,
+      partOfSpeech,
+      gloss,
+    })
+  }
+
+  await ensureUserVocabularySenses({ supabase: deps.supabase, userId, language })
+
+  const { data: existingLink } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('vocab_list_items')
+      .select('vocabulary_id')
+      .eq('user_id', userId)
+      .eq('list_id', listId)
+      .eq('vocabulary_id', vocabularyId)
+      .maybeSingle(),
+  )
+  if (existingLink?.vocabulary_id) {
+    return { already: true, vocabulary_id: vocabularyId, word, gloss }
+  }
+
+  const { data: lastItem } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('vocab_list_items')
+      .select('position')
+      .eq('user_id', userId)
+      .eq('list_id', listId)
+      .order('position', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  )
+  const position = Number.isInteger(lastItem?.position) ? lastItem.position + 1 : 0
+  const { error: linkError } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('vocab_list_items')
+      .insert({
+        list_id: listId,
+        user_id: userId,
+        vocabulary_id: vocabularyId,
+        position,
+      }),
+  )
+  if (linkError && errorCode(linkError) !== '23505') throw linkError
+  return { already: Boolean(linkError), vocabulary_id: vocabularyId, word, gloss }
+}
+
 export function createAddListWordHandler(deps) {
   const { supabase, safeSupabaseCall = (fn) => fn() } = deps
   return async function addListWordHandler(req, res) {
@@ -899,88 +1048,255 @@ export function createAddListWordHandler(deps) {
       res.status(400).json({ error: 'Invalid list id' })
       return
     }
-    const word = normalizeListWord(req.body?.word)
-    const gloss = typeof req.body?.gloss === 'string' ? req.body.gloss.trim() : ''
-    if (!word || word.length > 80 || !gloss || gloss.length > 200) {
-      res.status(400).json({ error: 'Нужны слово и перевод' })
-      return
-    }
 
     try {
-      const { data: list, error: listError } = await safeSupabaseCall(
-        () => supabase
-          .from('vocab_lists')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('language', language)
-          .eq('id', listId)
-          .maybeSingle(),
-      )
-      if (listError) throw listError
+      const list = await loadOwnedList({ supabase, safeSupabaseCall }, { userId, language, listId })
       if (!list) {
         res.status(404).json({ error: 'Список не найден' })
         return
       }
-
-      const { data: found, error: foundError } = await safeSupabaseCall(
-        () => supabase
-          .from('user_vocabulary')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('language', language)
-          .eq('word', word)
-          .maybeSingle(),
-      )
-      if (foundError) throw foundError
-
-      let vocabularyId = found?.id
-      if (!vocabularyId) {
-        const { data: inserted, error: insertError } = await safeSupabaseCall(
-          () => supabase
-            .from('user_vocabulary')
-            .insert({
-              user_id: userId,
-              language,
-              word,
-              translations: [gloss],
-              difficulty_level: 'A1',
-            })
-            .select('id')
-            .single(),
-        )
-        if (insertError) throw insertError
-        vocabularyId = inserted.id
-      }
-
-      await ensureUserVocabularySenses({ supabase, userId, language })
-
-      const { data: lastItem } = await safeSupabaseCall(
-        () => supabase
-          .from('vocab_list_items')
-          .select('position')
-          .eq('user_id', userId)
-          .eq('list_id', listId)
-          .order('position', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      )
-      const position = Number.isInteger(lastItem?.position) ? lastItem.position + 1 : 0
-      const { error: linkError } = await safeSupabaseCall(
-        () => supabase
-          .from('vocab_list_items')
-          .upsert({
-            list_id: listId,
-            user_id: userId,
-            vocabulary_id: vocabularyId,
-            position,
-          }, { onConflict: 'list_id,vocabulary_id', ignoreDuplicates: true }),
-      )
-      if (linkError) throw linkError
-
-      res.status(201).json({ ok: true, vocabulary_id: vocabularyId, word, gloss })
+      const result = await addWordToList({ supabase, safeSupabaseCall }, {
+        userId,
+        language,
+        listId,
+        word: req.body?.word,
+        gloss: req.body?.gloss,
+        phonetic: req.body?.phonetic,
+        part_of_speech: req.body?.part_of_speech,
+        pinyin: req.body?.pinyin,
+      })
+      res.status(result.already ? 200 : 201).json({ ok: true, ...result })
     } catch (error) {
+      if (error?.status === 400) {
+        res.status(400).json({ error: error.message })
+        return
+      }
       console.error('[api/vocabulary/lists/words] failed', error?.message || error?.code || error)
       res.status(500).json({ error: 'Не удалось добавить слово' })
+    }
+  }
+}
+
+export function createResolveListWordsHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn(), resolveListEntries } = deps
+  return async function resolveListWordsHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
+    if (!UUID_RE.test(listId) || !text) {
+      res.status(400).json({ error: 'Нужен текст для разбора' })
+      return
+    }
+    if (typeof resolveListEntries !== 'function') {
+      res.status(501).json({ error: 'Разбор слов недоступен' })
+      return
+    }
+    try {
+      const list = await loadOwnedList({ supabase, safeSupabaseCall }, { userId, language, listId })
+      if (!list) {
+        res.status(404).json({ error: 'Список не найден' })
+        return
+      }
+      const items = await resolveListEntries({ text, language, userId })
+      const words = items.map((item) => item.word)
+      let inList = new Set()
+      if (words.length) {
+        const { data: vocabRows } = await safeSupabaseCall(
+          () => supabase
+            .from('user_vocabulary')
+            .select('id, word')
+            .eq('user_id', userId)
+            .eq('language', language)
+            .in('word', words),
+        )
+        const byWord = new Map((vocabRows || []).map((row) => [row.word, row.id]))
+        const vocabIds = [...byWord.values()]
+        if (vocabIds.length) {
+          const { data: links } = await safeSupabaseCall(
+            () => supabase
+              .from('vocab_list_items')
+              .select('vocabulary_id')
+              .eq('user_id', userId)
+              .eq('list_id', listId)
+              .in('vocabulary_id', vocabIds),
+          )
+          const linked = new Set((links || []).map((row) => row.vocabulary_id))
+          inList = new Set([...byWord.entries()].filter(([, id]) => linked.has(id)).map(([word]) => word))
+        }
+      }
+      res.status(200).json({
+        items: items.map((item) => ({
+          ...item,
+          in_list: inList.has(item.word),
+        })),
+      })
+    } catch (error) {
+      if (error?.status === 402) {
+        res.status(402).json({ error: error.message })
+        return
+      }
+      console.error('[api/vocabulary/lists/resolve] failed', error?.message || error)
+      res.status(500).json({ error: 'Не удалось разобрать слова' })
+    }
+  }
+}
+
+export function createBulkAddListWordsHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn() } = deps
+  return async function bulkAddListWordsHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+    const rows = Array.isArray(req.body?.items) ? req.body.items.slice(0, 15) : []
+    if (!UUID_RE.test(listId) || !rows.length) {
+      res.status(400).json({ error: 'Нужны слова для добавления' })
+      return
+    }
+    try {
+      const list = await loadOwnedList({ supabase, safeSupabaseCall }, { userId, language, listId })
+      if (!list) {
+        res.status(404).json({ error: 'Список не найден' })
+        return
+      }
+      const added = []
+      const existing = []
+      for (const row of rows) {
+        const result = await addWordToList({ supabase, safeSupabaseCall }, {
+          userId,
+          language,
+          listId,
+          word: row?.word,
+          gloss: row?.gloss,
+          phonetic: row?.phonetic,
+          part_of_speech: row?.part_of_speech,
+          pinyin: row?.pinyin,
+        })
+        if (result.already) existing.push(result)
+        else added.push(result)
+      }
+      res.status(200).json({ ok: true, added, existing })
+    } catch (error) {
+      if (error?.status === 400) {
+        res.status(400).json({ error: error.message })
+        return
+      }
+      console.error('[api/vocabulary/lists/bulk] failed', error?.message || error)
+      res.status(500).json({ error: 'Не удалось добавить слова' })
+    }
+  }
+}
+
+export function createPatchListHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn() } = deps
+  return async function patchListHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : ''
+    if (!UUID_RE.test(listId) || !title || title.length > TITLE_MAX) {
+      res.status(400).json({ error: 'Нужно название списка' })
+      return
+    }
+    try {
+      const { data, error } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_lists')
+          .update({ title, updated_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .eq('language', language)
+          .eq('id', listId)
+          .select('id, title, description, source, system_key, collection_id, language, created_at, updated_at')
+          .maybeSingle(),
+      )
+      if (error) throw error
+      if (!data) {
+        res.status(404).json({ error: 'Список не найден' })
+        return
+      }
+      const stats = await loadListWordStats({ supabase, safeSupabaseCall, userId, listId })
+      res.status(200).json({ item: await serializeList(data, stats) })
+    } catch (error) {
+      console.error('[api/vocabulary/lists/patch] failed', error?.message || error)
+      res.status(500).json({ error: listWriteError(error) })
+    }
+  }
+}
+
+export function createDeleteListHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn() } = deps
+  return async function deleteListHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+    if (!UUID_RE.test(listId)) {
+      res.status(400).json({ error: 'Invalid list id' })
+      return
+    }
+    try {
+      const { data, error } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_lists')
+          .delete()
+          .eq('user_id', userId)
+          .eq('language', language)
+          .eq('id', listId)
+          .select('id')
+          .maybeSingle(),
+      )
+      if (error) throw error
+      if (!data) {
+        res.status(404).json({ error: 'Список не найден' })
+        return
+      }
+      res.status(200).json({ ok: true, id: listId })
+    } catch (error) {
+      console.error('[api/vocabulary/lists/delete] failed', error?.message || error)
+      res.status(500).json({ error: 'Не удалось удалить список' })
+    }
+  }
+}
+
+export function createRemoveListWordHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn() } = deps
+  return async function removeListWordHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+    const vocabularyId = typeof req.params?.vocabularyId === 'string' ? req.params.vocabularyId.trim() : ''
+    if (!UUID_RE.test(listId) || !UUID_RE.test(vocabularyId)) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    try {
+      const list = await loadOwnedList({ supabase, safeSupabaseCall }, { userId, language, listId })
+      if (!list) {
+        res.status(404).json({ error: 'Список не найден' })
+        return
+      }
+      const { error } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_list_items')
+          .delete()
+          .eq('user_id', userId)
+          .eq('list_id', listId)
+          .eq('vocabulary_id', vocabularyId),
+      )
+      if (error) throw error
+      res.status(200).json({ ok: true, vocabulary_id: vocabularyId })
+    } catch (error) {
+      console.error('[api/vocabulary/lists/remove-word] failed', error?.message || error)
+      res.status(500).json({ error: 'Не удалось убрать слово' })
     }
   }
 }
@@ -990,7 +1306,12 @@ export function registerVocabListsRoutes(app, deps) {
   app.get('/api/vocabulary/lists', wrap(createListLibraryHandler(deps)))
   app.post('/api/vocabulary/lists', wrap(createEmptyListHandler(deps)))
   app.post('/api/vocabulary/lists/starter', wrap(createStarterPackHandler(deps)))
+  app.patch('/api/vocabulary/lists/:id', wrap(createPatchListHandler(deps)))
+  app.delete('/api/vocabulary/lists/:id', wrap(createDeleteListHandler(deps)))
   app.get('/api/vocabulary/lists/:id', wrap(createListDetailHandler(deps)))
+  app.post('/api/vocabulary/lists/:id/words/resolve', wrap(createResolveListWordsHandler(deps)))
+  app.post('/api/vocabulary/lists/:id/words/bulk', wrap(createBulkAddListWordsHandler(deps)))
   app.post('/api/vocabulary/lists/:id/words', wrap(createAddListWordHandler(deps)))
+  app.delete('/api/vocabulary/lists/:id/words/:vocabularyId', wrap(createRemoveListWordHandler(deps)))
   app.get('/api/vocabulary/lists/:id/listen', wrap(createListListenIdsHandler(deps)))
 }
