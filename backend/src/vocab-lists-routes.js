@@ -3,7 +3,7 @@
  * Тренировка внутри словаря не делается: только Послушать / Сказать сам снаружи.
  */
 import { ensureUserVocabularySenses } from './vocab-sense-sync.js'
-import { findStarterPack, listStarterPacks, STARTER_PACKS } from './vocab-starter-packs.js'
+import { demoListOrder, findStarterPack, listStarterPacks, STARTER_PACKS } from './vocab-starter-packs.js'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -159,6 +159,7 @@ async function serializeList(row, stats = null, tags = []) {
     system_key: row.system_key || null,
     collection_id: row.collection_id || null,
     language: row.language,
+    level: demoListOrder(row.system_key) == null ? null : findStarterPack(row.system_key, row.language)?.level || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     word_count: stats?.word_count ?? 0,
@@ -183,10 +184,18 @@ export function createListLibraryHandler(deps) {
 
     try {
       await ensureUserVocabularySenses({ supabase, userId, language })
-      await ensureDemoLists({ supabase, safeSupabaseCall, userId, language })
     } catch {
       console.error('[api/vocabulary/lists] failed to prepare senses')
       res.status(500).json({ error: 'Failed to prepare vocabulary senses' })
+      return
+    }
+    try {
+      await ensureDemoLists({ supabase, safeSupabaseCall, userId, language })
+    } catch (error) {
+      console.error('[api/vocabulary/lists] failed to prepare demo lists', error?.message || error?.code || error)
+      res.status(500).json({
+        error: isMissingRelation(error) ? 'Списки ещё не включены в базе' : 'Failed to prepare vocabulary senses',
+      })
       return
     }
 
@@ -258,14 +267,15 @@ export function createListLibraryHandler(deps) {
     }
 
     const ungrouped = serialized.filter((item) => !item.collection_id).length
+    const items = orderLibraryItems(serialized)
     res.status(200).json({
-      items: serialized,
+      items,
       count: serialized.length,
       limit_free: 3,
       collections,
       tags,
       sidebar: {
-        all: serialized.length,
+        all: items.length,
         ungrouped,
       },
       summary: {
@@ -320,12 +330,38 @@ export function createEmptyListHandler(deps) {
   }
 }
 
+function errorCode(error) {
+  return error?.code || error?.error?.code || ''
+}
+
+function isMissingRelation(error) {
+  const code = errorCode(error)
+  return code === '42P01' || code === 'PGRST205'
+}
+
 function listWriteError(error) {
-  const code = error?.code || error?.error?.code
+  const code = errorCode(error)
   if (code === '23505') return 'Такой список уже есть'
   if (code === '23514') return 'Название списка не подходит'
-  if (code === '42P01') return 'Списки ещё не включены в базе'
+  if (isMissingRelation(error)) return 'Списки ещё не включены в базе'
   return 'Не удалось создать список'
+}
+
+function orderLibraryItems(items) {
+  const system = []
+  const rest = []
+  const byKey = new Map()
+  for (const item of items) {
+    if (item.system_key && demoListOrder(item.system_key) != null) byKey.set(item.system_key, item)
+  }
+  for (const pack of STARTER_PACKS) {
+    const item = byKey.get(pack.key)
+    if (item) system.push(item)
+  }
+  for (const item of items) {
+    if (demoListOrder(item.system_key) == null) rest.push(item)
+  }
+  return [...system, ...rest]
 }
 
 function normalizeListWord(raw) {
@@ -340,14 +376,26 @@ async function vocabularyIdForPackWord({ supabase, safeSupabaseCall, userId, lan
   const { data: found, error: foundError } = await safeSupabaseCall(
     () => supabase
       .from('user_vocabulary')
-      .select('id')
+      .select('id, part_of_speech')
       .eq('user_id', userId)
       .eq('language', language)
       .eq('word', word)
       .maybeSingle(),
   )
   if (foundError) throw foundError
-  if (found?.id) return found.id
+  if (found?.id) {
+    if (entry.partOfSpeech && found.part_of_speech !== entry.partOfSpeech) {
+      const { error: updateError } = await safeSupabaseCall(
+        () => supabase
+          .from('user_vocabulary')
+          .update({ part_of_speech: entry.partOfSpeech })
+          .eq('id', found.id)
+          .eq('user_id', userId),
+      )
+      if (updateError) throw updateError
+    }
+    return found.id
+  }
   const { data: inserted, error: insertError } = await safeSupabaseCall(
     () => supabase
       .from('user_vocabulary')
@@ -401,9 +449,67 @@ async function fillPackWords({ supabase, safeSupabaseCall, userId, language, pac
     })
     nextPosition += 1
   }
-  if (!rows.length) return
-  const { error } = await safeSupabaseCall(() => supabase.from('vocab_list_items').insert(rows))
+  if (rows.length) {
+    const { error } = await safeSupabaseCall(() => supabase.from('vocab_list_items').insert(rows))
+    if (error) throw error
+  }
+  try {
+    await ensurePackLexicon({ supabase, safeSupabaseCall, language, pack })
+  } catch (error) {
+    console.error('[api/vocabulary/lists] failed to store phonetics', error?.message || error?.code || error)
+  }
+}
+
+async function ensurePackLexicon({ supabase, safeSupabaseCall, language, pack }) {
+  const entries = pack.words
+    .map((entry) => ({
+      word: normalizeListWord(entry.word),
+      gloss: entry.gloss,
+      partOfSpeech: entry.partOfSpeech || null,
+      phonetic: entry.phonetic || null,
+      level: pack.level === 'A2' ? 'A2' : 'A1',
+    }))
+    .filter((entry) => entry.word && entry.phonetic)
+  if (!entries.length) return
+  const { data, error } = await safeSupabaseCall(
+    () => supabase
+      .from('word_definitions_cache')
+      .select('word, phonetic_transcription')
+      .eq('language', language)
+      .in('word', entries.map((entry) => entry.word)),
+  )
   if (error) throw error
+  const byWord = new Map((data || []).map((row) => [row.word, row]))
+  for (const entry of entries) {
+    const existing = byWord.get(entry.word)
+    if (existing?.phonetic_transcription) continue
+    if (existing) {
+      const { error: updateError } = await safeSupabaseCall(
+        () => supabase
+          .from('word_definitions_cache')
+          .update({
+            phonetic_transcription: entry.phonetic,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('word', entry.word)
+          .eq('language', language),
+      )
+      if (updateError) throw updateError
+      continue
+    }
+    const { error: insertError } = await safeSupabaseCall(
+      () => supabase.from('word_definitions_cache').upsert({
+        word: entry.word,
+        language,
+        definitions: entry.gloss ? [{ translation: entry.gloss }] : [],
+        phonetic_transcription: entry.phonetic,
+        part_of_speech: entry.partOfSpeech,
+        difficulty_level: entry.level,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'word,language' }),
+    )
+    if (insertError) throw insertError
+  }
 }
 
 async function ensureDemoLists({ supabase, safeSupabaseCall, userId, language }) {
@@ -573,6 +679,20 @@ export function createListDetailHandler(deps) {
         return
       }
       const byId = new Map((vocabRows || []).map((row) => [row.id, row]))
+      const headwords = [...new Set((vocabRows || []).map((row) => row.word).filter(Boolean))]
+      let phoneticByWord = new Map()
+      if (headwords.length) {
+        const { data: cacheRows, error: cacheError } = await safeSupabaseCall(
+          () => supabase
+            .from('word_definitions_cache')
+            .select('word, phonetic_transcription')
+            .eq('language', language)
+            .in('word', headwords),
+        )
+        if (!cacheError) {
+          phoneticByWord = new Map((cacheRows || []).map((row) => [row.word, row.phonetic_transcription || null]))
+        }
+      }
 
       const { data: senses } = await safeSupabaseCall(
         () => supabase
@@ -611,13 +731,26 @@ export function createListDetailHandler(deps) {
         else if (statuses.every((item) => item === 'mastered')) status = 'mastered'
         else if (statuses.every((item) => item === 'new')) status = 'new'
         else status = 'learning'
+        const senseStates = senseList.map((sense) => stateBySense.get(sense.id)).filter(Boolean)
+        let nextReviewAt = null
+        for (const state of senseStates) {
+          if (!state?.due_at) continue
+          if (!nextReviewAt || String(state.due_at) < nextReviewAt) nextReviewAt = String(state.due_at)
+        }
+        const interval = senseStates.reduce((max, state) => Math.max(max, Number(state.interval_days) || 0), 0)
+        let progress = 0
+        if (status === 'mastered') progress = 100
+        else if (status !== 'new') progress = Math.min(90, Math.round((interval / MASTERED_INTERVAL_DAYS) * 100))
         return [{
           vocabulary_id: vocabularyId,
           headword: row.word,
           gloss_ru: firstGloss(row.translations) || senseList[0]?.gloss_ru || null,
           part_of_speech: row.part_of_speech || null,
+          phonetic: phoneticByWord.get(row.word) || null,
           pinyin: row.pinyin || null,
           status,
+          progress,
+          next_review_at: nextReviewAt,
           sense_ids: senseList.map((sense) => sense.id),
         }]
       })
@@ -690,7 +823,13 @@ export function createListListenIdsHandler(deps) {
           .eq('user_id', userId)
           .in('vocabulary_id', vocabularyIds),
       )
-      const senseIds = (senses || []).filter((row) => typeof row.gloss_ru === 'string' && row.gloss_ru.trim()).map((row) => row.id)
+      const requestedSenses = typeof req.query?.senses === 'string'
+        ? new Set(req.query.senses.split(',').map((item) => item.trim()).filter(Boolean))
+        : null
+      const senseIds = (senses || [])
+        .filter((row) => typeof row.gloss_ru === 'string' && row.gloss_ru.trim())
+        .map((row) => row.id)
+        .filter((senseId) => !requestedSenses || requestedSenses.has(senseId))
       const { data: states } = senseIds.length
         ? await safeSupabaseCall(
           () => supabase

@@ -75,6 +75,7 @@ export function RecognitionReview() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const listId = searchParams.get('list');
+  const senseFilter = searchParams.get('senses');
   const { ttsVoice } = useTtsVoice();
   const { learningLanguage } = useLearningLanguage();
   const [token, setToken] = useState<string | null>(null);
@@ -110,8 +111,9 @@ export function RecognitionReview() {
     setIndex(0);
     requestIdRef.current = null;
     try {
+      const senses = senseFilter ? `?senses=${encodeURIComponent(senseFilter)}` : '';
       const endpoint = listId
-        ? `${getApiUrl()}/api/vocabulary/lists/${listId}/listen`
+        ? `${getApiUrl()}/api/vocabulary/lists/${listId}/listen${senses}`
         : `${getApiUrl()}/api/vocabulary/srs/due`;
       const resp = await fetch(endpoint, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -135,7 +137,7 @@ export function RecognitionReview() {
       setMessage('Не удалось найти слова');
       setPhase('error');
     }
-  }, [listId]);
+  }, [listId, senseFilter]);
 
   useEffect(() => {
     let cancelled = false;

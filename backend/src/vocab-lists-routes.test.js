@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { listStarterPacks, findStarterPack } from './vocab-starter-packs.js'
+import { listStarterPacks, findStarterPack, STARTER_PACKS, demoListOrder } from './vocab-starter-packs.js'
 import { registerVocabListsRoutes } from './vocab-lists-routes.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -17,6 +17,19 @@ test('пять демо-списков A1–A2 по 20 слов', () => {
   }
   assert.ok(findStarterPack('intro', 'en'))
   assert.equal(findStarterPack('intro', 'zh'), null)
+  assert.deepEqual(STARTER_PACKS.map((pack) => pack.key), ['intro', 'family', 'home', 'food', 'everyday'])
+  assert.deepEqual(['intro', 'family', 'home', 'food', 'everyday'].map((key) => demoListOrder(key)), [0, 1, 2, 3, 4])
+  for (const pack of STARTER_PACKS) {
+    for (const word of pack.words) {
+      assert.equal(typeof word.phonetic, 'string')
+      assert.ok(word.phonetic.startsWith('/'))
+      assert.ok(word.partOfSpeech)
+    }
+  }
+  const eat = findStarterPack('food', 'en').words.find((word) => word.word === 'eat')
+  const work = findStarterPack('everyday', 'en').words.find((word) => word.word === 'work')
+  assert.equal(eat.partOfSpeech, 'глагол')
+  assert.equal(work.partOfSpeech, 'существительное')
 })
 
 test('маршруты библиотеки списков зарегистрированы', () => {
@@ -40,6 +53,14 @@ test('маршруты библиотеки списков зарегистри�
     ['POST', '/api/vocabulary/lists/:id/words'],
     ['GET', '/api/vocabulary/lists/:id/listen'],
   ])
+})
+
+test('библиотека создаёт системные списки и отдаёт транскрипцию', () => {
+  const source = readFileSync(join(root, 'backend/src/vocab-lists-routes.js'), 'utf8')
+  assert.match(source, /ensureDemoLists/)
+  assert.match(source, /Списки ещё не включены в базе/)
+  assert.match(source, /phonetic_transcription/)
+  assert.match(source, /orderLibraryItems/)
 })
 
 test('миграция создаёт списки и не объявляет режимы отработки в словаре', () => {
