@@ -46,6 +46,7 @@ type ListWord = {
   gloss_ru: string | null;
   part_of_speech: string | null;
   phonetic: string | null;
+  pinyin?: string | null;
   status: 'new' | 'learning' | 'due' | 'mastered';
   progress: number;
   next_review_at: string | null;
@@ -346,9 +347,16 @@ export function VocabLibrary() {
       if (!resp.ok) throw new Error('tts');
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      await audio.play();
-      URL.revokeObjectURL(url);
+      try {
+        const audio = new Audio(url);
+        await new Promise<void>((resolve, reject) => {
+          audio.onended = () => resolve();
+          audio.onerror = () => reject(new Error('play'));
+          void audio.play().catch(reject);
+        });
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     } catch {
       setError('Не получилось произнести слово');
     } finally {
@@ -371,15 +379,24 @@ export function VocabLibrary() {
     router.push(`/dashboard?${next.toString()}`);
   };
 
+  const listenCandidates = () => {
+    const pool = selecting && selected.size > 0
+      ? (detail?.words || []).filter((word) => selected.has(word.vocabulary_id))
+      : (detail?.words || []);
+    return pool.filter((word) => word.status === 'new' || word.status === 'due');
+  };
+
   const listenList = () => {
     if (!listId) return;
-    const words = chosenWords();
+    const words = listenCandidates();
     const senseIds = words.flatMap((word) => word.sense_ids);
-    if (selecting && selected.size > 0 && senseIds.length === 0) {
-      setError('В выбранных словах пока нечего слушать');
+    if (senseIds.length === 0) {
+      setError(selecting && selected.size > 0
+        ? 'В выбранных словах пока нечего слушать'
+        : 'Сейчас нечего слушать — нет новых или к повторению');
       return;
     }
-    openListen(listId, selecting && selected.size > 0 ? senseIds : undefined);
+    openListen(listId, senseIds);
   };
 
   const saveResolved = async () => {
@@ -486,10 +503,14 @@ export function VocabLibrary() {
 
   const sayList = () => {
     if (!detail) return;
-    const senseIds = chosenWords().flatMap((word) => word.sense_ids).slice(0, 5);
-    if (!senseIds.length) {
+    const allSenseIds = chosenWords().flatMap((word) => word.sense_ids);
+    if (!allSenseIds.length) {
       setError('В этом списке пока нечего сказать');
       return;
+    }
+    const senseIds = allSenseIds.slice(0, 5);
+    if (allSenseIds.length > 5) {
+      setError(`В практику возьмём первые 5 из ${allSenseIds.length} слов`);
     }
     router.push(`/dashboard?tab=agent&senses=${senseIds.join(',')}`);
   };
@@ -601,6 +622,10 @@ export function VocabLibrary() {
     const item = detail?.item;
     const words = sortListWords(detail?.words || [], sortMode);
     const canSave = resolved.some((itemRow) => itemRow.selected && !itemRow.in_list);
+    const listenCount = listenCandidates().length;
+    const listenLabel = selecting && selected.size > 0
+      ? (listenCount > 0 ? `Послушать · ${listenCount}` : 'Послушать выбранные')
+      : (listenCount > 0 ? `Послушать · ${listenCount}` : 'Послушать');
     return (
       <div className={styles.page}>
         <div className={styles.header}>
@@ -618,18 +643,42 @@ export function VocabLibrary() {
                   value={titleDraft}
                   onChange={(event) => setTitleDraft(event.target.value)}
                   autoFocus
-                  onBlur={() => void renameList()}
+                  onBlur={() => {
+                    if (!titleDraft.trim()) {
+                      setEditingTitle(false);
+                      return;
+                    }
+                    void renameList();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      setEditingTitle(false);
+                    }
+                  }}
                 />
               </form>
             ) : (
-              <h1 className={styles.title}>
-                {item?.title || 'Список'}
-                {item?.level ? <span> {item.level}</span> : null}
-              </h1>
+              <button
+                type="button"
+                className={styles.titleButton}
+                onClick={() => {
+                  setTitleDraft(item?.title || '');
+                  setEditingTitle(true);
+                }}
+                title="Переименовать"
+              >
+                <h1 className={styles.title}>
+                  {item?.title || 'Список'}
+                  {item?.level ? <span> {item.level}</span> : null}
+                </h1>
+              </button>
             )}
           </div>
           <div className={styles.actions}>
-            <button type="button" onClick={listenList} className={styles.primary}>Послушать</button>
+            <button type="button" onClick={listenList} className={styles.primary} disabled={listenCount === 0}>
+              {listenLabel}
+            </button>
             <button type="button" onClick={sayList} className={styles.secondary}>Сказать эти слова</button>
           </div>
         </div>
@@ -640,6 +689,16 @@ export function VocabLibrary() {
             placeholder="Поиск слов..."
             className={styles.search}
           />
+          <select
+            className={styles.select}
+            value={sortMode}
+            onChange={(event) => setSortMode(event.target.value as 'due' | 'alpha' | 'new')}
+            aria-label="Сортировка"
+          >
+            <option value="due">По повторению</option>
+            <option value="alpha">По алфавиту</option>
+            <option value="new">Сначала новые</option>
+          </select>
           <button
             type="button"
             onClick={() => {
@@ -651,6 +710,19 @@ export function VocabLibrary() {
           >
             + Добавить
           </button>
+          <button
+            type="button"
+            className={`${styles.secondary} ${styles.compact}`}
+            style={selecting ? { background: 'var(--accent-soft)' } : undefined}
+            onClick={() => {
+              setSelecting((on) => {
+                if (on) setSelected(new Set());
+                return !on;
+              });
+            }}
+          >
+            {selecting ? `Выбрано · ${selected.size}` : 'Выбрать'}
+          </button>
           <div className={styles.more} ref={moreRef}>
             <button
               type="button"
@@ -661,40 +733,6 @@ export function VocabLibrary() {
             </button>
             {moreOpen && (
               <div className={styles.moreMenu}>
-                <select
-                  className={styles.select}
-                  value={sortMode}
-                  onChange={(event) => setSortMode(event.target.value as 'due' | 'alpha' | 'new')}
-                  aria-label="Сортировка"
-                >
-                  <option value="due">Следующее повторение</option>
-                  <option value="alpha">По алфавиту</option>
-                  <option value="new">Сначала новые</option>
-                </select>
-                <button
-                  type="button"
-                  className={styles.secondary}
-                  onClick={() => {
-                    setSelecting((on) => {
-                      if (on) setSelected(new Set());
-                      return !on;
-                    });
-                    setMoreOpen(false);
-                  }}
-                >
-                  {selecting ? 'Снять выбор' : 'Выбрать'}
-                </button>
-                <button
-                  type="button"
-                  className={styles.secondary}
-                  onClick={() => {
-                    setTitleDraft(item?.title || '');
-                    setEditingTitle(true);
-                    setMoreOpen(false);
-                  }}
-                >
-                  Переименовать
-                </button>
                 <button type="button" className={styles.danger} onClick={() => void deleteList()}>
                   Удалить список
                 </button>
@@ -816,7 +854,7 @@ export function VocabLibrary() {
                 </button>
               </div>
               <div className={styles.ipa}>
-                {word.phonetic || '—'}
+                {word.phonetic || word.pinyin || '—'}
                 {word.part_of_speech ? <span>{word.part_of_speech}</span> : null}
               </div>
               <div className={styles.gloss}>{word.gloss_ru || '—'}</div>
@@ -824,7 +862,11 @@ export function VocabLibrary() {
           ))}
         </div>
         {!detailLoading && detail && detail.words.length === 0 && (
-          <p className={styles.muted}>В этом списке пока нет слов.</p>
+          <p className={styles.muted}>
+            {wordFilter !== 'all' || wordQuery.trim()
+              ? 'По этому фильтру слов нет.'
+              : 'В этом списке пока нет слов.'}
+          </p>
         )}
       </div>
     );

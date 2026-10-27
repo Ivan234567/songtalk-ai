@@ -255,9 +255,16 @@ export function RecognitionReview() {
       const url = URL.createObjectURL(blob);
       audioUrlRef.current = url;
       if (!audioRef.current) audioRef.current = new Audio();
-      audioRef.current.pause();
-      audioRef.current.src = url;
-      await audioRef.current.play();
+      const audio = audioRef.current;
+      audio.pause();
+      audio.onended = () => {
+        if (audioUrlRef.current === url) {
+          URL.revokeObjectURL(url);
+          audioUrlRef.current = null;
+        }
+      };
+      audio.src = url;
+      await audio.play();
       setHeard(true);
     } catch {
       setMessage('Не получилось произнести');

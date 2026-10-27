@@ -68,8 +68,7 @@ function DashboardPageContent() {
     if (!tabParam || tabParam === 'words') {
       const next = new URLSearchParams(searchParams.toString());
       next.set('tab', tabParam === 'words' ? 'dictionary' : 'dashboard');
-      if (tabParam === 'words') next.set('review', '1');
-      else next.delete('review');
+      next.delete('review');
       router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
       setActiveTab(tabParam === 'words' ? 'dictionary' : 'dashboard');
       return;

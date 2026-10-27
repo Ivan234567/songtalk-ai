@@ -88,9 +88,9 @@ export function classifyRecognitionState(state, now = new Date()) {
   if (!reviewed) return 'new'
   // Пора снова слушать — важнее «освоено».
   if (dueAt && !Number.isNaN(dueAt.getTime()) && dueAt.getTime() <= now.getTime()) return 'due'
-  // Успешный ответ в опросе (Знаю / Легко / С трудом): reps >= 1.
-  // «Не знаю» сбрасывает reps в 0 → остаётся «Учу».
-  if (reps >= 1 && interval >= 1) return 'mastered'
+  // Освоено только после устойчивого интервала (2-й успех SM-2 → 6 дней).
+  // Первый «Знаю» даёт interval=1, reps=1 → ещё «Учу».
+  if (reps >= 2 && interval >= MASTERED_INTERVAL_DAYS) return 'mastered'
   return 'learning'
 }
 
@@ -517,6 +517,8 @@ async function ensurePackLexicon({ supabase, safeSupabaseCall, language, pack })
 }
 
 async function ensureDemoLists({ supabase, safeSupabaseCall, userId, language }) {
+  // Только дозаполняем уже существующие наборы.
+  // Не создаём заново удалённые — иначе DELETE выглядит сломанным.
   const packs = STARTER_PACKS.filter((pack) => pack.language === language)
   for (const pack of packs) {
     const { data: existing, error: existingError } = await safeSupabaseCall(
@@ -529,26 +531,8 @@ async function ensureDemoLists({ supabase, safeSupabaseCall, userId, language })
         .maybeSingle(),
     )
     if (existingError) throw existingError
-    let listId = existing?.id
-    if (!listId) {
-      const { data: created, error: createError } = await safeSupabaseCall(
-        () => supabase
-          .from('vocab_lists')
-          .insert({
-            user_id: userId,
-            language,
-            title: pack.title,
-            description: pack.description,
-            source: 'system',
-            system_key: pack.key,
-          })
-          .select('id')
-          .single(),
-      )
-      if (createError) throw createError
-      listId = created.id
-    }
-    await fillPackWords({ supabase, safeSupabaseCall, userId, language, pack, listId })
+    if (!existing?.id) continue
+    await fillPackWords({ supabase, safeSupabaseCall, userId, language, pack, listId: existing.id })
   }
   await ensureUserVocabularySenses({ supabase, userId, language })
 }
@@ -844,17 +828,16 @@ export function createListListenIdsHandler(deps) {
             .in('sense_id', senseIds),
         )
         : { data: [] }
+      // Только новые и due: оценка non-due в /srs/review даёт 409.
       const nowMs = now().getTime()
-      const dueFirst = []
-      const rest = []
+      const queueIds = []
       const stateMap = new Map((states || []).map((row) => [row.sense_id, row]))
       for (const senseId of senseIds) {
         const state = stateMap.get(senseId)
         const dueAt = state?.due_at ? new Date(state.due_at).getTime() : 0
-        if (!state?.last_reviewed_at || dueAt <= nowMs) dueFirst.push(senseId)
-        else rest.push(senseId)
+        if (!state?.last_reviewed_at || dueAt <= nowMs) queueIds.push(senseId)
       }
-      const orderedIds = [...dueFirst, ...rest].slice(0, 10)
+      const orderedIds = queueIds.slice(0, 10)
       const senseById = new Map((senses || []).map((row) => [row.id, row]))
       const vocabularyIdSet = new Set(vocabularyIds)
       const { data: vocabRows } = await safeSupabaseCall(

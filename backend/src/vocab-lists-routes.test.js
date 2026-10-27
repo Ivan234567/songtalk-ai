@@ -8,7 +8,7 @@ import { registerVocabListsRoutes, classifyRecognitionState } from './vocab-list
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
 
-test('после «Знаю» слово становится освоено, а не учу', () => {
+test('статусы recognition: первый Знаю = учу, устойчивый интервал = освоено', () => {
   const now = new Date('2026-10-27T12:00:00.000Z')
   assert.equal(classifyRecognitionState(null, now), 'new')
   assert.equal(classifyRecognitionState({
@@ -17,12 +17,19 @@ test('после «Знаю» слово становится освоено, а
     repetitions: 0,
     due_at: now.toISOString(),
   }, now), 'new')
-  // Первый успешный ответ SM-2: reps=1, interval=1, due завтра.
+  // Первый успешный ответ SM-2: reps=1, interval=1 → ещё учит.
   assert.equal(classifyRecognitionState({
     last_reviewed_at: now.toISOString(),
     interval_days: 1,
     repetitions: 1,
     due_at: '2026-10-28T12:00:00.000Z',
+  }, now), 'learning')
+  // Второй успех: interval=6, reps=2 → освоено.
+  assert.equal(classifyRecognitionState({
+    last_reviewed_at: now.toISOString(),
+    interval_days: 6,
+    repetitions: 2,
+    due_at: '2026-11-02T12:00:00.000Z',
   }, now), 'mastered')
   // «Не знаю» сбрасывает серию.
   assert.equal(classifyRecognitionState({
@@ -34,10 +41,25 @@ test('после «Знаю» слово становится освоено, а
   // Когда срок подошёл — снова к повторению.
   assert.equal(classifyRecognitionState({
     last_reviewed_at: '2026-10-26T12:00:00.000Z',
-    interval_days: 1,
-    repetitions: 1,
+    interval_days: 6,
+    repetitions: 2,
     due_at: '2026-10-27T11:00:00.000Z',
   }, now), 'due')
+})
+
+test('listen из списка не подмешивает карточки не due', () => {
+  const source = readFileSync(join(root, 'backend/src/vocab-lists-routes.js'), 'utf8')
+  assert.match(source, /Только новые и due/)
+  assert.doesNotMatch(source, /\[\.\.\.dueFirst, \.\.\.rest\]/)
+})
+
+test('ensureDemoLists не создаёт удалённые system-наборы заново', () => {
+  const source = readFileSync(join(root, 'backend/src/vocab-lists-routes.js'), 'utf8')
+  const fnStart = source.indexOf('async function ensureDemoLists')
+  const fnEnd = source.indexOf('export function createStarterPackHandler', fnStart)
+  const body = source.slice(fnStart, fnEnd)
+  assert.match(body, /if \(!existing\?\.id\) continue/)
+  assert.doesNotMatch(body, /\.insert\(\{\s*user_id: userId,\s*language,\s*title: pack\.title/)
 })
 
 test('пять демо-списков A1–A2 по 20 слов', () => {
