@@ -545,15 +545,23 @@ export function VocabLibrary() {
                     ? openList(existingId)
                     : addStarter(pack.key))}
                 >
-                  {pack.in_library && <span className={styles.libraryBadge}>В библиотеке</span>}
                   <div className={styles.packTop}>
                     <span className={styles.iconWrap} style={{ background: `${look.color}22` }}>
                       <ListIcon name={look.icon} color={look.color} />
                     </span>
-                    <span className={styles.packCount}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
+                    <div className={styles.packMeta}>
+                      {pack.in_library ? (
+                        <span className={styles.libraryBadge}>В библиотеке</span>
+                      ) : (
+                        <span className={styles.packCount}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
+                      )}
+                    </div>
                   </div>
                   <strong>{pack.title}</strong>
                   <span className={styles.muted}>{look.subtitle}</span>
+                  {pack.in_library && (
+                    <span className={styles.packCount}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
+                  )}
                 </button>
               );
             })}

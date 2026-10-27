@@ -9,7 +9,8 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const TITLE_MAX = 120
-const MASTERED_INTERVAL_DAYS = 21
+/** Для прогресс-бара: полный прогресс после второго успешного повторения (интервал 6 дней в SM-2). */
+const MASTERED_INTERVAL_DAYS = 6
 
 async function loadLearningLanguage({ supabase, safeSupabaseCall, userId }) {
   const { data, error } = await safeSupabaseCall(
@@ -78,15 +79,18 @@ function firstGloss(translations) {
   return null
 }
 
-function classifyRecognitionState(state, now) {
+export function classifyRecognitionState(state, now = new Date()) {
   if (!state) return 'new'
   const dueAt = state.due_at ? new Date(state.due_at) : null
   const interval = Number(state.interval_days) || 0
   const reps = Number(state.repetitions) || 0
   const reviewed = Boolean(state.last_reviewed_at)
   if (!reviewed) return 'new'
-  if (dueAt && dueAt.getTime() <= now.getTime()) return 'due'
-  if (interval >= MASTERED_INTERVAL_DAYS && reps >= 2) return 'mastered'
+  // Пора снова слушать — важнее «освоено».
+  if (dueAt && !Number.isNaN(dueAt.getTime()) && dueAt.getTime() <= now.getTime()) return 'due'
+  // Успешный ответ в опросе (Знаю / Легко / С трудом): reps >= 1.
+  // «Не знаю» сбрасывает reps в 0 → остаётся «Учу».
+  if (reps >= 1 && interval >= 1) return 'mastered'
   return 'learning'
 }
 

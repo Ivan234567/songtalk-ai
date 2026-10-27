@@ -239,7 +239,16 @@
 .packTop {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 8px;
+}
+
+.packMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
 }
 
 .iconWrap {
@@ -260,12 +269,11 @@
   font-size: 0.72rem;
   color: var(--text-muted);
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .libraryBadge {
-  position: absolute;
-  top: 0.72rem;
-  right: 0.72rem;
+  position: static;
   font-size: 0.62rem;
   font-weight: 800;
   padding: 0.16rem 0.4rem;
@@ -273,6 +281,7 @@
   color: #d7efe4;
   background: rgba(74, 222, 128, 0.16);
   border: 1px solid rgba(74, 222, 128, 0.32);
+  white-space: nowrap;
 }
 
 .form {
@@ -330,13 +339,15 @@
 
 .wordTop {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .wordTop strong {
   font-size: 1.15rem;
   line-height: 1.2;
+  min-width: 0;
 }
 
 .speaker {

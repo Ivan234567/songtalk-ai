@@ -4,9 +4,41 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { listStarterPacks, findStarterPack, STARTER_PACKS, demoListOrder } from './vocab-starter-packs.js'
-import { registerVocabListsRoutes } from './vocab-lists-routes.js'
+import { registerVocabListsRoutes, classifyRecognitionState } from './vocab-lists-routes.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
+
+test('после «Знаю» слово становится освоено, а не учу', () => {
+  const now = new Date('2026-10-27T12:00:00.000Z')
+  assert.equal(classifyRecognitionState(null, now), 'new')
+  assert.equal(classifyRecognitionState({
+    last_reviewed_at: null,
+    interval_days: 0,
+    repetitions: 0,
+    due_at: now.toISOString(),
+  }, now), 'new')
+  // Первый успешный ответ SM-2: reps=1, interval=1, due завтра.
+  assert.equal(classifyRecognitionState({
+    last_reviewed_at: now.toISOString(),
+    interval_days: 1,
+    repetitions: 1,
+    due_at: '2026-10-28T12:00:00.000Z',
+  }, now), 'mastered')
+  // «Не знаю» сбрасывает серию.
+  assert.equal(classifyRecognitionState({
+    last_reviewed_at: now.toISOString(),
+    interval_days: 1,
+    repetitions: 0,
+    due_at: '2026-10-28T12:00:00.000Z',
+  }, now), 'learning')
+  // Когда срок подошёл — снова к повторению.
+  assert.equal(classifyRecognitionState({
+    last_reviewed_at: '2026-10-26T12:00:00.000Z',
+    interval_days: 1,
+    repetitions: 1,
+    due_at: '2026-10-27T11:00:00.000Z',
+  }, now), 'due')
+})
 
 test('пять демо-списков A1–A2 по 20 слов', () => {
   const packs = listStarterPacks('en')
