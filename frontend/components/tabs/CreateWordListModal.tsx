@@ -25,7 +25,7 @@ function pluralWords(n: number) {
   return 'слов';
 }
 
-function ListIcon({ name, color }: { name: string; color: string }) {
+export function ListIcon({ name, color }: { name: string; color: string }) {
   const stroke = color;
   const common = {
     viewBox: '0 0 24 24',

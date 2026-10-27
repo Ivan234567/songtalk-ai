@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { useTtsVoice } from '@/context/TtsVoiceContext';
 import styles from './vocab-library.module.css';
+import createStyles from '@/components/tabs/create-word-list.module.css';
+import { ListIcon } from '@/components/tabs/CreateWordListModal';
 
 type ListStats = { new: number; learning: number; due: number; mastered: number };
 
@@ -59,6 +61,25 @@ function getApiUrl() {
   const url = process.env.NEXT_PUBLIC_API_URL || '';
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
+
+function apiPath(path: string, params?: Record<string, string | undefined>) {
+  const search = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value) search.set(key, value);
+    });
+  }
+  const query = search.toString();
+  return `${getApiUrl()}${path}${query ? `?${query}` : ''}`;
+}
+
+const PACK_LOOK: Record<string, { color: string; icon: string; subtitle: string }> = {
+  intro: { color: '#4ade80', icon: 'spark', subtitle: 'Привет, пожалуйста, спасибо' },
+  family: { color: '#f472b6', icon: 'people', subtitle: 'Мать, отец, родственники' },
+  home: { color: '#fb923c', icon: 'calendar', subtitle: 'Дом и вещи вокруг' },
+  food: { color: '#f59e0b', icon: 'utensils', subtitle: 'Хлеб, вода и многое другое' },
+  everyday: { color: '#60a5fa', icon: 'bolt', subtitle: 'Быть, иметь, идти' },
+};
 
 const STATUS_LABEL: Record<ListWord['status'], string> = {
   new: 'Новые',
@@ -136,9 +157,7 @@ export function VocabLibrary() {
     setLoading(true);
     setError(null);
     try {
-      const url = new URL(`${getApiUrl()}/api/vocabulary/lists`);
-      if (q) url.searchParams.set('q', q);
-      const resp = await fetch(url.toString(), {
+      const resp = await fetch(apiPath('/api/vocabulary/lists', { q: q || undefined }), {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const data = await resp.json().catch(() => ({}));
@@ -157,10 +176,10 @@ export function VocabLibrary() {
     setDetailLoading(true);
     setError(null);
     try {
-      const url = new URL(`${getApiUrl()}/api/vocabulary/lists/${id}`);
-      if (wordFilter !== 'all') url.searchParams.set('filter', wordFilter);
-      if (wordQuery.trim()) url.searchParams.set('q', wordQuery.trim());
-      const resp = await fetch(url.toString(), {
+      const resp = await fetch(apiPath(`/api/vocabulary/lists/${id}`, {
+        filter: wordFilter !== 'all' ? wordFilter : undefined,
+        q: wordQuery.trim() || undefined,
+      }), {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const data = await resp.json().catch(() => ({}));
@@ -331,92 +350,107 @@ export function VocabLibrary() {
 
   if (createMode) {
     return (
-      <div style={{ maxWidth: 1100, margin: '0 auto', width: '100%', padding: '0.5rem 0 2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 18 }}>
-          <button type="button" onClick={closeCreate} style={ghostBtn}>← К словарям</button>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '0.08em' }}>ВЫБЕРИТЕ СТАРТОВЫЙ НАБОР</span>
-        </div>
-        <h1 className={styles.title}>
-          Пять демо-списков <span>A1–A2</span>
-        </h1>
-        <div style={{ display: 'flex', gap: 18, marginBottom: 16, borderBottom: '1px solid var(--stroke)' }}>
-          {([
-            ['starter', '01', 'Быстрый старт'],
-            ['empty', '02', 'Пустой список'],
-            ['custom', '03', 'Настраиваемый'],
-          ] as const).map(([key, num, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setCreateTab(key)}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: createTab === key ? 'var(--text-primary)' : 'var(--text-muted)',
-                padding: '0.6rem 0',
-                borderBottom: createTab === key ? '2px solid var(--accent)' : '2px solid transparent',
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-              }}
-            >
-              <div style={{ fontSize: '0.7rem', opacity: 0.7 }}>{num}</div>
-              {label}
-            </button>
-          ))}
-        </div>
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
-        {createTab === 'starter' && (
-          <>
-            <p style={{ color: 'var(--text-muted)', maxWidth: 720 }}>
-              Нажмите на любой набор, чтобы создать список. Потом можно слушать слова и говорить их самому.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginTop: 16 }}>
-              {(library?.starter_packs || []).map((pack) => (
+      <div style={{ maxWidth: 960, margin: '0 auto', width: '100%', padding: '0.5rem 0 2rem' }}>
+        <button type="button" onClick={closeCreate} style={{ ...ghostBtn, marginBottom: 14 }}>← К словарям</button>
+        <div className={createStyles.modal} style={{ position: 'relative', maxHeight: 'none' }}>
+          <div className={createStyles.tabs}>
+            {([
+              ['starter', '01', 'Быстрый старт'],
+              ['empty', '02', 'Пустой список'],
+              ['custom', '03', 'Настраиваемый'],
+            ] as const).map(([key, num, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`${createStyles.tab} ${createTab === key ? createStyles.tabActive : ''}`}
+                onClick={() => setCreateTab(key)}
+              >
+                <span className={createStyles.tabNum}>{num}</span>
+                <span className={createStyles.tabLabel}>
+                  {label}
+                  {key === 'custom' ? <span className={createStyles.proBadge}>PRO</span> : null}
+                </span>
+              </button>
+            ))}
+          </div>
+          {error && <p className={createStyles.error}>{error}</p>}
+          {createTab === 'starter' && (
+            <>
+              <p className={createStyles.intro}>
+                Нажмите на любой набор, чтобы создать список для вашего целевого языка.
+                Первая установка занимает несколько секунд — повторно список открывается сразу.
+              </p>
+              <div className={createStyles.grid}>
+                {(library?.starter_packs || []).map((pack) => {
+                  const look = PACK_LOOK[pack.key] || { color: '#7ad7a7', icon: 'spark', subtitle: pack.description };
+                  return (
+                    <button
+                      key={pack.key}
+                      type="button"
+                      className={createStyles.card}
+                      disabled={busyKey === pack.key}
+                      onClick={() => void (pack.in_library
+                        ? openList(library?.items.find((item) => item.system_key === pack.key)?.id || '')
+                        : addStarter(pack.key))}
+                    >
+                      {pack.in_library && <span className={createStyles.libraryBadge}>В библиотеке</span>}
+                      <div className={createStyles.cardTop}>
+                        <span
+                          className={createStyles.iconWrap}
+                          style={{ background: `${look.color}22`, boxShadow: `inset 0 0 0 1px ${look.color}55` }}
+                        >
+                          <ListIcon name={look.icon} color={look.color} />
+                        </span>
+                        <span className={createStyles.count}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
+                      </div>
+                      <h3 className={createStyles.cardTitle}>{pack.title}</h3>
+                      <p className={createStyles.cardSubtitle}>{look.subtitle}</p>
+                      {pack.in_library && <span className={createStyles.openHint}>Открыть список →</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {createTab === 'empty' && (
+            <div className={createStyles.panel}>
+              <p className={createStyles.intro}>Создайте пустой список и добавляйте слова сами.</p>
+              <div>
+                <label className={createStyles.label} htmlFor="empty-list-name">Название списка</label>
+                <input
+                  id="empty-list-name"
+                  className={createStyles.input}
+                  value={emptyTitle}
+                  onChange={(event) => setEmptyTitle(event.target.value)}
+                  placeholder="Например, Путешествия"
+                />
+              </div>
+              <div className={createStyles.actions}>
+                <button type="button" className={createStyles.secondary} onClick={closeCreate}>Отмена</button>
                 <button
-                  key={pack.key}
                   type="button"
-                  disabled={busyKey === pack.key}
-                  onClick={() => void (pack.in_library
-                    ? openList(library?.items.find((item) => item.system_key === pack.key)?.id || '')
-                    : addStarter(pack.key))}
-                  style={{ ...cardBtn, textAlign: 'left', minHeight: 160 }}
+                  className={createStyles.primary}
+                  disabled={!emptyTitle.trim() || busyKey === 'empty'}
+                  onClick={() => void createEmpty()}
                 >
-                  {pack.in_library && (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--accent)', marginBottom: 8 }}>В БИБЛИОТЕКЕ · {pack.level}</div>
-                  )}
-                  <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>{pack.title}</div>
-                  <div style={{ marginTop: 8, fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pack.word_count} слов</div>
-                  <div style={{ marginTop: 8, fontSize: '0.85rem', color: 'var(--text-muted)' }}>{pack.description}</div>
-                  <div style={{ marginTop: 'auto', paddingTop: 16, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    {pack.in_library ? 'ОТКРЫТЬ СПИСОК →' : busyKey === pack.key ? 'Добавляем…' : 'ДОБАВИТЬ →'}
-                  </div>
+                  {busyKey === 'empty' ? 'Создаём…' : 'Создать список'}
                 </button>
-              ))}
+              </div>
             </div>
-          </>
-        )}
-        {createTab === 'empty' && (
-          <div style={{ maxWidth: 420 }}>
-            <p style={{ color: 'var(--text-muted)' }}>Свой список: дайте имя, затем добавляйте слова и переводы.</p>
-            <input
-              value={emptyTitle}
-              onChange={(event) => setEmptyTitle(event.target.value)}
-              placeholder="Название списка"
-              style={inputStyle}
-            />
-            <button type="button" disabled={!emptyTitle.trim() || busyKey === 'empty'} onClick={() => void createEmpty()} style={primaryBtn}>
-              {busyKey === 'empty' ? 'Создаём…' : 'Создать список'}
-            </button>
-          </div>
-        )}
-        {createTab === 'custom' && (
-          <div style={{ maxWidth: 520 }}>
-            <p style={{ color: 'var(--text-muted)' }}>
-              Свой список уже бесплатный. Уровень, контекст и часть речи для автоподбора слов подключим следующим шагом.
-            </p>
-            <button type="button" onClick={() => setCreateTab('empty')} style={primaryBtn}>Сделать пустой список</button>
-          </div>
-        )}
+          )}
+          {createTab === 'custom' && (
+            <div className={createStyles.panel}>
+              <p className={createStyles.intro}>
+                Свой список уже бесплатный. Уровень, контекст и автоподбор слов подключим следующим шагом.
+              </p>
+              <div className={createStyles.actions}>
+                <button type="button" className={createStyles.primary} onClick={() => setCreateTab('empty')}>
+                  Сделать пустой список
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
