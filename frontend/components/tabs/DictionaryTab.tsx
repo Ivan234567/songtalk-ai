@@ -1660,7 +1660,7 @@ export const DictionaryTab: React.FC = () => {
             <button
               type="button"
               className="zh-add-open-btn"
-              onClick={() => router.push('/dashboard?tab=words')}
+              onClick={() => router.push('/dashboard?tab=dictionary&review=1')}
             >
               Послушать слова{dueCount > 0 ? ` · ${dueCount}` : ''}
             </button>

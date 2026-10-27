@@ -83,7 +83,7 @@ const SupportIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   </svg>
 );
 
-type SidebarTabKey = 'words' | 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
+type SidebarTabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
 
 export interface SidebarProps {
   activeTab: SidebarTabKey;
@@ -108,19 +108,10 @@ function getEmailHue(email: string): number {
   return Math.abs(hash) % 360;
 }
 
-const WordsIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 10v4h3l4 3V7L7 10H4z" />
-    <path d="M15 9.5a3.5 3.5 0 0 1 0 5" />
-    <path d="M17.5 7a7 7 0 0 1 0 10" />
-  </svg>
-);
-
 const tabs: { key: SidebarTabKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'words', label: 'Слова', icon: <WordsIcon size={20} /> },
   { key: 'dashboard', label: 'Главная', icon: <DashboardIcon size={20} /> },
-  { key: 'agent', label: 'Практика', icon: <AgentIcon size={20} /> },
   { key: 'dictionary', label: 'Словарь', icon: <DictionaryIcon size={20} /> },
+  { key: 'agent', label: 'Практика', icon: <AgentIcon size={20} /> },
   { key: 'karaoke', label: 'Караоке', icon: <KaraokeIcon size={20} /> },
   { key: 'progress', label: 'Прогресс', icon: <ProgressIcon size={20} /> },
   { key: 'balance', label: 'Баланс', icon: <BalanceIcon size={20} /> },

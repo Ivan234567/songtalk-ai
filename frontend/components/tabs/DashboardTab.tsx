@@ -82,9 +82,11 @@ export const DashboardTab: React.FC = () => {
   const openListen = () => {
     const base = pathname || '/';
     const next = new URLSearchParams(searchParams.toString());
-    next.set('tab', 'words');
+    next.set('tab', 'dictionary');
     next.delete('review');
     next.delete('senses');
+    next.delete('list');
+    next.delete('create');
     router.replace(`${base}?${next.toString()}`, { scroll: false });
   };
 

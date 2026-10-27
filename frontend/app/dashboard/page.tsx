@@ -22,10 +22,10 @@ import { VoiceSwitch } from '@/components/header/VoiceSwitch';
 import { TtsVoiceProvider } from '@/context/TtsVoiceContext';
 import { LanguageToastStack } from '@/components/ui/LanguageToastStack';
 
-type TabKey = 'words' | 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
+type TabKey = 'dashboard' | 'karaoke' | 'dictionary' | 'agent' | 'progress' | 'balance' | 'faq' | 'account';
 
 function isTabKey(value: string | null): value is TabKey {
-  return value === 'words' || value === 'dashboard' || value === 'karaoke' || value === 'dictionary' || value === 'agent' || value === 'progress' || value === 'balance' || value === 'faq' || value === 'account';
+  return value === 'dashboard' || value === 'karaoke' || value === 'dictionary' || value === 'agent' || value === 'progress' || value === 'balance' || value === 'faq' || value === 'account';
 }
 
 function DashboardPageContent() {
@@ -37,14 +37,18 @@ function DashboardPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : 'words');
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    initialTab === 'words' ? 'dictionary' : isTabKey(initialTab) ? initialTab : 'dashboard',
+  );
   const balanceNotice = searchParams.get('balance_notice');
 
   const handleTabChange = (nextTab: TabKey) => {
     setActiveTab(nextTab);
     const currentTab = searchParams.get('tab');
-    const leavingReview = nextTab === 'dictionary' && searchParams.get('review') === '1';
-    if (currentTab === nextTab && !leavingReview) return;
+    const leavingDictionaryView = nextTab === 'dictionary' && Boolean(
+      searchParams.get('review') || searchParams.get('list') || searchParams.get('create'),
+    );
+    if (currentTab === nextTab && !leavingDictionaryView) return;
     const next = new URLSearchParams(searchParams.toString());
     next.set('tab', nextTab);
     if (nextTab !== 'balance') {
@@ -61,11 +65,13 @@ function DashboardPageContent() {
     if (!isLanguageReady) return;
 
     const tabParam = searchParams.get('tab');
-    if (!tabParam) {
+    if (!tabParam || tabParam === 'words') {
       const next = new URLSearchParams(searchParams.toString());
-      next.set('tab', 'words');
+      next.set('tab', tabParam === 'words' ? 'dictionary' : 'dashboard');
+      if (tabParam === 'words') next.set('review', '1');
+      else next.delete('review');
       router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
-      setActiveTab('words');
+      setActiveTab(tabParam === 'words' ? 'dictionary' : 'dashboard');
       return;
     }
     if (isTabKey(tabParam)) {
@@ -140,14 +146,14 @@ function DashboardPageContent() {
       case 'karaoke':
         if (learningLanguage === 'zh') return <DashboardTab />;
         return <KaraokeTab />;
-      case 'words':
-        return (
+      case 'dictionary':
+        return searchParams.get('review') === '1' ? (
           <div style={{ padding: '1.5rem 1.25rem 2.5rem' }}>
             <RecognitionReview />
           </div>
+        ) : (
+          <VocabLibrary />
         );
-      case 'dictionary':
-        return searchParams.get('review') === '1' ? <RecognitionReview /> : <VocabLibrary />;
       case 'agent':
         return <AgentTab />;
       case 'progress':
@@ -164,7 +170,7 @@ function DashboardPageContent() {
     }
   };
 
-  const shouldEnableScroll = activeTab === 'words' || activeTab === 'dictionary' || activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account';
+  const shouldEnableScroll = activeTab === 'dictionary' || activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account';
   const usernameFromEmail = userEmail?.split('@')[0];
   const displayName = usernameFromEmail
     ? usernameFromEmail.charAt(0).toUpperCase() + usernameFromEmail.slice(1).toLowerCase()
@@ -207,18 +213,6 @@ function DashboardPageContent() {
             <LanguageSwitch />
           </div>
         </div>
-        {activeTab === 'words' && (
-          <header className={layoutStyles.header} data-language={learningLanguage}>
-            <div className={layoutStyles.headerInner}>
-              <span className={layoutStyles.greetingLabel}>Слова</span>
-              <div className={layoutStyles.greetingRow}>
-                <p className={layoutStyles.greeting}>Сначала послушай.</p>
-                <span className={layoutStyles.greetingDot} aria-hidden="true" />
-                <p className={layoutStyles.greetingHint}>Потом скажи это слово сам.</p>
-              </div>
-            </div>
-          </header>
-        )}
         {activeTab === 'dashboard' && (
           <header className={layoutStyles.header} data-language={learningLanguage}>
             <div className={layoutStyles.headerInner}>
