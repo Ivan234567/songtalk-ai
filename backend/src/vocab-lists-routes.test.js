@@ -108,6 +108,7 @@ test('маршруты библиотеки списков зарегистри�
     ['PATCH', '/api/vocabulary/lists/:id'],
     ['DELETE', '/api/vocabulary/lists/:id'],
     ['GET', '/api/vocabulary/lists/:id'],
+    ['GET', '/api/vocabulary/lists/:id/words/:vocabularyId'],
     ['POST', '/api/vocabulary/lists/:id/words/resolve'],
     ['POST', '/api/vocabulary/lists/:id/words/bulk'],
     ['POST', '/api/vocabulary/lists/:id/words'],

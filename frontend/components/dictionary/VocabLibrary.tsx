@@ -7,6 +7,7 @@ import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { useTtsVoice } from '@/context/TtsVoiceContext';
 import styles from './vocab-library.module.css';
 import { ListIcon } from '@/components/tabs/CreateWordListModal';
+import { WordDetailCard, type WordCardPayload } from './WordDetailCard';
 
 type ListStats = { new: number; learning: number; due: number; mastered: number };
 
@@ -135,6 +136,9 @@ export function VocabLibrary() {
   const [flashId, setFlashId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  const [wordCard, setWordCard] = useState<WordCardPayload | null>(null);
+  const [wordCardLoading, setWordCardLoading] = useState(false);
+  const [wordCardError, setWordCardError] = useState<string | null>(null);
   const moreRef = useRef<HTMLDivElement | null>(null);
 
   const setParams = useCallback((patch: Record<string, string | null>) => {
@@ -332,9 +336,9 @@ export function VocabLibrary() {
     }
   };
 
-  const speakWord = async (word: ListWord) => {
-    if (!token || speakingId) return;
-    setSpeakingId(word.vocabulary_id);
+  const speakText = async (text: string, id: string) => {
+    if (!token || speakingId || !text) return;
+    setSpeakingId(id);
     try {
       const resp = await fetch(apiPath('/api/tts'), {
         method: 'POST',
@@ -342,7 +346,7 @@ export function VocabLibrary() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ text: word.headword, language: learningLanguage, voice: ttsVoice }),
+        body: JSON.stringify({ text, language: learningLanguage, voice: ttsVoice }),
       });
       if (!resp.ok) throw new Error('tts');
       const blob = await resp.blob();
@@ -362,6 +366,36 @@ export function VocabLibrary() {
     } finally {
       setSpeakingId(null);
     }
+  };
+
+  const speakWord = async (word: ListWord) => {
+    await speakText(word.headword, word.vocabulary_id);
+  };
+
+  const openWordCard = async (vocabularyId: string) => {
+    if (!token || !listId || selecting) return;
+    setWordCard(null);
+    setWordCardError(null);
+    setWordCardLoading(true);
+    try {
+      const resp = await fetch(apiPath(`/api/vocabulary/lists/${listId}/words/${vocabularyId}`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || 'card');
+      setWordCard(data.card as WordCardPayload);
+      await loadDetail(token, listId);
+    } catch (err) {
+      setWordCardError(err instanceof Error ? err.message : 'Не получилось открыть слово');
+    } finally {
+      setWordCardLoading(false);
+    }
+  };
+
+  const closeWordCard = () => {
+    setWordCard(null);
+    setWordCardError(null);
+    setWordCardLoading(false);
   };
 
   const chosenWords = () => {
@@ -809,7 +843,9 @@ export function VocabLibrary() {
               data-flash={flashId === word.vocabulary_id ? 'true' : 'false'}
               onClick={() => {
                 if (selecting) toggleSelected(word.vocabulary_id);
+                else void openWordCard(word.vocabulary_id);
               }}
+              style={{ cursor: selecting ? undefined : 'pointer' }}
             >
               <div className={styles.wordTop}>
                 {selecting && (
@@ -867,6 +903,19 @@ export function VocabLibrary() {
               ? 'По этому фильтру слов нет.'
               : 'В этом списке пока нет слов.'}
           </p>
+        )}
+        {(wordCard || wordCardLoading || wordCardError) && (
+          <WordDetailCard
+            card={wordCard}
+            loading={wordCardLoading}
+            error={wordCardError}
+            speaking={Boolean(wordCard && speakingId === wordCard.vocabulary_id)}
+            onClose={closeWordCard}
+            onSpeak={() => {
+              if (!wordCard) return;
+              void speakText(wordCard.headword, wordCard.vocabulary_id);
+            }}
+          />
         )}
       </div>
     );

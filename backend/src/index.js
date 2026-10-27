@@ -3185,6 +3185,7 @@ registerVocabListsRoutes(app, {
   safeSupabaseCall,
   asyncHandler,
   resolveListEntries: createResolveListEntries({ billableChatCreate }),
+  billableChatCreate,
 })
 
 registerVocabDialogueRoutes(app, {

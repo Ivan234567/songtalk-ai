@@ -4,6 +4,13 @@
  */
 import { ensureUserVocabularySenses } from './vocab-sense-sync.js'
 import { demoListOrder, findStarterPack, listStarterPacks, STARTER_PACKS } from './vocab-starter-packs.js'
+import {
+  applyLexiconToVocabulary,
+  buildWordCardPayload,
+  createBuildWordLexicon,
+  lexiconNeedsEnrichment,
+  persistWordLexicon,
+} from './vocab-word-card.js'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -732,7 +739,11 @@ export function createListDetailHandler(deps) {
         return [{
           vocabulary_id: vocabularyId,
           headword: row.word,
-          gloss_ru: firstGloss(row.translations) || senseList[0]?.gloss_ru || null,
+          gloss_ru: (() => {
+            const fromSenses = senseList.map((sense) => sense.gloss_ru).filter(Boolean)
+            if (fromSenses.length) return fromSenses.slice(0, 3).join('; ')
+            return firstGloss(row.translations)
+          })(),
           part_of_speech: row.part_of_speech || null,
           phonetic: phoneticByWord.get(row.word) || null,
           pinyin: row.pinyin || null,
@@ -916,6 +927,61 @@ async function cachePhonetic(deps, { language, word, phonetic, pinyin, partOfSpe
   }
 }
 
+
+async function enrichListWordCard(deps, {
+  userId,
+  language,
+  vocabularyId,
+  word,
+  gloss,
+  phonetic,
+  partOfSpeech,
+  pinyin,
+  force = false,
+}) {
+  const buildWordLexicon = deps.buildWordLexicon
+  if (typeof buildWordLexicon !== 'function' || !vocabularyId || !word) return null
+
+  const { data: cache } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('word_definitions_cache')
+      .select('definitions, example_sentences, phonetic_transcription, pinyin, part_of_speech')
+      .eq('word', word)
+      .eq('language', language)
+      .maybeSingle(),
+  )
+  const { data: vocabulary } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('user_vocabulary')
+      .select('id, word, translations, part_of_speech, pinyin')
+      .eq('id', vocabularyId)
+      .eq('user_id', userId)
+      .maybeSingle(),
+  )
+  if (!force && !lexiconNeedsEnrichment(cache, vocabulary)) return null
+
+  const lexicon = await buildWordLexicon({
+    word,
+    language,
+    userId,
+    seedGloss: gloss || firstGloss(vocabulary?.translations),
+    phonetic: phonetic || cache?.phonetic_transcription || null,
+    pinyin: pinyin || vocabulary?.pinyin || cache?.pinyin || null,
+    partOfSpeech: partOfSpeech || vocabulary?.part_of_speech || cache?.part_of_speech || null,
+  })
+  if (!lexicon) return null
+
+  await persistWordLexicon(deps, { language, lexicon })
+  await applyLexiconToVocabulary(deps, {
+    userId,
+    language,
+    vocabularyId,
+    lexicon,
+    ensureUserVocabularySenses,
+  })
+  return lexicon
+}
+
 async function addWordToList(deps, {
   userId,
   language,
@@ -994,33 +1060,60 @@ async function addWordToList(deps, {
       .eq('vocabulary_id', vocabularyId)
       .maybeSingle(),
   )
-  if (existingLink?.vocabulary_id) {
-    return { already: true, vocabulary_id: vocabularyId, word, gloss }
+  const alreadyLinked = Boolean(existingLink?.vocabulary_id)
+  if (!alreadyLinked) {
+    const { data: lastItem } = await deps.safeSupabaseCall(
+      () => deps.supabase
+        .from('vocab_list_items')
+        .select('position')
+        .eq('user_id', userId)
+        .eq('list_id', listId)
+        .order('position', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    )
+    const position = Number.isInteger(lastItem?.position) ? lastItem.position + 1 : 0
+    const { error: linkError } = await deps.safeSupabaseCall(
+      () => deps.supabase
+        .from('vocab_list_items')
+        .insert({
+          list_id: listId,
+          user_id: userId,
+          vocabulary_id: vocabularyId,
+          position,
+        }),
+    )
+    if (linkError && errorCode(linkError) !== '23505') throw linkError
   }
 
-  const { data: lastItem } = await deps.safeSupabaseCall(
-    () => deps.supabase
-      .from('vocab_list_items')
-      .select('position')
-      .eq('user_id', userId)
-      .eq('list_id', listId)
-      .order('position', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  )
-  const position = Number.isInteger(lastItem?.position) ? lastItem.position + 1 : 0
-  const { error: linkError } = await deps.safeSupabaseCall(
-    () => deps.supabase
-      .from('vocab_list_items')
-      .insert({
-        list_id: listId,
-        user_id: userId,
-        vocabulary_id: vocabularyId,
-        position,
-      }),
-  )
-  if (linkError && errorCode(linkError) !== '23505') throw linkError
-  return { already: Boolean(linkError), vocabulary_id: vocabularyId, word, gloss }
+  let senses = null
+  if (!alreadyLinked) {
+    try {
+      const lexicon = await enrichListWordCard(deps, {
+        userId,
+        language,
+        vocabularyId,
+        word,
+        gloss,
+        phonetic,
+        partOfSpeech,
+        pinyin,
+        force: true,
+      })
+      senses = lexicon?.senses?.map((sense) => sense.gloss) || null
+    } catch (error) {
+      if (error?.status === 402) throw error
+      console.error('[vocab-word-card] enrich failed', error?.message || error)
+    }
+  }
+
+  return {
+    already: alreadyLinked,
+    vocabulary_id: vocabularyId,
+    word,
+    gloss,
+    senses,
+  }
 }
 
 export function createAddListWordHandler(deps) {
@@ -1042,7 +1135,7 @@ export function createAddListWordHandler(deps) {
         res.status(404).json({ error: 'Список не найден' })
         return
       }
-      const result = await addWordToList({ supabase, safeSupabaseCall }, {
+      const result = await addWordToList(deps, {
         userId,
         language,
         listId,
@@ -1054,12 +1147,121 @@ export function createAddListWordHandler(deps) {
       })
       res.status(result.already ? 200 : 201).json({ ok: true, ...result })
     } catch (error) {
-      if (error?.status === 400) {
-        res.status(400).json({ error: error.message })
+      if (error?.status === 400 || error?.status === 402) {
+        res.status(error.status).json({ error: error.message })
         return
       }
       console.error('[api/vocabulary/lists/words] failed', error?.message || error?.code || error)
       res.status(500).json({ error: 'Не удалось добавить слово' })
+    }
+  }
+}
+
+export function createListWordCardHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn() } = deps
+  return async function listWordCardHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+    const vocabularyId = typeof req.params?.vocabularyId === 'string' ? req.params.vocabularyId.trim() : ''
+    if (!UUID_RE.test(listId) || !UUID_RE.test(vocabularyId)) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+
+    try {
+      const list = await loadOwnedList({ supabase, safeSupabaseCall }, { userId, language, listId })
+      if (!list) {
+        res.status(404).json({ error: 'Список не найден' })
+        return
+      }
+      const { data: link } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_list_items')
+          .select('vocabulary_id')
+          .eq('user_id', userId)
+          .eq('list_id', listId)
+          .eq('vocabulary_id', vocabularyId)
+          .maybeSingle(),
+      )
+      if (!link?.vocabulary_id) {
+        res.status(404).json({ error: 'Слова нет в списке' })
+        return
+      }
+
+      const { data: vocabulary, error: vocabError } = await safeSupabaseCall(
+        () => supabase
+          .from('user_vocabulary')
+          .select('id, word, translations, part_of_speech, pinyin, contexts')
+          .eq('id', vocabularyId)
+          .eq('user_id', userId)
+          .maybeSingle(),
+      )
+      if (vocabError) throw vocabError
+      if (!vocabulary) {
+        res.status(404).json({ error: 'Слово не найдено' })
+        return
+      }
+
+      let lexicon = null
+      try {
+        lexicon = await enrichListWordCard(deps, {
+          userId,
+          language,
+          vocabularyId,
+          word: vocabulary.word,
+          gloss: firstGloss(vocabulary.translations),
+          phonetic: null,
+          partOfSpeech: vocabulary.part_of_speech,
+          pinyin: vocabulary.pinyin,
+          force: false,
+        })
+      } catch (error) {
+        if (error?.status === 402) {
+          res.status(402).json({ error: error.message })
+          return
+        }
+        console.error('[api/vocabulary/lists/word-card] enrich failed', error?.message || error)
+      }
+
+      const { data: senses } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_senses')
+          .select('id, gloss_ru, part_of_speech, context_text')
+          .eq('user_id', userId)
+          .eq('vocabulary_id', vocabularyId)
+          .order('created_at', { ascending: true }),
+      )
+      const { data: cache } = await safeSupabaseCall(
+        () => supabase
+          .from('word_definitions_cache')
+          .select('definitions, example_sentences, phonetic_transcription, pinyin, part_of_speech')
+          .eq('word', vocabulary.word)
+          .eq('language', language)
+          .maybeSingle(),
+      )
+      const { data: freshVocab } = await safeSupabaseCall(
+        () => supabase
+          .from('user_vocabulary')
+          .select('id, word, translations, part_of_speech, pinyin, contexts')
+          .eq('id', vocabularyId)
+          .eq('user_id', userId)
+          .maybeSingle(),
+      )
+
+      res.status(200).json({
+        card: buildWordCardPayload({
+          vocabulary: freshVocab || vocabulary,
+          senses: senses || [],
+          cache,
+          lexicon,
+        }),
+      })
+    } catch (error) {
+      console.error('[api/vocabulary/lists/word-card] failed', error?.message || error)
+      res.status(500).json({ error: 'Не получилось открыть слово' })
     }
   }
 }
@@ -1153,7 +1355,7 @@ export function createBulkAddListWordsHandler(deps) {
       const added = []
       const existing = []
       for (const row of rows) {
-        const result = await addWordToList({ supabase, safeSupabaseCall }, {
+        const result = await addWordToList(deps, {
           userId,
           language,
           listId,
@@ -1168,8 +1370,8 @@ export function createBulkAddListWordsHandler(deps) {
       }
       res.status(200).json({ ok: true, added, existing })
     } catch (error) {
-      if (error?.status === 400) {
-        res.status(400).json({ error: error.message })
+      if (error?.status === 400 || error?.status === 402) {
+        res.status(error.status).json({ error: error.message })
         return
       }
       console.error('[api/vocabulary/lists/bulk] failed', error?.message || error)
@@ -1290,15 +1492,24 @@ export function createRemoveListWordHandler(deps) {
 
 export function registerVocabListsRoutes(app, deps) {
   const wrap = deps.asyncHandler || ((fn) => fn)
-  app.get('/api/vocabulary/lists', wrap(createListLibraryHandler(deps)))
-  app.post('/api/vocabulary/lists', wrap(createEmptyListHandler(deps)))
-  app.post('/api/vocabulary/lists/starter', wrap(createStarterPackHandler(deps)))
-  app.patch('/api/vocabulary/lists/:id', wrap(createPatchListHandler(deps)))
-  app.delete('/api/vocabulary/lists/:id', wrap(createDeleteListHandler(deps)))
-  app.get('/api/vocabulary/lists/:id', wrap(createListDetailHandler(deps)))
-  app.post('/api/vocabulary/lists/:id/words/resolve', wrap(createResolveListWordsHandler(deps)))
-  app.post('/api/vocabulary/lists/:id/words/bulk', wrap(createBulkAddListWordsHandler(deps)))
-  app.post('/api/vocabulary/lists/:id/words', wrap(createAddListWordHandler(deps)))
-  app.delete('/api/vocabulary/lists/:id/words/:vocabularyId', wrap(createRemoveListWordHandler(deps)))
-  app.get('/api/vocabulary/lists/:id/listen', wrap(createListListenIdsHandler(deps)))
+  const withLexicon = {
+    ...deps,
+    buildWordLexicon: deps.buildWordLexicon || (
+      typeof deps.billableChatCreate === 'function'
+        ? createBuildWordLexicon({ billableChatCreate: deps.billableChatCreate })
+        : null
+    ),
+  }
+  app.get('/api/vocabulary/lists', wrap(createListLibraryHandler(withLexicon)))
+  app.post('/api/vocabulary/lists', wrap(createEmptyListHandler(withLexicon)))
+  app.post('/api/vocabulary/lists/starter', wrap(createStarterPackHandler(withLexicon)))
+  app.patch('/api/vocabulary/lists/:id', wrap(createPatchListHandler(withLexicon)))
+  app.delete('/api/vocabulary/lists/:id', wrap(createDeleteListHandler(withLexicon)))
+  app.get('/api/vocabulary/lists/:id', wrap(createListDetailHandler(withLexicon)))
+  app.get('/api/vocabulary/lists/:id/words/:vocabularyId', wrap(createListWordCardHandler(withLexicon)))
+  app.post('/api/vocabulary/lists/:id/words/resolve', wrap(createResolveListWordsHandler(withLexicon)))
+  app.post('/api/vocabulary/lists/:id/words/bulk', wrap(createBulkAddListWordsHandler(withLexicon)))
+  app.post('/api/vocabulary/lists/:id/words', wrap(createAddListWordHandler(withLexicon)))
+  app.delete('/api/vocabulary/lists/:id/words/:vocabularyId', wrap(createRemoveListWordHandler(withLexicon)))
+  app.get('/api/vocabulary/lists/:id/listen', wrap(createListListenIdsHandler(withLexicon)))
 }
