@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { buildAgentAuthHeaders } from '@/lib/agent-request';
+import React, { useState } from 'react';
 import type { LearningLanguage } from '@/lib/learning-language';
-import type { ChatPracticeSense } from './ChatPracticeWords';
+import { PRACTICE_WORDS_LIMIT, type ChatPracticeSense } from './ChatPracticeWords';
+import { PracticeWordListPicker } from './PracticeWordListPicker';
 import styles from './practice-words-gate.module.css';
 
-export const PRACTICE_WORDS_LIMIT = 5;
+export { PRACTICE_WORDS_LIMIT };
 
 type GateMode = 'roleplay' | 'debate' | 'chat';
 
@@ -25,19 +25,19 @@ const COPY: Record<GateMode, { eyebrow: string; title: string; subtitle: string;
   roleplay: {
     eyebrow: 'Перед сценой',
     title: 'Возьми слова в сцену',
-    subtitle: 'До 5 значений из словаря. ИИ поможет сказать их по делу — без зубрёжки. Можно пройти без слов.',
+    subtitle: 'Открой список словаря и выбери до 5 слов. Можно пройти без слов.',
     continueLabel: 'Дальше к сценариям',
   },
   debate: {
     eyebrow: 'Перед дебатом',
     title: 'Возьми слова в спор',
-    subtitle: 'До 5 слов как боезапас для аргументов. Используй их уместно. Можно начать без слов.',
+    subtitle: 'Выбери до 5 слов из списка — боезапас для аргументов. Можно без слов.',
     continueLabel: 'Дальше к темам',
   },
   chat: {
     eyebrow: 'Свободный разговор',
     title: 'Слова для этого разговора',
-    subtitle: 'Выбери до 5 значений. ИИ создаст ситуации, где их естественно сказать.',
+    subtitle: 'Выбери список, затем до 5 слов. ИИ поможет сказать их в разговоре.',
     continueLabel: 'Готово',
   },
 };
@@ -53,53 +53,7 @@ export function PracticeWordsGate({
   onClose,
 }: PracticeWordsGateProps) {
   const copy = COPY[mode];
-  const [query, setQuery] = useState('');
-  const [catalog, setCatalog] = useState<ChatPracticeSense[]>([]);
-  const [catalogState, setCatalogState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [draft, setDraft] = useState<ChatPracticeSense[]>(initialSenses);
-
-  useEffect(() => {
-    let cancelled = false;
-    setCatalogState('loading');
-    fetch(`${apiUrl}/api/vocabulary/srs/senses`, {
-      headers: buildAgentAuthHeaders(token, learningLanguage),
-    })
-      .then(async (resp) => {
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || !Array.isArray(data?.items)) throw new Error('catalog');
-        if (cancelled) return;
-        setCatalog(data.items.flatMap((item: { sense_id?: string; headword?: string; gloss_ru?: string }) => {
-          const senseId = typeof item?.sense_id === 'string' ? item.sense_id : '';
-          const headword = typeof item?.headword === 'string' ? item.headword.trim() : '';
-          const glossRu = typeof item?.gloss_ru === 'string' ? item.gloss_ru.trim() : '';
-          return senseId && headword && glossRu ? [{ senseId, headword, glossRu }] : [];
-        }));
-        setCatalogState('idle');
-      })
-      .catch(() => {
-        if (!cancelled) setCatalogState('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [apiUrl, token, learningLanguage]);
-
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return catalog;
-    return catalog.filter((item) => (
-      item.headword.toLowerCase().includes(needle) || item.glossRu.toLowerCase().includes(needle)
-    ));
-  }, [catalog, query]);
-
-  const toggle = (item: ChatPracticeSense) => {
-    setDraft((prev) => {
-      const exists = prev.some((sense) => sense.senseId === item.senseId);
-      if (exists) return prev.filter((sense) => sense.senseId !== item.senseId);
-      if (prev.length >= PRACTICE_WORDS_LIMIT) return prev;
-      return [...prev, item];
-    });
-  };
 
   return (
     <div className={styles.backdrop} role="presentation" onClick={onClose || onSkip}>
@@ -122,64 +76,14 @@ export function PracticeWordsGate({
         </div>
 
         <div className={styles.body}>
-          {draft.length > 0 && (
-            <div className={styles.selectedStrip}>
-              {draft.map((sense) => (
-                <span key={sense.senseId} className={styles.chip}>
-                  {sense.headword}
-                  <button
-                    type="button"
-                    className={styles.chipRemove}
-                    aria-label={`Убрать ${sense.headword}`}
-                    onClick={() => toggle(sense)}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className={styles.counter}>
-            <span>Выбрано</span>
-            <span className={styles.counterStrong}>{draft.length} из {PRACTICE_WORDS_LIMIT}</span>
-          </div>
-
-          <input
-            className={styles.search}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Поиск: слово или перевод"
-            autoFocus
+          <PracticeWordListPicker
+            apiUrl={apiUrl}
+            token={token}
+            learningLanguage={learningLanguage}
+            selected={draft}
+            onChange={setDraft}
+            limit={PRACTICE_WORDS_LIMIT}
           />
-
-          {catalogState === 'loading' && <p className={styles.muted}>Загружаем словарь…</p>}
-          {catalogState === 'error' && <p className={styles.error}>Не удалось открыть словарь</p>}
-          {catalogState === 'idle' && visible.length === 0 && (
-            <p className={styles.muted}>В словаре пока нет слов с переводом</p>
-          )}
-
-          <div className={styles.list}>
-            {visible.map((item) => {
-              const selected = draft.some((sense) => sense.senseId === item.senseId);
-              const disabled = !selected && draft.length >= PRACTICE_WORDS_LIMIT;
-              return (
-                <button
-                  key={item.senseId}
-                  type="button"
-                  className={`${styles.row} ${selected ? styles.rowSelected : ''}`}
-                  disabled={disabled}
-                  onClick={() => toggle(item)}
-                >
-                  <span className={styles.check}>{selected ? '✓' : ''}</span>
-                  <span>
-                    <span className={styles.headword}>{item.headword}</span>
-                    <span className={styles.gloss}>{item.glossRu}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         <div className={styles.footer}>

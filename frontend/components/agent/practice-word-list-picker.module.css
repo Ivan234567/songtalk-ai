@@ -1,0 +1,213 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.back,
+.crumb {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--sidebar-text);
+  opacity: 0.78;
+}
+
+.back {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: #93c5fd;
+  opacity: 1;
+}
+
+.count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid color-mix(in srgb, #60a5fa 40%, var(--sidebar-border));
+  background: color-mix(in srgb, #3b82f6 16%, transparent);
+  color: var(--sidebar-text);
+  border-radius: 999px;
+  padding: 0.22rem 0.55rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.chipWord {
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.chipX {
+  opacity: 0.65;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.search {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.search:focus {
+  outline: none;
+  border-color: color-mix(in srgb, #60a5fa 55%, var(--sidebar-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, #3b82f6 16%, transparent);
+}
+
+.muted,
+.error {
+  margin: 0;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.error {
+  color: #fca5a5;
+  opacity: 1;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.listRow,
+.wordRow {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.listRow:hover,
+.wordRow:hover:not(:disabled) {
+  border-color: color-mix(in srgb, #93c5fd 40%, var(--sidebar-border));
+}
+
+.listIcon {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, #60a5fa 14%, transparent);
+  color: #93c5fd;
+  flex-shrink: 0;
+}
+
+.listText,
+.wordText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  flex: 1;
+}
+
+.listTitle,
+.headword {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.listMeta {
+  font-size: 0.72rem;
+  opacity: 0.62;
+}
+
+.chevron {
+  opacity: 0.45;
+  font-size: 1.1rem;
+  line-height: 1;
+  margin-top: 0.05rem;
+}
+
+.listHeading {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.wordSelected {
+  border-color: color-mix(in srgb, #60a5fa 55%, var(--sidebar-border));
+  background: color-mix(in srgb, #3b82f6 14%, var(--sidebar-hover));
+}
+
+.wordRow:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.check {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--sidebar-text) 28%, transparent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-top: 0.12rem;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: transparent;
+}
+
+.wordSelected .check {
+  border-color: #60a5fa;
+  background: #3b82f6;
+  color: #fff;
+}
+
+.gloss {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  opacity: 0.78;
+}

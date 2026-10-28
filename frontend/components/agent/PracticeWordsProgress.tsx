@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import type { ChatPracticeSense } from './ChatPracticeWords';
+import type { ChatPracticeSense, PracticeVerdict } from './ChatPracticeWords';
 import styles from './practice-words-progress.module.css';
 
 export type PracticeProgressStatus = 'waiting' | 'used' | 'not_counted';
@@ -14,59 +14,128 @@ export type PracticeProgressItem = {
   verdict?: string;
 };
 
-const STATUS_LABEL: Record<PracticeProgressStatus, string> = {
-  waiting: 'Ещё не сказал',
-  used: 'Использовано в разговоре',
-  not_counted: 'Пока не засчитано',
-};
+const VERDICT_OK = new Set(['produced']);
 
 type PracticeWordsProgressProps = {
   senses: ChatPracticeSense[];
   items?: PracticeProgressItem[] | null;
+  results?: PracticeVerdict[] | null;
   usedCount?: number;
   totalCount?: number;
   locked?: boolean;
+  revealed?: Record<string, boolean>;
+  onToggleReveal?: (senseId: string) => void;
+  assessable?: boolean;
+  assessing?: boolean;
+  assessError?: string | null;
+  storeWarning?: string | null;
+  onAssess?: () => void;
 };
+
+function toneForSense(
+  senseId: string,
+  progress: PracticeProgressItem | undefined,
+  result: PracticeVerdict | undefined,
+): 'ok' | 'bad' | 'idle' | 'maybe' {
+  if (result) return VERDICT_OK.has(result.verdict) ? 'ok' : 'bad';
+  if (progress?.status === 'used') return 'ok';
+  if (progress?.status === 'not_counted') return 'maybe';
+  return 'idle';
+}
+
+function captionForSense(
+  sense: ChatPracticeSense,
+  progress: PracticeProgressItem | undefined,
+  result: PracticeVerdict | undefined,
+): string {
+  if (result) {
+    if (result.verdict === 'produced') {
+      const days = result.intervalDays;
+      if (days != null && Number.isInteger(days) && days > 0) return `Сказал сам · через ${days} дн.`;
+      return 'Сказал сам';
+    }
+    if (result.verdict === 'unused') return 'Не прозвучало';
+    if (result.verdict === 'wrong_sense') return 'Другой смысл';
+    if (result.verdict === 'echoed') return 'Повтор за ИИ';
+    if (result.verdict === 'hinted') return 'После подсказки';
+    if (result.verdict === 'mentioned') return 'Неясно';
+    return result.verdict;
+  }
+  if (progress?.status === 'used') return 'Использовано в разговоре';
+  if (progress?.status === 'not_counted') return 'Пока не засчитано';
+  return 'Ждём в речи';
+}
 
 export function PracticeWordsProgress({
   senses,
   items = null,
+  results = null,
   usedCount,
   totalCount,
   locked = false,
+  revealed = {},
+  onToggleReveal,
+  assessable = false,
+  assessing = false,
+  assessError = null,
+  storeWarning = null,
+  onAssess,
 }: PracticeWordsProgressProps) {
   if (!senses.length) return null;
   const byId = new Map((items || []).map((item) => [item.senseId, item]));
+  const resultById = new Map((results || []).map((item) => [item.senseId, item]));
+  const assessed = (results || []).length > 0;
   const total = totalCount ?? senses.length;
-  const used = usedCount ?? (items || []).filter((item) => item.status === 'used').length;
+  const used = assessed
+    ? (results || []).filter((item) => VERDICT_OK.has(item.verdict)).length
+    : usedCount ?? (items || []).filter((item) => item.status === 'used').length;
+  const showButton = assessable && !assessed && Boolean(onAssess);
 
   return (
-    <section className={styles.wrap} aria-label="Прогресс слов в разговоре">
+    <section className={styles.wrap} aria-label="Слова в разговоре">
       <div className={styles.head}>
-        <span className={styles.eyebrow}>Слова в разговоре</span>
-        <span className={styles.counter}>
+        <span className={styles.eyebrow}>Скажи сам</span>
+        <span className={styles.counter} data-done={used >= total && total > 0 ? '1' : '0'}>
           {used}/{total}
         </span>
       </div>
+
       <ul className={styles.list}>
         {senses.map((sense) => {
-          const row = byId.get(sense.senseId);
-          const status: PracticeProgressStatus = row?.status
-            || (locked ? 'waiting' : 'waiting');
+          const progress = byId.get(sense.senseId);
+          const result = resultById.get(sense.senseId);
+          const tone = toneForSense(sense.senseId, progress, result);
           return (
-            <li key={sense.senseId} className={styles.item} data-status={status}>
-              <span className={styles.dot} aria-hidden />
-              <div className={styles.text}>
-                <span className={styles.gloss}>{sense.glossRu}</span>
-                <span className={styles.meta}>
-                  {STATUS_LABEL[status]}
-                  {status === 'used' && row?.headword ? ` · ${row.headword}` : ''}
+            <li key={sense.senseId} className={styles.item} data-tone={tone}>
+              <div className={styles.card}>
+                <span className={styles.rail} aria-hidden />
+                <span className={styles.body}>
+                  <span className={styles.headwordRow}>
+                    <span className={styles.headword}>{sense.headword}</span>
+                    <span className={styles.toneMark} aria-hidden>
+                      {tone === 'ok' ? '✓' : tone === 'bad' ? '!' : ''}
+                    </span>
+                  </span>
+                  <span className={`${styles.glossBlock} ${styles.glossOpen}`}>
+                    <span className={styles.glossLabel}>Перевод</span>
+                    <span className={styles.gloss}>{sense.glossRu}</span>
+                  </span>
+                  <span className={styles.caption}>{captionForSense(sense, progress, result)}</span>
                 </span>
               </div>
             </li>
           );
         })}
       </ul>
+
+      {showButton && (
+        <button type="button" className={styles.assessBtn} disabled={assessing} onClick={onAssess}>
+          {assessing ? 'Слушаю…' : 'Проверить, сказал ли я сам'}
+        </button>
+      )}
+      {assessing && !showButton && <p className={styles.hint}>Слушаю речь…</p>}
+      {assessError && <p className={styles.hint}>{assessError}</p>}
+      {storeWarning && <p className={styles.hint}>{storeWarning}</p>}
     </section>
   );
 }

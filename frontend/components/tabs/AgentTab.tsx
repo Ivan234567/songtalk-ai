@@ -20,7 +20,7 @@ import {
   type ZhVoiceTaskEvaluateResult,
 } from '@/lib/zh-voice-tasks';
 import { RoleplayScenarioProgress } from '@/components/roleplay/RoleplayScenarioProgress';
-import { ChatPracticeWords, PracticeSpeechReport, type ChatPracticeSense } from '@/components/agent/ChatPracticeWords';
+import { ChatPracticeWords, type ChatPracticeSense } from '@/components/agent/ChatPracticeWords';
 import {
   ChatWordsInviteStrip,
   ChatWordsSoftAsk,
@@ -31,7 +31,6 @@ import {
   mapPracticeProgressPayload,
   type PracticeProgressItem,
 } from '@/components/agent/PracticeWordsProgress';
-import { PracticeWordsSummary } from '@/components/agent/PracticeWordsSummary';
 import { ZhAfterSessionReview } from '@/components/roleplay/ZhAfterSessionReview';
 import { EnAfterSessionReview } from '@/components/roleplay/EnAfterSessionReview';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
@@ -4076,15 +4075,6 @@ export function AgentTab() {
                   </div>
                 );
               })}
-              <PracticeSpeechReport
-                senses={chatPracticeSenses}
-                results={chatPracticeResults}
-                assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
-                assessing={chatPracticeAssessing}
-                assessError={chatPracticeAssessError}
-                storeWarning={chatPracticeStoreWarning}
-                onAssess={() => { void assessChatPractice(); }}
-              />
             </div>
           )}
         </div>
@@ -4404,35 +4394,11 @@ export function AgentTab() {
               )}
               {agentMode === 'chat' && !selectedVoiceTask && token && chatPracticeSenses.length === 0 && !chatInviteDismissed && !chatPracticeLocked && (
                 <ChatWordsInviteStrip
-                  onChoose={() => setWordsGateMode('chat')}
+                  onChoose={() => {
+                    setEnglishSettingsOpen(true);
+                    setWordsGateMode('chat');
+                  }}
                   onDismiss={() => setChatInviteDismissed(true)}
-                />
-              )}
-              {(agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || (agentMode === 'debate' && debateStarted)) && !selectedVoiceTask && token && chatPracticeSenses.length > 0 && (
-                <ChatPracticeWords
-                  apiUrl={getApiUrl()}
-                  token={token}
-                  learningLanguage={learningLanguage}
-                  senses={chatPracticeSenses}
-                  locked={chatPracticeLocked}
-                  revealed={chatPracticeRevealed}
-                  onConfirm={(next) => {
-                    setChatPracticeSenses(next);
-                    setChatPracticeRequestId(crypto.randomUUID());
-                    setChatPracticeRevealed({});
-                  }}
-                  onClear={clearChatPractice}
-                  onToggleReveal={(senseId) => {
-                    setChatPracticeRevealed((prev) => ({ ...prev, [senseId]: !prev[senseId] }));
-                  }}
-                  assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
-                  assessing={chatPracticeAssessing}
-                  assessError={chatPracticeAssessError}
-                  storeWarning={chatPracticeStoreWarning}
-                  results={chatPracticeResults}
-                  usedCount={chatPracticeProgressCounts?.used}
-                  totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
-                  onAssess={() => { void assessChatPractice(); }}
                 />
               )}
               {/* Настройки обучения для английского — единая панель во всех режимах */}
@@ -4521,32 +4487,33 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
-                      {chatPracticeSenses.length > 0 && (
-                        chatPracticeResults || (chatPracticeLocked && messages.some((message) => message.role === 'user'))
-                          ? (
-                            <PracticeWordsSummary
-                              variant="plain"
-                              senses={chatPracticeSenses}
-                              progressItems={chatPracticeProgress}
-                              usedCount={chatPracticeProgressCounts?.used}
-                              totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
-                              results={chatPracticeResults}
-                              assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
-                              assessing={chatPracticeAssessing}
-                              assessError={chatPracticeAssessError}
-                              storeWarning={chatPracticeStoreWarning}
-                              onAssess={() => { void assessChatPractice(); }}
-                            />
-                          )
-                          : (
-                            <PracticeWordsProgress
-                              senses={chatPracticeSenses}
-                              items={chatPracticeProgress}
-                              usedCount={chatPracticeProgressCounts?.used}
-                              totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
-                              locked={chatPracticeLocked}
-                            />
-                          )
+                      {token && !selectedVoiceTask && (
+                        <ChatPracticeWords
+                          apiUrl={getApiUrl()}
+                          token={token}
+                          learningLanguage={learningLanguage}
+                          senses={chatPracticeSenses}
+                          locked={chatPracticeLocked}
+                          revealed={chatPracticeRevealed}
+                          onConfirm={(next) => {
+                            setChatPracticeSenses(next);
+                            setChatPracticeRequestId(crypto.randomUUID());
+                            setChatPracticeRevealed({});
+                          }}
+                          onClear={clearChatPractice}
+                          onToggleReveal={(senseId) => {
+                            setChatPracticeRevealed((prev) => ({ ...prev, [senseId]: !prev[senseId] }));
+                          }}
+                          assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
+                          assessing={chatPracticeAssessing}
+                          assessError={chatPracticeAssessError}
+                          storeWarning={chatPracticeStoreWarning}
+                          results={chatPracticeResults}
+                          progressItems={chatPracticeProgress}
+                          usedCount={chatPracticeProgressCounts?.used}
+                          totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
+                          onAssess={() => { void assessChatPractice(); }}
+                        />
                       )}
                       {agentMode === 'roleplay' && selectedScenario && (
                         <>
@@ -5108,32 +5075,33 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
-                      {chatPracticeSenses.length > 0 && (
-                        chatPracticeResults || (chatPracticeLocked && messages.some((message) => message.role === 'user'))
-                          ? (
-                            <PracticeWordsSummary
-                              variant="plain"
-                              senses={chatPracticeSenses}
-                              progressItems={chatPracticeProgress}
-                              usedCount={chatPracticeProgressCounts?.used}
-                              totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
-                              results={chatPracticeResults}
-                              assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
-                              assessing={chatPracticeAssessing}
-                              assessError={chatPracticeAssessError}
-                              storeWarning={chatPracticeStoreWarning}
-                              onAssess={() => { void assessChatPractice(); }}
-                            />
-                          )
-                          : (
-                            <PracticeWordsProgress
-                              senses={chatPracticeSenses}
-                              items={chatPracticeProgress}
-                              usedCount={chatPracticeProgressCounts?.used}
-                              totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
-                              locked={chatPracticeLocked}
-                            />
-                          )
+                      {token && !selectedVoiceTask && (
+                        <ChatPracticeWords
+                          apiUrl={getApiUrl()}
+                          token={token}
+                          learningLanguage={learningLanguage}
+                          senses={chatPracticeSenses}
+                          locked={chatPracticeLocked}
+                          revealed={chatPracticeRevealed}
+                          onConfirm={(next) => {
+                            setChatPracticeSenses(next);
+                            setChatPracticeRequestId(crypto.randomUUID());
+                            setChatPracticeRevealed({});
+                          }}
+                          onClear={clearChatPractice}
+                          onToggleReveal={(senseId) => {
+                            setChatPracticeRevealed((prev) => ({ ...prev, [senseId]: !prev[senseId] }));
+                          }}
+                          assessable={chatPracticeLocked && messages.some((message) => message.role === 'user')}
+                          assessing={chatPracticeAssessing}
+                          assessError={chatPracticeAssessError}
+                          storeWarning={chatPracticeStoreWarning}
+                          results={chatPracticeResults}
+                          progressItems={chatPracticeProgress}
+                          usedCount={chatPracticeProgressCounts?.used}
+                          totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
+                          onAssess={() => { void assessChatPractice(); }}
+                        />
                       )}
                       {selectedVoiceTask && (
                         <section
@@ -5899,12 +5867,17 @@ export function AgentTab() {
               </p>
             )}
             {chatPracticeLocked && chatPracticeSenses.length > 0 && (
-              <PracticeWordsSummary
+              <PracticeWordsProgress
                 senses={chatPracticeSenses}
-                progressItems={chatPracticeProgress}
+                items={chatPracticeProgress}
+                results={chatPracticeResults}
                 usedCount={chatPracticeProgressCounts?.used}
                 totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
-                results={chatPracticeResults}
+                locked
+                revealed={chatPracticeRevealed}
+                onToggleReveal={(senseId) => {
+                  setChatPracticeRevealed((prev) => ({ ...prev, [senseId]: !prev[senseId] }));
+                }}
                 assessable={messages.some((message) => message.role === 'user')}
                 assessing={chatPracticeAssessing}
                 assessError={chatPracticeAssessError}
@@ -6182,12 +6155,17 @@ export function AgentTab() {
               </p>
             )}
             {chatPracticeLocked && chatPracticeSenses.length > 0 && (
-              <PracticeWordsSummary
+              <PracticeWordsProgress
                 senses={chatPracticeSenses}
-                progressItems={chatPracticeProgress}
+                items={chatPracticeProgress}
+                results={chatPracticeResults}
                 usedCount={chatPracticeProgressCounts?.used}
                 totalCount={chatPracticeProgressCounts?.total ?? chatPracticeSenses.length}
-                results={chatPracticeResults}
+                locked
+                revealed={chatPracticeRevealed}
+                onToggleReveal={(senseId) => {
+                  setChatPracticeRevealed((prev) => ({ ...prev, [senseId]: !prev[senseId] }));
+                }}
                 assessable={messages.some((message) => message.role === 'user')}
                 assessing={chatPracticeAssessing}
                 assessError={chatPracticeAssessError}
