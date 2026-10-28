@@ -6681,7 +6681,7 @@ export function AgentTab() {
                   </span>
                 )}
               </div>
-            ))}
+            )}
 
             {selectedVoiceTask && isVoiceTaskTakeDone && !voiceTaskResult && (
               <button
