@@ -46,6 +46,8 @@ import {
   buildDebatePracticeHintInstruction,
   classifyPracticeHint,
   createDialogueProgressHandler,
+  createRecentDialogueSessionsHandler,
+  createSenseCourseHandler,
   DialogueRouteError,
 } from './vocab-dialogue-routes.js'
 import {
@@ -53,6 +55,8 @@ import {
   latestUserText,
   recordChatPracticeExchange,
   loadDialogueProgressSnapshot,
+  classifyDialogueTargets,
+  buildCourseProgressItems,
 } from './vocab-dialogue-assessment.js'
 import {
   buildZhRoleplayFeedbackSystem,
@@ -1654,12 +1658,36 @@ app.post('/api/agent/chat', async (req, res) => {
       })
       practiceAntiSpoilTargets = progress.remaining_targets
       if (practiceAntiSpoilTargets.length > 0) {
+        const rawScene = req.body?.practice_scene && typeof req.body.practice_scene === 'object'
+          ? req.body.practice_scene
+          : null
+        const firstOpenStep = Array.isArray(steps) && steps.length > 0 ? steps[0] : null
+        const practiceScene = {
+          title: typeof rawScene?.title === 'string' ? rawScene.title.trim() : '',
+          goal: typeof rawScene?.goal === 'string' ? rawScene.goal.trim() : '',
+          topic: typeof rawScene?.topic === 'string' ? rawScene.topic.trim() : '',
+          userPosition: typeof rawScene?.userPosition === 'string' ? rawScene.userPosition.trim() : '',
+          currentStep: typeof rawScene?.currentStep === 'string'
+            ? rawScene.currentStep.trim()
+            : (firstOpenStep
+              ? String(firstOpenStep.titleRu || firstOpenStep.titleEn || firstOpenStep.id || '').trim()
+              : ''),
+          stepAction: typeof rawScene?.stepAction === 'string'
+            ? rawScene.stepAction.trim()
+            : (firstOpenStep
+              ? String(
+                firstOpenStep.expectedUserAction
+                || firstOpenStep.completionCriteria?.evidence_hint_en
+                || '',
+              ).trim()
+              : ''),
+        }
         chatMessages.unshift({
           role: 'system',
           content: practiceMode === 'roleplay'
-            ? buildRoleplayPracticeInstruction(practiceAntiSpoilTargets)
+            ? buildRoleplayPracticeInstruction(practiceAntiSpoilTargets, practiceScene)
             : practiceMode === 'debate'
-              ? buildDebatePracticeInstruction(practiceAntiSpoilTargets)
+              ? buildDebatePracticeInstruction(practiceAntiSpoilTargets, practiceScene)
               : buildChatPracticeInstruction(practiceAntiSpoilTargets),
         })
       }
@@ -1724,7 +1752,17 @@ app.post('/api/agent/chat', async (req, res) => {
         }
         if (timeoutId) clearTimeout(timeoutId)
         if (holdPracticeReply && replyContainsTarget(fullReply, practiceAntiSpoilTargets)) {
-          fullReply = fallbackPracticeReply(req.learningLanguage === 'zh' ? 'zh' : 'en', practiceAntiSpoilTargets)
+          const recentAssistant = (Array.isArray(messages) ? messages : [])
+            .filter((m) => m?.role === 'assistant' && typeof m.content === 'string')
+            .map((m) => String(m.content).trim())
+            .filter(Boolean)
+            .slice(-6)
+          const seed = `${latestUserText(messages) || ''}|${recentAssistant.join('|')}|${fullReply.slice(0, 80)}`
+          fullReply = fallbackPracticeReply(
+            req.learningLanguage === 'zh' ? 'zh' : 'en',
+            practiceAntiSpoilTargets,
+            { seed, avoid: recentAssistant },
+          )
         }
         if (holdPracticeReply && fullReply) send({ type: 'chunk', delta: fullReply })
         if (Array.isArray(practiceAllTargets) && practiceAllTargets.length > 0 && fullReply.trim()) {
@@ -2653,9 +2691,18 @@ Rules:
         role: 'system',
         content: practiceHintContext
           ? `${systemContent}\n\n${hintMode === 'roleplay'
-            ? buildRoleplayPracticeHintInstruction(practiceHintContext.targets)
+            ? buildRoleplayPracticeHintInstruction(practiceHintContext.targets, {
+              title: typeof req.body?.scenario_title === 'string' ? req.body.scenario_title.trim() : '',
+              goal: scenarioGoal || '',
+              currentStep: currentStepLabel || '',
+              stepAction: currentStepAction || '',
+            })
             : hintMode === 'debate'
-              ? buildDebatePracticeHintInstruction(practiceHintContext.targets)
+              ? buildDebatePracticeHintInstruction(practiceHintContext.targets, {
+                topic: debateTopic || '',
+                userPosition: userPosition || '',
+                currentStep: currentStepLabel || '',
+              })
               : buildChatPracticeHintInstruction(practiceHintContext.targets)}`
           : systemContent,
       },
@@ -3242,6 +3289,8 @@ registerVocabListsRoutes(app, {
   asyncHandler,
   resolveListEntries: createResolveListEntries({ billableChatCreate }),
   billableChatCreate,
+  classifyTargets: classifyDialogueTargets,
+  buildCourseItems: buildCourseProgressItems,
 })
 
 registerVocabDialogueRoutes(app, {
@@ -3251,6 +3300,24 @@ registerVocabDialogueRoutes(app, {
   safeSupabaseCall,
   asyncHandler,
 })
+
+app.get('/api/vocabulary/srs/dialogue/recent', asyncHandler(createRecentDialogueSessionsHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  classifyTargets: classifyDialogueTargets,
+  buildCourseItems: buildCourseProgressItems,
+})))
+
+app.get('/api/vocabulary/srs/senses/:senseId/course', asyncHandler(createSenseCourseHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  classifyTargets: classifyDialogueTargets,
+  buildCourseItems: buildCourseProgressItems,
+})))
 
 app.get('/api/vocabulary/srs/dialogue/:id/progress', asyncHandler(createDialogueProgressHandler({
   supabase,

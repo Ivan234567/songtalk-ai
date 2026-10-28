@@ -11,6 +11,13 @@ import { WordDetailCard, type WordCardPayload } from './WordDetailCard';
 
 type ListStats = { new: number; learning: number; due: number; mastered: number };
 
+type VocabListBinding = {
+  kind: 'scenario' | 'debate' | 'chat';
+  ref: string;
+  origin: 'system' | 'user' | null;
+  label: string | null;
+};
+
 type VocabListCard = {
   id: string;
   title: string;
@@ -22,7 +29,34 @@ type VocabListCard = {
   stats: ListStats;
   studied: boolean;
   level: string | null;
+  bound_kind?: string | null;
+  bound_ref?: string | null;
+  bound_origin?: string | null;
+  bound_label?: string | null;
+  binding?: VocabListBinding | null;
 };
+
+function bindingBadgeText(item: VocabListCard): string | null {
+  const label = item.bound_label || item.binding?.label || null;
+  const kind = item.bound_kind || item.binding?.kind || null;
+  if (!kind && !label) return null;
+  if (kind === 'debate') return label ? `Дебат · ${label}` : 'К дебату';
+  if (kind === 'chat') return label ? `Чат · ${label}` : 'К свободному диалогу';
+  if (kind === 'scenario') return label ? `Сценарий · ${label}` : 'К сценарию';
+  return label;
+}
+
+function practiceHrefForList(item: VocabListCard): string | null {
+  const kind = item.bound_kind || item.binding?.kind || null;
+  const ref = item.bound_ref || item.binding?.ref || null;
+  if (!kind || !item.id) return null;
+  const params = new URLSearchParams({ tab: 'agent', from: 'vocab', list: item.id });
+  if (kind === 'scenario' && ref) params.set('target', `rp:${ref}`);
+  else if (kind === 'debate' && ref) params.set('target', `db:${ref}`);
+  else if (kind === 'chat') params.set('mode', 'chat');
+  else return null;
+  return `/dashboard?${params.toString()}`;
+}
 
 type StarterPack = {
   key: string;
@@ -714,9 +748,33 @@ export function VocabLibrary() {
                 </h1>
               </button>
             )}
+            {item && bindingBadgeText(item) ? (
+              <div className={styles.boundBadge} title="Привязка к модулю практики">
+                {bindingBadgeText(item)}
+              </div>
+            ) : null}
           </div>
           <div className={styles.actions}>
-            <button type="button" onClick={listenList} className={styles.primary} disabled={listenCount === 0}>
+            {item && practiceHrefForList(item) ? (
+              <button
+                type="button"
+                className={styles.primary}
+                onClick={() => router.push(practiceHrefForList(item)!)}
+              >
+                Практиковать
+              </button>
+            ) : null}
+            {item && (item.bound_kind || item.binding?.kind) ? (
+              <button
+                type="button"
+                className={styles.secondary}
+                onClick={() => router.push('/dashboard?tab=progress')}
+                title="Как усваивается этот модуль"
+              >
+                В прогрессе
+              </button>
+            ) : null}
+            <button type="button" onClick={listenList} className={item && practiceHrefForList(item) ? styles.secondary : styles.primary} disabled={listenCount === 0}>
               {listenLabel}
             </button>
             <button type="button" onClick={sayList} className={styles.secondary}>Сказать эти слова</button>
@@ -1000,6 +1058,12 @@ export function VocabLibrary() {
                 <span className={styles.dueChip}>{item.stats.due} к повторению</span>
               )}
             </div>
+            {(() => {
+              const badge = bindingBadgeText(item);
+              return badge ? (
+                <div className={styles.boundBadge} title="Привязка к модулю практики">{badge}</div>
+              ) : null;
+            })()}
             <div className={styles.listCardMeta}>{item.word_count} {wordCountLabel(item.word_count)}</div>
           </button>
         ))}

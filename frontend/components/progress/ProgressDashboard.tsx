@@ -22,6 +22,7 @@ import { KpiCards } from './KpiCards';
 import { CriteriaOverview } from './CriteriaOverview';
 import { RecentSessions, type RecentSessionRow } from './RecentSessions';
 import { RecommendedScenarios, type RecommendRow } from './RecommendedScenarios';
+import { VocabCourseSection } from './VocabCourseSection';
 import type { CompletionRow, AssessmentRow, DebateCompletionRow } from './hooks/useProgressData';
 import styles from './progress.module.css';
 
@@ -752,6 +753,8 @@ export function ProgressDashboard() {
         deltaVsPrevious={deltaVsPrevious}
         streakDays={streakDays}
       />
+
+      <VocabCourseSection />
 
       <KpiCards
         avgScore={overviewAvgScore}

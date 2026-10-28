@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import type { LearningLanguage } from '@/lib/learning-language';
+import type { PracticeListContext } from '@/lib/practice-list-context';
 import { PracticeWordListPicker } from './PracticeWordListPicker';
 import { PracticeWordsProgress, type PracticeProgressItem } from './PracticeWordsProgress';
 import styles from './chat-practice-words.module.css';
@@ -41,6 +42,7 @@ type ChatPracticeWordsProps = {
   usedCount?: number;
   totalCount?: number;
   onAssess?: () => void;
+  listContext?: PracticeListContext | null;
 };
 
 export function ChatPracticeWords({
@@ -62,6 +64,7 @@ export function ChatPracticeWords({
   usedCount,
   totalCount,
   onAssess,
+  listContext = null,
 }: ChatPracticeWordsProps) {
   const [picking, setPicking] = useState(false);
   const [draft, setDraft] = useState<ChatPracticeSense[]>(senses);
@@ -139,6 +142,7 @@ export function ChatPracticeWords({
                 selected={draft}
                 onChange={setDraft}
                 limit={PRACTICE_LIMIT}
+                listContext={listContext}
               />
             </div>
             <div className={styles.sheetFooter}>

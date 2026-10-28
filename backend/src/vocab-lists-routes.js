@@ -11,13 +11,168 @@ import {
   lexiconNeedsEnrichment,
   persistWordLexicon,
 } from './vocab-word-card.js'
+import { createGenerateBoundListEntries, normalizeConfirmEntries } from './vocab-list-ai.js'
+import {
+  pickSessionCandidates,
+  classifySenseMilestone,
+  MILESTONE_LABELS,
+} from './vocab-session-picks.js'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const TITLE_MAX = 120
+const BOUND_REF_MAX = 160
+const BOUND_LABEL_MAX = 160
 /** Для прогресс-бара: полный прогресс после второго успешного повторения (интервал 6 дней в SM-2). */
 const MASTERED_INTERVAL_DAYS = 6
+
+const LIST_ROW_FIELDS = [
+  'id',
+  'title',
+  'description',
+  'source',
+  'system_key',
+  'collection_id',
+  'language',
+  'bound_kind',
+  'bound_ref',
+  'bound_origin',
+  'bound_label',
+  'theme_keys',
+  'created_at',
+  'updated_at',
+].join(', ')
+
+const LIST_SOURCES = new Set(['system', 'user', 'custom', 'ai'])
+const BOUND_KINDS = new Set(['scenario', 'debate', 'chat'])
+const BOUND_ORIGINS = new Set(['system', 'user'])
+
+/** Канонические темы — зеркало frontend/lib/practice-list-context THEME_GROUPS.boost */
+const THEME_INFER = [
+  { key: 'home', needles: ['home', 'дом', 'квартир', 'аренд', 'apartment', 'rent', 'housing', 'bathroom', 'kitchen'] },
+  { key: 'food', needles: ['food', 'еда', 'кафе', 'ресторан', 'cafe', 'restaurant', 'menu', 'заказ'] },
+  { key: 'travel', needles: ['travel', 'поездк', 'путешеств', 'hotel', 'отел', 'taxi', 'аэропорт', 'airport'] },
+  { key: 'everyday', needles: ['everyday', 'каждый', 'shop', 'магазин', 'doctor', 'врач', 'city', 'город'] },
+  { key: 'family', needles: ['family', 'семья', 'родител'] },
+  { key: 'work', needles: ['work', 'работ', 'office', 'офис', 'interview', 'собеседован'] },
+  { key: 'school', needles: ['school', 'школ', 'учеба', 'учёба', 'university'] },
+  { key: 'debate', needles: ['debate', 'дебат', 'opinion', 'мнение', 'society', 'обществ', 'climate', 'rights', 'политик'] },
+  { key: 'intro', needles: ['intro', 'знаком', 'hello', 'привет'] },
+]
+
+export function inferThemeKeys(...parts) {
+  const blob = parts
+    .filter((part) => typeof part === 'string' && part.trim())
+    .join(' ')
+    .toLowerCase()
+  if (!blob) return []
+  const keys = []
+  for (const theme of THEME_INFER) {
+    if (theme.needles.some((needle) => blob.includes(needle))) keys.push(theme.key)
+  }
+  return [...new Set(keys)].slice(0, 8)
+}
+
+export function parseThemeKeysInput(body) {
+  if (!body || typeof body !== 'object' || !('theme_keys' in body)) return { present: false }
+  const raw = body.theme_keys
+  if (!Array.isArray(raw)) {
+    const err = new Error('theme_keys должен быть массивом')
+    err.status = 400
+    throw err
+  }
+  const keys = [...new Set(
+    raw
+      .filter((item) => typeof item === 'string')
+      .map((item) => item.trim().toLowerCase())
+      .filter((item) => /^[a-z][a-z0-9_-]{1,31}$/.test(item)),
+  )].slice(0, 12)
+  return { present: true, theme_keys: keys }
+}
+
+/**
+ * Разбор primary-привязки списка к сцене/дебату/чату.
+ * { present:false } — полей в теле нет.
+ * { present:true, clear:true } — снять привязку.
+ * { present:true, clear:false, bound_* } — установить.
+ */
+export function parseListBindingInput(body) {
+  if (!body || typeof body !== 'object') return { present: false }
+  const nested = body.binding && typeof body.binding === 'object' ? body.binding : null
+  const hasFlat = ['bound_kind', 'bound_ref', 'bound_origin', 'bound_label'].some((key) => key in body)
+  const hasNested = Boolean(nested) && ['kind', 'ref', 'origin', 'label', 'bound_kind', 'bound_ref'].some((key) => key in nested)
+  if (!hasFlat && !hasNested && !('binding' in body)) return { present: false }
+
+  const rawKind = hasNested
+    ? (nested.kind ?? nested.bound_kind)
+    : body.bound_kind
+  const rawRef = hasNested
+    ? (nested.ref ?? nested.bound_ref)
+    : body.bound_ref
+  const rawOrigin = hasNested
+    ? (nested.origin ?? nested.bound_origin)
+    : body.bound_origin
+  const rawLabel = hasNested
+    ? (nested.label ?? nested.bound_label)
+    : body.bound_label
+
+  if (rawKind == null || rawKind === '' || rawKind === false) {
+    return {
+      present: true,
+      clear: true,
+      bound_kind: null,
+      bound_ref: null,
+      bound_origin: null,
+      bound_label: null,
+    }
+  }
+
+  const kind = typeof rawKind === 'string' ? rawKind.trim() : ''
+  const ref = typeof rawRef === 'string' ? rawRef.trim() : ''
+  const origin = typeof rawOrigin === 'string' ? rawOrigin.trim() : ''
+  const label = typeof rawLabel === 'string' ? rawLabel.trim() : ''
+
+  if (!BOUND_KINDS.has(kind)) {
+    const err = new Error('Некорректный тип привязки списка')
+    err.status = 400
+    throw err
+  }
+  if (!ref || ref.length > BOUND_REF_MAX) {
+    const err = new Error('Нужен идентификатор сценария или дебата')
+    err.status = 400
+    throw err
+  }
+  if (origin && !BOUND_ORIGINS.has(origin)) {
+    const err = new Error('Некорректный origin привязки')
+    err.status = 400
+    throw err
+  }
+  if (label.length > BOUND_LABEL_MAX) {
+    const err = new Error('Слишком длинная подпись привязки')
+    err.status = 400
+    throw err
+  }
+
+  return {
+    present: true,
+    clear: false,
+    bound_kind: kind,
+    bound_ref: ref,
+    bound_origin: origin || null,
+    bound_label: label || null,
+  }
+}
+
+export function listBindingPatch(binding) {
+  if (!binding?.present) return {}
+  return {
+    bound_kind: binding.bound_kind,
+    bound_ref: binding.bound_ref,
+    bound_origin: binding.bound_origin,
+    bound_label: binding.bound_label,
+  }
+}
 
 async function loadLearningLanguage({ supabase, safeSupabaseCall, userId }) {
   const { data, error } = await safeSupabaseCall(
@@ -101,6 +256,28 @@ export function classifyRecognitionState(state, now = new Date()) {
   return 'learning'
 }
 
+function emptyListStats() {
+  return { word_count: 0, new: 0, learning: 0, due: 0, mastered: 0 }
+}
+
+function computeListStatsFromMaps({ vocabularyIds, byVocabulary, statesBySense, now }) {
+  const counts = emptyListStats()
+  counts.word_count = vocabularyIds.length
+  for (const vocabularyId of vocabularyIds) {
+    const senseList = byVocabulary.get(vocabularyId) || []
+    if (!senseList.length) {
+      counts.new += 1
+      continue
+    }
+    const statuses = senseList.map((senseId) => classifyRecognitionState(statesBySense.get(senseId), now))
+    if (statuses.includes('due')) counts.due += 1
+    else if (statuses.every((status) => status === 'mastered')) counts.mastered += 1
+    else if (statuses.every((status) => status === 'new')) counts.new += 1
+    else counts.learning += 1
+  }
+  return counts
+}
+
 async function loadListWordStats({ supabase, safeSupabaseCall, userId, listId, now = new Date() }) {
   const { data: items, error: itemsError } = await safeSupabaseCall(
     () => supabase
@@ -111,9 +288,7 @@ async function loadListWordStats({ supabase, safeSupabaseCall, userId, listId, n
   )
   if (itemsError) throw itemsError
   const vocabularyIds = (items || []).map((row) => row.vocabulary_id).filter(Boolean)
-  if (!vocabularyIds.length) {
-    return { word_count: 0, new: 0, learning: 0, due: 0, mastered: 0 }
-  }
+  if (!vocabularyIds.length) return emptyListStats()
 
   const { data: senses, error: sensesError } = await safeSupabaseCall(
     () => supabase
@@ -145,23 +320,87 @@ async function loadListWordStats({ supabase, safeSupabaseCall, userId, listId, n
     statesBySense = new Map((states || []).map((row) => [row.sense_id, row]))
   }
 
-  const counts = { word_count: vocabularyIds.length, new: 0, learning: 0, due: 0, mastered: 0 }
-  for (const vocabularyId of vocabularyIds) {
-    const senseList = byVocabulary.get(vocabularyId) || []
-    if (!senseList.length) {
-      counts.new += 1
-      continue
-    }
-    const statuses = senseList.map((senseId) => classifyRecognitionState(statesBySense.get(senseId), now))
-    if (statuses.includes('due')) counts.due += 1
-    else if (statuses.every((status) => status === 'mastered')) counts.mastered += 1
-    else if (statuses.every((status) => status === 'new')) counts.new += 1
-    else counts.learning += 1
+  return computeListStatsFromMaps({ vocabularyIds, byVocabulary, statesBySense, now })
+}
+
+/** Один проход по items/senses/states для всех списков библиотеки (вместо N+1). */
+async function loadAllListWordStats({ supabase, safeSupabaseCall, userId, listIds, now = new Date() }) {
+  const result = new Map()
+  for (const listId of listIds) result.set(listId, emptyListStats())
+  if (!listIds.length) return result
+
+  const { data: items, error: itemsError } = await safeSupabaseCall(
+    () => supabase
+      .from('vocab_list_items')
+      .select('list_id, vocabulary_id')
+      .eq('user_id', userId)
+      .in('list_id', listIds),
+  )
+  if (itemsError) throw itemsError
+
+  const vocabIdsByList = new Map()
+  const allVocabularyIds = new Set()
+  for (const row of items || []) {
+    if (!row?.list_id || !row?.vocabulary_id) continue
+    if (!vocabIdsByList.has(row.list_id)) vocabIdsByList.set(row.list_id, [])
+    vocabIdsByList.get(row.list_id).push(row.vocabulary_id)
+    allVocabularyIds.add(row.vocabulary_id)
   }
-  return counts
+
+  const vocabularyIds = [...allVocabularyIds]
+  let senses = []
+  if (vocabularyIds.length) {
+    const { data, error: sensesError } = await safeSupabaseCall(
+      () => supabase
+        .from('vocab_senses')
+        .select('id, vocabulary_id')
+        .eq('user_id', userId)
+        .in('vocabulary_id', vocabularyIds),
+    )
+    if (sensesError) throw sensesError
+    senses = data || []
+  }
+
+  const byVocabulary = new Map()
+  const senseIds = []
+  for (const sense of senses) {
+    senseIds.push(sense.id)
+    if (!byVocabulary.has(sense.vocabulary_id)) byVocabulary.set(sense.vocabulary_id, [])
+    byVocabulary.get(sense.vocabulary_id).push(sense.id)
+  }
+
+  let statesBySense = new Map()
+  if (senseIds.length) {
+    const { data: states, error: statesError } = await safeSupabaseCall(
+      () => supabase
+        .from('vocab_srs_states')
+        .select('sense_id, due_at, interval_days, repetitions, last_reviewed_at')
+        .eq('user_id', userId)
+        .eq('card_type', 'recognition')
+        .in('sense_id', senseIds),
+    )
+    if (statesError) throw statesError
+    statesBySense = new Map((states || []).map((row) => [row.sense_id, row]))
+  }
+
+  for (const listId of listIds) {
+    const listVocabIds = vocabIdsByList.get(listId) || []
+    result.set(listId, computeListStatsFromMaps({
+      vocabularyIds: listVocabIds,
+      byVocabulary,
+      statesBySense,
+      now,
+    }))
+  }
+  return result
 }
 
 async function serializeList(row, stats = null, tags = []) {
+  const boundKind = row.bound_kind || null
+  const boundRef = row.bound_ref || null
+  const themeKeys = Array.isArray(row.theme_keys)
+    ? row.theme_keys.filter((item) => typeof item === 'string' && item.trim())
+    : []
   return {
     id: row.id,
     title: row.title,
@@ -170,6 +409,19 @@ async function serializeList(row, stats = null, tags = []) {
     system_key: row.system_key || null,
     collection_id: row.collection_id || null,
     language: row.language,
+    bound_kind: boundKind,
+    bound_ref: boundRef,
+    bound_origin: row.bound_origin || null,
+    bound_label: row.bound_label || null,
+    theme_keys: themeKeys,
+    binding: boundKind && boundRef
+      ? {
+        kind: boundKind,
+        ref: boundRef,
+        origin: row.bound_origin || null,
+        label: row.bound_label || null,
+      }
+      : null,
     level: demoListOrder(row.system_key) == null ? null : findStarterPack(row.system_key, row.language)?.level || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -193,13 +445,10 @@ export function createListLibraryHandler(deps) {
     const language = await requireLanguage(deps, userId, res)
     if (!language) return
 
-    try {
-      await ensureUserVocabularySenses({ supabase, userId, language })
-    } catch {
-      console.error('[api/vocabulary/lists] failed to prepare senses')
-      res.status(500).json({ error: 'Failed to prepare vocabulary senses' })
-      return
-    }
+    // Sense-sync не блокирует каталог: он тяжёлый и нужен при открытии списка / практике.
+    ensureUserVocabularySenses({ supabase, userId, language }).catch((error) => {
+      console.error('[api/vocabulary/lists] background sense sync failed', error?.message || error)
+    })
     try {
       await ensureDemoLists({ supabase, safeSupabaseCall, userId, language })
     } catch (error) {
@@ -211,17 +460,24 @@ export function createListLibraryHandler(deps) {
     }
 
     const q = typeof req.query?.q === 'string' ? req.query.q.trim().toLowerCase() : ''
+    const boundKindFilter = typeof req.query?.bound_kind === 'string' ? req.query.bound_kind.trim() : ''
+    const boundRefFilter = typeof req.query?.bound_ref === 'string' ? req.query.bound_ref.trim() : ''
+    if (boundKindFilter && !BOUND_KINDS.has(boundKindFilter)) {
+      res.status(400).json({ error: 'Некорректный bound_kind' })
+      return
+    }
 
     let lists
     try {
-      const { data, error } = await safeSupabaseCall(
-        () => supabase
-          .from('vocab_lists')
-          .select('id, title, description, source, system_key, collection_id, language, created_at, updated_at')
-          .eq('user_id', userId)
-          .eq('language', language)
-          .order('updated_at', { ascending: false }),
-      )
+      let query = supabase
+        .from('vocab_lists')
+        .select(LIST_ROW_FIELDS)
+        .eq('user_id', userId)
+        .eq('language', language)
+        .order('updated_at', { ascending: false })
+      if (boundKindFilter) query = query.eq('bound_kind', boundKindFilter)
+      if (boundRefFilter) query = query.eq('bound_ref', boundRefFilter)
+      const { data, error } = await safeSupabaseCall(() => query)
       if (error) throw error
       lists = data || []
     } catch {
@@ -231,19 +487,31 @@ export function createListLibraryHandler(deps) {
     }
 
     if (q) {
-      lists = lists.filter((row) => String(row.title || '').toLowerCase().includes(q))
+      lists = lists.filter((row) => {
+        const title = String(row.title || '').toLowerCase()
+        const label = String(row.bound_label || '').toLowerCase()
+        return title.includes(q) || label.includes(q)
+      })
+    }
+
+    let statsByList = new Map()
+    try {
+      statsByList = await loadAllListWordStats({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        listIds: lists.map((row) => row.id),
+      })
+    } catch (error) {
+      console.error('[api/vocabulary/lists] failed to load list stats', error?.message || error)
+      statsByList = new Map(lists.map((row) => [row.id, emptyListStats()]))
     }
 
     const serialized = []
     let libraryDue = 0
     let libraryMastered = 0
     for (const row of lists) {
-      let stats
-      try {
-        stats = await loadListWordStats({ supabase, safeSupabaseCall, userId, listId: row.id })
-      } catch {
-        stats = { word_count: 0, new: 0, learning: 0, due: 0, mastered: 0 }
-      }
+      const stats = statsByList.get(row.id) || emptyListStats()
       libraryDue += stats.due
       libraryMastered += stats.mastered
       serialized.push(await serializeList(row, stats))
@@ -317,7 +585,48 @@ export function createEmptyListHandler(deps) {
       return
     }
 
+    let binding
+    let themeInput
     try {
+      binding = parseListBindingInput(req.body)
+      themeInput = parseThemeKeysInput(req.body)
+    } catch (error) {
+      res.status(error?.status || 400).json({ error: error.message || 'Некорректная привязка' })
+      return
+    }
+
+    const sourceRaw = typeof req.body?.source === 'string' ? req.body.source.trim() : 'user'
+    const source = LIST_SOURCES.has(sourceRaw) && sourceRaw !== 'system' ? sourceRaw : 'user'
+    const description = typeof req.body?.description === 'string' ? req.body.description.trim() || null : null
+    const reuseBound = req.body?.reuse_bound !== false
+
+    try {
+      // Идемпотентность: повторное «создать под сцену» возвращает уже привязанный список.
+      if (reuseBound && binding.present && !binding.clear && binding.bound_kind && binding.bound_ref) {
+        const { data: existingRows, error: existingError } = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_lists')
+            .select(LIST_ROW_FIELDS)
+            .eq('user_id', userId)
+            .eq('language', language)
+            .eq('bound_kind', binding.bound_kind)
+            .eq('bound_ref', binding.bound_ref)
+            .order('updated_at', { ascending: false })
+            .limit(1),
+        )
+        if (existingError) throw existingError
+        const existing = Array.isArray(existingRows) ? existingRows[0] : existingRows
+        if (existing?.id) {
+          const stats = await loadListWordStats({ supabase, safeSupabaseCall, userId, listId: existing.id })
+          res.status(200).json({ item: await serializeList(existing, stats), created: false, reused: true })
+          return
+        }
+      }
+
+      const inferredThemes = themeInput.present
+        ? themeInput.theme_keys
+        : inferThemeKeys(title, description || '', binding.present ? binding.bound_label : '')
+
       const { data, error } = await safeSupabaseCall(
         () => supabase
           .from('vocab_lists')
@@ -325,15 +634,21 @@ export function createEmptyListHandler(deps) {
             user_id: userId,
             language,
             title,
-            description: typeof req.body?.description === 'string' ? req.body.description.trim() || null : null,
-            source: 'user',
+            description,
+            source,
+            theme_keys: inferredThemes,
+            ...(binding.present ? listBindingPatch(binding) : {}),
           })
-          .select('id, title, description, source, system_key, collection_id, language, created_at, updated_at')
+          .select(LIST_ROW_FIELDS)
           .single(),
       )
       if (error) throw error
       if (!data?.id) throw new Error('empty insert')
-      res.status(201).json({ item: await serializeList(data, { word_count: 0, new: 0, learning: 0, due: 0, mastered: 0 }) })
+      res.status(201).json({
+        item: await serializeList(data, { word_count: 0, new: 0, learning: 0, due: 0, mastered: 0 }),
+        created: true,
+        reused: false,
+      })
     } catch (error) {
       console.error('[api/vocabulary/lists] failed to create list', error?.message || error?.code || error)
       res.status(500).json({ error: listWriteError(error) })
@@ -562,7 +877,7 @@ export function createStarterPackHandler(deps) {
     const { data: existing } = await safeSupabaseCall(
       () => supabase
         .from('vocab_lists')
-        .select('id, title, description, source, system_key, collection_id, language, created_at, updated_at')
+        .select(LIST_ROW_FIELDS)
         .eq('user_id', userId)
         .eq('language', language)
         .eq('system_key', pack.key)
@@ -588,7 +903,7 @@ export function createStarterPackHandler(deps) {
             source: 'system',
             system_key: pack.key,
           })
-          .select('id, title, description, source, system_key, collection_id, language, created_at, updated_at')
+          .select(LIST_ROW_FIELDS)
           .single(),
       )
       if (listError) throw listError
@@ -628,7 +943,7 @@ export function createListDetailHandler(deps) {
     const { data: list, error: listError } = await safeSupabaseCall(
       () => supabase
         .from('vocab_lists')
-        .select('id, title, description, source, system_key, collection_id, language, created_at, updated_at')
+        .select(LIST_ROW_FIELDS)
         .eq('user_id', userId)
         .eq('language', language)
         .eq('id', listId)
@@ -1388,20 +1703,64 @@ export function createPatchListHandler(deps) {
     const language = await requireLanguage(deps, userId, res)
     if (!language) return
     const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
-    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : ''
-    if (!UUID_RE.test(listId) || !title || title.length > TITLE_MAX) {
+    if (!UUID_RE.test(listId)) {
+      res.status(400).json({ error: 'Invalid list id' })
+      return
+    }
+
+    const hasTitle = typeof req.body?.title === 'string'
+    const title = hasTitle ? req.body.title.trim() : ''
+    if (hasTitle && (!title || title.length > TITLE_MAX)) {
       res.status(400).json({ error: 'Нужно название списка' })
       return
     }
+
+    let binding
+    let themeInput
+    try {
+      binding = parseListBindingInput(req.body || {})
+      themeInput = parseThemeKeysInput(req.body || {})
+    } catch (error) {
+      res.status(error?.status || 400).json({ error: error.message || 'Некорректная привязка' })
+      return
+    }
+
+    const hasDescription = typeof req.body?.description === 'string'
+    if (!hasTitle && !hasDescription && !binding.present && !themeInput.present) {
+      res.status(400).json({ error: 'Нет полей для обновления' })
+      return
+    }
+
+    const nextTitle = hasTitle ? title : null
+    const nextDescription = hasDescription ? (req.body.description.trim() || null) : null
+    const themeKeys = themeInput.present
+      ? themeInput.theme_keys
+      : (binding.present && !binding.clear
+        ? inferThemeKeys(
+          nextTitle || '',
+          nextDescription || '',
+          binding.bound_label || '',
+        )
+        : null)
+
+    const patch = {
+      updated_at: new Date().toISOString(),
+      ...(hasTitle ? { title } : {}),
+      ...(hasDescription ? { description: nextDescription } : {}),
+      ...(binding.present ? listBindingPatch(binding) : {}),
+      ...(themeKeys ? { theme_keys: themeKeys } : {}),
+      ...(binding.present && binding.clear ? { theme_keys: [] } : {}),
+    }
+
     try {
       const { data, error } = await safeSupabaseCall(
         () => supabase
           .from('vocab_lists')
-          .update({ title, updated_at: new Date().toISOString() })
+          .update(patch)
           .eq('user_id', userId)
           .eq('language', language)
           .eq('id', listId)
-          .select('id, title, description, source, system_key, collection_id, language, created_at, updated_at')
+          .select(LIST_ROW_FIELDS)
           .maybeSingle(),
       )
       if (error) throw error
@@ -1490,6 +1849,830 @@ export function createRemoveListWordHandler(deps) {
   }
 }
 
+async function clearListItems(deps, { userId, listId }) {
+  const { error } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('vocab_list_items')
+      .delete()
+      .eq('user_id', userId)
+      .eq('list_id', listId),
+  )
+  if (error) throw error
+}
+
+async function fillListWithGeneratedEntries(deps, { userId, language, listId, entries }) {
+  let added = 0
+  for (const entry of entries) {
+    try {
+      const result = await addWordToList(deps, {
+        userId,
+        language,
+        listId,
+        word: entry.word,
+        gloss: entry.gloss,
+        phonetic: entry.phonetic,
+        part_of_speech: entry.part_of_speech,
+        pinyin: entry.pinyin,
+      })
+      if (!result.already) added += 1
+    } catch (error) {
+      if (error?.status === 402) throw error
+      console.error('[vocab-lists] skip generated word', entry?.word, error?.message || error)
+    }
+  }
+  return added
+}
+
+function defaultBoundListTitle(binding, mode) {
+  if (binding?.bound_label) {
+    if (mode === 'debate') return `К дебату: ${binding.bound_label}`.slice(0, 120)
+    if (mode === 'chat') return 'Слова для свободного диалога'
+    return `К сцене: ${binding.bound_label}`.slice(0, 120)
+  }
+  return mode === 'debate' ? 'Слова для дебата' : mode === 'chat' ? 'Слова для разговора' : 'Слова для сцены'
+}
+
+export function createGenerateBoundListHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn() } = deps
+  const generateBoundListEntries = deps.generateBoundListEntries || (
+    typeof deps.billableChatCreate === 'function'
+      ? createGenerateBoundListEntries({ billableChatCreate: deps.billableChatCreate })
+      : null
+  )
+  return async function generateBoundListHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    if (typeof generateBoundListEntries !== 'function') {
+      res.status(501).json({ error: 'Генерация списка недоступна' })
+      return
+    }
+
+    let binding
+    try {
+      binding = parseListBindingInput(req.body || {})
+    } catch (error) {
+      res.status(error?.status || 400).json({ error: error.message || 'Некорректная привязка' })
+      return
+    }
+    if (!binding.present || binding.clear || !binding.bound_kind || !binding.bound_ref) {
+      res.status(400).json({ error: 'Нужна привязка к сцене, дебату или чату' })
+      return
+    }
+
+    // D4: ZH не генерирует debate-списки
+    let mode = binding.bound_kind === 'debate' ? 'debate' : binding.bound_kind === 'chat' ? 'chat' : 'roleplay'
+    if (language === 'zh' && mode === 'debate') {
+      res.status(400).json({ error: 'Для китайского дебаты недоступны — выбери сцену или свободный диалог' })
+      return
+    }
+    const forceNew = req.body?.force_new === true
+    const replaceExisting = req.body?.replace_existing === true
+    const confirm = req.body?.confirm === true
+    const previewOnly = req.body?.preview === true || (!confirm && req.body?.preview !== false && !req.body?.items)
+    const level = typeof req.body?.level === 'string' ? req.body.level.trim() : ''
+    const themeText = typeof req.body?.theme_text === 'string' ? req.body.theme_text.trim() : ''
+    const goal = typeof req.body?.goal === 'string' ? req.body.goal.trim() : ''
+    const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : ''
+    const steps = typeof req.body?.steps === 'string' ? req.body.steps.trim() : ''
+    const titleHint = typeof req.body?.title === 'string' ? req.body.title.trim() : ''
+
+    try {
+      if (!forceNew && !confirm && previewOnly) {
+        const { data: existingRows, error: existingError } = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_lists')
+            .select(LIST_ROW_FIELDS)
+            .eq('user_id', userId)
+            .eq('language', language)
+            .eq('bound_kind', binding.bound_kind)
+            .eq('bound_ref', binding.bound_ref)
+            .order('updated_at', { ascending: false })
+            .limit(1),
+        )
+        if (existingError) throw existingError
+        const existing = Array.isArray(existingRows) ? existingRows[0] : existingRows
+        if (existing?.id && !replaceExisting) {
+          const stats = await loadListWordStats({ supabase, safeSupabaseCall, userId, listId: existing.id })
+          if ((stats?.word_count || 0) > 0) {
+            res.status(200).json({
+              item: await serializeList(existing, stats),
+              created: false,
+              reused: true,
+              regenerated: false,
+            })
+            return
+          }
+        }
+      }
+
+      let generated
+      if (confirm && Array.isArray(req.body?.items)) {
+        generated = {
+          title: titleHint || defaultBoundListTitle(binding, mode),
+          items: normalizeConfirmEntries(req.body.items, language),
+          quality: { confirmed: true, count: 0 },
+        }
+        generated.quality.count = generated.items.length
+      } else {
+        generated = await generateBoundListEntries({
+          userId,
+          language,
+          mode,
+          level,
+          title: titleHint || binding.bound_label || '',
+          goal,
+          topic,
+          steps,
+          themeText,
+          count: 12,
+        })
+      }
+
+      if (previewOnly && !confirm) {
+        res.status(200).json({
+          preview: true,
+          title: (generated.title || titleHint || defaultBoundListTitle(binding, mode)).slice(0, 120),
+          items: generated.items,
+          quality: generated.quality || null,
+          binding: {
+            kind: binding.bound_kind,
+            ref: binding.bound_ref,
+            origin: binding.bound_origin,
+            label: binding.bound_label,
+          },
+          billed: true,
+        })
+        return
+      }
+
+      const listTitle = (generated.title || titleHint || defaultBoundListTitle(binding, mode)).slice(0, 120)
+      const themeKeys = inferThemeKeys(listTitle, binding.bound_label || '', themeText, topic, goal)
+
+      let listRow = null
+      let created = false
+      let regenerated = false
+
+      if (replaceExisting && !forceNew) {
+        const { data: existingRows } = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_lists')
+            .select(LIST_ROW_FIELDS)
+            .eq('user_id', userId)
+            .eq('language', language)
+            .eq('bound_kind', binding.bound_kind)
+            .eq('bound_ref', binding.bound_ref)
+            .order('updated_at', { ascending: false })
+            .limit(1),
+        )
+        const existing = Array.isArray(existingRows) ? existingRows[0] : existingRows
+        if (existing?.id) {
+          await clearListItems({ supabase, safeSupabaseCall }, { userId, listId: existing.id })
+          const { data: updated, error: updateError } = await safeSupabaseCall(
+            () => supabase
+              .from('vocab_lists')
+              .update({
+                title: listTitle,
+                source: 'ai',
+                theme_keys: themeKeys,
+                ...listBindingPatch(binding),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', existing.id)
+              .eq('user_id', userId)
+              .select(LIST_ROW_FIELDS)
+              .maybeSingle(),
+          )
+          if (updateError) throw updateError
+          listRow = updated
+          regenerated = true
+        }
+      }
+
+      if (!listRow) {
+        const { data: inserted, error: insertError } = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_lists')
+            .insert({
+              user_id: userId,
+              language,
+              title: listTitle,
+              description: null,
+              source: 'ai',
+              theme_keys: themeKeys,
+              ...listBindingPatch(binding),
+            })
+            .select(LIST_ROW_FIELDS)
+            .single(),
+        )
+        if (insertError) throw insertError
+        listRow = inserted
+        created = true
+      }
+
+      const added = await fillListWithGeneratedEntries(deps, {
+        userId,
+        language,
+        listId: listRow.id,
+        entries: generated.items,
+      })
+      if (added < 1) {
+        if (created) {
+          await safeSupabaseCall(
+            () => supabase.from('vocab_lists').delete().eq('id', listRow.id).eq('user_id', userId),
+          )
+        }
+        res.status(422).json({ error: 'Не удалось сохранить сгенерированные слова' })
+        return
+      }
+
+      const stats = await loadListWordStats({ supabase, safeSupabaseCall, userId, listId: listRow.id })
+      const { data: fresh } = await safeSupabaseCall(
+        () => supabase.from('vocab_lists').select(LIST_ROW_FIELDS).eq('id', listRow.id).maybeSingle(),
+      )
+      res.status(created ? 201 : 200).json({
+        item: await serializeList(fresh || listRow, stats),
+        created,
+        reused: false,
+        regenerated,
+        added,
+        quality: generated.quality || null,
+      })
+    } catch (error) {
+      if (error?.status === 402 || error?.status === 422) {
+        res.status(error.status).json({ error: error.message })
+        return
+      }
+      console.error('[api/vocabulary/lists/generate-for-context] failed', error?.message || error)
+      res.status(500).json({ error: listWriteError(error) })
+    }
+  }
+}
+
+export function createRegenerateListHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn() } = deps
+  const generateBoundListEntries = deps.generateBoundListEntries || (
+    typeof deps.billableChatCreate === 'function'
+      ? createGenerateBoundListEntries({ billableChatCreate: deps.billableChatCreate })
+      : null
+  )
+  return async function regenerateListHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+    if (!UUID_RE.test(listId)) {
+      res.status(400).json({ error: 'Invalid list id' })
+      return
+    }
+    if (typeof generateBoundListEntries !== 'function') {
+      res.status(501).json({ error: 'Генерация списка недоступна' })
+      return
+    }
+
+    const mode = req.body?.mode === 'new' ? 'new' : 'replace'
+    try {
+      const { data: list, error: listError } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_lists')
+          .select(LIST_ROW_FIELDS)
+          .eq('id', listId)
+          .eq('user_id', userId)
+          .eq('language', language)
+          .maybeSingle(),
+      )
+      if (listError) throw listError
+      if (!list) {
+        res.status(404).json({ error: 'Список не найден' })
+        return
+      }
+      if (!list.bound_kind || !list.bound_ref) {
+        res.status(409).json({ error: 'Пересборка доступна для списков с привязкой к сцене, дебату или чату' })
+        return
+      }
+      if (language === 'zh' && list.bound_kind === 'debate') {
+        res.status(400).json({ error: 'Для китайского дебаты недоступны' })
+        return
+      }
+
+      const practiceMode = list.bound_kind === 'debate' ? 'debate' : list.bound_kind === 'chat' ? 'chat' : 'roleplay'
+      const confirm = req.body?.confirm === true
+      const previewOnly = req.body?.preview === true || (!confirm && req.body?.preview !== false && !req.body?.items)
+
+      let generated
+      if (confirm && Array.isArray(req.body?.items)) {
+        generated = {
+          title: typeof req.body?.title === 'string' ? req.body.title.trim() : list.title,
+          items: normalizeConfirmEntries(req.body.items, language),
+          quality: { confirmed: true },
+        }
+      } else {
+        generated = await generateBoundListEntries({
+          userId,
+          language,
+          mode: practiceMode,
+          level: typeof req.body?.level === 'string' ? req.body.level.trim() : '',
+          title: list.bound_label || list.title,
+          goal: typeof req.body?.goal === 'string' ? req.body.goal.trim() : '',
+          topic: typeof req.body?.topic === 'string' ? req.body.topic.trim() : (list.bound_label || ''),
+          steps: typeof req.body?.steps === 'string' ? req.body.steps.trim() : '',
+          themeText: typeof req.body?.theme_text === 'string' ? req.body.theme_text.trim() : '',
+          count: 12,
+        })
+      }
+
+      if (previewOnly && !confirm) {
+        res.status(200).json({
+          preview: true,
+          title: (generated.title || list.title || defaultBoundListTitle({
+            bound_label: list.bound_label,
+          }, practiceMode)).slice(0, 120),
+          items: generated.items,
+          quality: generated.quality || null,
+          list_id: list.id,
+          billed: true,
+        })
+        return
+      }
+
+      const listTitle = (generated.title || list.title || defaultBoundListTitle({
+        bound_label: list.bound_label,
+      }, practiceMode)).slice(0, 120)
+      const themeKeys = inferThemeKeys(listTitle, list.bound_label || '', list.title || '')
+
+      let targetList = list
+      let created = false
+      if (mode === 'new') {
+        const { data: inserted, error: insertError } = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_lists')
+            .insert({
+              user_id: userId,
+              language,
+              title: listTitle,
+              source: 'ai',
+              theme_keys: themeKeys,
+              bound_kind: list.bound_kind,
+              bound_ref: list.bound_ref,
+              bound_origin: list.bound_origin,
+              bound_label: list.bound_label,
+            })
+            .select(LIST_ROW_FIELDS)
+            .single(),
+        )
+        if (insertError) throw insertError
+        targetList = inserted
+        created = true
+      } else {
+        await clearListItems({ supabase, safeSupabaseCall }, { userId, listId: list.id })
+        const { data: updated, error: updateError } = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_lists')
+            .update({
+              title: listTitle,
+              source: list.source === 'system' ? list.source : 'ai',
+              theme_keys: themeKeys,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', list.id)
+            .eq('user_id', userId)
+            .select(LIST_ROW_FIELDS)
+            .maybeSingle(),
+        )
+        if (updateError) throw updateError
+        targetList = updated || list
+      }
+
+      const added = await fillListWithGeneratedEntries(deps, {
+        userId,
+        language,
+        listId: targetList.id,
+        entries: generated.items,
+      })
+      if (added < 1) {
+        res.status(422).json({ error: 'Не удалось сохранить сгенерированные слова' })
+        return
+      }
+      const stats = await loadListWordStats({ supabase, safeSupabaseCall, userId, listId: targetList.id })
+      res.status(created ? 201 : 200).json({
+        item: await serializeList(targetList, stats),
+        created,
+        regenerated: !created,
+        mode,
+        added,
+        quality: generated.quality || null,
+      })
+    } catch (error) {
+      if (error?.status === 402 || error?.status === 422) {
+        res.status(error.status).json({ error: error.message })
+        return
+      }
+      console.error('[api/vocabulary/lists/regenerate] failed', error?.message || error)
+      res.status(500).json({ error: 'Не удалось пересобрать список' })
+    }
+  }
+}
+
+export function createSessionPicksHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn(), now = () => new Date() } = deps
+  return async function sessionPicksHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+    const listId = typeof req.params?.id === 'string' ? req.params.id.trim() : ''
+    if (!UUID_RE.test(listId)) {
+      res.status(400).json({ error: 'Invalid list id' })
+      return
+    }
+    const limitRaw = Number(req.body?.limit)
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(5, Math.floor(limitRaw))) : 5
+    const exclude = new Set(
+      (Array.isArray(req.body?.exclude_sense_ids) ? req.body.exclude_sense_ids : [])
+        .filter((id) => typeof id === 'string' && UUID_RE.test(id.trim()))
+        .map((id) => id.trim()),
+    )
+    const sceneText = [
+      typeof req.body?.theme_text === 'string' ? req.body.theme_text : '',
+      typeof req.body?.scene_text === 'string' ? req.body.scene_text : '',
+      typeof req.body?.current_step === 'string' ? req.body.current_step : '',
+    ].filter(Boolean).join(' ')
+
+    try {
+      const list = await loadOwnedList({ supabase, safeSupabaseCall }, { userId, language, listId })
+      if (!list) {
+        res.status(404).json({ error: 'Список не найден' })
+        return
+      }
+
+      const { data: items, error: itemsError } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_list_items')
+          .select('vocabulary_id, position')
+          .eq('user_id', userId)
+          .eq('list_id', listId)
+          .order('position', { ascending: true }),
+      )
+      if (itemsError) throw itemsError
+      const vocabularyIds = (items || []).map((row) => row.vocabulary_id).filter(Boolean)
+      if (!vocabularyIds.length) {
+        res.status(200).json({ items: [], list_id: listId, reason: '' })
+        return
+      }
+
+      const { data: vocabRows, error: vocabError } = await safeSupabaseCall(
+        () => supabase
+          .from('user_vocabulary')
+          .select('id, word')
+          .eq('user_id', userId)
+          .in('id', vocabularyIds),
+      )
+      if (vocabError) throw vocabError
+      const vocabById = new Map((vocabRows || []).map((row) => [row.id, row]))
+
+      const { data: senses, error: sensesError } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_senses')
+          .select('id, vocabulary_id, gloss_ru, headword')
+          .eq('user_id', userId)
+          .in('vocabulary_id', vocabularyIds),
+      )
+      if (sensesError) throw sensesError
+      const senseIds = (senses || []).map((row) => row.id)
+      let statesBySense = new Map()
+      if (senseIds.length) {
+        const { data: states, error: statesError } = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_srs_states')
+            .select('sense_id, due_at, interval_days, repetitions, last_reviewed_at')
+            .eq('user_id', userId)
+            .eq('card_type', 'recognition')
+            .in('sense_id', senseIds),
+        )
+        if (statesError) throw statesError
+        statesBySense = new Map((states || []).map((row) => [row.sense_id, row]))
+      }
+
+      const candidates = []
+      for (const sense of senses || []) {
+        const vocab = vocabById.get(sense.vocabulary_id)
+        const headword = (sense.headword || vocab?.word || '').trim()
+        const glossRu = (sense.gloss_ru || '').trim()
+        if (!headword || !glossRu) continue
+        candidates.push({
+          senseId: sense.id,
+          headword,
+          glossRu,
+          status: classifyRecognitionState(statesBySense.get(sense.id), now()),
+        })
+      }
+
+      const themeHay = [sceneText, list.bound_label, ...(Array.isArray(list.theme_keys) ? list.theme_keys : [])]
+        .filter(Boolean)
+        .join(' ')
+      const picked = pickSessionCandidates(candidates, {
+        limit,
+        sceneText: themeHay,
+        excludeSenseIds: exclude,
+      })
+
+      res.status(200).json({
+        list_id: listId,
+        reason: picked.reason,
+        items: picked.items.map((item) => ({
+          sense_id: item.senseId,
+          headword: item.headword,
+          gloss_ru: item.glossRu,
+          status: item.status,
+          pick_reason: item.pickReason,
+        })),
+      })
+    } catch (error) {
+      console.error('[api/vocabulary/lists/session-picks] failed', error?.message || error)
+      res.status(500).json({ error: 'Не удалось подобрать слова для сессии' })
+    }
+  }
+}
+
+export function createCourseModulesHandler(deps) {
+  const { supabase, safeSupabaseCall = (fn) => fn(), now = () => new Date() } = deps
+  return async function courseModulesHandler(req, res) {
+    const userId = await requireUser(deps, req, res)
+    if (!userId) return
+    const language = await requireLanguage(deps, userId, res)
+    if (!language) return
+
+    try {
+      const { data: lists, error: listsError } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_lists')
+          .select('id, title, source, bound_kind, bound_ref, bound_origin, bound_label, theme_keys, updated_at')
+          .eq('user_id', userId)
+          .eq('language', language)
+          .not('bound_kind', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(24),
+      )
+      if (listsError) throw listsError
+      const boundLists = (lists || []).filter((row) => row.bound_kind && row.bound_ref)
+      if (!boundLists.length) {
+        res.status(200).json({ items: [] })
+        return
+      }
+
+      const listIds = boundLists.map((row) => row.id)
+      const statsByList = await loadAllListWordStats({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        listIds,
+        now: now(),
+      })
+
+      const since30 = new Date(now().getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const since7 = new Date(now().getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+      const { data: sessions, error: sessionsError } = await safeSupabaseCall(
+        () => supabase
+          .from('vocab_dialogue_sessions')
+          .select('id, list_id, status, created_at, assessed_at')
+          .eq('user_id', userId)
+          .eq('language', language)
+          .in('list_id', listIds)
+          .gte('created_at', since30)
+          .order('created_at', { ascending: false })
+          .limit(120),
+      )
+      if (sessionsError) throw sessionsError
+
+      const sessionsByList = new Map()
+      for (const session of sessions || []) {
+        if (!session.list_id) continue
+        if (!sessionsByList.has(session.list_id)) sessionsByList.set(session.list_id, [])
+        sessionsByList.get(session.list_id).push(session)
+      }
+
+      const sessionIds = (sessions || []).map((row) => row.id)
+      let targets = []
+      let turnsBySession = new Map()
+      let hintsBySession = new Map()
+      if (sessionIds.length) {
+        const [targetsResult, turnsResult, hintsResult] = await Promise.all([
+          safeSupabaseCall(
+            () => supabase
+              .from('vocab_dialogue_targets')
+              .select('dialogue_session_id, sense_id, headword, gloss_ru')
+              .eq('user_id', userId)
+              .in('dialogue_session_id', sessionIds),
+          ),
+          safeSupabaseCall(
+            () => supabase
+              .from('vocab_dialogue_turns')
+              .select('dialogue_session_id, turn_index, role, content')
+              .eq('user_id', userId)
+              .in('dialogue_session_id', sessionIds),
+          ),
+          safeSupabaseCall(
+            () => supabase
+              .from('vocab_dialogue_hints')
+              .select('dialogue_session_id, turn_index, hint_text')
+              .eq('user_id', userId)
+              .in('dialogue_session_id', sessionIds),
+          ),
+        ])
+        if (targetsResult.error) throw targetsResult.error
+        if (turnsResult.error) throw turnsResult.error
+        if (hintsResult.error) throw hintsResult.error
+        targets = targetsResult.data || []
+        turnsBySession = (turnsResult.data || []).reduce((map, row) => {
+          if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
+          map.get(row.dialogue_session_id).push(row)
+          return map
+        }, new Map())
+        hintsBySession = (hintsResult.data || []).reduce((map, row) => {
+          if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
+          map.get(row.dialogue_session_id).push(row)
+          return map
+        }, new Map())
+      }
+
+      const classify = typeof deps.classifyTargets === 'function' ? deps.classifyTargets : null
+      const toCourse = typeof deps.buildCourseItems === 'function' ? deps.buildCourseItems : null
+      const senseStats = new Map()
+      const courseBySession = new Map()
+      const targetsBySession = targets.reduce((map, row) => {
+        if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
+        map.get(row.dialogue_session_id).push(row)
+        return map
+      }, new Map())
+
+      for (const session of sessions || []) {
+        const sessionTargets = targetsBySession.get(session.id) || []
+        let courseItems = sessionTargets.map((target) => ({
+          sense_id: target.sense_id,
+          headword: target.headword,
+          gloss_ru: target.gloss_ru,
+          status: session.status === 'active' ? 'waiting' : 'missed',
+          verdict: 'unused',
+        }))
+        if (classify && toCourse && sessionTargets.length) {
+          const classified = classify({
+            targets: sessionTargets,
+            turns: turnsBySession.get(session.id) || [],
+            hints: hintsBySession.get(session.id) || [],
+          })
+          courseItems = toCourse(sessionTargets, classified, session.status)
+        }
+        courseBySession.set(session.id, courseItems)
+        for (const item of courseItems) {
+          const key = item.sense_id
+          if (!senseStats.has(key)) {
+            senseStats.set(key, {
+              sense_id: key,
+              headword: item.headword,
+              gloss_ru: item.gloss_ru,
+              appearances: 0,
+              produced: 0,
+              hinted: 0,
+              missed: 0,
+              list_ids: new Set(),
+            })
+          }
+          const row = senseStats.get(key)
+          row.appearances += 1
+          if (session.list_id) row.list_ids.add(session.list_id)
+          if (item.status === 'used') row.produced += 1
+          else if (item.status === 'hinted') row.hinted += 1
+          else if (item.status === 'missed') row.missed += 1
+        }
+      }
+
+      const allSenseIds = [...senseStats.keys()]
+      let statesBySense = new Map()
+      if (allSenseIds.length) {
+        const { data: states, error: statesError } = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_srs_states')
+            .select('sense_id, due_at, interval_days, repetitions, last_reviewed_at')
+            .eq('user_id', userId)
+            .eq('card_type', 'recognition')
+            .in('sense_id', allSenseIds.slice(0, 500)),
+        )
+        if (statesError) throw statesError
+        statesBySense = new Map((states || []).map((row) => [row.sense_id, row]))
+      }
+
+      const payload = boundLists.map((list) => {
+        const stats = statsByList.get(list.id) || emptyListStats()
+        const listSessions = sessionsByList.get(list.id) || []
+        const sessions7 = listSessions.filter((row) => row.created_at >= since7).length
+        const sessions30 = listSessions.length
+        const assessed = listSessions.filter((row) => row.status === 'assessed')
+        let hintFree = 0
+        for (const session of assessed) {
+          const courseItems = courseBySession.get(session.id) || []
+          if (!courseItems.length) continue
+          if (!courseItems.some((item) => item.status === 'hinted')) hintFree += 1
+        }
+
+        const weak = []
+        for (const row of senseStats.values()) {
+          if (!row.list_ids.has(list.id)) continue
+          const status = classifyRecognitionState(statesBySense.get(row.sense_id), now())
+          const milestone = classifySenseMilestone({
+            status,
+            producedCount: row.produced,
+            sessionAppearances: row.appearances,
+          })
+          const weakScore = row.missed * 3 + row.hinted * 2 - row.produced
+          if (weakScore <= 0 && status !== 'due') continue
+          weak.push({
+            sense_id: row.sense_id,
+            headword: row.headword,
+            gloss_ru: row.gloss_ru,
+            status,
+            milestone,
+            milestone_label: MILESTONE_LABELS[milestone] || milestone,
+            missed: row.missed,
+            hinted: row.hinted,
+            produced: row.produced,
+            appearances: row.appearances,
+            weak_score: weakScore,
+          })
+        }
+        weak.sort((a, b) => b.weak_score - a.weak_score || b.missed - a.missed)
+        const covered = [...senseStats.values()].filter((row) => row.list_ids.has(list.id)).length
+        const coveragePct = stats.word_count > 0
+          ? Math.min(100, Math.round((covered / stats.word_count) * 100))
+          : 0
+        const masteredPct = stats.word_count > 0
+          ? Math.round((stats.mastered / stats.word_count) * 100)
+          : 0
+        const recentSessions = listSessions.slice(0, 4).map((session) => {
+          const courseItems = courseBySession.get(session.id) || []
+          const used = courseItems.filter((item) => item.status === 'used').length
+          const hinted = courseItems.filter((item) => item.status === 'hinted').length
+          const missed = courseItems.filter((item) => item.status === 'missed').length
+          return {
+            id: session.id,
+            status: session.status,
+            created_at: session.created_at,
+            assessed_at: session.assessed_at || null,
+            used_count: used,
+            hinted_count: hinted,
+            missed_count: missed,
+            target_count: courseItems.length,
+            words: courseItems.slice(0, 5).map((item) => ({
+              sense_id: item.sense_id,
+              headword: item.headword,
+              status: item.status,
+            })),
+          }
+        })
+        const moduleClear = (stats.due || 0) === 0
+          && masteredPct >= 50
+          && hintFree >= 3
+          && coveragePct >= 40
+
+        return {
+          id: list.id,
+          title: list.title,
+          source: list.source,
+          bound_kind: list.bound_kind,
+          bound_ref: list.bound_ref,
+          bound_origin: list.bound_origin,
+          bound_label: list.bound_label,
+          theme_keys: Array.isArray(list.theme_keys) ? list.theme_keys : [],
+          stats,
+          coverage_pct: coveragePct,
+          mastered_pct: masteredPct,
+          sessions_7d: sessions7,
+          sessions_30d: sessions30,
+          hint_free_assessed: hintFree,
+          assessed_count: assessed.length,
+          weak_words: weak.slice(0, 5),
+          recent_sessions: recentSessions,
+          module_clear: moduleClear,
+          last_session_at: listSessions[0]?.created_at || null,
+        }
+      })
+
+      payload.sort((a, b) => {
+        const aTs = a.last_session_at ? Date.parse(a.last_session_at) : 0
+        const bTs = b.last_session_at ? Date.parse(b.last_session_at) : 0
+        return bTs - aTs || (b.sessions_30d - a.sessions_30d)
+      })
+
+      res.status(200).json({ items: payload })
+    } catch (error) {
+      console.error('[api/vocabulary/lists/course-modules] failed', error?.message || error)
+      res.status(500).json({ error: 'Не удалось загрузить модули слов' })
+    }
+  }
+}
+
 export function registerVocabListsRoutes(app, deps) {
   const wrap = deps.asyncHandler || ((fn) => fn)
   const withLexicon = {
@@ -1499,13 +2682,22 @@ export function registerVocabListsRoutes(app, deps) {
         ? createBuildWordLexicon({ billableChatCreate: deps.billableChatCreate })
         : null
     ),
+    generateBoundListEntries: deps.generateBoundListEntries || (
+      typeof deps.billableChatCreate === 'function'
+        ? createGenerateBoundListEntries({ billableChatCreate: deps.billableChatCreate })
+        : null
+    ),
   }
   app.get('/api/vocabulary/lists', wrap(createListLibraryHandler(withLexicon)))
   app.post('/api/vocabulary/lists', wrap(createEmptyListHandler(withLexicon)))
+  app.post('/api/vocabulary/lists/generate-for-context', wrap(createGenerateBoundListHandler(withLexicon)))
+  app.get('/api/vocabulary/lists/course-modules', wrap(createCourseModulesHandler(withLexicon)))
   app.post('/api/vocabulary/lists/starter', wrap(createStarterPackHandler(withLexicon)))
   app.patch('/api/vocabulary/lists/:id', wrap(createPatchListHandler(withLexicon)))
   app.delete('/api/vocabulary/lists/:id', wrap(createDeleteListHandler(withLexicon)))
   app.get('/api/vocabulary/lists/:id', wrap(createListDetailHandler(withLexicon)))
+  app.post('/api/vocabulary/lists/:id/regenerate', wrap(createRegenerateListHandler(withLexicon)))
+  app.post('/api/vocabulary/lists/:id/session-picks', wrap(createSessionPicksHandler(withLexicon)))
   app.get('/api/vocabulary/lists/:id/words/:vocabularyId', wrap(createListWordCardHandler(withLexicon)))
   app.post('/api/vocabulary/lists/:id/words/resolve', wrap(createResolveListWordsHandler(withLexicon)))
   app.post('/api/vocabulary/lists/:id/words/bulk', wrap(createBulkAddListWordsHandler(withLexicon)))

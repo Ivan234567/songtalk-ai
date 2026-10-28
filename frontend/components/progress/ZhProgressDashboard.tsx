@@ -27,6 +27,7 @@ import { KpiCards } from './KpiCards';
 import { CriteriaOverview } from './CriteriaOverview';
 import { RecentSessions, type RecentSessionRow } from './RecentSessions';
 import { RecommendedScenarios, type RecommendRow } from './RecommendedScenarios';
+import { VocabCourseSection } from './VocabCourseSection';
 import styles from './progress.module.css';
 
 function parseMsSafe(iso: string | null | undefined): number | null {
@@ -528,6 +529,8 @@ export function ZhProgressDashboard() {
         }
         streakDays={streakDays}
       />
+
+      <VocabCourseSection />
 
       <KpiCards
         avgScore={mode === 'voice' ? (voiceCoverageAvg != null ? voiceCoverageAvg / 10 : null) : overviewAvgScore}

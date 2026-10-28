@@ -1,0 +1,47 @@
+.wrap {
+  margin: 1.35rem 0 1.9rem;
+  padding: 1.15rem 1.15rem 0.35rem;
+  border-radius: 20px;
+  border: 1px solid var(--stroke, rgba(255, 255, 255, 0.08));
+  background:
+    linear-gradient(165deg, color-mix(in srgb, #34d399 8%, transparent), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 70%);
+}
+
+.head {
+  margin-bottom: 0.85rem;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #6ee7b7 80%, var(--text-muted));
+}
+
+.title {
+  margin: 0.25rem 0 0;
+  font-size: 1.28rem;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.lead {
+  margin: 0.35rem 0 0;
+  max-width: 42rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.wrap :global(section) {
+  margin-left: 0;
+  margin-right: 0;
+  border: 0;
+  background: transparent;
+  padding-left: 0;
+  padding-right: 0;
+}

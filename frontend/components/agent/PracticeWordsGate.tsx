@@ -4,6 +4,10 @@ import React, { useState } from 'react';
 import type { LearningLanguage } from '@/lib/learning-language';
 import { PRACTICE_WORDS_LIMIT, type ChatPracticeSense } from './ChatPracticeWords';
 import { PracticeWordListPicker } from './PracticeWordListPicker';
+import {
+  buildModePracticeContext,
+  type PracticeListContext,
+} from '@/lib/practice-list-context';
 import styles from './practice-words-gate.module.css';
 
 export { PRACTICE_WORDS_LIMIT };
@@ -16,7 +20,9 @@ type PracticeWordsGateProps = {
   learningLanguage: LearningLanguage;
   mode: GateMode;
   initialSenses?: ChatPracticeSense[];
-  onContinue: (senses: ChatPracticeSense[]) => void;
+  listContext?: PracticeListContext | null;
+  preferredListId?: string | null;
+  onContinue: (senses: ChatPracticeSense[], meta?: { listId?: string | null }) => void;
   onSkip: () => void;
   onClose?: () => void;
 };
@@ -25,19 +31,19 @@ const COPY: Record<GateMode, { eyebrow: string; title: string; subtitle: string;
   roleplay: {
     eyebrow: 'Перед сценой',
     title: 'Возьми слова в сцену',
-    subtitle: 'Открой список словаря и выбери до 5 слов. Можно пройти без слов.',
+    subtitle: 'До 5 слов, которые стыкуются со сценой. Due без fit лучше в карточках, не в диалоге. Можно без слов.',
     continueLabel: 'Дальше к сценариям',
   },
   debate: {
     eyebrow: 'Перед дебатом',
     title: 'Возьми слова в спор',
-    subtitle: 'Выбери до 5 слов из списка — боезапас для аргументов. Можно без слов.',
+    subtitle: 'До 5 слов под тему спора. Слова вне темы не тащим ради SRS. Можно без слов.',
     continueLabel: 'Дальше к темам',
   },
   chat: {
     eyebrow: 'Свободный разговор',
     title: 'Слова для этого разговора',
-    subtitle: 'Выбери список, затем до 5 слов. ИИ поможет сказать их в разговоре.',
+    subtitle: 'Список → до 5 слов. ИИ поможет сказать их в разговоре.',
     continueLabel: 'Готово',
   },
 };
@@ -48,12 +54,17 @@ export function PracticeWordsGate({
   learningLanguage,
   mode,
   initialSenses = [],
+  listContext = null,
+  preferredListId = null,
   onContinue,
   onSkip,
   onClose,
 }: PracticeWordsGateProps) {
   const copy = COPY[mode];
   const [draft, setDraft] = useState<ChatPracticeSense[]>(initialSenses);
+  const [activeListId, setActiveListId] = useState<string | null>(preferredListId);
+  const effectiveContext = listContext || buildModePracticeContext(mode);
+  const bindingLabel = effectiveContext.binding?.label;
 
   return (
     <div className={styles.backdrop} role="presentation" onClick={onClose || onSkip}>
@@ -72,7 +83,11 @@ export function PracticeWordsGate({
           )}
           <div className={styles.eyebrow}>{copy.eyebrow}</div>
           <h2 className={styles.title}>{copy.title}</h2>
-          <p className={styles.subtitle}>{copy.subtitle}</p>
+          <p className={styles.subtitle}>
+            {bindingLabel
+              ? `${copy.subtitle} Сейчас: «${bindingLabel}».`
+              : copy.subtitle}
+          </p>
         </div>
 
         <div className={styles.body}>
@@ -83,6 +98,9 @@ export function PracticeWordsGate({
             selected={draft}
             onChange={setDraft}
             limit={PRACTICE_WORDS_LIMIT}
+            listContext={effectiveContext}
+            preferredListId={preferredListId}
+            onActiveListChange={(list) => setActiveListId(list?.id || null)}
           />
         </div>
 
@@ -94,7 +112,7 @@ export function PracticeWordsGate({
             type="button"
             className={styles.primary}
             disabled={draft.length < 1}
-            onClick={() => onContinue(draft.slice(0, PRACTICE_WORDS_LIMIT))}
+            onClick={() => onContinue(draft.slice(0, PRACTICE_WORDS_LIMIT), { listId: activeListId })}
           >
             {copy.continueLabel}
           </button>

@@ -4,7 +4,13 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { listStarterPacks, findStarterPack, STARTER_PACKS, demoListOrder } from './vocab-starter-packs.js'
-import { registerVocabListsRoutes, classifyRecognitionState } from './vocab-lists-routes.js'
+import {
+  registerVocabListsRoutes,
+  classifyRecognitionState,
+  parseListBindingInput,
+  listBindingPatch,
+  inferThemeKeys,
+} from './vocab-lists-routes.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -104,10 +110,14 @@ test('маршруты библиотеки списков зарегистри�
   assert.deepEqual(routes, [
     ['GET', '/api/vocabulary/lists'],
     ['POST', '/api/vocabulary/lists'],
+    ['POST', '/api/vocabulary/lists/generate-for-context'],
+    ['GET', '/api/vocabulary/lists/course-modules'],
     ['POST', '/api/vocabulary/lists/starter'],
     ['PATCH', '/api/vocabulary/lists/:id'],
     ['DELETE', '/api/vocabulary/lists/:id'],
     ['GET', '/api/vocabulary/lists/:id'],
+    ['POST', '/api/vocabulary/lists/:id/regenerate'],
+    ['POST', '/api/vocabulary/lists/:id/session-picks'],
     ['GET', '/api/vocabulary/lists/:id/words/:vocabularyId'],
     ['POST', '/api/vocabulary/lists/:id/words/resolve'],
     ['POST', '/api/vocabulary/lists/:id/words/bulk'],
@@ -133,4 +143,69 @@ test('миграция создаёт списки и не объявляет р
   assert.match(sql, /CREATE TABLE IF NOT EXISTS vocab_list_tags/)
   assert.doesNotMatch(sql, /flashcard|matching|vocabchat/i)
   assert.match(sql, /Послушать\/Сказать сам/)
+})
+
+test('привязка списка: parse + patch + миграция scene binding', () => {
+  assert.deepEqual(parseListBindingInput({}), { present: false })
+  assert.deepEqual(parseListBindingInput({ bound_kind: null }), {
+    present: true,
+    clear: true,
+    bound_kind: null,
+    bound_ref: null,
+    bound_origin: null,
+    bound_label: null,
+  })
+  const bound = parseListBindingInput({
+    binding: {
+      kind: 'scenario',
+      ref: 'apartment-rental',
+      origin: 'system',
+      label: 'Аренда квартиры',
+    },
+  })
+  assert.equal(bound.present, true)
+  assert.equal(bound.clear, false)
+  assert.equal(bound.bound_kind, 'scenario')
+  assert.equal(bound.bound_ref, 'apartment-rental')
+  assert.deepEqual(listBindingPatch(bound), {
+    bound_kind: 'scenario',
+    bound_ref: 'apartment-rental',
+    bound_origin: 'system',
+    bound_label: 'Аренда квартиры',
+  })
+  assert.throws(
+    () => parseListBindingInput({ bound_kind: 'scenario' }),
+    (err) => err?.status === 400,
+  )
+
+  const sql = readFileSync(join(root, 'supabase/migrations/20261028120000_vocab_lists_scene_binding.sql'), 'utf8')
+  assert.match(sql, /bound_kind/)
+  assert.match(sql, /bound_ref/)
+  assert.match(sql, /'ai'/)
+  assert.match(sql, /idx_vocab_lists_bound/)
+})
+
+test('библиотека фильтрует и отдаёт привязку', () => {
+  const source = readFileSync(join(root, 'backend/src/vocab-lists-routes.js'), 'utf8')
+  assert.match(source, /bound_kind/)
+  assert.match(source, /parseListBindingInput/)
+  assert.match(source, /LIST_ROW_FIELDS/)
+  assert.match(source, /req\.query\?\.bound_ref/)
+  assert.match(source, /reuse_bound/)
+  assert.match(source, /theme_keys/)
+  assert.match(source, /generate-for-context/)
+  assert.match(source, /session-picks/)
+  assert.match(source, /\/regenerate/)
+})
+
+test('inferThemeKeys достаёт темы из подписи сцены', () => {
+  const keys = inferThemeKeys('Аренда квартиры', 'apartment rental landlord')
+  assert.ok(keys.includes('home'))
+  assert.deepEqual(inferThemeKeys(''), [])
+})
+
+test('миграция theme_keys для списков', () => {
+  const sql = readFileSync(join(root, 'supabase/migrations/20261028140000_vocab_lists_theme_keys.sql'), 'utf8')
+  assert.match(sql, /theme_keys/)
+  assert.match(sql, /GIN/)
 })

@@ -5,6 +5,8 @@
  * и клиент не получает успешный запуск. Это не одна транзакция Postgres.
  */
 import { ensureUserVocabularySenses } from './vocab-sense-sync.js'
+import { classifyRecognitionState } from './vocab-lists-routes.js'
+import { classifySenseMilestone, MILESTONE_LABELS } from './vocab-session-picks.js'
 
 export const DIALOGUE_TARGET_LIMIT = 5
 export const DIALOGUE_REQUEST_ID_MAX = 200
@@ -50,89 +52,166 @@ export function normalizePracticeMode(raw) {
   return ''
 }
 
-export function buildDebatePracticeInstruction(targets) {
-  const lines = targets.map((target, index) => (
+function practiceTargetLines(targets) {
+  return targets.map((target, index) => (
     `${index + 1}. headword: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
   ))
+}
+
+function practiceHintTargetLines(targets) {
+  return targets.map((target, index) => (
+    `${index + 1}. meaning: ${JSON.stringify(target.gloss_ru)} forbidden word: ${JSON.stringify(target.headword)}`
+  ))
+}
+
+function sceneContextLines(scene) {
+  if (!scene || typeof scene !== 'object') return []
+  const lines = []
+  if (scene.title) lines.push(`Scene title: ${JSON.stringify(scene.title)}`)
+  if (scene.goal) lines.push(`Scene goal: ${JSON.stringify(scene.goal)}`)
+  if (scene.topic) lines.push(`Debate topic: ${JSON.stringify(scene.topic)}`)
+  if (scene.userPosition) lines.push(`Learner position: ${JSON.stringify(scene.userPosition)}`)
+  if (scene.currentStep) lines.push(`Current step: ${JSON.stringify(scene.currentStep)}`)
+  if (scene.stepAction) lines.push(`Expected learner action: ${JSON.stringify(scene.stepAction)}`)
+  return lines
+}
+
+/** Поднять в начало target, чьё значение лучше стыкуется со сценой/шагом. */
+export function orderPracticeTargetsForScene(targets, sceneText = '') {
+  const list = Array.isArray(targets) ? targets.slice() : []
+  if (list.length < 2) return list
+  const hay = String(sceneText || '').toLowerCase()
+  if (!hay.trim()) return list
+  const scored = list.map((target, index) => {
+    const gloss = String(target?.gloss_ru || '').toLowerCase()
+    const head = String(target?.headword || '').toLowerCase()
+    let score = 0
+    for (const token of gloss.split(/[\s,.;:!?/()«»"'-]+/).filter((t) => t.length >= 3)) {
+      if (hay.includes(token)) score += 3
+    }
+    if (head && hay.includes(head)) score += 1
+    return { target, index, score }
+  })
+  scored.sort((a, b) => b.score - a.score || a.index - b.index)
+  return scored.map((row) => row.target)
+}
+
+export function buildDebatePracticeInstruction(targets, scene = null) {
+  const ordered = orderPracticeTargetsForScene(targets, [scene?.topic, scene?.userPosition, scene?.currentStep].filter(Boolean).join(' '))
+  const focus = ordered[0]
+  const lines = practiceTargetLines(ordered)
   return [
-    'Hidden practice for this debate only.',
-    'The learner should use each meaning naturally in their arguments.',
-    'Do not say, spell, or translate the headword before the learner uses it.',
-    'Do not list the headwords. Create pressure or a question where that meaning helps the argument.',
-    'Keep debate rules, positions, and tone.',
+    'Hidden vocabulary practice is ACTIVE inside this debate — weave meanings into THIS topic, not a side drill.',
+    'Each reply must push the learner to use one unused target meaning in their own argument.',
+    focus
+      ? `This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`
+      : 'Create pressure for the next unused meaning.',
+    'Ask a pointed question or raise a counterpoint where that meaning is the natural precise word for THIS debate.',
+    'Never say, spell, translate, or hint the letter shape of any unused headword. Do not say the headword aloud.',
+    'Do not list targets. Keep debate roles, positions, and tone.',
+    'Advance the argument every turn — never stall with a generic filler.',
+    ...sceneContextLines(scene),
     'Targets still unused:',
     ...lines,
   ].join('\n')
 }
 
-export function buildRoleplayPracticeInstruction(targets) {
-  const lines = targets.map((target, index) => (
-    `${index + 1}. headword: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
-  ))
+export function buildRoleplayPracticeInstruction(targets, scene = null) {
+  const ordered = orderPracticeTargetsForScene(
+    targets,
+    [scene?.title, scene?.goal, scene?.currentStep, scene?.stepAction].filter(Boolean).join(' '),
+  )
+  const focus = ordered[0]
+  const lines = practiceTargetLines(ordered)
   return [
-    'Hidden practice for this roleplay only.',
-    'The learner should recall each meaning and say the foreign word themselves.',
-    'Do not say, spell, or translate the headword before the learner uses it.',
-    'Do not list the headwords. Keep the scenario steps, goal, and persona.',
-    'Scenario lesson words stay separate from these hidden targets.',
+    'Hidden vocabulary practice is ACTIVE inside this roleplay — weave meanings into THIS scene and its scenario steps.',
+    'Each reply must create a concrete need for the learner to say one unused target themselves.',
+    focus
+      ? `This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`
+      : 'Create a situation for the next unused meaning.',
+    'Use the current scenario step: ask for that thing, refuse until they name it, or make the goal depend on it.',
+    'Never say, spell, translate, or leak any unused headword before the learner uses it. Do not say the headword aloud.',
+    'Do not list targets. Keep persona, steps, and goal.',
+    'Scenario lesson vocabulary stays separate from these hidden targets.',
+    'Advance the scene every turn — never stall with a generic filler.',
+    ...sceneContextLines(scene),
     'Targets still unused:',
     ...lines,
   ].join('\n')
 }
 
 export function buildChatPracticeInstruction(targets) {
-  const lines = targets.map((target, index) => (
-    `${index + 1}. headword: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
-  ))
+  const focus = targets[0]
+  const lines = practiceTargetLines(targets)
   return [
-    'Hidden practice for this free conversation only.',
-    'The learner should recall each meaning and say the foreign word themselves.',
-    'Do not say, spell, or translate the headword before the learner uses it.',
-    'Do not list the headwords. Build a natural situation where that meaning is useful.',
-    'Keep every other chat rule, persona, level, and tone.',
+    'Hidden vocabulary practice is ACTIVE in this free conversation.',
+    'Each reply must build a natural situation where the learner needs one unused target meaning.',
+    focus
+      ? `This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`
+      : 'Steer toward the next unused meaning.',
+    'Ask a specific question or set a mini-task that makes that meaning useful in their next answer.',
+    'Never say, spell, translate, or leak any unused headword before the learner uses it. Do not say the headword aloud.',
+    'Do not list targets. Keep level, tone, and persona.',
+    'Move the conversation forward every turn with new detail — never repeat the same vague prompt.',
     'Targets still unused:',
     ...lines,
   ].join('\n')
 }
 
-export function buildDebatePracticeHintInstruction(targets) {
-  const lines = targets.map((target, index) => (
-    `${index + 1}. meaning: ${JSON.stringify(target.gloss_ru)} forbidden word: ${JSON.stringify(target.headword)}`
-  ))
+export function buildDebatePracticeHintInstruction(targets, scene = null) {
+  const ordered = orderPracticeTargetsForScene(targets, [scene?.topic, scene?.currentStep].filter(Boolean).join(' '))
+  const focus = ordered[0]
+  const lines = practiceHintTargetLines(ordered)
   return [
     'The learner is practicing hidden words inside a debate.',
     'Write the hint in Russian only.',
-    'Describe the argument angle or the meaning so they can recall the expression themselves.',
+    focus
+      ? `Steer them to use this meaning in the next argument: ${JSON.stringify(focus.gloss_ru)}.`
+      : 'Steer them toward one unused meaning.',
+    'Tie the hint to the current debate topic and their position — not a generic vocab drill.',
+    'Describe the argument angle so they can recall the expression themselves.',
     'Do not write any forbidden word, its spelling, or a foreign-language example containing it.',
     'Do not output the suggested reply in the target language.',
-    'Keep the hint useful for the current debate without naming the hidden word.',
+    'Keep the hint useful for the current debate.',
+    ...sceneContextLines(scene),
     ...lines,
   ].join('\n')
 }
 
-export function buildRoleplayPracticeHintInstruction(targets) {
-  const lines = targets.map((target, index) => (
-    `${index + 1}. meaning: ${JSON.stringify(target.gloss_ru)} forbidden word: ${JSON.stringify(target.headword)}`
-  ))
+export function buildRoleplayPracticeHintInstruction(targets, scene = null) {
+  const ordered = orderPracticeTargetsForScene(
+    targets,
+    [scene?.title, scene?.goal, scene?.currentStep, scene?.stepAction].filter(Boolean).join(' '),
+  )
+  const focus = ordered[0]
+  const lines = practiceHintTargetLines(ordered)
   return [
     'The learner is practicing hidden words inside a roleplay.',
     'Write the hint in Russian only.',
-    'Describe the situation or the meaning so they can recall the expression themselves.',
+    focus
+      ? `Steer them to say this meaning now: ${JSON.stringify(focus.gloss_ru)}.`
+      : 'Steer them toward one unused meaning for the current step.',
+    'Tie the hint to the current scenario step and goal — not a generic vocab drill.',
+    'Describe the situation so they can recall the expression themselves.',
     'Do not write any forbidden word, its spelling, or a foreign-language example containing it.',
     'Do not output the suggested reply in the target language.',
-    'Keep the hint useful for the current scenario step without naming the hidden word.',
+    'Keep the hint useful for the current scenario step.',
+    ...sceneContextLines(scene),
     ...lines,
   ].join('\n')
 }
 
 export function buildChatPracticeHintInstruction(targets) {
-  const lines = targets.map((target, index) => (
-    `${index + 1}. meaning: ${JSON.stringify(target.gloss_ru)} forbidden word: ${JSON.stringify(target.headword)}`
-  ))
+  const focus = targets[0]
+  const lines = practiceHintTargetLines(targets)
   return [
     'The learner is practicing hidden words in free conversation.',
     'Write the hint in Russian only.',
-    'Describe the situation or the meaning so they can recall the expression themselves.',
+    focus
+      ? `Steer them to use this meaning in the next reply: ${JSON.stringify(focus.gloss_ru)}.`
+      : 'Steer them toward one unused meaning.',
+    'The Russian hint should outline a reply that naturally needs that meaning — not a vague tip.',
+    'Describe the situation so they can recall the expression themselves.',
     'Do not write any forbidden word, its spelling, or a foreign-language example containing it.',
     'Do not output the suggested reply in the target language.',
     ...lines,
@@ -204,11 +283,38 @@ export function nextPracticeHintIndex(maxTurnIndex) {
   return Number.isInteger(maxTurnIndex) && maxTurnIndex >= 0 ? maxTurnIndex + 1 : 0
 }
 
-export function fallbackPracticeReply(language, targets) {
+export function fallbackPracticeReply(language, targets, { seed = '', avoid = [] } = {}) {
   const options = language === 'zh'
-    ? ['后来呢？', '你觉得怎么样？', '再多说一点。', '嗯。']
-    : ['What happened next?', 'How did that feel?', 'Tell me a bit more.', 'Go on.']
-  return options.find((line) => !replyContainsTarget(line, targets)) || '…'
+    ? [
+      '那后来呢？再说具体一点。',
+      '你当时想怎么办？',
+      '能用另一个说法描述一下吗？',
+      '好，那下一步是什么？',
+      '你为什么这么觉得？',
+      '再给我一个细节。',
+    ]
+    : [
+      'Okay — what would you do next?',
+      'Interesting. Can you describe it another way?',
+      'Got it. What matters most here?',
+      'Alright. What changed after that?',
+      'Tell me one more concrete detail.',
+      'Why does that matter to you?',
+      'What would make this easier?',
+      'And then what did you try?',
+    ]
+  const blocked = new Set(
+    (Array.isArray(avoid) ? avoid : [])
+      .map((line) => (typeof line === 'string' ? line.trim() : ''))
+      .filter(Boolean),
+  )
+  const safe = options.filter((line) => !replyContainsTarget(line, targets) && !blocked.has(line))
+  const pool = safe.length > 0 ? safe : options.filter((line) => !replyContainsTarget(line, targets))
+  if (!pool.length) return language === 'zh' ? '再说一点。' : 'Tell me more.'
+  let hash = 0
+  const key = `${seed}|${pool.join('|')}`
+  for (let i = 0; i < key.length; i += 1) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0
+  return pool[Math.abs(hash) % pool.length]
 }
 
 export function classifyPracticeHint(hint, targets) {
@@ -617,6 +723,24 @@ export function createDialogueSessionHandler({
       if (!LEVEL_RE.test(levelSnapshot)) throw new DialogueRouteError(400, 'Practice level is invalid')
       const senseIds = parseSenseIds(req.body?.sense_ids)
       const language = await loadLearningLanguage({ supabase, safeSupabaseCall, userId })
+      const rawListId = typeof req.body?.list_id === 'string' ? req.body.list_id.trim() : ''
+      let listId = null
+      if (rawListId) {
+        if (!isUuid(rawListId)) throw new DialogueRouteError(400, 'Practice list is invalid')
+        const listResult = await callSupabase(
+          safeSupabaseCall,
+          () => supabase
+            .from('vocab_lists')
+            .select('id')
+            .eq('id', rawListId)
+            .eq('user_id', userId)
+            .eq('language', language)
+            .maybeSingle(),
+        )
+        if (!listResult || listResult.error) throw new DialogueRouteError(500, 'Failed to read practice list')
+        if (!listResult.data?.id) throw new DialogueRouteError(404, 'Practice list was not found')
+        listId = listResult.data.id
+      }
 
       const agentResult = await callSupabase(
         safeSupabaseCall,
@@ -683,8 +807,9 @@ export function createDialogueSessionHandler({
             status: 'active',
             level_snapshot: levelSnapshot,
             request_id: requestId,
+            ...(listId ? { list_id: listId } : {}),
           })
-          .select('id')
+          .select('id, list_id')
           .single(),
       )
       if (inserted?.error?.code === '23505') {
@@ -721,6 +846,7 @@ export function createDialogueSessionHandler({
       res.status(200).json({
         dialogue_session_id: dialogueSessionId,
         agent_session_id: agentSessionId,
+        list_id: inserted.data.list_id || listId || null,
         status: 'active',
         mode,
         targets: publicTargets(targetsInserted.data),
@@ -731,6 +857,406 @@ export function createDialogueSessionHandler({
       if (status === 500) console.error('[api/vocabulary/srs/dialogue] failed to start practice session')
       res.status(status).json({
         error: err instanceof DialogueRouteError ? err.message : 'Failed to start practice session',
+      })
+    }
+  }
+}
+
+export function createRecentDialogueSessionsHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall = (fn) => fn(),
+  classifyTargets,
+  buildCourseItems,
+}) {
+  return async function recentDialogueSessionsHandler(req, res) {
+    const userId = await requireUser(req, res, { getBearerToken, resolveUserId })
+    if (!userId) return
+    try {
+      const language = await loadLearningLanguage({ supabase, safeSupabaseCall, userId })
+      const limitRaw = Number(req.query?.limit)
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(20, Math.floor(limitRaw))) : 8
+      const sessionsResult = await callSupabase(
+        safeSupabaseCall,
+        () => supabase
+          .from('vocab_dialogue_sessions')
+          .select('id, mode, status, list_id, level_snapshot, agent_session_id, created_at, assessed_at')
+          .eq('user_id', userId)
+          .eq('language', language)
+          .order('created_at', { ascending: false })
+          .limit(limit),
+      )
+      if (!sessionsResult || sessionsResult.error) {
+        throw new DialogueRouteError(500, 'Failed to load practice sessions')
+      }
+      const sessions = Array.isArray(sessionsResult.data) ? sessionsResult.data : []
+      const sessionIds = sessions.map((row) => row.id).filter(Boolean)
+      const listIds = [...new Set(sessions.map((row) => row.list_id).filter(Boolean))]
+
+      let targetsBySession = new Map()
+      if (sessionIds.length) {
+        const targetsResult = await callSupabase(
+          safeSupabaseCall,
+          () => supabase
+            .from('vocab_dialogue_targets')
+            .select('dialogue_session_id, sense_id, position, headword, gloss_ru')
+            .eq('user_id', userId)
+            .in('dialogue_session_id', sessionIds)
+            .order('position', { ascending: true }),
+        )
+        if (targetsResult && !targetsResult.error && Array.isArray(targetsResult.data)) {
+          targetsBySession = targetsResult.data.reduce((map, row) => {
+            const key = row.dialogue_session_id
+            if (!map.has(key)) map.set(key, [])
+            map.get(key).push({
+              sense_id: row.sense_id,
+              position: row.position,
+              headword: row.headword,
+              gloss_ru: row.gloss_ru,
+            })
+            return map
+          }, new Map())
+        }
+      }
+
+      let turnsBySession = new Map()
+      let hintsBySession = new Map()
+      if (sessionIds.length) {
+        const [turnsResult, hintsResult] = await Promise.all([
+          callSupabase(
+            safeSupabaseCall,
+            () => supabase
+              .from('vocab_dialogue_turns')
+              .select('dialogue_session_id, turn_index, role, content')
+              .eq('user_id', userId)
+              .in('dialogue_session_id', sessionIds)
+              .order('turn_index', { ascending: true }),
+          ),
+          callSupabase(
+            safeSupabaseCall,
+            () => supabase
+              .from('vocab_dialogue_hints')
+              .select('dialogue_session_id, turn_index, hint_text')
+              .eq('user_id', userId)
+              .in('dialogue_session_id', sessionIds),
+          ),
+        ])
+        if (turnsResult && !turnsResult.error && Array.isArray(turnsResult.data)) {
+          turnsBySession = turnsResult.data.reduce((map, row) => {
+            if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
+            map.get(row.dialogue_session_id).push(row)
+            return map
+          }, new Map())
+        }
+        if (hintsResult && !hintsResult.error && Array.isArray(hintsResult.data)) {
+          hintsBySession = hintsResult.data.reduce((map, row) => {
+            if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
+            map.get(row.dialogue_session_id).push(row)
+            return map
+          }, new Map())
+        }
+      }
+
+      let listsById = new Map()
+      if (listIds.length) {
+        const listsResult = await callSupabase(
+          safeSupabaseCall,
+          () => supabase
+            .from('vocab_lists')
+            .select('id, title, bound_kind, bound_ref, bound_label')
+            .eq('user_id', userId)
+            .in('id', listIds),
+        )
+        if (listsResult && !listsResult.error && Array.isArray(listsResult.data)) {
+          listsById = new Map(listsResult.data.map((row) => [row.id, row]))
+        }
+      }
+
+      const classify = typeof classifyTargets === 'function' ? classifyTargets : null
+      const toCourse = typeof buildCourseItems === 'function' ? buildCourseItems : null
+
+      res.status(200).json({
+        items: sessions.map((session) => {
+          const list = session.list_id ? listsById.get(session.list_id) : null
+          const targets = targetsBySession.get(session.id) || []
+          let courseTargets = targets.map((target) => ({
+            ...target,
+            status: session.status === 'active' ? 'waiting' : 'missed',
+            verdict: 'unused',
+          }))
+          if (classify && toCourse && targets.length) {
+            const classified = classify({
+              targets,
+              turns: turnsBySession.get(session.id) || [],
+              hints: hintsBySession.get(session.id) || [],
+            })
+            courseTargets = toCourse(targets, classified, session.status)
+          }
+          const usedCount = courseTargets.filter((item) => item.status === 'used').length
+          const hintedCount = courseTargets.filter((item) => item.status === 'hinted').length
+          const missedCount = courseTargets.filter((item) => item.status === 'missed').length
+          return {
+            id: session.id,
+            mode: session.mode,
+            status: session.status,
+            level_snapshot: session.level_snapshot,
+            agent_session_id: session.agent_session_id,
+            created_at: session.created_at,
+            assessed_at: session.assessed_at,
+            list_id: session.list_id || null,
+            list_title: list?.title || null,
+            bound_kind: list?.bound_kind || null,
+            bound_ref: list?.bound_ref || null,
+            bound_label: list?.bound_label || null,
+            targets: courseTargets,
+            target_count: courseTargets.length,
+            used_count: usedCount,
+            hinted_count: hintedCount,
+            missed_count: missedCount,
+          }
+        }),
+      })
+    } catch (err) {
+      if (res.headersSent) return
+      const status = err instanceof DialogueRouteError ? err.status : 500
+      if (status === 500) console.error('[api/vocabulary/srs/dialogue/recent] failed')
+      res.status(status).json({
+        error: err instanceof DialogueRouteError ? err.message : 'Failed to load practice sessions',
+      })
+    }
+  }
+}
+
+export function createSenseCourseHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall = (fn) => fn(),
+  classifyTargets,
+  buildCourseItems,
+  now = () => new Date(),
+}) {
+  return async function senseCourseHandler(req, res) {
+    const userId = await requireUser(req, res, { getBearerToken, resolveUserId })
+    if (!userId) return
+    const senseId = typeof req.params?.senseId === 'string' ? req.params.senseId.trim() : ''
+    if (!isUuid(senseId)) {
+      res.status(400).json({ error: 'Invalid sense id' })
+      return
+    }
+    try {
+      const language = await loadLearningLanguage({ supabase, safeSupabaseCall, userId })
+      const senseResult = await callSupabase(
+        safeSupabaseCall,
+        () => supabase
+          .from('vocab_senses')
+          .select('id, vocabulary_id, headword, gloss_ru')
+          .eq('user_id', userId)
+          .eq('id', senseId)
+          .maybeSingle(),
+      )
+      if (!senseResult || senseResult.error) throw new DialogueRouteError(500, 'Failed to load sense')
+      if (!senseResult.data?.id) {
+        res.status(404).json({ error: 'Значение не найдено' })
+        return
+      }
+      const sense = senseResult.data
+
+      const statesResult = await callSupabase(
+        safeSupabaseCall,
+        () => supabase
+          .from('vocab_srs_states')
+          .select('card_type, due_at, interval_days, repetitions, last_reviewed_at, updated_at')
+          .eq('user_id', userId)
+          .eq('sense_id', senseId),
+      )
+      if (!statesResult || statesResult.error) throw new DialogueRouteError(500, 'Failed to load SRS')
+      const states = Array.isArray(statesResult.data) ? statesResult.data : []
+      const recognition = states.find((row) => row.card_type === 'recognition') || null
+      const production = states.find((row) => row.card_type === 'production') || null
+
+      const recognitionStatus = classifyRecognitionState(recognition, now())
+
+      const targetsResult = await callSupabase(
+        safeSupabaseCall,
+        () => supabase
+          .from('vocab_dialogue_targets')
+          .select('dialogue_session_id, sense_id, headword, gloss_ru, position')
+          .eq('user_id', userId)
+          .eq('sense_id', senseId)
+          .order('dialogue_session_id', { ascending: false })
+          .limit(40),
+      )
+      if (!targetsResult || targetsResult.error) throw new DialogueRouteError(500, 'Failed to load practice history')
+      const targetRows = Array.isArray(targetsResult.data) ? targetsResult.data : []
+      const sessionIds = [...new Set(targetRows.map((row) => row.dialogue_session_id).filter(Boolean))]
+
+      let sessions = []
+      if (sessionIds.length) {
+        const sessionsResult = await callSupabase(
+          safeSupabaseCall,
+          () => supabase
+            .from('vocab_dialogue_sessions')
+            .select('id, mode, status, list_id, created_at, assessed_at, language')
+            .eq('user_id', userId)
+            .eq('language', language)
+            .in('id', sessionIds)
+            .order('created_at', { ascending: false })
+            .limit(20),
+        )
+        if (!sessionsResult || sessionsResult.error) throw new DialogueRouteError(500, 'Failed to load sessions')
+        sessions = Array.isArray(sessionsResult.data) ? sessionsResult.data : []
+      }
+
+      const listIds = [...new Set(sessions.map((row) => row.list_id).filter(Boolean))]
+      let listsById = new Map()
+      if (listIds.length) {
+        const listsResult = await callSupabase(
+          safeSupabaseCall,
+          () => supabase
+            .from('vocab_lists')
+            .select('id, title, bound_kind, bound_ref, bound_label')
+            .eq('user_id', userId)
+            .in('id', listIds),
+        )
+        if (listsResult && !listsResult.error && Array.isArray(listsResult.data)) {
+          listsById = new Map(listsResult.data.map((row) => [row.id, row]))
+        }
+      }
+
+      let turnsBySession = new Map()
+      let hintsBySession = new Map()
+      let allTargetsBySession = new Map()
+      if (sessions.length) {
+        const ids = sessions.map((row) => row.id)
+        const [turnsResult, hintsResult, allTargetsResult] = await Promise.all([
+          callSupabase(
+            safeSupabaseCall,
+            () => supabase
+              .from('vocab_dialogue_turns')
+              .select('dialogue_session_id, turn_index, role, content')
+              .eq('user_id', userId)
+              .in('dialogue_session_id', ids),
+          ),
+          callSupabase(
+            safeSupabaseCall,
+            () => supabase
+              .from('vocab_dialogue_hints')
+              .select('dialogue_session_id, turn_index, hint_text')
+              .eq('user_id', userId)
+              .in('dialogue_session_id', ids),
+          ),
+          callSupabase(
+            safeSupabaseCall,
+            () => supabase
+              .from('vocab_dialogue_targets')
+              .select('dialogue_session_id, sense_id, headword, gloss_ru')
+              .eq('user_id', userId)
+              .in('dialogue_session_id', ids),
+          ),
+        ])
+        if (turnsResult && !turnsResult.error) {
+          turnsBySession = (turnsResult.data || []).reduce((map, row) => {
+            if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
+            map.get(row.dialogue_session_id).push(row)
+            return map
+          }, new Map())
+        }
+        if (hintsResult && !hintsResult.error) {
+          hintsBySession = (hintsResult.data || []).reduce((map, row) => {
+            if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
+            map.get(row.dialogue_session_id).push(row)
+            return map
+          }, new Map())
+        }
+        if (allTargetsResult && !allTargetsResult.error) {
+          allTargetsBySession = (allTargetsResult.data || []).reduce((map, row) => {
+            if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
+            map.get(row.dialogue_session_id).push(row)
+            return map
+          }, new Map())
+        }
+      }
+
+      const classify = typeof classifyTargets === 'function' ? classifyTargets : null
+      const toCourse = typeof buildCourseItems === 'function' ? buildCourseItems : null
+      let producedCount = 0
+      const timeline = []
+      for (const session of sessions) {
+        const sessionTargets = allTargetsBySession.get(session.id) || []
+        let courseItems = sessionTargets.map((target) => ({
+          sense_id: target.sense_id,
+          status: session.status === 'active' ? 'waiting' : 'missed',
+          verdict: 'unused',
+        }))
+        if (classify && toCourse && sessionTargets.length) {
+          courseItems = toCourse(
+            sessionTargets,
+            classify({
+              targets: sessionTargets,
+              turns: turnsBySession.get(session.id) || [],
+              hints: hintsBySession.get(session.id) || [],
+            }),
+            session.status,
+          )
+        }
+        const self = courseItems.find((item) => item.sense_id === senseId)
+        const status = self?.status || (session.status === 'active' ? 'waiting' : 'missed')
+        if (status === 'used') producedCount += 1
+        const list = session.list_id ? listsById.get(session.list_id) : null
+        timeline.push({
+          dialogue_session_id: session.id,
+          mode: session.mode,
+          status: session.status,
+          word_status: status,
+          verdict: self?.verdict || 'unused',
+          created_at: session.created_at,
+          assessed_at: session.assessed_at,
+          list_id: session.list_id || null,
+          list_title: list?.title || null,
+          bound_kind: list?.bound_kind || null,
+          bound_ref: list?.bound_ref || null,
+          bound_label: list?.bound_label || null,
+          source: 'session',
+        })
+      }
+
+      const milestone = classifySenseMilestone({
+        status: recognitionStatus,
+        producedCount,
+        sessionAppearances: timeline.length,
+      })
+
+      const lastCardAt = recognition?.last_reviewed_at || production?.last_reviewed_at || null
+      const lastSessionAt = timeline[0]?.created_at || null
+      let last_move_source = null
+      if (lastCardAt || lastSessionAt) {
+        const cardTs = lastCardAt ? Date.parse(lastCardAt) : 0
+        const sessionTs = lastSessionAt ? Date.parse(lastSessionAt) : 0
+        last_move_source = sessionTs >= cardTs ? 'session' : 'card'
+      }
+
+      res.status(200).json({
+        sense_id: sense.id,
+        headword: sense.headword,
+        gloss_ru: sense.gloss_ru,
+        recognition_status: recognitionStatus,
+        recognition,
+        production,
+        milestone,
+        milestone_label: MILESTONE_LABELS[milestone] || milestone,
+        produced_count: producedCount,
+        session_count: timeline.length,
+        last_move_source,
+        timeline,
+      })
+    } catch (err) {
+      if (res.headersSent) return
+      const status = err instanceof DialogueRouteError ? err.status : 500
+      if (status === 500) console.error('[api/vocabulary/srs/senses/:senseId/course] failed', err?.message || err)
+      res.status(status).json({
+        error: err instanceof DialogueRouteError ? err.message : 'Failed to load word course',
       })
     }
   }
@@ -799,5 +1325,6 @@ export function createDialogueProgressHandler({
 export function registerVocabDialogueRoutes(app, deps) {
   const wrap = deps.asyncHandler || ((fn) => fn)
   app.get('/api/vocabulary/srs/senses', wrap(createSenseCatalogHandler(deps)))
+  // recent регистрируется в index.js с classify/buildCourse deps (до :id/progress)
   app.post('/api/vocabulary/srs/dialogue', wrap(createDialogueSessionHandler(deps)))
 }

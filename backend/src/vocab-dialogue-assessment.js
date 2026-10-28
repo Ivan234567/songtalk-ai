@@ -170,6 +170,34 @@ export function buildPracticeProgressItems(targets, classified) {
   })
 }
 
+/** Статусы для витрины курса: used / hinted / missed / waiting / other */
+export function courseWordStatus(verdict, sessionStatus = 'active') {
+  const value = typeof verdict === 'string' ? verdict : 'unused'
+  if (value === 'produced') return 'used'
+  if (value === 'hinted') return 'hinted'
+  if (value === 'unused') {
+    return sessionStatus === 'active' ? 'waiting' : 'missed'
+  }
+  return 'other'
+}
+
+export function buildCourseProgressItems(targets, classified, sessionStatus = 'active') {
+  const byId = new Map((Array.isArray(classified) ? classified : []).map((row) => [row.sense_id, row]))
+  return (Array.isArray(targets) ? targets : []).map((target) => {
+    const row = byId.get(target.sense_id)
+    const verdict = row?.verdict || 'unused'
+    const status = courseWordStatus(verdict, sessionStatus)
+    return {
+      sense_id: target.sense_id,
+      headword: target.headword,
+      gloss_ru: target.gloss_ru,
+      status,
+      verdict,
+      evidence_text: row?.evidence_text || null,
+    }
+  })
+}
+
 export function remainingPracticeTargets(targets, progressItems) {
   const used = new Set(
     (Array.isArray(progressItems) ? progressItems : [])

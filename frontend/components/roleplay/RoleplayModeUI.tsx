@@ -85,6 +85,8 @@ export type RoleplayModeUIProps = {
   showSystemCatalog?: boolean;
   mode: AgentMode;
   onModeChange: (mode: AgentMode) => void;
+  /** Активный диалог: нельзя открывать другие режимы */
+  modesLocked?: boolean;
   selectedScenario: RoleplayScenario | null;
   onSelectScenario: (scenario: RoleplayScenario) => void;
   onClearScenario: () => void;
@@ -458,6 +460,7 @@ export function RoleplayModeUI({
   showSystemCatalog: showSystemCatalogProp,
   mode,
   onModeChange,
+  modesLocked = false,
   selectedScenario,
   onSelectScenario,
   onClearScenario,
@@ -484,6 +487,7 @@ export function RoleplayModeUI({
   if (placement === 'bar') {
     const openRoleplayWithView = (view: 'catalog' | 'create' | 'my') => {
       if (view === 'catalog' && !showSystemCatalog) return;
+      if (modesLocked && mode !== 'roleplay') return;
       onModeChange('roleplay');
       onScenarioViewChange?.(view);
       onScenarioModalOpenChange?.(true);
@@ -491,11 +495,13 @@ export function RoleplayModeUI({
     };
     const openDebateWithView = (view: DebateView) => {
       if (view === 'catalog' && !showSystemCatalog) return;
+      if (modesLocked && mode !== 'debate') return;
       onModeChange('debate');
       onDebateViewChange?.(view);
       onDebateSetupOpenChange?.(true);
       setDebateDropdownOpen(false);
     };
+    const lockedTitle = 'Сначала выйдите из диалога или дойдите до финала';
     return (
       <>
         <div style={barStyles.wrap}>
@@ -504,9 +510,18 @@ export function RoleplayModeUI({
               type="button"
               role="tab"
               aria-selected={mode === 'chat'}
-              onClick={() => onModeChange('chat')}
-              style={barStyles.tab(mode === 'chat')}
+              aria-disabled={modesLocked && mode !== 'chat'}
+              disabled={modesLocked && mode !== 'chat'}
+              onClick={() => {
+                if (modesLocked && mode !== 'chat') return;
+                onModeChange('chat');
+              }}
+              style={{
+                ...barStyles.tab(mode === 'chat'),
+                ...(modesLocked && mode !== 'chat' ? { opacity: 0.45, cursor: 'not-allowed' } : null),
+              }}
               className="agent-mode-tab"
+              title={modesLocked && mode !== 'chat' ? lockedTitle : undefined}
             >
               <span style={{ opacity: mode === 'chat' ? 1 : 0.75, display: 'flex' }}>{MODE_ICONS.chat}</span>
               <span style={{ whiteSpace: 'nowrap' }}>{learningLanguage === 'zh' ? 'Свободный диалог' : 'Freestyle Mode'}</span>
@@ -518,13 +533,26 @@ export function RoleplayModeUI({
                 aria-selected={mode === 'roleplay'}
                 aria-expanded={roleplayDropdownOpen}
                 aria-haspopup="menu"
-                onClick={() => (roleplayDropdownOpen ? setRoleplayDropdownOpen(false) : setRoleplayDropdownOpen(true))}
+                aria-disabled={modesLocked && mode !== 'roleplay'}
+                disabled={modesLocked && mode !== 'roleplay'}
+                onClick={() => {
+                  if (modesLocked && mode !== 'roleplay') return;
+                  if (modesLocked && mode === 'roleplay') return;
+                  setRoleplayDropdownOpen((open) => !open);
+                }}
                 style={{
                   ...barStyles.tab(mode === 'roleplay'),
                   maxWidth: mode === 'roleplay' && selectedScenario ? 220 : undefined,
+                  ...(modesLocked && mode !== 'roleplay' ? { opacity: 0.45, cursor: 'not-allowed' } : null),
                 }}
                 className="agent-mode-tab"
-                title={mode === 'roleplay' && selectedScenario ? 'Сменить сценарий' : 'Ролевой режим — каталог, создать или мои сценарии'}
+                title={
+                  modesLocked && mode !== 'roleplay'
+                    ? lockedTitle
+                    : mode === 'roleplay' && selectedScenario
+                      ? 'Сменить сценарий'
+                      : 'Ролевой режим — каталог, создать или мои сценарии'
+                }
               >
                 <span style={{ opacity: mode === 'roleplay' ? 1 : 0.75, display: 'flex', flexShrink: 0 }}>{MODE_ICONS.roleplay}</span>
                 <span style={{ whiteSpace: 'nowrap' }}>{roleplayTabLabel}</span>
@@ -615,10 +643,19 @@ export function RoleplayModeUI({
                 aria-selected={mode === 'debate'}
                 aria-expanded={debateDropdownOpen}
                 aria-haspopup="menu"
-                onClick={() => (debateDropdownOpen ? setDebateDropdownOpen(false) : setDebateDropdownOpen(true))}
-                style={barStyles.tab(mode === 'debate')}
+                aria-disabled={modesLocked && mode !== 'debate'}
+                disabled={modesLocked && mode !== 'debate'}
+                onClick={() => {
+                  if (modesLocked && mode !== 'debate') return;
+                  if (modesLocked && mode === 'debate') return;
+                  setDebateDropdownOpen((open) => !open);
+                }}
+                style={{
+                  ...barStyles.tab(mode === 'debate'),
+                  ...(modesLocked && mode !== 'debate' ? { opacity: 0.45, cursor: 'not-allowed' } : null),
+                }}
                 className="agent-mode-tab"
-                title="Дебаты — каталог, создать или мои темы"
+                title={modesLocked && mode !== 'debate' ? lockedTitle : 'Дебаты — каталог, создать или мои темы'}
               >
                 <span style={{ opacity: mode === 'debate' ? 1 : 0.75, display: 'flex', flexShrink: 0 }}>{MODE_ICONS.debate}</span>
                 <span style={{ whiteSpace: 'nowrap' }}>Дебаты</span>

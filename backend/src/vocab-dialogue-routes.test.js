@@ -234,17 +234,27 @@ test('инструкция чата содержит форму из базы и
   assert.match(text, /яблоко/)
   assert.match(text, /Do not say/)
   assert.match(text, /Targets still unused/)
+  assert.match(text, /This turn focus meaning/)
   const hint = buildChatPracticeHintInstruction([{ headword: 'apple', gloss_ru: 'яблоко' }])
   assert.match(hint, /Russian only/)
   assert.match(hint, /forbidden word/)
-  const roleplay = buildRoleplayPracticeInstruction([{ headword: 'apple', gloss_ru: 'яблоко' }])
+  assert.match(hint, /Steer them to use this meaning/)
+  const roleplay = buildRoleplayPracticeInstruction(
+    [{ headword: 'apple', gloss_ru: 'яблоко' }],
+    { title: 'At the market', goal: 'Buy fruit', currentStep: 'Ask for fruit' },
+  )
   assert.match(roleplay, /roleplay/)
   assert.match(roleplay, /Do not say/)
   assert.match(roleplay, /scenario steps/)
-  const debate = buildDebatePracticeInstruction([{ headword: 'apple', gloss_ru: 'яблоко' }])
+  assert.match(roleplay, /At the market/)
+  const debate = buildDebatePracticeInstruction(
+    [{ headword: 'apple', gloss_ru: 'яблоко' }],
+    { topic: 'School lunches', userPosition: 'For fruit' },
+  )
   assert.match(debate, /debate/)
   assert.match(debate, /Do not say/)
   assert.match(debate, /Targets still unused/)
+  assert.match(debate, /School lunches/)
 })
 
 test('ответ с целевым словом заменяется одной безопасной репликой', () => {
@@ -257,8 +267,11 @@ test('ответ с целевым словом заменяется одной 
   assert.equal(replyContainsTarget('我在跑步', [{ headword: '跑' }]), true)
   assert.equal(nextPracticeHintIndex(null), 0)
   assert.equal(nextPracticeHintIndex(3), 4)
-  const fallback = fallbackPracticeReply('en', targets)
+  const fallback = fallbackPracticeReply('en', targets, { seed: 'turn-1' })
   assert.equal(replyContainsTarget(fallback, targets), false)
+  const again = fallbackPracticeReply('en', targets, { seed: 'turn-2', avoid: [fallback] })
+  assert.equal(replyContainsTarget(again, targets), false)
+  assert.notEqual(again, fallback)
   assert.equal(classifyPracticeHint('Скажи apple сейчас', targets).ok, false)
   assert.equal(classifyPracticeHint('Say the fruit', targets).ok, false)
   assert.equal(classifyPracticeHint('Опиши фрукт, который едят осенью', targets).ok, true)
@@ -498,7 +511,9 @@ test('ошибка записи целей удаляет сессию и не �
 test('модуль практики не трогает карточки SRS, чат вызывает проверку сессии', () => {
   const source = fs.readFileSync(new URL('./vocab-dialogue-routes.js', import.meta.url), 'utf8')
   const index = fs.readFileSync(new URL('./index.js', import.meta.url), 'utf8')
-  assert.doesNotMatch(source, /vocab_srs_states|vocab_review_events|commit_vocab_srs_review/)
+  // Практика сессии не пишет SRS; read-only vocab_srs_states допустим только в sense course (отдельный handler).
+  assert.doesNotMatch(source, /vocab_review_events|commit_vocab_srs_review/)
+  assert.doesNotMatch(source, /\.from\('vocab_srs_states'\)[\s\S]{0,200}\.(insert|upsert|update)\(/)
   assert.match(index, /assertChatPracticeRequest\(/)
   assert.match(index, /assertRoleplayPracticeRequest\(/)
   assert.match(index, /assertDebatePracticeRequest\(/)
@@ -513,4 +528,21 @@ test('модуль практики не трогает карточки SRS, ч
   assert.match(index, /classifyPracticeHint\(/)
   assert.match(index, /saveDialogueHint\(/)
   assert.match(index, /dialogue\/:id\/progress/)
+  assert.match(source, /list_id/)
+  assert.match(source, /createRecentDialogueSessionsHandler/)
+  assert.match(index, /dialogue\/recent/)
+  assert.match(index, /buildCourseProgressItems/)
+  assert.match(index, /classifyDialogueTargets/)
+  assert.match(index, /senses\/:senseId\/course/)
+})
+
+test('D7: course слова отдаёт агрегаты без quote/реплик', () => {
+  const source = fs.readFileSync(new URL('./vocab-dialogue-routes.js', import.meta.url), 'utf8')
+  const start = source.indexOf('export function createSenseCourseHandler')
+  assert.ok(start >= 0)
+  const body = source.slice(start, start + 9000)
+  assert.match(body, /word_status/)
+  assert.match(body, /verdict/)
+  assert.doesNotMatch(body, /evidence_text/)
+  assert.doesNotMatch(body, /timeline\.push\(\{[\s\S]*content:/)
 })

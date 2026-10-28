@@ -36,6 +36,21 @@ test('цитата берётся из реплики пользователя �
   assert.match(reverse, /\brun\b/i)
 })
 
+test('курсные статусы слов: used / hinted / missed / waiting', async () => {
+  const { courseWordStatus, buildCourseProgressItems } = await import('./vocab-dialogue-assessment.js')
+  assert.equal(courseWordStatus('produced', 'active'), 'used')
+  assert.equal(courseWordStatus('hinted', 'assessed'), 'hinted')
+  assert.equal(courseWordStatus('unused', 'active'), 'waiting')
+  assert.equal(courseWordStatus('unused', 'assessed'), 'missed')
+  assert.equal(courseWordStatus('unused', 'abandoned'), 'missed')
+  const items = buildCourseProgressItems(
+    [{ sense_id: SENSE_A, headword: 'apple', gloss_ru: 'яблоко' }],
+    [{ sense_id: SENSE_A, verdict: 'unused' }],
+    'assessed',
+  )
+  assert.equal(items[0].status, 'missed')
+})
+
 test('live-прогресс отмечает produced как used и оставляет unused в anti-spoil', () => {
   const targets = [
     { sense_id: SENSE_A, headword: 'apple', gloss_ru: 'яблоко' },

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { SenseCourseTimeline } from './SenseCourseTimeline';
 import styles from './word-detail-card.module.css';
 
 export type WordExample = {
@@ -229,6 +230,10 @@ export function WordDetailCard({
                 <span className={styles.statusPill}>{STATUS_HINT[statusKey]}</span>
               </div>
             </section>
+
+            <SenseCourseTimeline
+              senseId={card.senses.find((sense) => typeof sense.id === 'string' && sense.id)?.id || null}
+            />
           </>
         )}
       </aside>
