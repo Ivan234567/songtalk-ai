@@ -78,7 +78,62 @@ export function cleanEntry(row, language) {
       ? row.part_of_speech.trim().slice(0, 40)
       : null,
     pinyin: typeof row.pinyin === 'string' && row.pinyin.trim() ? row.pinyin.trim().slice(0, 80) : null,
+    step: normalizeStepKey(row.step),
   }
+}
+
+export function normalizeStepKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 160)
+}
+
+export function normalizeStepList(raw) {
+  const source = Array.isArray(raw)
+    ? raw
+    : String(raw || '').split(/\n|·/)
+  const seen = new Set()
+  const steps = []
+  for (const item of source) {
+    const title = String(item || '').trim().replace(/\s+/g, ' ').slice(0, 160)
+    const key = normalizeStepKey(title)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    steps.push(title)
+    if (steps.length >= 12) break
+  }
+  return steps
+}
+
+export function matchStepKey(itemStep, currentStep) {
+  const left = normalizeStepKey(itemStep)
+  const right = normalizeStepKey(currentStep)
+  if (!left || !right) return false
+  return left === right || left.includes(right) || right.includes(left)
+}
+
+function coverSteps(items, steps, max) {
+  const need = steps.length * 2 > max ? 1 : 2
+  const buckets = steps.map(() => [])
+  for (const item of items) {
+    const index = steps.findIndex((step) => matchStepKey(item.step, step))
+    if (index < 0) continue
+    buckets[index].push({ ...item, step: steps[index] })
+  }
+  const missing = steps.filter((step, index) => buckets[index].length < need)
+  const ordered = []
+  let round = 0
+  while (ordered.length < max) {
+    let added = false
+    for (const bucket of buckets) {
+      if (ordered.length >= max) break
+      if (bucket[round]) {
+        ordered.push(bucket[round])
+        added = true
+      }
+    }
+    if (!added) break
+    round += 1
+  }
+  return { items: ordered, missing }
 }
 
 export function scoreEntryThemeFit(entry, themeText = '') {
@@ -105,6 +160,7 @@ export function validateBoundListDraft(rows, options = {}) {
   const language = options.language === 'zh' ? 'zh' : 'en'
   const mode = options.mode === 'debate' ? 'debate' : options.mode === 'chat' ? 'chat' : 'roleplay'
   const themeText = String(options.themeText || '')
+  const steps = normalizeStepList(options.steps)
   const min = Math.max(6, Number(options.min) || MIN_LIST)
   const max = Math.max(min, Math.min(MAX_LIST, Number(options.max) || MAX_LIST))
   const reasons = []
@@ -135,9 +191,18 @@ export function validateBoundListDraft(rows, options = {}) {
     seen.add(entry.word)
     items.push({
       ...entry,
-      theme_fit: scoreEntryThemeFit(entry, themeText),
+      theme_fit: scoreEntryThemeFit(entry, steps.length ? (entry.step || themeText) : themeText),
     })
-    if (items.length >= max) break
+    if (!steps.length && items.length >= max) break
+  }
+
+  if (steps.length) {
+    const covered = coverSteps(items, steps, max)
+    if (covered.missing.length) {
+      reasons.push(`шаги без своих слов: ${covered.missing.join('; ')}`)
+    }
+    items.length = 0
+    items.push(...covered.items)
   }
 
   if (items.length < min) {
@@ -145,7 +210,7 @@ export function validateBoundListDraft(rows, options = {}) {
   }
 
   let themeRatio = 1
-  if (themeText.trim() && items.length) {
+  if (!steps.length && themeText.trim() && items.length) {
     const fitted = items.filter((item) => item.theme_fit > 0).length
     themeRatio = fitted / items.length
     if (themeRatio < THEME_MIN_RATIO) {
@@ -196,7 +261,7 @@ async function callGenerateOnce({
           `Create a vocabulary list of ${targetCount} ${target} for a language learner.`,
           'gloss must be natural Russian (Cyrillic), never English and never a copy of the headword.',
           'Return JSON only:',
-          '{"title":"","items":[{"word":"","gloss":"","phonetic":"","part_of_speech":"","pinyin":""}]}',
+          '{"title":"","items":[{"word":"","gloss":"","phonetic":"","part_of_speech":"","pinyin":"","step":""}]}',
           'title: short Russian list name for the learner dictionary (max 80 chars).',
           'word is the headword in the learning language only.',
           'phonetic is IPA for English, empty for Chinese. pinyin only for Chinese.',
@@ -206,10 +271,11 @@ async function callGenerateOnce({
             ? 'This is a DEBATE: prefer argumentative and topic vocabulary (claims, evidence, policy, rights, trade-offs). Avoid random household words.'
             : mode === 'chat'
               ? 'This is a FREE CONVERSATION: everyday useful words the learner can say in open dialogue.'
-              : 'This is a ROLEPLAY/DIALOGUE scene: prefer words the learner would naturally need to say in the scene steps.',
+              : 'This is a ROLEPLAY/DIALOGUE scene. Each item must be a word the learner says to COMPLETE one listed step. Cover every step before adding anything else.',
           'No proper names, no duplicates, no junk, no transliteration as gloss, no placeholder words.',
           `Return exactly ${targetCount} items. Do not stop early.`,
-          'Every item must fit the provided Title/Goal/Topic/Context.',
+          'Every item must fit one step. Set "step" to that step title exactly, copied from the Steps list.',
+          'Do not add words for a different situation.',
         ].join(' '),
       },
       { role: 'user', content: profile || 'Everyday conversation practice.' },
@@ -255,7 +321,7 @@ export function createGenerateBoundListEntries(deps) {
       title && `Title: ${String(title).trim().slice(0, 160)}`,
       goal && `Goal: ${String(goal).trim().slice(0, 240)}`,
       topic && `Topic: ${String(topic).trim().slice(0, 240)}`,
-      steps && `Steps: ${String(steps).trim().slice(0, 400)}`,
+      steps && `Steps:\n${normalizeStepList(steps).join('\n')}`.slice(0, 900),
       themeText && `Context: ${String(themeText).trim().slice(0, 500)}`,
       `Level: ${levelHint}`,
       `Mode: ${practiceMode}`,
@@ -276,6 +342,7 @@ export function createGenerateBoundListEntries(deps) {
       language: lang,
       mode: practiceMode,
       themeText: themeBlob,
+      steps,
       min: Math.max(6, targetCount - 4),
       max: targetCount,
     })
@@ -296,6 +363,7 @@ export function createGenerateBoundListEntries(deps) {
         language: lang,
         mode: practiceMode,
         themeText: themeBlob,
+        steps,
         min: Math.max(6, targetCount - 4),
         max: targetCount,
       })

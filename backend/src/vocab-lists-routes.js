@@ -1308,6 +1308,7 @@ async function addWordToList(deps, {
   pinyin,
   lite = false,
   position: fixedPosition = null,
+  stepKey = null,
 }) {
   const word = language === 'zh' ? normalizeHeadword(rawWord, 'zh') : (normalizeListWord(rawWord) || normalizeHeadword(rawWord, language))
   const gloss = typeof rawGloss === 'string' ? rawGloss.trim() : ''
@@ -1403,9 +1404,22 @@ async function addWordToList(deps, {
           user_id: userId,
           vocabulary_id: vocabularyId,
           position,
+          ...(stepKey ? { step_key: String(stepKey).slice(0, 160) } : {}),
         }),
     )
-    if (linkError && errorCode(linkError) !== '23505') throw linkError
+    if (linkError && errorCode(linkError) === '42703' && stepKey) {
+      const { error: retryError } = await deps.safeSupabaseCall(
+        () => deps.supabase
+          .from('vocab_list_items')
+          .insert({
+            list_id: listId,
+            user_id: userId,
+            vocabulary_id: vocabularyId,
+            position,
+          }),
+      )
+      if (retryError && errorCode(retryError) !== '23505') throw retryError
+    } else if (linkError && errorCode(linkError) !== '23505') throw linkError
   }
 
   let senses = null
@@ -1891,6 +1905,7 @@ async function fillListWithGeneratedEntries(deps, { userId, language, listId, en
       pinyin: entry.pinyin,
       lite: true,
       position: start + index,
+      stepKey: entry.step || null,
     }).catch((error) => {
       if (error?.status === 402) throw error
       console.error('[vocab-lists] skip generated word', entry?.word, error?.message || error)
@@ -1955,7 +1970,9 @@ export function createGenerateBoundListHandler(deps) {
     const themeText = typeof req.body?.theme_text === 'string' ? req.body.theme_text.trim() : ''
     const goal = typeof req.body?.goal === 'string' ? req.body.goal.trim() : ''
     const topic = typeof req.body?.topic === 'string' ? req.body.topic.trim() : ''
-    const steps = typeof req.body?.steps === 'string' ? req.body.steps.trim() : ''
+    const steps = Array.isArray(req.body?.steps)
+      ? req.body.steps.filter((item) => typeof item === 'string').join('\n')
+      : (typeof req.body?.steps === 'string' ? req.body.steps.trim() : '')
     const titleHint = typeof req.body?.title === 'string' ? req.body.title.trim() : ''
 
     try {
@@ -2197,7 +2214,9 @@ export function createRegenerateListHandler(deps) {
           title: list.bound_label || list.title,
           goal: typeof req.body?.goal === 'string' ? req.body.goal.trim() : '',
           topic: typeof req.body?.topic === 'string' ? req.body.topic.trim() : (list.bound_label || ''),
-          steps: typeof req.body?.steps === 'string' ? req.body.steps.trim() : '',
+          steps: Array.isArray(req.body?.steps)
+            ? req.body.steps.filter((item) => typeof item === 'string').join('\n')
+            : (typeof req.body?.steps === 'string' ? req.body.steps.trim() : ''),
           themeText: typeof req.body?.theme_text === 'string' ? req.body.theme_text.trim() : '',
           count: 20,
         })
@@ -2314,10 +2333,10 @@ export function createSessionPicksHandler(deps) {
         .filter((id) => typeof id === 'string' && UUID_RE.test(id.trim()))
         .map((id) => id.trim()),
     )
-    const sceneText = [
+    const currentStep = typeof req.body?.current_step === 'string' ? req.body.current_step.trim() : ''
+    const sceneText = currentStep || [
       typeof req.body?.theme_text === 'string' ? req.body.theme_text : '',
       typeof req.body?.scene_text === 'string' ? req.body.scene_text : '',
-      typeof req.body?.current_step === 'string' ? req.body.current_step : '',
     ].filter(Boolean).join(' ')
 
     try {
@@ -2327,15 +2346,26 @@ export function createSessionPicksHandler(deps) {
         return
       }
 
-      const { data: items, error: itemsError } = await safeSupabaseCall(
+      let itemsResult = await safeSupabaseCall(
         () => supabase
           .from('vocab_list_items')
-          .select('vocabulary_id, position')
+          .select('vocabulary_id, position, step_key')
           .eq('user_id', userId)
           .eq('list_id', listId)
           .order('position', { ascending: true }),
       )
-      if (itemsError) throw itemsError
+      if (itemsResult?.error && (itemsResult.error.code === '42703' || /step_key/.test(itemsResult.error.message || ''))) {
+        itemsResult = await safeSupabaseCall(
+          () => supabase
+            .from('vocab_list_items')
+            .select('vocabulary_id, position')
+            .eq('user_id', userId)
+            .eq('list_id', listId)
+            .order('position', { ascending: true }),
+        )
+      }
+      if (itemsResult?.error) throw itemsResult.error
+      const items = itemsResult?.data || []
       const vocabularyIds = (items || []).map((row) => row.vocabulary_id).filter(Boolean)
       if (!vocabularyIds.length) {
         res.status(200).json({ items: [], list_id: listId, reason: '' })
@@ -2375,6 +2405,7 @@ export function createSessionPicksHandler(deps) {
         statesBySense = new Map((states || []).map((row) => [row.sense_id, row]))
       }
 
+      const stepByVocab = new Map((items || []).map((row) => [row.vocabulary_id, row.step_key || '']))
       const candidates = []
       for (const sense of senses || []) {
         const vocab = vocabById.get(sense.vocabulary_id)
@@ -2385,6 +2416,7 @@ export function createSessionPicksHandler(deps) {
           senseId: sense.id,
           headword,
           glossRu,
+          stepKey: stepByVocab.get(sense.vocabulary_id) || '',
           status: classifyRecognitionState(statesBySense.get(sense.id), now()),
         })
       }
@@ -2394,7 +2426,8 @@ export function createSessionPicksHandler(deps) {
         .join(' ')
       const picked = pickSessionCandidates(candidates, {
         limit,
-        sceneText: themeHay,
+        sceneText: currentStep || themeHay,
+        currentStep,
         excludeSenseIds: exclude,
       })
 

@@ -226,7 +226,9 @@ export function PracticeWordListPicker({
       body: JSON.stringify({
         limit,
         exclude_sense_ids: options?.excludeSenseIds || [],
-        theme_text: themeTextForPicks,
+        theme_text: listContext?.steps?.[0] || themeTextForPicks,
+        current_step: listContext?.steps?.[0] || '',
+        steps: listContext?.steps || [],
       }),
     });
     const data = await resp.json().catch(() => ({}));
@@ -418,6 +420,7 @@ export function PracticeWordListPicker({
           mode,
           theme_text: listContext?.text || '',
           level: listContext?.level || '',
+          steps: listContext?.steps || [],
         }),
       });
       const data = await resp.json().catch(() => ({}));

@@ -1668,6 +1668,7 @@ app.post('/api/agent/chat', async (req, res) => {
           goal: typeof rawScene?.goal === 'string' ? rawScene.goal.trim() : '',
           topic: typeof rawScene?.topic === 'string' ? rawScene.topic.trim() : '',
           userPosition: typeof rawScene?.userPosition === 'string' ? rawScene.userPosition.trim() : '',
+          wordStep: typeof rawScene?.wordStep === 'string' ? rawScene.wordStep.trim() : '',
           currentStep: typeof rawScene?.currentStep === 'string'
             ? rawScene.currentStep.trim()
             : (firstOpenStep

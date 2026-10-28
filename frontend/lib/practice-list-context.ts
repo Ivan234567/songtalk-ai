@@ -19,6 +19,8 @@ export type PracticeListContext = {
   level?: string | null;
   /** Primary-привязка списка к текущей сцене/дебату/чату */
   binding?: PracticeListBinding | null;
+  /** Шаги цели: слова списка привязаны к ним */
+  steps?: string[] | null;
 };
 
 export function buildListBinding(input: {
@@ -244,10 +246,14 @@ export function buildRoleplayPracticeContext(scenario: {
   if (!text.trim()) return null;
   const id = typeof scenario.id === 'string' ? scenario.id.trim() : '';
   const origin = id && /^[0-9a-f-]{36}$/i.test(id) ? 'user' as const : 'system' as const;
+  const stepTitles = (scenario.steps || [])
+    .map((step) => (step.titleRu || step.titleEn || '').trim())
+    .filter(Boolean);
   return {
     label: 'Подходит к этой сцене',
     text,
     level: scenario.level || scenario.difficulty || null,
+    steps: stepTitles,
     binding: buildListBinding({
       kind: 'scenario',
       ref: id || null,

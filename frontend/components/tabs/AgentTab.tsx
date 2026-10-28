@@ -1788,6 +1788,7 @@ export function AgentTab() {
                         title: selectedScenario.title || '',
                         setting: selectedScenario.settingRu || selectedScenario.setting || '',
                         goal: selectedScenario.goalRu || selectedScenario.goal || '',
+                        wordStep: selectedScenario.steps?.[0]?.titleRu || selectedScenario.steps?.[0]?.titleEn || '',
                         currentStep: openStep
                           ? (openStep.titleRu || openStep.titleEn || openStep.id || '')
                           : '',

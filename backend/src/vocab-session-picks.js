@@ -1,6 +1,17 @@
 /**
- * Умный отбор ≤5 слов сессии: SRS (due→learning→new) + fit к сцене + разнообразие.
+ * Умный отбор ≤5 слов сессии: сначала слова текущего шага, затем SRS и fit.
  */
+
+function normalizeStepKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 160)
+}
+
+function matchStepKey(itemStep, currentStep) {
+  const left = normalizeStepKey(itemStep)
+  const right = normalizeStepKey(currentStep)
+  if (!left || !right) return false
+  return left === right || left.includes(right) || right.includes(left)
+}
 
 const STATUS_BASE = {
   due: 100,
@@ -35,11 +46,12 @@ export const SCENE_FIT_FLOOR = 1
 
 /**
  * @param {Array<{ senseId: string, headword: string, glossRu: string, status: string }>} candidates
- * @param {{ limit?: number, sceneText?: string, excludeSenseIds?: Set<string>|string[], rng?: () => number, fitFloor?: number }} [options]
+ * @param {{ limit?: number, sceneText?: string, currentStep?: string, excludeSenseIds?: Set<string>|string[], rng?: () => number, fitFloor?: number }} [options]
  */
 export function pickSessionCandidates(candidates, options = {}) {
   const limit = Math.max(1, Math.min(5, Number(options.limit) || 5))
   const sceneText = options.sceneText || ''
+  const currentStep = String(options.currentStep || '').trim()
   const hasScene = Boolean(String(sceneText).trim())
   const fitFloor = Number.isFinite(Number(options.fitFloor)) ? Number(options.fitFloor) : SCENE_FIT_FLOOR
   const exclude = options.excludeSenseIds instanceof Set
@@ -57,6 +69,7 @@ export function pickSessionCandidates(candidates, options = {}) {
       senseId: raw.senseId,
       headword: raw.headword,
       glossRu: raw.glossRu,
+      stepKey: raw.stepKey || raw.step_key || '',
       status,
       fit,
       score: (STATUS_BASE[status] ?? 0) + fit * 4 + jitter,
@@ -74,10 +87,13 @@ export function pickSessionCandidates(candidates, options = {}) {
 
   pool.sort((a, b) => b.score - a.score || a.headword.localeCompare(b.headword, 'en'))
 
-  // D6: при тексте сцены сначала только слова с fit ≥ порога; due без fit не вытесняет сцену.
+  const forStep = currentStep
+    ? pool.filter((item) => matchStepKey(item.stepKey, currentStep))
+    : []
+  // Слова текущего шага важнее due с другого шага.
   const withFit = hasScene ? pool.filter((item) => item.fit >= fitFloor) : pool
-  const ranked = withFit.length > 0 ? withFit : pool
-  const weakSceneFit = hasScene && withFit.length === 0 && pool.length > 0
+  const ranked = forStep.length > 0 ? forStep : (withFit.length > 0 ? withFit : pool)
+  const weakSceneFit = forStep.length === 0 && hasScene && withFit.length === 0 && pool.length > 0
 
   // Разнообразие: не больше 2 mastered, если есть другие кандидаты.
   const picked = []

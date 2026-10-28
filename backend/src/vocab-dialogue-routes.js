@@ -118,26 +118,37 @@ export function buildDebatePracticeInstruction(targets, scene = null) {
 }
 
 export function buildRoleplayPracticeInstruction(targets, scene = null) {
-  const ordered = orderPracticeTargetsForScene(
-    targets,
-    [scene?.title, scene?.goal, scene?.currentStep, scene?.stepAction].filter(Boolean).join(' '),
-  )
+  const wordStep = String(scene?.wordStep || '').trim()
+  const currentStep = String(scene?.currentStep || '').trim()
+  const sameStep = !wordStep || !currentStep || wordStep.toLowerCase() === currentStep.toLowerCase()
+    || wordStep.toLowerCase().includes(currentStep.toLowerCase())
+    || currentStep.toLowerCase().includes(wordStep.toLowerCase())
+  const ordered = sameStep
+    ? orderPracticeTargetsForScene(targets, [currentStep, scene?.stepAction].filter(Boolean).join(' '))
+    : []
   const focus = ordered[0]
   const lines = practiceTargetLines(ordered)
-  return [
+  const linesOut = [
     'Hidden vocabulary practice is ACTIVE inside this roleplay.',
     'You stay IN CHARACTER as the other person in THIS scene (dispatcher, clerk, host). You are not a teacher and not a coach.',
     'Every reply is one short in-world turn that moves the current scenario step.',
     'Never leave the scene. Forbidden: "what would you do next", "what did you try", "what changed", "what would make this easier", "and then", lesson recap, or any meta question about the exercise.',
-    'Create a concrete in-world need for one unused target meaning — ask for the missing detail the way that character would (address, order, price), without naming the hidden word.',
-    focus
-      ? `This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`
-      : 'Create an in-world need for the next unused meaning.',
-    'Never say, spell, translate, or leak any unused headword before the learner uses it.',
-    'Do not list targets. Keep persona, place, steps, and goal.',
+  ]
+  if (!sameStep) {
+    linesOut.push('The hidden words belong to an earlier step. Ignore them. Play only the current step. Do not start a side quest for leftover words.')
+  } else if (focus) {
+    linesOut.push('Create an in-world need for one unused target meaning that completes THIS step, without naming the hidden word.')
+    linesOut.push(`This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`)
+    linesOut.push('Never say, spell, translate, or leak any unused headword before the learner uses it.')
+    linesOut.push('Do not list targets. Keep persona, place, and the current step.')
+    if (wordStep) linesOut.push(`These words serve only this step: ${JSON.stringify(wordStep)}.`)
+  } else {
+    linesOut.push('No hidden word fits this step. Play the current step in character and do not invent a vocabulary task.')
+  }
+  return [
+    ...linesOut,
     ...sceneContextLines(scene),
-    'Targets still unused:',
-    ...lines,
+    ...(lines.length ? ['Targets still unused:', ...lines] : []),
   ].join('\n')
 }
 
