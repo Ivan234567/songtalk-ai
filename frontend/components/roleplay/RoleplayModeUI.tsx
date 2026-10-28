@@ -22,6 +22,11 @@ import {
 import { EN_PLAY_MODE_HINTS, defaultEnStressTwistRu } from '@/lib/en-play-mode';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 import { supabase } from '@/lib/supabase';
+import {
+  PracticeWordsInSheet,
+  type PracticeWordsSession,
+} from '@/components/agent/PracticeWordsInSheet';
+import { buildRoleplayPracticeContext } from '@/lib/practice-list-context';
 
 /** Значение фильтра сложности в модалке сценариев */
 type DifficultyFilter = 'all' | 'easy' | 'medium' | 'hard';
@@ -109,6 +114,8 @@ export type RoleplayModeUIProps = {
   /** Текущий экран дебатной модалки */
   debateView?: DebateView;
   onDebateViewChange?: (view: DebateView) => void;
+  /** Слова практики внутри sheet (брифинг) — без отдельной модалки */
+  practiceWords?: PracticeWordsSession | null;
 };
 
 /** Иконки для вкладок режима в bar */
@@ -476,6 +483,7 @@ export function RoleplayModeUI({
   onDebateSetupOpenChange,
   debateView = 'catalog',
   onDebateViewChange,
+  practiceWords = null,
 }: RoleplayModeUIProps) {
   const showSystemCatalog = showSystemCatalogProp ?? hasRoleplaySystemCatalog(learningLanguage);
   const showDebate = learningLanguage !== 'zh';
@@ -748,6 +756,7 @@ export function RoleplayModeUI({
             onCopyToMineSuccess={onCopyToMineSuccess}
             initialScenarioId={initialScenarioId}
             initialPlayMode={initialPlayMode}
+            practiceWords={practiceWords}
           />
         )}
       </>
@@ -1173,11 +1182,13 @@ export function BriefingView({
   onBack,
   onStart,
   initialPlayMode,
+  practiceWords = null,
 }: {
   scenario: RoleplayScenario;
   onBack: () => void;
   onStart: (scenario: RoleplayScenario) => void;
   initialPlayMode?: PlayMode;
+  practiceWords?: PracticeWordsSession | null;
 }) {
   const colors = ROLEPLAY_CATEGORY_COLORS[scenario.category];
   const setting = scenario.settingRu ?? scenario.setting;
@@ -1391,6 +1402,15 @@ export function BriefingView({
             </div>
           </div>
         )}
+        {practiceWords && (
+          <PracticeWordsInSheet
+            {...practiceWords}
+            listContext={buildRoleplayPracticeContext(scenario)}
+            toolsMode="scene"
+            title="Слова в эту сцену"
+            subtitle="Подбор и ИИ — под выбранную сцену. Можно оставить пустым."
+          />
+        )}
         <div
           style={{
             padding: '1rem 1.125rem',
@@ -1472,6 +1492,7 @@ function ScenarioModal({
   onCopyToMineSuccess,
   initialScenarioId,
   initialPlayMode,
+  practiceWords = null,
 }: {
   learningLanguage: LearningLanguage;
   onSelect: (s: RoleplayScenario) => void;
@@ -1480,6 +1501,7 @@ function ScenarioModal({
   onCopyToMineSuccess?: (newScenarioId: string) => void;
   initialScenarioId?: string | null;
   initialPlayMode?: PlayMode;
+  practiceWords?: PracticeWordsSession | null;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState<DifficultyFilter>('all');
@@ -1686,6 +1708,7 @@ function ScenarioModal({
               onBack={() => setBriefingScenario(null)}
               onStart={handleStartDialog}
               initialPlayMode={parsePlayMode(briefingScenario.playMode ?? initialPlayMode)}
+              practiceWords={practiceWords}
             />
           </>
         ) : (

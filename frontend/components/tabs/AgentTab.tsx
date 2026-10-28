@@ -26,6 +26,7 @@ import {
   ChatWordsSoftAsk,
   PracticeWordsGate,
 } from '@/components/agent/PracticeWordsGate';
+import type { PracticeWordsSession } from '@/components/agent/PracticeWordsInSheet';
 import {
   PracticeWordsProgress,
   mapPracticeProgressPayload,
@@ -366,8 +367,7 @@ export function AgentTab() {
   const [chatPracticeProgressCounts, setChatPracticeProgressCounts] = useState<{ used: number; total: number } | null>(null);
   const chatPracticeAssessRequestRef = useRef<string | null>(null);
   const chatPracticeAutoAssessRef = useRef<string | null>(null);
-  const [wordsGateMode, setWordsGateMode] = useState<'roleplay' | 'debate' | 'chat' | null>(null);
-  const [wordsGateSkipped, setWordsGateSkipped] = useState<{ roleplay?: boolean; debate?: boolean }>({});
+  const [wordsGateMode, setWordsGateMode] = useState<'chat' | null>(null);
   const [chatPracticeListId, setChatPracticeListId] = useState<string | null>(null);
   const [preferredPracticeListId, setPreferredPracticeListId] = useState<string | null>(null);
   const chatPracticeListIdRef = useRef<string | null>(null);
@@ -613,6 +613,35 @@ export function AgentTab() {
     return englishCefrLevel;
   }, [agentMode, selectedScenario, debateDifficulty, englishCefrLevel]);
   const englishLevelEditable = agentMode === 'chat';
+  const practiceWordsSession = useMemo<PracticeWordsSession | null>(() => {
+    if (!token) return null;
+    return {
+      apiUrl: getApiUrl(),
+      token,
+      learningLanguage,
+      senses: chatPracticeSenses,
+      onSensesChange: (next) => {
+        const requestId = crypto.randomUUID();
+        setChatPracticeSenses(next);
+        setChatPracticeRequestId(requestId);
+        setChatPracticeRevealed({});
+        chatPracticeSensesRef.current = next;
+        chatPracticeRequestIdRef.current = requestId;
+      },
+      listId: preferredPracticeListId || chatPracticeListId,
+      onListIdChange: (listId) => {
+        setChatPracticeListId(listId);
+        chatPracticeListIdRef.current = listId;
+        if (listId) setPreferredPracticeListId(listId);
+      },
+    };
+  }, [
+    token,
+    learningLanguage,
+    chatPracticeSenses,
+    preferredPracticeListId,
+    chatPracticeListId,
+  ]);
   const practiceListContext = useMemo(() => {
     if (agentMode === 'roleplay' && selectedScenario) {
       return buildRoleplayPracticeContext(selectedScenario);
@@ -718,7 +747,6 @@ export function AgentTab() {
     }
     if (repick) {
       setChatPracticeSenses([]);
-      setWordsGateSkipped({});
     }
 
     if (target.startsWith('rp:')) {
@@ -726,15 +754,14 @@ export function AgentTab() {
       if (scenarioId) {
         setProgressDeepLink({ id: scenarioId, playMode: parsePlayMode(searchParams.get('play_mode')) });
         setAgentMode('roleplay');
-        setWordsGateMode('roleplay');
+        setScenarioModalOpen(true);
         if (learningLanguage !== 'zh') {
           setScenarioView(isUserScenarioId(scenarioId) ? 'my' : 'catalog');
         }
       }
     } else if (target.startsWith('db:') || modeParam === 'debate') {
       setAgentMode('debate');
-      setWordsGateMode('debate');
-      setDebateSetupOpen(modeParam === 'debate' && !target.startsWith('db:'));
+      setDebateSetupOpen(true);
     } else if (modeParam === 'chat' || (!target && listId)) {
       setAgentMode('chat');
       setWordsGateMode('chat');
@@ -4429,17 +4456,7 @@ export function AgentTab() {
                   onSelectScenario={handleSelectScenario}
                   onClearScenario={() => setSelectedScenario(null)}
                   scenarioModalOpen={scenarioModalOpen}
-                  onScenarioModalOpenChange={(open) => {
-                    if (!open) {
-                      setScenarioModalOpen(false);
-                      return;
-                    }
-                    if (chatPracticeSenses.length > 0 || wordsGateSkipped.roleplay) {
-                      setScenarioModalOpen(true);
-                      return;
-                    }
-                    setWordsGateMode('roleplay');
-                  }}
+                  onScenarioModalOpenChange={setScenarioModalOpen}
                   scenarioView={scenarioView}
                   onScenarioViewChange={handleScenarioViewChange}
                   onCopyToMineSuccess={(id) => {
@@ -4449,19 +4466,10 @@ export function AgentTab() {
                   initialScenarioId={learningLanguage !== 'zh' ? progressDeepLink?.id : undefined}
                   initialPlayMode={learningLanguage !== 'zh' ? progressDeepLink?.playMode : undefined}
                   debateSetupOpen={debateSetupOpen}
-                  onDebateSetupOpenChange={(open) => {
-                    if (!open) {
-                      setDebateSetupOpen(false);
-                      return;
-                    }
-                    if (chatPracticeSenses.length > 0 || wordsGateSkipped.debate) {
-                      setDebateSetupOpen(true);
-                      return;
-                    }
-                    setWordsGateMode('debate');
-                  }}
+                  onDebateSetupOpenChange={setDebateSetupOpen}
                   debateView={debateView}
                   onDebateViewChange={handleDebateViewChange}
+                  practiceWords={practiceWordsSession}
                 />
                 {learningLanguage === 'zh' && scenarioModalOpen && (
                   <ZhScenariosErrorBoundary onClose={closeScenarioCatalog}>
@@ -4470,6 +4478,7 @@ export function AgentTab() {
                       defaultHsk={chineseHskLevel}
                       initialScenarioId={progressDeepLink?.id}
                       initialPlayMode={progressDeepLink?.playMode}
+                      practiceWords={practiceWordsSession}
                       onSelectScenario={(s) => {
                         handleSelectScenario(s);
                         setScenarioModalOpen(false);
@@ -4490,6 +4499,7 @@ export function AgentTab() {
                     highlightedScenarioId={highlightedUserScenarioId}
                     initialBriefingId={progressDeepLink?.id}
                     initialPlayMode={progressDeepLink?.playMode}
+                    practiceWords={practiceWordsSession}
                     onSelectScenario={(s) => {
                       handleSelectScenario(s);
                       setScenarioModalOpen(false);
@@ -6977,6 +6987,7 @@ export function AgentTab() {
           learningLanguage={learningLanguage}
           userId={userId}
           view={guardCatalogView(debateView)}
+          practiceWords={practiceWordsSession}
           onStart={handleStartDebate}
           onClose={() => {
             if (!debateStarted) {
@@ -6986,43 +6997,22 @@ export function AgentTab() {
           }}
         />
       )}
-      {wordsGateMode && token && (
+      {wordsGateMode === 'chat' && token && (
         <PracticeWordsGate
           apiUrl={getApiUrl()}
           token={token}
           learningLanguage={learningLanguage}
-          mode={wordsGateMode}
+          mode="chat"
+          phase="bound"
           initialSenses={chatPracticeSenses}
-          preferredListId={preferredPracticeListId}
-          listContext={(() => {
-            if (wordsGateMode === 'roleplay' && selectedScenario) {
-              return {
-                ...(buildRoleplayPracticeContext(selectedScenario) || buildModePracticeContext('roleplay')),
-                level: learningLanguage === 'zh'
-                  ? `HSK${chineseHskLevel}`
-                  : (selectedScenario.level || selectedScenario.difficulty || englishCefrLevel),
-              };
-            }
-            if (wordsGateMode === 'debate' && debateTopic) {
-              return {
-                ...(buildDebatePracticeContext({
-                  topic: debateTopic,
-                  userPosition: debateUserPosition,
-                  aiPosition: debateAIPosition,
-                  difficulty: debateDifficulty,
-                  origin: debateTopicSource === 'custom' ? 'user' : 'system',
-                }) || buildModePracticeContext('debate')),
-                level: debateDifficulty || englishCefrLevel,
-              };
-            }
-            return {
-              ...buildModePracticeContext(wordsGateMode),
-              level: learningLanguage === 'zh' ? `HSK${chineseHskLevel}` : englishCefrLevel,
-            };
-          })()}
+          preferredListId={preferredPracticeListId || chatPracticeListId}
+          listContext={{
+            ...buildModePracticeContext('chat'),
+            level: learningLanguage === 'zh' ? `HSK${chineseHskLevel}` : englishCefrLevel,
+          }}
           onContinue={(senses, meta) => {
             const requestId = crypto.randomUUID();
-            const listId = meta?.listId || preferredPracticeListId;
+            const listId = meta?.listId || preferredPracticeListId || chatPracticeListId;
             setChatPracticeSenses(senses);
             setChatPracticeRequestId(requestId);
             setChatPracticeListId(listId || null);
@@ -7030,47 +7020,27 @@ export function AgentTab() {
             chatPracticeSensesRef.current = senses;
             chatPracticeRequestIdRef.current = requestId;
             chatPracticeListIdRef.current = listId || null;
-            const gate = wordsGateMode;
             setWordsGateMode(null);
             setPreferredPracticeListId(null);
             setChatInviteDismissed(true);
             setChatSoftAskDone(true);
-            if (gate === 'roleplay') {
-              if (!selectedScenario) setScenarioModalOpen(true);
-            } else if (gate === 'debate') {
-              if (!debateStarted) setDebateSetupOpen(true);
-            } else if (startMicAfterWordsRef.current) {
+            if (startMicAfterWordsRef.current) {
               startMicAfterWordsRef.current = false;
               void startRecording();
             }
           }}
           onSkip={() => {
-            const gate = wordsGateMode;
             setWordsGateMode(null);
-            if (gate === 'roleplay') {
-              setWordsGateSkipped((prev) => ({ ...prev, roleplay: true }));
-              setScenarioModalOpen(true);
-            } else if (gate === 'debate') {
-              setWordsGateSkipped((prev) => ({ ...prev, debate: true }));
-              setDebateSetupOpen(true);
-            } else {
-              setChatSoftAskDone(true);
-              setChatInviteDismissed(true);
-              if (startMicAfterWordsRef.current) {
-                startMicAfterWordsRef.current = false;
-                void startRecording();
-              }
+            setChatSoftAskDone(true);
+            setChatInviteDismissed(true);
+            if (startMicAfterWordsRef.current) {
+              startMicAfterWordsRef.current = false;
+              void startRecording();
             }
           }}
           onClose={() => {
-            const gate = wordsGateMode;
             setWordsGateMode(null);
             startMicAfterWordsRef.current = false;
-            if (gate === 'roleplay' || gate === 'debate') {
-              setAgentMode('chat');
-              setScenarioModalOpen(false);
-              setDebateSetupOpen(false);
-            }
           }}
         />
       )}

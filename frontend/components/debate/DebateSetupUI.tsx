@@ -48,6 +48,7 @@ type DebateSetupUIProps = {
   userId?: string | null;
   /** Внешний экран: 'catalog' | 'create' | 'my' — управляется через dropdown */
   view?: 'catalog' | 'create' | 'my';
+  practiceWords?: import('@/components/agent/PracticeWordsInSheet').PracticeWordsSession | null;
 };
 
 type TopicView = 'list' | 'custom' | 'my';
@@ -185,7 +186,7 @@ const PROFANITY_OPTIONS: Array<{ value: DebateProfanityIntensity; label: string 
   { value: 'hard', label: 'Жестко' },
 ];
 
-export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view: externalView }: DebateSetupUIProps) {
+export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view: externalView, practiceWords = null }: DebateSetupUIProps) {
   const showSystemCatalog = hasEnglishSystemCatalog(learningLanguage);
   const [setupStep, setSetupStep] = useState<SetupStep>('topic');
   const mapExternalView = (v?: 'catalog' | 'create' | 'my'): TopicView => {
@@ -1197,6 +1198,8 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
             onBack={handleBriefingBack}
             onStart={handleBriefingStart}
             onEditStep={handleBriefingEditStep}
+            practiceWords={practiceWords}
+            topicOrigin={topicView === 'my' || topicView === 'custom' ? 'user' : 'system'}
           />
         </div>
       </div>

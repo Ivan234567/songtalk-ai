@@ -13,12 +13,15 @@ import styles from './practice-words-gate.module.css';
 export { PRACTICE_WORDS_LIMIT };
 
 type GateMode = 'roleplay' | 'debate' | 'chat';
+export type WordsGatePhase = 'preselect' | 'bound';
 
 type PracticeWordsGateProps = {
   apiUrl: string;
   token: string;
   learningLanguage: LearningLanguage;
   mode: GateMode;
+  /** preselect — до сцены/темы; bound — после конкретного модуля */
+  phase?: WordsGatePhase;
   initialSenses?: ChatPracticeSense[];
   listContext?: PracticeListContext | null;
   preferredListId?: string | null;
@@ -27,18 +30,41 @@ type PracticeWordsGateProps = {
   onClose?: () => void;
 };
 
-const COPY: Record<GateMode, { eyebrow: string; title: string; subtitle: string; continueLabel: string }> = {
+type GateCopy = { eyebrow: string; title: string; subtitle: string; continueLabel: string };
+
+const PRESELECT_COPY: Record<GateMode, GateCopy> = {
   roleplay: {
     eyebrow: 'Перед сценой',
     title: 'Возьми слова в сцену',
-    subtitle: 'До 5 слов, которые стыкуются со сценой. Due без fit лучше в карточках, не в диалоге. Можно без слов.',
+    subtitle: 'Выбери до 5 слов из словаря. Точный подбор под сцену — после выбора сценария. Можно без слов.',
     continueLabel: 'Дальше к сценариям',
   },
   debate: {
     eyebrow: 'Перед дебатом',
     title: 'Возьми слова в спор',
-    subtitle: 'До 5 слов под тему спора. Слова вне темы не тащим ради SRS. Можно без слов.',
+    subtitle: 'Выбери до 5 слов из словаря. Подбор под тему — после выбора дебата. Можно без слов.',
     continueLabel: 'Дальше к темам',
+  },
+  chat: {
+    eyebrow: 'Свободный разговор',
+    title: 'Слова для этого разговора',
+    subtitle: 'Список → до 5 слов. ИИ поможет сказать их в разговоре.',
+    continueLabel: 'Готово',
+  },
+};
+
+const BOUND_COPY: Record<GateMode, GateCopy> = {
+  roleplay: {
+    eyebrow: 'Сцена выбрана',
+    title: 'Слова для этой сцены',
+    subtitle: 'Можно пересобрать пятёрку под сцену, собрать список ИИ или оставить как есть.',
+    continueLabel: 'В сцену',
+  },
+  debate: {
+    eyebrow: 'Тема выбрана',
+    title: 'Слова для этого дебата',
+    subtitle: 'Можно пересобрать пятёрку под тему, собрать список ИИ или оставить как есть.',
+    continueLabel: 'В дебат',
   },
   chat: {
     eyebrow: 'Свободный разговор',
@@ -53,6 +79,7 @@ export function PracticeWordsGate({
   token,
   learningLanguage,
   mode,
+  phase = 'bound',
   initialSenses = [],
   listContext = null,
   preferredListId = null,
@@ -60,11 +87,18 @@ export function PracticeWordsGate({
   onSkip,
   onClose,
 }: PracticeWordsGateProps) {
-  const copy = COPY[mode];
+  const isPreselect = phase === 'preselect';
+  const copy = isPreselect ? PRESELECT_COPY[mode] : BOUND_COPY[mode];
   const [draft, setDraft] = useState<ChatPracticeSense[]>(initialSenses);
   const [activeListId, setActiveListId] = useState<string | null>(preferredListId);
-  const effectiveContext = listContext || buildModePracticeContext(mode);
-  const bindingLabel = effectiveContext.binding?.label;
+  const baseContext = listContext || buildModePracticeContext(mode);
+  // До сцены не кормим AI/fit фейковым binding — оставляем только мягкий ranking по тексту.
+  const effectiveContext: PracticeListContext = isPreselect
+    ? { ...baseContext, binding: null }
+    : baseContext;
+  const bindingLabel = !isPreselect ? effectiveContext.binding?.label : null;
+  const toolsMode = isPreselect ? 'browse' : 'scene';
+  const canContinueEmpty = !isPreselect || mode === 'chat';
 
   return (
     <div className={styles.backdrop} role="presentation" onClick={onClose || onSkip}>
@@ -100,6 +134,7 @@ export function PracticeWordsGate({
             limit={PRACTICE_WORDS_LIMIT}
             listContext={effectiveContext}
             preferredListId={preferredListId}
+            toolsMode={toolsMode}
             onActiveListChange={(list) => setActiveListId(list?.id || null)}
           />
         </div>
@@ -111,7 +146,7 @@ export function PracticeWordsGate({
           <button
             type="button"
             className={styles.primary}
-            disabled={draft.length < 1}
+            disabled={!canContinueEmpty && draft.length < 1}
             onClick={() => onContinue(draft.slice(0, PRACTICE_WORDS_LIMIT), { listId: activeListId })}
           >
             {copy.continueLabel}

@@ -41,6 +41,11 @@ type PracticeWordListPickerProps = {
   listContext?: PracticeListContext | null;
   preferredListId?: string | null;
   onActiveListChange?: (list: VocabListCard | null) => void;
+  /**
+   * browse — до выбора сцены/темы: только списки и ручной выбор.
+   * scene — есть конкретный модуль: AI-список, fit-пятёрка, привязка.
+   */
+  toolsMode?: 'browse' | 'scene';
 };
 
 function getApiUrl(apiUrl: string) {
@@ -120,9 +125,12 @@ export function PracticeWordListPicker({
   listContext = null,
   preferredListId = null,
   onActiveListChange,
+  toolsMode = 'scene',
 }: PracticeWordListPickerProps) {
   const base = getApiUrl(apiUrl);
-  const binding = listContext?.binding || null;
+  const sceneTools = toolsMode === 'scene';
+  const binding = sceneTools ? (listContext?.binding || null) : null;
+  const themeTextForPicks = sceneTools ? (listContext?.text || '') : '';
   const [view, setView] = useState<'lists' | 'words'>('lists');
   const [lists, setLists] = useState<VocabListCard[]>([]);
   const [boundLists, setBoundLists] = useState<VocabListCard[]>([]);
@@ -220,7 +228,7 @@ export function PracticeWordListPicker({
       body: JSON.stringify({
         limit,
         exclude_sense_ids: options?.excludeSenseIds || [],
-        theme_text: listContext?.text || '',
+        theme_text: themeTextForPicks,
       }),
     });
     const data = await resp.json().catch(() => ({}));
@@ -272,8 +280,10 @@ export function PracticeWordListPicker({
         const wordList = [...dedup.values()];
         setWords(wordList);
         setWordsState('idle');
+        // Авто-пятёрка с fit — только когда сцена/тема уже известны.
         if (
-          wordList.length > 0
+          sceneTools
+          && wordList.length > 0
           && selected.length === 0
           && autoPickedListRef.current !== list.id
         ) {
@@ -616,7 +626,7 @@ export function PracticeWordListPicker({
 
       {view === 'lists' && (
         <>
-          {binding && (
+          {sceneTools && binding && (
             <div className={styles.createBound}>
               <button
                 type="button"
@@ -643,7 +653,7 @@ export function PracticeWordListPicker({
               {createError && <p className={styles.error}>{createError}</p>}
             </div>
           )}
-          {aiPreview && (
+          {sceneTools && aiPreview && (
             <div className={styles.previewPanel}>
               <p className={styles.previewTitle}>Проверьте список до сохранения</p>
               <p className={styles.previewLead}>
@@ -741,10 +751,10 @@ export function PracticeWordListPicker({
       {view === 'words' && (
         <>
           {activeList && <p className={styles.listHeading}>{activeList.title}</p>}
-          {pickReason && selected.length > 0 && (
+          {sceneTools && pickReason && selected.length > 0 && (
             <p className={styles.whyLine}>{pickReason}</p>
           )}
-          {activeList && (
+          {activeList && sceneTools && (
             <div className={styles.sessionActions}>
               <button
                 type="button"
@@ -752,7 +762,13 @@ export function PracticeWordListPicker({
                 disabled={pickingSession || wordsState === 'loading'}
                 onClick={() => void pickSessionWords()}
               >
-                {pickingSession ? 'Подбираем…' : 'Другие 5 для сессии'}
+                {pickingSession
+                  ? 'Подбираем…'
+                  : binding?.kind === 'debate'
+                    ? 'Другие 5 под эту тему'
+                    : binding?.kind === 'chat'
+                      ? 'Другие 5 для разговора'
+                      : 'Другие 5 под эту сцену'}
               </button>
               {binding && (
                 <button
@@ -771,12 +787,12 @@ export function PracticeWordListPicker({
           {wordsState === 'error' && <p className={styles.error}>Не удалось открыть список</p>}
           {wordsState === 'idle' && visibleWords.length === 0 && (
             <p className={styles.muted}>
-              {binding
+              {sceneTools && binding
                 ? 'Список пуст — соберите слова ИИ или добавьте вручную в словаре'
                 : 'В этом списке нет слов с переводом'}
             </p>
           )}
-          {wordsState === 'idle' && visibleWords.length === 0 && binding && (
+          {wordsState === 'idle' && visibleWords.length === 0 && sceneTools && binding && (
             <button
               type="button"
               className={styles.aiBoundBtn}

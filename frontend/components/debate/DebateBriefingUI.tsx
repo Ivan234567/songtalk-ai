@@ -9,6 +9,11 @@ import type {
   DebateSlangMode,
   DebateWhoStarts,
 } from '@/lib/debate';
+import {
+  PracticeWordsInSheet,
+  type PracticeWordsSession,
+} from '@/components/agent/PracticeWordsInSheet';
+import { buildDebatePracticeContext } from '@/lib/practice-list-context';
 
 type BriefingEditStep = 'topic' | 'position';
 
@@ -25,6 +30,8 @@ type DebateBriefingUIProps = {
   onStart: () => void;
   /** Переход к конкретному шагу для редактирования */
   onEditStep?: (step: BriefingEditStep) => void;
+  practiceWords?: PracticeWordsSession | null;
+  topicOrigin?: 'system' | 'user';
 };
 
 const debateColors = {
@@ -134,6 +141,8 @@ export function DebateBriefingUI({
   onBack,
   onStart,
   onEditStep,
+  practiceWords = null,
+  topicOrigin = 'system',
 }: DebateBriefingUIProps) {
   const userPositionText = userPosition === 'for' ? 'За' : 'Против';
   const aiPositionText = aiPosition === 'for' ? 'За' : 'Против';
@@ -305,6 +314,21 @@ export function DebateBriefingUI({
       </div>
 
       <div style={{ gridColumn: 2, gridRow: '2 / 4', display: 'flex', flexDirection: 'column', gap: '1.25rem', alignSelf: 'start', paddingTop: '0.25rem' }}>
+        {practiceWords && (
+          <PracticeWordsInSheet
+            {...practiceWords}
+            listContext={buildDebatePracticeContext({
+              topic: topicRu || topic,
+              userPosition,
+              aiPosition,
+              difficulty,
+              origin: topicOrigin,
+            })}
+            toolsMode="scene"
+            title="Слова в этот дебат"
+            subtitle="До 5 из словаря или ИИ под тему. Можно без слов."
+          />
+        )}
         <button
           type="button"
           onClick={onStart}

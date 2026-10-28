@@ -17,6 +17,11 @@ import {
   type ZhScenario,
   type ZhStarter,
 } from '@/lib/zh-scenarios';
+import {
+  PracticeWordsInSheet,
+  type PracticeWordsSession,
+} from '@/components/agent/PracticeWordsInSheet';
+import { buildRoleplayPracticeContext } from '@/lib/practice-list-context';
 
 const btnPrimary: React.CSSProperties = {
   padding: '0.75rem 1.5rem',
@@ -90,6 +95,7 @@ type ZhScenarioBriefingProps = {
   vocabBusy?: boolean;
   vocabMessage?: string | null;
   initialPlayMode?: ZhPlayMode;
+  practiceWords?: PracticeWordsSession | null;
 };
 
 export function ZhScenarioBriefing({
@@ -101,6 +107,7 @@ export function ZhScenarioBriefing({
   vocabBusy,
   vocabMessage,
   initialPlayMode,
+  practiceWords = null,
 }: ZhScenarioBriefingProps) {
   const isPreview = variant === 'preview';
   const [starter, setStarter] = useState<ZhStarter>(scenario.starter || 'ai');
@@ -361,6 +368,18 @@ export function ZhScenarioBriefing({
           </p>
         )}
       </div>
+
+      {!isPreview && practiceWords && (
+        <PracticeWordsInSheet
+          {...practiceWords}
+          listContext={buildRoleplayPracticeContext(
+            zhScenarioToRoleplay(scenario, effectiveStarter, { playMode }),
+          )}
+          toolsMode="scene"
+          title="Слова в эту сцену"
+          subtitle="До 5 из словаря или ИИ-список под эту сцену. Можно без слов."
+        />
+      )}
 
       {!isPreview && onStart && (
         <button

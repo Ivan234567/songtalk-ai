@@ -34,6 +34,7 @@ type ZhScenariosUIProps = {
   onCopyToMineSuccess?: (newScenarioId: string) => void;
   initialScenarioId?: string | null;
   initialPlayMode?: ZhPlayMode;
+  practiceWords?: import('@/components/agent/PracticeWordsInSheet').PracticeWordsSession | null;
 };
 
 type ZhScenariosErrorBoundaryProps = {
@@ -374,6 +375,7 @@ export function ZhScenariosUI({
   onCopyToMineSuccess,
   initialScenarioId,
   initialPlayMode,
+  practiceWords = null,
 }: ZhScenariosUIProps) {
   const [view, setView] = useState<'catalog' | 'create' | 'my'>(
     initialView === 'create' || initialView === 'catalog' ? initialView : 'my'
@@ -820,6 +822,7 @@ export function ZhScenariosUI({
             onAddToDictionary={briefing.vocabulary?.length ? () => handleAddVocab(briefing.id) : undefined}
             vocabBusy={vocabBusyId === briefing.id}
             vocabMessage={vocabMessage?.id === briefing.id ? vocabMessage.text : null}
+            practiceWords={practiceWords}
           />
         ) : draft ? (
           <ZhScenarioConstructor

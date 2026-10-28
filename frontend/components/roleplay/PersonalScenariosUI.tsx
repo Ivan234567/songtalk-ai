@@ -18,6 +18,11 @@ import { FieldAiButton, fieldFlashStyle } from '@/components/roleplay/FieldAiBut
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { LevelRequiredNotice } from '@/components/ui/HskLevelPicker';
 import { BriefingView } from './RoleplayModeUI';
+import {
+  PracticeWordsInSheet,
+  type PracticeWordsSession,
+} from '@/components/agent/PracticeWordsInSheet';
+import { buildRoleplayPracticeContext } from '@/lib/practice-list-context';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 import { parsePlayMode, type PlayMode } from '@/lib/play-mode';
 import { SpeechVoicePicker } from '@/components/roleplay/SpeechVoicePicker';
@@ -330,6 +335,7 @@ export type PersonalScenariosUIProps = {
   highlightedScenarioId?: string | null;
   initialBriefingId?: string | null;
   initialPlayMode?: PlayMode;
+  practiceWords?: PracticeWordsSession | null;
 };
 
 /** Превращает UserScenario в RoleplayScenario для передачи в AgentTab */
@@ -645,6 +651,7 @@ export function PersonalScenariosUI({
   highlightedScenarioId,
   initialBriefingId,
   initialPlayMode,
+  practiceWords = null,
 }: PersonalScenariosUIProps) {
   const [view, setView] = useState<'create' | 'my' | 'edit'>(initialView);
 
@@ -949,7 +956,7 @@ export function PersonalScenariosUI({
     setSaveLoading(true);
     setSaveError(null);
     try {
-      await createUserScenario({
+      const created = await createUserScenario({
         title: editTitle.trim(),
         level: generated.level,
         payload: generated.payload,
@@ -968,6 +975,8 @@ export function PersonalScenariosUI({
       setCreateProfanityIntensity('light');
       setView('my');
       loadList();
+      // Сразу брифинг в том же sheet — слова/AI под уже сохранённую сцену.
+      setBriefingScenario(created);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
@@ -1548,8 +1557,25 @@ export function PersonalScenariosUI({
                     </button>
                   </div>
                 </div>
-                <div style={{ borderRadius: 10, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', padding: '0.5rem', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', width: '100%' }}>
+                <div style={{ borderRadius: 10, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', padding: '0.5rem', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.65rem', width: '100%' }}>
                   <BriefingPreview payload={generated.payload} title="Брифинг перед стартом" compact />
+                  {practiceWords && (
+                    <PracticeWordsInSheet
+                      {...practiceWords}
+                      listContext={buildRoleplayPracticeContext({
+                        title: editTitle.trim() || 'Новый сценарий',
+                        goalRu: typeof generated.payload.goalRu === 'string' ? generated.payload.goalRu : null,
+                        goal: typeof generated.payload.goal === 'string' ? generated.payload.goal : null,
+                        settingRu: typeof generated.payload.settingRu === 'string' ? generated.payload.settingRu : null,
+                        scenarioTextRu: typeof generated.payload.scenarioTextRu === 'string' ? generated.payload.scenarioTextRu : null,
+                        yourRoleRu: typeof generated.payload.yourRoleRu === 'string' ? generated.payload.yourRoleRu : null,
+                        steps: Array.isArray(generated.payload.steps) ? generated.payload.steps as Array<{ titleRu?: string | null; titleEn?: string | null }> : null,
+                      })}
+                      toolsMode="browse"
+                      title="Слова заранее"
+                      subtitle="Можно отметить до 5 из словаря. ИИ-список и fit — после сохранения, на экране перед диалогом."
+                    />
+                  )}
                 </div>
               </div>
             </>
@@ -2095,6 +2121,7 @@ export function PersonalScenariosUI({
           onBack={() => setBriefingScenario(null)}
           onStart={handleStartFromBriefing}
           initialPlayMode={parsePlayMode(initialPlayMode)}
+          practiceWords={practiceWords}
         />
       </div>
     );
