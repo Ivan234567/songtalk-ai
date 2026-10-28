@@ -68,6 +68,7 @@ function sceneContextLines(scene) {
   if (!scene || typeof scene !== 'object') return []
   const lines = []
   if (scene.title) lines.push(`Scene title: ${JSON.stringify(scene.title)}`)
+  if (scene.setting) lines.push(`Place: ${JSON.stringify(scene.setting)}`)
   if (scene.goal) lines.push(`Scene goal: ${JSON.stringify(scene.goal)}`)
   if (scene.topic) lines.push(`Debate topic: ${JSON.stringify(scene.topic)}`)
   if (scene.userPosition) lines.push(`Learner position: ${JSON.stringify(scene.userPosition)}`)
@@ -124,16 +125,16 @@ export function buildRoleplayPracticeInstruction(targets, scene = null) {
   const focus = ordered[0]
   const lines = practiceTargetLines(ordered)
   return [
-    'Hidden vocabulary practice is ACTIVE inside this roleplay — weave meanings into THIS scene and its scenario steps.',
-    'Each reply must create a concrete need for the learner to say one unused target themselves.',
+    'Hidden vocabulary practice is ACTIVE inside this roleplay.',
+    'You stay IN CHARACTER as the other person in THIS scene (dispatcher, clerk, host). You are not a teacher and not a coach.',
+    'Every reply is one short in-world turn that moves the current scenario step.',
+    'Never leave the scene. Forbidden: "what would you do next", "what did you try", "what changed", "what would make this easier", "and then", lesson recap, or any meta question about the exercise.',
+    'Create a concrete in-world need for one unused target meaning — ask for the missing detail the way that character would (address, order, price), without naming the hidden word.',
     focus
       ? `This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`
-      : 'Create a situation for the next unused meaning.',
-    'Use the current scenario step: ask for that thing, refuse until they name it, or make the goal depend on it.',
-    'Never say, spell, translate, or leak any unused headword before the learner uses it. Do not say the headword aloud.',
-    'Do not list targets. Keep persona, steps, and goal.',
-    'Scenario lesson vocabulary stays separate from these hidden targets.',
-    'Advance the scene every turn — never stall with a generic filler.',
+      : 'Create an in-world need for the next unused meaning.',
+    'Never say, spell, translate, or leak any unused headword before the learner uses it.',
+    'Do not list targets. Keep persona, place, steps, and goal.',
     ...sceneContextLines(scene),
     'Targets still unused:',
     ...lines,

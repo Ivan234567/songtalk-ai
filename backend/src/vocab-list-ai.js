@@ -1,7 +1,8 @@
 import crypto from 'node:crypto'
 
 const MIN_LIST = 8
-const MAX_LIST = 16
+const MAX_LIST = 20
+const DEFAULT_LIST = 20
 const THEME_MIN_RATIO = 0.4
 
 const STOP_WORDS = new Set([
@@ -207,13 +208,13 @@ async function callGenerateOnce({
               ? 'This is a FREE CONVERSATION: everyday useful words the learner can say in open dialogue.'
               : 'This is a ROLEPLAY/DIALOGUE scene: prefer words the learner would naturally need to say in the scene steps.',
           'No proper names, no duplicates, no junk, no transliteration as gloss, no placeholder words.',
-          `Return between ${Math.max(MIN_LIST, targetCount - 2)} and ${targetCount} items.`,
+          `Return exactly ${targetCount} items. Do not stop early.`,
           'Every item must fit the provided Title/Goal/Topic/Context.',
         ].join(' '),
       },
       { role: 'user', content: profile || 'Everyday conversation practice.' },
     ],
-    max_tokens: 1100,
+    max_tokens: 2200,
     temperature: 0.35,
     metadata: { vocabulary_list_generate_bound: true, mode },
   })
@@ -237,7 +238,7 @@ export function createGenerateBoundListEntries(deps) {
     topic = '',
     steps = '',
     themeText = '',
-    count = 12,
+    count = DEFAULT_LIST,
   }) {
     const lang = language === 'zh' ? 'zh' : 'en'
     // D4: для ZH дебаты не используем как режим генерации
@@ -246,7 +247,7 @@ export function createGenerateBoundListEntries(deps) {
       practiceMode = 'roleplay'
     }
 
-    const targetCount = Math.max(MIN_LIST, Math.min(MAX_LIST, Number(count) || 12))
+    const targetCount = Math.max(MIN_LIST, Math.min(MAX_LIST, Number(count) || DEFAULT_LIST))
     const levelHint = String(level || '').trim() || (lang === 'zh' ? 'HSK3' : 'B1')
     const isDebate = practiceMode === 'debate'
     const themeBlob = [title, goal, topic, steps, themeText].filter(Boolean).join(' ')

@@ -50,6 +50,7 @@ export function RoleplayScenarioProgress({
   boxed = false,
   vocabPeeked = false,
   onPeekVocab,
+  practiceWords = [],
 }: {
   scenario: RoleplayScenario;
   completedStepIds: string[];
@@ -62,6 +63,7 @@ export function RoleplayScenarioProgress({
   boxed?: boolean;
   vocabPeeked?: boolean;
   onPeekVocab?: () => void;
+  practiceWords?: Array<{ id: string; headword: string; used?: boolean }>;
 }) {
   const policy =
     learningLanguage === 'zh'
@@ -166,6 +168,28 @@ export function RoleplayScenarioProgress({
                 <span>{label}</span>
               </div>
             )))}
+
+      {practiceWords.length > 0 && (stepsOpen || showGoalChecklist || !hasSteps) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: '0.55rem' }}>
+          {practiceWords.map((word) => (
+            <span
+              key={word.id}
+              style={{
+                fontSize: '0.75rem',
+                lineHeight: 1.2,
+                padding: '0.18rem 0.45rem',
+                borderRadius: 999,
+                border: word.used ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid var(--sidebar-border)',
+                background: word.used ? 'rgba(34, 197, 94, 0.12)' : 'transparent',
+                color: 'var(--sidebar-text)',
+                opacity: word.used ? 1 : 0.75,
+              }}
+            >
+              {word.used ? '✓ ' : ''}{word.headword}
+            </span>
+          ))}
+        </div>
+      )}
 
       {canPeekVocab && (
         <button

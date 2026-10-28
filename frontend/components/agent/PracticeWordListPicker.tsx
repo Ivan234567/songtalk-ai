@@ -52,6 +52,13 @@ function getApiUrl(apiUrl: string) {
   return apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
 }
 
+const LISTS_CACHE_MS = 20000;
+const listsCache = new Map<string, { at: number; items: VocabListCard[] }>();
+
+function listsCacheKey(base: string, token: string, language: string) {
+  return `${base}|${language}|${token.slice(0, 16)}`;
+}
+
 function wordCountLabel(count: number) {
   if (count === 1) return 'слово';
   if (count >= 2 && count <= 4) return 'слова';
@@ -156,42 +163,33 @@ export function PracticeWordListPicker({
   const preferredOpenedRef = React.useRef<string | null>(null);
   const autoPickedListRef = React.useRef<string | null>(null);
 
-  const reloadLists = React.useCallback(async () => {
-    setListsState('loading');
+  const reloadLists = React.useCallback(async (options?: { force?: boolean }) => {
+    const cacheKey = listsCacheKey(base, token, learningLanguage);
+    const cached = listsCache.get(cacheKey);
+    if (!options?.force && cached && Date.now() - cached.at < LISTS_CACHE_MS) {
+      setLists(cached.items);
+      setBoundLists(binding
+        ? cached.items.filter((item) => item.bound_kind === binding.kind && item.bound_ref === binding.ref)
+        : []);
+      setListsState('idle');
+      return cached.items;
+    }
+    setListsState((current) => (current === 'idle' && cached ? 'idle' : 'loading'));
     setCreateError(null);
     try {
-      const [allResp, boundResp] = await Promise.all([
-        fetch(`${base}/api/vocabulary/lists`, {
-          headers: buildAgentAuthHeaders(token, learningLanguage),
-        }),
-        binding
-          ? fetch(
-            `${base}/api/vocabulary/lists?bound_kind=${encodeURIComponent(binding.kind)}&bound_ref=${encodeURIComponent(binding.ref)}`,
-            { headers: buildAgentAuthHeaders(token, learningLanguage) },
-          )
-          : Promise.resolve(null),
-      ]);
+      const allResp = await fetch(`${base}/api/vocabulary/lists`, {
+        headers: buildAgentAuthHeaders(token, learningLanguage),
+      });
       const allData = await allResp.json().catch(() => ({}));
       if (!allResp.ok || !Array.isArray(allData?.items)) throw new Error('lists');
       const mappedAll = (allData.items as VocabListCard[])
         .map((item) => mapListItem(item))
         .filter(Boolean) as VocabListCard[];
+      listsCache.set(cacheKey, { at: Date.now(), items: mappedAll });
       setLists(mappedAll);
-
-      if (boundResp) {
-        const boundData = await boundResp.json().catch(() => ({}));
-        if (boundResp.ok && Array.isArray(boundData?.items)) {
-          setBoundLists(
-            (boundData.items as VocabListCard[])
-              .map((item) => mapListItem(item))
-              .filter(Boolean) as VocabListCard[],
-          );
-        } else {
-          setBoundLists([]);
-        }
-      } else {
-        setBoundLists([]);
-      }
+      setBoundLists(binding
+        ? mappedAll.filter((item) => item.bound_kind === binding.kind && item.bound_ref === binding.ref)
+        : []);
       setListsState('idle');
       return mappedAll;
     } catch {
@@ -373,6 +371,7 @@ export function PracticeWordListPicker({
           title: binding.label,
           theme_text: listContext?.text || '',
           level: listContext?.level || '',
+          count: 20,
           replace_existing: Boolean(options?.replaceExisting),
         }),
       });
@@ -470,8 +469,8 @@ export function PracticeWordListPicker({
         }
         const next = mapListItem(data.item);
         setAiPreview(null);
-        await reloadLists();
         if (next) openList(next);
+        void reloadLists({ force: true });
         return;
       }
       if (!binding) throw new Error('Нет привязки к модулю');
@@ -503,8 +502,8 @@ export function PracticeWordListPicker({
       }
       const created = mapListItem(data.item);
       setAiPreview(null);
-      await reloadLists();
       if (created) openList(created);
+      void reloadLists({ force: true });
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : 'Не удалось сохранить список');
     } finally {
@@ -657,7 +656,7 @@ export function PracticeWordListPicker({
             <div className={styles.previewPanel}>
               <p className={styles.previewTitle}>Проверьте список до сохранения</p>
               <p className={styles.previewLead}>
-                Списано с баланса. Мусорные слова отфильтрованы. Подтвердите — тогда попадёт в словарь.
+                Подтвердите — тогда слова попадут в словарь.
               </p>
               <p className={styles.previewName}>{aiPreview.title}</p>
               <ul className={styles.previewList}>
@@ -696,7 +695,7 @@ export function PracticeWordListPicker({
                     else void generateAiList({ replaceExisting: again.replaceExisting });
                   }}
                 >
-                  Сгенерировать снова (ещё списание)
+                  Сгенерировать снова
                 </button>
               </div>
               {createError && <p className={styles.error}>{createError}</p>}

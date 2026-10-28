@@ -1664,6 +1664,7 @@ app.post('/api/agent/chat', async (req, res) => {
         const firstOpenStep = Array.isArray(steps) && steps.length > 0 ? steps[0] : null
         const practiceScene = {
           title: typeof rawScene?.title === 'string' ? rawScene.title.trim() : '',
+          setting: typeof rawScene?.setting === 'string' ? rawScene.setting.trim() : '',
           goal: typeof rawScene?.goal === 'string' ? rawScene.goal.trim() : '',
           topic: typeof rawScene?.topic === 'string' ? rawScene.topic.trim() : '',
           userPosition: typeof rawScene?.userPosition === 'string' ? rawScene.userPosition.trim() : '',

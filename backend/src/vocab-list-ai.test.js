@@ -109,6 +109,7 @@ test('генерация списка под сцену возвращает tit
     goal: 'Rent a flat',
     themeText: 'rent apartment landlord lease deposit tenant',
     level: 'A2',
+    count: 8,
   })
   assert.equal(result.title, 'К аренде квартиры')
   assert.ok(result.items.length >= 6)
@@ -157,6 +158,7 @@ test('ZH не использует debate-режим внутри генерат
     userId: 'user',
     language: 'zh',
     mode: 'debate',
+    count: 8,
   })
   assert.equal(seenMode, 'roleplay')
   assert.ok(result.items.length >= 6)

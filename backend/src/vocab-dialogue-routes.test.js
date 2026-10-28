@@ -244,8 +244,8 @@ test('инструкция чата содержит форму из базы и
     { title: 'At the market', goal: 'Buy fruit', currentStep: 'Ask for fruit' },
   )
   assert.match(roleplay, /roleplay/)
-  assert.match(roleplay, /Do not say/)
-  assert.match(roleplay, /scenario steps/)
+  assert.match(roleplay, /IN CHARACTER/)
+  assert.match(roleplay, /what would you do next/)
   assert.match(roleplay, /At the market/)
   const debate = buildDebatePracticeInstruction(
     [{ headword: 'apple', gloss_ru: 'яблоко' }],

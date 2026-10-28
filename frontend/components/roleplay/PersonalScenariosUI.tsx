@@ -23,6 +23,7 @@ import {
   type PracticeWordsSession,
 } from '@/components/agent/PracticeWordsInSheet';
 import { buildRoleplayPracticeContext } from '@/lib/practice-list-context';
+import { getStoredBackendToken } from '@/lib/backend-jwt';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 import { parsePlayMode, type PlayMode } from '@/lib/play-mode';
 import { SpeechVoicePicker } from '@/components/roleplay/SpeechVoicePicker';
@@ -670,6 +671,7 @@ export function PersonalScenariosUI({
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<GenerateScenarioResult | null>(null);
+  const draftListRef = useRef(`draft-${crypto.randomUUID()}`);
   const [fieldBusy, setFieldBusy] = useState<UserScenarioField | null>(null);
   const [flashField, setFlashField] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -975,7 +977,26 @@ export function PersonalScenariosUI({
       setCreateProfanityIntensity('light');
       setView('my');
       loadList();
-      // Сразу брифинг в том же sheet — слова/AI под уже сохранённую сцену.
+      const listId = practiceWords?.listId;
+      const token = getStoredBackendToken();
+      const api = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+      if (listId && created?.id && token && api) {
+        void fetch(`${api}/api/vocabulary/lists/${encodeURIComponent(listId)}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            binding: {
+              kind: 'scenario',
+              ref: created.id,
+              origin: 'user',
+              label: created.title || editTitle.trim(),
+            },
+          }),
+        }).catch(() => { /* список уже в словаре */ });
+      }
       setBriefingScenario(created);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Ошибка сохранения');
@@ -1563,6 +1584,7 @@ export function PersonalScenariosUI({
                     <PracticeWordsInSheet
                       {...practiceWords}
                       listContext={buildRoleplayPracticeContext({
+                        id: draftListRef.current,
                         title: editTitle.trim() || 'Новый сценарий',
                         goalRu: typeof generated.payload.goalRu === 'string' ? generated.payload.goalRu : null,
                         goal: typeof generated.payload.goal === 'string' ? generated.payload.goal : null,
@@ -1571,9 +1593,9 @@ export function PersonalScenariosUI({
                         yourRoleRu: typeof generated.payload.yourRoleRu === 'string' ? generated.payload.yourRoleRu : null,
                         steps: Array.isArray(generated.payload.steps) ? generated.payload.steps as Array<{ titleRu?: string | null; titleEn?: string | null }> : null,
                       })}
-                      toolsMode="browse"
-                      title="Слова заранее"
-                      subtitle="Можно отметить до 5 из словаря. ИИ-список и fit — после сохранения, на экране перед диалогом."
+                      toolsMode="scene"
+                      title="Слова под этот сценарий"
+                      subtitle="ИИ соберёт около 20 слов под название, цель и шаги. Список сохранится в словарь."
                     />
                   )}
                 </div>

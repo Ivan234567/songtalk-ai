@@ -1786,6 +1786,7 @@ export function AgentTab() {
                       ) || selectedScenario.steps?.[0];
                       return {
                         title: selectedScenario.title || '',
+                        setting: selectedScenario.settingRu || selectedScenario.setting || '',
                         goal: selectedScenario.goalRu || selectedScenario.goal || '',
                         currentStep: openStep
                           ? (openStep.titleRu || openStep.titleEn || openStep.id || '')
@@ -4689,7 +4690,7 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
-                      {token && !selectedVoiceTask && (
+                      {token && !selectedVoiceTask && agentMode === 'chat' && (
                         <ChatPracticeWords
                           apiUrl={getApiUrl()}
                           token={token}
@@ -4731,6 +4732,12 @@ export function AgentTab() {
                             onSaveProgress={saveRoleplayProgress}
                             vocabPeeked={zhVocabPeeked}
                             onPeekVocab={() => setZhVocabPeeked(true)}
+                            practiceWords={chatPracticeSenses.map((sense) => ({
+                              id: sense.senseId,
+                              headword: sense.headword,
+                              used: (chatPracticeProgress || []).some((item) => item.senseId === sense.senseId && item.status === 'used')
+                                || (chatPracticeResults || []).some((item) => item.senseId === sense.senseId && item.verdict === 'produced'),
+                            }))}
                           />
                           {(selectedScenario.goalRu || selectedScenario.goal) && (
                             <section style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
@@ -4825,6 +4832,28 @@ export function AgentTab() {
                                       </div>
                                     );
                                   })}
+                              {debateSidebarStepsOpen && chatPracticeSenses.length > 0 && (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: '0.55rem' }}>
+                                  {chatPracticeSenses.map((sense) => {
+                                    const used = (chatPracticeProgress || []).some((item) => item.senseId === sense.senseId && item.status === 'used')
+                                      || (chatPracticeResults || []).some((item) => item.senseId === sense.senseId && item.verdict === 'produced');
+                                    return (
+                                      <span
+                                        key={sense.senseId}
+                                        style={{
+                                          fontSize: '0.75rem',
+                                          padding: '0.18rem 0.45rem',
+                                          borderRadius: 999,
+                                          border: used ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid var(--sidebar-border)',
+                                          opacity: used ? 1 : 0.75,
+                                        }}
+                                      >
+                                        {used ? '✓ ' : ''}{sense.headword}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </section>
                           )}
                           {DEBATE_GOAL_RU && (
@@ -5278,7 +5307,7 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
-                      {token && !selectedVoiceTask && (
+                      {token && !selectedVoiceTask && agentMode === 'chat' && (
                         <ChatPracticeWords
                           apiUrl={getApiUrl()}
                           token={token}
@@ -5408,6 +5437,12 @@ export function AgentTab() {
                           onSaveProgress={saveRoleplayProgress}
                           vocabPeeked={zhVocabPeeked}
                           onPeekVocab={() => setZhVocabPeeked(true)}
+                          practiceWords={chatPracticeSenses.map((sense) => ({
+                            id: sense.senseId,
+                            headword: sense.headword,
+                            used: (chatPracticeProgress || []).some((item) => item.senseId === sense.senseId && item.status === 'used')
+                              || (chatPracticeResults || []).some((item) => item.senseId === sense.senseId && item.verdict === 'produced'),
+                          }))}
                         />
                       )}
                       {/* --- Уровень HSK --- */}

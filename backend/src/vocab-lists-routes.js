@@ -1306,6 +1306,8 @@ async function addWordToList(deps, {
   phonetic,
   part_of_speech: partOfSpeech,
   pinyin,
+  lite = false,
+  position: fixedPosition = null,
 }) {
   const word = language === 'zh' ? normalizeHeadword(rawWord, 'zh') : (normalizeListWord(rawWord) || normalizeHeadword(rawWord, language))
   const gloss = typeof rawGloss === 'string' ? rawGloss.trim() : ''
@@ -1353,7 +1355,7 @@ async function addWordToList(deps, {
     }
   }
 
-  if (phonetic || pinyin) {
+  if (!lite && (phonetic || pinyin)) {
     await cachePhonetic(deps, {
       language,
       word,
@@ -1364,7 +1366,9 @@ async function addWordToList(deps, {
     })
   }
 
-  await ensureUserVocabularySenses({ supabase: deps.supabase, userId, language })
+  if (!lite) {
+    await ensureUserVocabularySenses({ supabase: deps.supabase, userId, language })
+  }
 
   const { data: existingLink } = await deps.safeSupabaseCall(
     () => deps.supabase
@@ -1377,17 +1381,20 @@ async function addWordToList(deps, {
   )
   const alreadyLinked = Boolean(existingLink?.vocabulary_id)
   if (!alreadyLinked) {
-    const { data: lastItem } = await deps.safeSupabaseCall(
-      () => deps.supabase
-        .from('vocab_list_items')
-        .select('position')
-        .eq('user_id', userId)
-        .eq('list_id', listId)
-        .order('position', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    )
-    const position = Number.isInteger(lastItem?.position) ? lastItem.position + 1 : 0
+    let position = Number.isInteger(fixedPosition) ? fixedPosition : 0
+    if (!Number.isInteger(fixedPosition)) {
+      const { data: lastItem } = await deps.safeSupabaseCall(
+        () => deps.supabase
+          .from('vocab_list_items')
+          .select('position')
+          .eq('user_id', userId)
+          .eq('list_id', listId)
+          .order('position', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      )
+      position = Number.isInteger(lastItem?.position) ? lastItem.position + 1 : 0
+    }
     const { error: linkError } = await deps.safeSupabaseCall(
       () => deps.supabase
         .from('vocab_list_items')
@@ -1402,7 +1409,7 @@ async function addWordToList(deps, {
   }
 
   let senses = null
-  if (!alreadyLinked) {
+  if (!alreadyLinked && !lite) {
     try {
       const lexicon = await enrichListWordCard(deps, {
         userId,
@@ -1861,26 +1868,39 @@ async function clearListItems(deps, { userId, listId }) {
 }
 
 async function fillListWithGeneratedEntries(deps, { userId, language, listId, entries }) {
-  let added = 0
-  for (const entry of entries) {
-    try {
-      const result = await addWordToList(deps, {
-        userId,
-        language,
-        listId,
-        word: entry.word,
-        gloss: entry.gloss,
-        phonetic: entry.phonetic,
-        part_of_speech: entry.part_of_speech,
-        pinyin: entry.pinyin,
-      })
-      if (!result.already) added += 1
-    } catch (error) {
+  const { data: lastItem } = await deps.safeSupabaseCall(
+    () => deps.supabase
+      .from('vocab_list_items')
+      .select('position')
+      .eq('user_id', userId)
+      .eq('list_id', listId)
+      .order('position', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  )
+  const start = Number.isInteger(lastItem?.position) ? lastItem.position + 1 : 0
+  const settled = await Promise.all((entries || []).map((entry, index) => (
+    addWordToList(deps, {
+      userId,
+      language,
+      listId,
+      word: entry.word,
+      gloss: entry.gloss,
+      phonetic: entry.phonetic,
+      part_of_speech: entry.part_of_speech,
+      pinyin: entry.pinyin,
+      lite: true,
+      position: start + index,
+    }).catch((error) => {
       if (error?.status === 402) throw error
       console.error('[vocab-lists] skip generated word', entry?.word, error?.message || error)
-    }
-  }
-  return added
+      return null
+    })
+  )))
+  ensureUserVocabularySenses({ supabase: deps.supabase, userId, language }).catch((error) => {
+    console.error('[vocab-lists] sense sync after generate failed', error?.message || error)
+  })
+  return settled.filter((result) => result && !result.already).length
 }
 
 function defaultBoundListTitle(binding, mode) {
@@ -1986,7 +2006,7 @@ export function createGenerateBoundListHandler(deps) {
           topic,
           steps,
           themeText,
-          count: 12,
+          count: 20,
         })
       }
 
@@ -2179,7 +2199,7 @@ export function createRegenerateListHandler(deps) {
           topic: typeof req.body?.topic === 'string' ? req.body.topic.trim() : (list.bound_label || ''),
           steps: typeof req.body?.steps === 'string' ? req.body.steps.trim() : '',
           themeText: typeof req.body?.theme_text === 'string' ? req.body.theme_text.trim() : '',
-          count: 12,
+          count: 20,
         })
       }
 

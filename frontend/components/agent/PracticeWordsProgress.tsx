@@ -75,11 +75,8 @@ export function PracticeWordsProgress({
   locked = false,
   revealed = {},
   onToggleReveal,
-  assessable = false,
-  assessing = false,
   assessError = null,
   storeWarning = null,
-  onAssess,
 }: PracticeWordsProgressProps) {
   if (!senses.length) return null;
   const byId = new Map((items || []).map((item) => [item.senseId, item]));
@@ -89,8 +86,6 @@ export function PracticeWordsProgress({
   const used = assessed
     ? (results || []).filter((item) => VERDICT_OK.has(item.verdict)).length
     : usedCount ?? (items || []).filter((item) => item.status === 'used').length;
-  const showButton = assessable && !assessed && Boolean(onAssess);
-
   return (
     <section className={styles.wrap} aria-label="Слова в разговоре">
       <div className={styles.head}>
@@ -128,12 +123,6 @@ export function PracticeWordsProgress({
         })}
       </ul>
 
-      {showButton && (
-        <button type="button" className={styles.assessBtn} disabled={assessing} onClick={onAssess}>
-          {assessing ? 'Слушаю…' : 'Проверить, сказал ли я сам'}
-        </button>
-      )}
-      {assessing && !showButton && <p className={styles.hint}>Слушаю речь…</p>}
       {assessError && <p className={styles.hint}>{assessError}</p>}
       {storeWarning && <p className={styles.hint}>{storeWarning}</p>}
     </section>

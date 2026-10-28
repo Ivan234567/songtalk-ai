@@ -46,11 +46,8 @@ export function PracticeWordsSummary({
   usedCount,
   totalCount,
   results = null,
-  assessable = false,
-  assessing = false,
   assessError = null,
   storeWarning = null,
-  onAssess,
   variant = 'card',
 }: PracticeWordsSummaryProps) {
   if (!senses.length) return null;
@@ -62,8 +59,6 @@ export function PracticeWordsSummary({
   const used = assessed
     ? lines.filter((item) => item.verdict === 'produced').length
     : usedCount ?? (progressItems || []).filter((item) => item.status === 'used').length;
-  const showButton = assessable && !assessed && Boolean(onAssess);
-
   return (
     <section
       className={variant === 'plain' ? `${styles.wrap} ${styles.plain}` : styles.wrap}
@@ -116,24 +111,11 @@ export function PracticeWordsSummary({
         })}
       </ul>
 
-      {showButton && (
-        <button
-          type="button"
-          className={styles.assessBtn}
-          disabled={assessing}
-          onClick={onAssess}
-        >
-          {assessing ? 'Слушаю…' : 'Проверить, сказал ли я сам'}
-        </button>
-      )}
-      {assessing && !showButton && (
-        <p className={styles.hint}>Слушаю, как ты сказал эти слова…</p>
-      )}
       {assessError && <p className={styles.hint}>{assessError}</p>}
       {storeWarning && <p className={styles.hint}>{storeWarning}</p>}
-      {!assessed && !showButton && !assessing && !assessError && (
+      {!assessed && !assessError && (
         <p className={styles.hint}>
-          Это ещё не оценка SRS — только что прозвучало в разговоре.
+          ИИ сам отметит, какие слова прозвучали.
         </p>
       )}
     </section>
