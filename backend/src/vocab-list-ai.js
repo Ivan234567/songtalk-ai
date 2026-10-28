@@ -118,6 +118,19 @@ function coverSteps(items, steps, max) {
     if (index < 0) continue
     buckets[index].push({ ...item, step: steps[index] })
   }
+  const loose = items.filter((item) => !steps.some((step) => matchStepKey(item.step, step)))
+  let cursor = 0
+  for (let index = 0; index < buckets.length && cursor < loose.length; index += 1) {
+    while (buckets[index].length < need && cursor < loose.length) {
+      buckets[index].push({ ...loose[cursor], step: steps[index] })
+      cursor += 1
+    }
+  }
+  while (cursor < loose.length) {
+    const index = cursor % steps.length
+    buckets[index].push({ ...loose[cursor], step: steps[index] })
+    cursor += 1
+  }
   const missing = steps.filter((step, index) => buckets[index].length < need)
   const ordered = []
   let round = 0
@@ -220,7 +233,7 @@ export function validateBoundListDraft(rows, options = {}) {
         items.length = 0
         items.push(...thematic.slice(0, max))
         themeRatio = 1
-      } else {
+      } else if (mode === 'debate') {
         reasons.push(`мало слов по теме сцены (${Math.round(themeRatio * 100)}%)`)
       }
     }

@@ -18,6 +18,7 @@ import { logSecurityEvent } from '@/lib/securityEvents';
 import { clearBackendToken } from '@/lib/backend-jwt';
 import { LearningLanguageProvider, useLearningLanguage } from '@/context/LearningLanguageContext';
 import { LanguageSwitch } from '@/components/header/LanguageSwitch';
+import { PracticeTimeChip } from '@/components/header/PracticeTimeChip';
 import { VoiceSwitch } from '@/components/header/VoiceSwitch';
 import { TtsVoiceProvider } from '@/context/TtsVoiceContext';
 import { LanguageToastStack } from '@/components/ui/LanguageToastStack';
@@ -206,7 +207,10 @@ function DashboardPageContent() {
 
       <main className={layoutStyles.mainShell}>
         <div className={layoutStyles.dashboardTopBar}>
-          <span className={layoutStyles.learningLabel}>Изучаю: {label}</span>
+          <div className={layoutStyles.learningCluster}>
+            <span className={layoutStyles.learningLabel}>Изучаю: {label}</span>
+            <PracticeTimeChip onOpen={() => handleTabChange('balance')} refreshKey={activeTab} />
+          </div>
           <div className={layoutStyles.topBarControls}>
             <VoiceSwitch />
             <LanguageSwitch />

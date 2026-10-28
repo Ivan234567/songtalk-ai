@@ -14,3 +14,13 @@ export function formatPracticeRemaining(balanceRub: number): string {
   if (mins === 0) return `≈ ${hours} ч практики`;
   return `≈ ${hours} ч ${mins} мин практики`;
 }
+
+/** Короткая подпись для шапки: «25 ч», «40 мин». */
+export function formatPracticeRemainingShort(balanceRub: number): string {
+  const minutes = practiceMinutesFromRub(balanceRub);
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours <= 0) return `${mins} мин`;
+  if (mins === 0) return `${hours} ч`;
+  return `${hours} ч ${mins} мин`;
+}

@@ -373,6 +373,7 @@ export function PracticeWordListPicker({
           title: binding.label,
           theme_text: listContext?.text || '',
           level: listContext?.level || '',
+          steps: listContext?.steps || [],
           count: 20,
           replace_existing: Boolean(options?.replaceExisting),
         }),

@@ -54,6 +54,32 @@ test('QC отбрасывает мусор: латиница в gloss, дубл�
   assert.ok(draft.theme_ratio >= 0.4)
 })
 
+test('QC ролевой сцены не бракует слова кофейни без дословного совпадения', () => {
+  const words = [
+    ['latte', 'латте'],
+    ['espresso', 'эспрессо'],
+    ['cappuccino', 'капучино'],
+    ['milk', 'молоко'],
+    ['sugar', 'сахар'],
+    ['cup', 'чашка'],
+    ['size', 'размер'],
+    ['order', 'заказ'],
+  ]
+  const draft = validateBoundListDraft(
+    words.map(([word, gloss]) => ({ word, gloss })),
+    {
+      language: 'en',
+      mode: 'roleplay',
+      themeText: 'Кофейня. Закажите напиток.',
+      steps: ['Назвать напиток', 'Уточнить размер'],
+      min: 6,
+      max: 8,
+    },
+  )
+  assert.equal(draft.ok, true)
+  assert.equal(draft.items.length, 8)
+})
+
 test('QC бракует off-topic черновик', () => {
   const draft = validateBoundListDraft([
     { word: 'banana', gloss: 'банан' },
@@ -66,7 +92,7 @@ test('QC бракует off-topic черновик', () => {
     { word: 'window', gloss: 'окно' },
   ], {
     language: 'en',
-    mode: 'roleplay',
+    mode: 'debate',
     themeText: 'climate policy carbon emissions debate parliament',
     min: 6,
   })

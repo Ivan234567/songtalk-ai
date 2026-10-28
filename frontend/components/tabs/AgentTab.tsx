@@ -3999,7 +3999,6 @@ export function AgentTab() {
   }
 
   const isVoiceTaskTakeDone = Boolean(selectedVoiceTask && messages.some((m) => m.role === 'user'));
-  const isUserStartsDebateEmpty = agentMode === 'debate' && debateStarted && debateWhoStarts === 'user' && messages.length === 0 && state === 'idle';
   const isUserStartsRoleplayEmpty =
     agentMode === 'roleplay' &&
     !!selectedScenario &&
@@ -4008,7 +4007,7 @@ export function AgentTab() {
     state === 'idle';
   const statusText =
     state === 'listening'
-      ? 'Отправить запись'
+      ? 'Нажмите ещё раз, когда закончите'
       : state === 'thinking'
         ? voiceTaskEvaluating
           ? 'Проверяю чеклист…'
@@ -4021,18 +4020,7 @@ export function AgentTab() {
             ? 'Дубль сохранён — можно проверить'
             : selectedVoiceTask && isVoiceTaskTakeDone
               ? 'Можно перезаписать один раз или проверить'
-              : selectedVoiceTask
-                ? 'Нажмите и скажите вслух'
-                : isUserStartsDebateEmpty
-            ? 'Ваша очередь — начните дебат!'
-            : isUserStartsRoleplayEmpty
-              ? 'Ваша очередь — начните диалог!'
-              : 'Нажмите, чтобы начать запись';
-  const isBareIdle =
-    state === 'idle' &&
-    !selectedVoiceTask &&
-    !isUserStartsDebateEmpty &&
-    !isUserStartsRoleplayEmpty;
+              : 'Нажмите на шар и говорите';
   const canRecordClick =
     (state === 'idle' || state === 'listening') &&
     !(selectedVoiceTask && (voiceTaskRewriteUsed || voiceTaskResult));
@@ -6633,7 +6621,7 @@ export function AgentTab() {
               )}
             </div>
 
-            {!isBareIdle && state !== 'listening' && (canRecordClick ? (
+            {canRecordClick ? (
               <button
                 type="button"
                 onClick={handleRecordClick}
