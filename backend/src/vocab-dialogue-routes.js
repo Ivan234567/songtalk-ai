@@ -73,6 +73,7 @@ function sceneContextLines(scene) {
   if (scene.topic) lines.push(`Debate topic: ${JSON.stringify(scene.topic)}`)
   if (scene.userPosition) lines.push(`Learner position: ${JSON.stringify(scene.userPosition)}`)
   if (scene.currentStep) lines.push(`Current step: ${JSON.stringify(scene.currentStep)}`)
+  if (scene.currentStepEn) lines.push(`Current step in the reply language: ${JSON.stringify(scene.currentStepEn)}`)
   if (scene.stepAction) lines.push(`Expected learner action: ${JSON.stringify(scene.stepAction)}`)
   return lines
 }
@@ -295,26 +296,97 @@ export function nextPracticeHintIndex(maxTurnIndex) {
   return Number.isInteger(maxTurnIndex) && maxTurnIndex >= 0 ? maxTurnIndex + 1 : 0
 }
 
-export function fallbackPracticeReply(language, targets, { seed = '', avoid = [] } = {}) {
-  const options = language === 'zh'
-    ? [
-      '那后来呢？再说具体一点。',
-      '你当时想怎么办？',
-      '能用另一个说法描述一下吗？',
-      '好，那下一步是什么？',
-      '你为什么这么觉得？',
-      '再给我一个细节。',
+function sceneLineForLanguage(value, language) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim().slice(0, 180)
+  if (!text) return ''
+  if (language === 'zh') return /[\u3400-\u9fff]/.test(text) ? text : ''
+  if (/[а-яё]/i.test(text)) return ''
+  return text
+}
+
+function practiceFallbackLines(language, mode, scene) {
+  const step = sceneLineForLanguage(scene?.stepAction || scene?.currentStepEn, language)
+  const topic = sceneLineForLanguage(scene?.topic, language)
+  if (language === 'zh') {
+    if (mode === 'roleplay') {
+      return [
+        step ? `好，我记下了。下一项：${step}` : '',
+        '好，我记下了。下一项是什么？',
+        '明白。请把下一项告诉我。',
+        '收到。我确认一下，还差哪一项？',
+      ].filter(Boolean)
+    }
+    if (mode === 'debate') {
+      return [
+        step ? `就这个点继续：${step}` : '',
+        topic ? `我还没被说服。请针对「${topic}」回答。` : '',
+        '继续说下一点。我还没被说服。',
+        '直接回答这一点。',
+      ].filter(Boolean)
+    }
+    return [
+      '好，再说具体一点。',
+      '我听懂了。再给我一个细节。',
+      '继续。说一件具体的事就够了。',
     ]
-    : [
-      'Okay — what would you do next?',
-      'Interesting. Can you describe it another way?',
-      'Got it. What matters most here?',
-      'Alright. What changed after that?',
-      'Tell me one more concrete detail.',
-      'Why does that matter to you?',
-      'What would make this easier?',
-      'And then what did you try?',
-    ]
+  }
+  if (mode === 'roleplay') {
+    const action = step ? step.charAt(0).toLowerCase() + step.slice(1) : ''
+    return [
+      action ? `Thanks, I have that. Next: ${action}` : '',
+      'Thanks, I noted that. What should I write down next?',
+      'Okay. Tell me the next detail and I will confirm it.',
+      'Right. I am ready for the next part of this request.',
+      'Got it. Give me the next detail.',
+    ].filter(Boolean)
+  }
+  if (mode === 'debate') {
+    return [
+      step ? `Stay on this. ${step}` : '',
+      topic ? `I am not convinced yet. Answer on ${topic}.` : '',
+      'Make the next point. I am still not convinced.',
+      'Answer that directly. One clear argument.',
+      'Push the point. What is your next argument?',
+    ].filter(Boolean)
+  }
+  return [
+    'Okay. Say a bit more about that.',
+    'Tell me one more concrete detail.',
+    'I follow. Give me the next detail.',
+    'Go on. One specific thing is enough.',
+  ]
+}
+
+export function stripSentencesWithTargets(text, targets) {
+  const raw = String(text || '').trim()
+  if (!raw || !replyContainsTarget(raw, targets)) return raw
+  const parts = raw.split(/(?<=[.!?。！？])\s+/)
+  return parts
+    .map((part) => part.trim())
+    .filter((part) => part && !replyContainsTarget(part, targets))
+    .join(' ')
+    .trim()
+}
+
+export function repairPracticeReply(text, targets, options = {}) {
+  const mode = options.mode === 'roleplay' || options.mode === 'debate' ? options.mode : 'chat'
+  const language = options.language === 'zh' ? 'zh' : 'en'
+  const stripped = stripSentencesWithTargets(text, targets)
+  const usable = Boolean(stripped) && stripped.length >= 12 && !replyContainsTarget(stripped, targets)
+  const asks = /[?？]/.test(stripped)
+  if (usable && (mode === 'chat' || asks)) return stripped
+  const fallback = fallbackPracticeReply(language, targets, {
+    ...options,
+    mode,
+    avoid: [stripped, ...(Array.isArray(options.avoid) ? options.avoid : [])].filter(Boolean),
+  })
+  if (usable) return `${stripped} ${fallback}`.trim()
+  return fallback
+}
+
+export function fallbackPracticeReply(language, targets, { seed = '', avoid = [], mode = 'chat', scene = null } = {}) {
+  const resolvedMode = mode === 'roleplay' || mode === 'debate' ? mode : 'chat'
+  const options = practiceFallbackLines(language === 'zh' ? 'zh' : 'en', resolvedMode, scene)
   const blocked = new Set(
     (Array.isArray(avoid) ? avoid : [])
       .map((line) => (typeof line === 'string' ? line.trim() : ''))
@@ -323,6 +395,8 @@ export function fallbackPracticeReply(language, targets, { seed = '', avoid = []
   const safe = options.filter((line) => !replyContainsTarget(line, targets) && !blocked.has(line))
   const pool = safe.length > 0 ? safe : options.filter((line) => !replyContainsTarget(line, targets))
   if (!pool.length) return language === 'zh' ? '再说一点。' : 'Tell me more.'
+  const sceneLine = pool.find((line) => /^(Thanks, I have that\. Next:|Stay on this\.|I am not convinced yet\.|好，我记下了。下一项：|就这个点继续：|我还没被说服。)/.test(line))
+  if (sceneLine) return sceneLine
   let hash = 0
   const key = `${seed}|${pool.join('|')}`
   for (let i = 0; i < key.length; i += 1) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0

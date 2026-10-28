@@ -38,7 +38,7 @@ import {
   buildRoleplayPracticeInstruction,
   buildDebatePracticeInstruction,
   replyContainsTarget,
-  fallbackPracticeReply,
+  repairPracticeReply,
   loadChatPracticeHint,
   saveDialogueHint,
   buildChatPracticeHintInstruction,
@@ -1614,6 +1614,8 @@ app.post('/api/agent/chat', async (req, res) => {
   let practiceAllTargets = null
   let practiceAntiSpoilTargets = null
   let practiceDialogueSessionId = null
+  let attachedPracticeMode = 'chat'
+  let practiceScene = null
   const requestedDialogueId = typeof req.body?.dialogue_session_id === 'string'
     ? req.body.dialogue_session_id.trim()
     : ''
@@ -1649,6 +1651,7 @@ app.post('/api/agent/chat', async (req, res) => {
       })
       practiceAllTargets = practice.targets
       practiceDialogueSessionId = practice.dialogueSessionId
+      attachedPracticeMode = practiceMode
       const progress = await loadDialogueProgressSnapshot({
         supabase,
         safeSupabaseCall,
@@ -1662,27 +1665,32 @@ app.post('/api/agent/chat', async (req, res) => {
           ? req.body.practice_scene
           : null
         const firstOpenStep = Array.isArray(steps) && steps.length > 0 ? steps[0] : null
-        const practiceScene = {
+        const requestedStep = typeof rawScene?.currentStep === 'string' ? rawScene.currentStep.trim() : ''
+        const matchedStep = requestedStep && Array.isArray(steps)
+          ? steps.find((step) => [step?.titleRu, step?.titleEn, step?.id]
+            .some((value) => String(value || '').trim().toLowerCase() === requestedStep.toLowerCase()))
+          : null
+        const openStep = matchedStep || firstOpenStep
+        const openStepEn = openStep
+          ? String(openStep.titleEn || openStep.expectedUserAction || openStep.completionCriteria?.evidence_hint_en || '').trim()
+          : ''
+        practiceScene = {
           title: typeof rawScene?.title === 'string' ? rawScene.title.trim() : '',
           setting: typeof rawScene?.setting === 'string' ? rawScene.setting.trim() : '',
           goal: typeof rawScene?.goal === 'string' ? rawScene.goal.trim() : '',
           topic: typeof rawScene?.topic === 'string' ? rawScene.topic.trim() : '',
           userPosition: typeof rawScene?.userPosition === 'string' ? rawScene.userPosition.trim() : '',
           wordStep: typeof rawScene?.wordStep === 'string' ? rawScene.wordStep.trim() : '',
-          currentStep: typeof rawScene?.currentStep === 'string'
-            ? rawScene.currentStep.trim()
-            : (firstOpenStep
-              ? String(firstOpenStep.titleRu || firstOpenStep.titleEn || firstOpenStep.id || '').trim()
+          currentStepEn: (typeof rawScene?.currentStepEn === 'string' && rawScene.currentStepEn.trim())
+            ? rawScene.currentStepEn.trim()
+            : openStepEn,
+          currentStep: requestedStep
+            || (openStep
+              ? String(openStep.titleRu || openStep.titleEn || openStep.id || '').trim()
               : ''),
-          stepAction: typeof rawScene?.stepAction === 'string'
+          stepAction: (typeof rawScene?.stepAction === 'string' && rawScene.stepAction.trim())
             ? rawScene.stepAction.trim()
-            : (firstOpenStep
-              ? String(
-                firstOpenStep.expectedUserAction
-                || firstOpenStep.completionCriteria?.evidence_hint_en
-                || '',
-              ).trim()
-              : ''),
+            : openStepEn,
         }
         chatMessages.unshift({
           role: 'system',
@@ -1760,11 +1768,13 @@ app.post('/api/agent/chat', async (req, res) => {
             .filter(Boolean)
             .slice(-6)
           const seed = `${latestUserText(messages) || ''}|${recentAssistant.join('|')}|${fullReply.slice(0, 80)}`
-          fullReply = fallbackPracticeReply(
-            req.learningLanguage === 'zh' ? 'zh' : 'en',
-            practiceAntiSpoilTargets,
-            { seed, avoid: recentAssistant },
-          )
+          fullReply = repairPracticeReply(fullReply, practiceAntiSpoilTargets, {
+            language: req.learningLanguage === 'zh' ? 'zh' : 'en',
+            seed,
+            avoid: recentAssistant,
+            mode: attachedPracticeMode,
+            scene: practiceScene,
+          })
         }
         if (holdPracticeReply && fullReply) send({ type: 'chunk', delta: fullReply })
         if (Array.isArray(practiceAllTargets) && practiceAllTargets.length > 0 && fullReply.trim()) {

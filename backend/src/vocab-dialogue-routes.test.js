@@ -13,6 +13,7 @@ import {
   createDialogueSessionHandler,
   createSenseCatalogHandler,
   fallbackPracticeReply,
+  repairPracticeReply,
   replyContainsTarget,
   nextPracticeHintIndex,
   DialogueRouteError,
@@ -272,6 +273,36 @@ test('ответ с целевым словом заменяется одной 
   const again = fallbackPracticeReply('en', targets, { seed: 'turn-2', avoid: [fallback] })
   assert.equal(replyContainsTarget(again, targets), false)
   assert.notEqual(again, fallback)
+  assert.doesNotMatch(fallback, /what matters most|what would you do next|what would make this easier/i)
+  assert.doesNotMatch(again, /what matters most|what would you do next|what would make this easier/i)
+  const roleplayFallback = fallbackPracticeReply('en', [{ headword: 'hotel' }], {
+    seed: 'station',
+    mode: 'roleplay',
+    scene: { stepAction: 'Give the drop-off place', currentStep: 'Назвать пункт назначения' },
+  })
+  assert.match(roleplayFallback, /drop-off place/)
+  assert.doesNotMatch(roleplayFallback, /what matters most/i)
+  const repaired = repairPracticeReply(
+    'The main entrance works. Where is the hotel?',
+    [{ headword: 'hotel' }],
+    {
+      language: 'en',
+      mode: 'roleplay',
+      scene: { stepAction: 'Give the drop-off place' },
+      seed: 'station',
+    },
+  )
+  assert.match(repaired, /The main entrance works/)
+  assert.equal(replyContainsTarget(repaired, [{ headword: 'hotel' }]), false)
+  assert.doesNotMatch(repaired, /what matters most/i)
+  const replaced = repairPracticeReply('Where is the hotel?', [{ headword: 'hotel' }], {
+    language: 'en',
+    mode: 'roleplay',
+    scene: { currentStepEn: 'Give the drop-off place' },
+    seed: 'station',
+  })
+  assert.match(replaced, /drop-off place/)
+  assert.doesNotMatch(replaced, /hotel/)
   assert.equal(classifyPracticeHint('Скажи apple сейчас', targets).ok, false)
   assert.equal(classifyPracticeHint('Say the fruit', targets).ok, false)
   assert.equal(classifyPracticeHint('Опиши фрукт, который едят осенью', targets).ok, true)

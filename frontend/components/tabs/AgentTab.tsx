@@ -1792,7 +1792,8 @@ export function AgentTab() {
                         currentStep: openStep
                           ? (openStep.titleRu || openStep.titleEn || openStep.id || '')
                           : '',
-                        stepAction: openStep?.expectedUserAction || '',
+                        currentStepEn: openStep?.titleEn || '',
+                        stepAction: openStep?.expectedUserAction || openStep?.titleEn || '',
                       };
                     })(),
                   }
@@ -1808,6 +1809,7 @@ export function AgentTab() {
                           currentStep: openStep
                             ? (openStep.titleRu || openStep.titleEn || openStep.id || '')
                             : '',
+                          currentStepEn: openStep?.titleEn || '',
                           stepAction:
                             openStep?.titleEn
                             || openStep?.completionCriteria?.evidence_hint_en
