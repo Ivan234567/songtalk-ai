@@ -237,10 +237,13 @@ test('инструкция чата содержит форму из базы и
   assert.match(text, /Targets still unused/)
   assert.match(text, /This turn focus meaning/)
   const hint = buildChatPracticeHintInstruction([{ headword: 'apple', gloss_ru: 'яблоко' }])
-  assert.match(hint, /MUST include this word/)
+  assert.match(hint, /include this word naturally/)
   assert.match(hint, /apple/)
   assert.match(hint, /яблоко/)
-  assert.doesNotMatch(hint, /Russian only/)
+  assert.match(hint, /If the word does not fit/)
+  const noWords = buildChatPracticeHintInstruction([])
+  assert.match(noWords, /No practice word is waiting/)
+  assert.match(noWords, /latest message/)
   const roleplay = buildRoleplayPracticeInstruction(
     [{ headword: 'apple', gloss_ru: 'яблоко' }],
     { title: 'At the market', goal: 'Buy fruit', currentStep: 'Ask for fruit' },
@@ -304,9 +307,10 @@ test('ответ с целевым словом заменяется одной 
   })
   assert.match(replaced, /drop-off place/)
   assert.doesNotMatch(replaced, /hotel/)
-  assert.equal(classifyPracticeHint('Скажи apple сейчас', targets).ok, false)
-  assert.equal(classifyPracticeHint('Say the fruit', targets).ok, false)
-  assert.equal(classifyPracticeHint('Опиши фрукт, который едят осенью', targets).ok, true)
+  assert.equal(classifyPracticeHint('I would like an apple, please.').ok, true)
+  assert.equal(classifyPracticeHint('It started after lunch.').ok, true)
+  assert.equal(classifyPracticeHint('Опиши фрукт, который едят осенью').ok, true)
+  assert.equal(classifyPracticeHint('  ').ok, false)
 })
 
 test('список отдаёт свои значения языка и не режется десяткой очереди', async () => {

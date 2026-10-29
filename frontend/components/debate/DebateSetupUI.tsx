@@ -1200,6 +1200,7 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
             onEditStep={handleBriefingEditStep}
             practiceWords={practiceWords}
             topicOrigin={topicView === 'my' || topicView === 'custom' ? 'user' : 'system'}
+            topicId={topicView === 'list' ? selectedTopic?.id : topicView === 'my' ? selectedMyTopic?.id : null}
           />
         </div>
       </div>

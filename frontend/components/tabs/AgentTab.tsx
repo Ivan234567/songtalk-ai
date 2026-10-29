@@ -651,9 +651,11 @@ export function AgentTab() {
     if (agentMode === 'debate' && debateStarted && debateTopic) {
       return buildDebatePracticeContext({
         topic: debateTopic,
+        topicEn: debateTopicNormalized || debateTopic,
         userPosition: debateUserPosition,
         aiPosition: debateAIPosition,
         difficulty: debateDifficulty,
+        origin: debateTopicSource === 'custom' ? 'user' : 'system',
       });
     }
     if (agentMode === 'chat') {
@@ -668,6 +670,8 @@ export function AgentTab() {
     selectedScenario,
     debateStarted,
     debateTopic,
+    debateTopicNormalized,
+    debateTopicSource,
     debateUserPosition,
     debateAIPosition,
     debateDifficulty,

@@ -2098,7 +2098,10 @@ export function createGenerateBoundListHandler(deps) {
       if (confirm && Array.isArray(req.body?.items)) {
         generated = {
           title: titleHint || defaultBoundListTitle(binding, mode),
-          items: normalizeConfirmEntries(req.body.items, language),
+          items: normalizeConfirmEntries(req.body.items, language, {
+            mode,
+            min: mode === 'debate' ? 4 : 6,
+          }),
           quality: { confirmed: true, count: 0 },
         }
         generated.quality.count = generated.items.length
@@ -2292,7 +2295,10 @@ export function createRegenerateListHandler(deps) {
       if (confirm && Array.isArray(req.body?.items)) {
         generated = {
           title: typeof req.body?.title === 'string' ? req.body.title.trim() : list.title,
-          items: normalizeConfirmEntries(req.body.items, language),
+          items: normalizeConfirmEntries(req.body.items, language, {
+            mode: practiceMode,
+            min: practiceMode === 'debate' ? 4 : 6,
+          }),
           quality: { confirmed: true },
         }
       } else {

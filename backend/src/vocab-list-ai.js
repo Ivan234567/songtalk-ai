@@ -45,13 +45,27 @@ function unescapeJsonString(value) {
 export function salvageGeneratedItems(raw) {
   const text = String(raw || '')
   const items = []
-  const re = /"word"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]{0,280}?"gloss"\s*:\s*"((?:\\.|[^"\\])*)"/g
-  let match = re.exec(text)
-  while (match && items.length < MAX_LIST) {
-    const word = unescapeJsonString(match[1]).trim()
-    const gloss = unescapeJsonString(match[2]).trim()
-    if (word && gloss) items.push({ word, gloss })
-    match = re.exec(text)
+  const seen = new Set()
+  const push = (wordRaw, glossRaw) => {
+    if (items.length >= MAX_LIST) return
+    const word = unescapeJsonString(wordRaw).trim()
+    const gloss = unescapeJsonString(glossRaw).trim()
+    const key = word.toLowerCase()
+    if (!word || !gloss || seen.has(key)) return
+    seen.add(key)
+    items.push({ word, gloss })
+  }
+  const wordFirst = /"word"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]{0,280}?"gloss"\s*:\s*"((?:\\.|[^"\\])*)"/g
+  const glossFirst = /"gloss"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]{0,280}?"word"\s*:\s*"((?:\\.|[^"\\])*)"/g
+  let match = wordFirst.exec(text)
+  while (match) {
+    push(match[1], match[2])
+    match = wordFirst.exec(text)
+  }
+  match = glossFirst.exec(text)
+  while (match) {
+    push(match[2], match[1])
+    match = glossFirst.exec(text)
   }
   return items
 }
@@ -208,7 +222,10 @@ export function validateBoundListDraft(rows, options = {}) {
   const mode = options.mode === 'debate' ? 'debate' : options.mode === 'chat' ? 'chat' : 'roleplay'
   const themeText = String(options.themeText || '')
   const steps = normalizeStepList(options.steps)
-  const min = Math.max(6, Number(options.min) || MIN_LIST)
+  const requestedMin = Number(options.min)
+  const min = Number.isFinite(requestedMin) && requestedMin >= 1
+    ? Math.min(MAX_LIST, Math.floor(requestedMin))
+    : MIN_LIST
   const max = Math.max(min, Math.min(MAX_LIST, Number(options.max) || MAX_LIST))
   const reasons = []
   const seen = new Set()
@@ -257,7 +274,7 @@ export function validateBoundListDraft(rows, options = {}) {
   }
 
   let themeRatio = 1
-  if (!steps.length && themeText.trim() && items.length) {
+  if (mode !== 'debate' && !steps.length && themeText.trim() && items.length) {
     const fitted = items.filter((item) => item.theme_fit > 0).length
     themeRatio = fitted / items.length
     if (themeRatio < THEME_MIN_RATIO) {
@@ -311,15 +328,14 @@ async function callGenerateOnce({
           'word is the headword in the learning language only.',
           'phonetic is IPA for English, empty for Chinese. pinyin only for Chinese.',
           'part_of_speech in Russian (существительное, глагол, прилагательное).',
-          `Match learner level ${levelHint}. Prefer concrete useful words for THIS situation.`,
+          `Match learner level ${levelHint}.`,
           isDebate
-            ? 'This is a DEBATE: prefer argumentative and topic vocabulary (claims, evidence, policy, rights, trade-offs). Avoid random household words.'
+            ? 'This is a DEBATE. Return English words the learner will SAY while arguing the topic in the user message. Use the subject itself: people, actions, evidence, costs, rights, and concrete nouns from that topic. Example topic "School uniforms" → uniform, dress code, student, choice, equality, cost. Do not return household objects, greetings, or words from another subject. Leave "step" empty.'
             : mode === 'chat'
-              ? 'This is a FREE CONVERSATION: everyday useful words the learner can say in open dialogue.'
-              : 'This is a ROLEPLAY/DIALOGUE scene. Each item must be a word the learner says to COMPLETE one listed step. Cover every step before adding anything else.',
+              ? 'This is a FREE CONVERSATION: everyday useful words the learner can say in open dialogue. Leave "step" empty.'
+              : 'This is a ROLEPLAY scene. Each item is a word the learner says to complete one listed step. Set "step" to that step title, copied from the Steps list. Cover every step before adding anything else.',
           'No proper names, no duplicates, no junk, no transliteration as gloss, no placeholder words.',
-          `Return exactly ${targetCount} items. Do not stop early.`,
-          'Every item must fit one step. Set "step" to that step title exactly, copied from the Steps list.',
+          `Return ${targetCount} items. Do not stop early.`,
           'Do not add words for a different situation.',
         ].join(' '),
       },
@@ -358,19 +374,31 @@ export function createGenerateBoundListEntries(deps) {
       practiceMode = 'roleplay'
     }
 
-    const targetCount = Math.max(MIN_LIST, Math.min(MAX_LIST, Number(count) || DEFAULT_LIST))
+    const requestedCount = Math.max(MIN_LIST, Math.min(MAX_LIST, Number(count) || DEFAULT_LIST))
     const levelHint = String(level || '').trim() || (lang === 'zh' ? 'HSK3' : 'B1')
     const isDebate = practiceMode === 'debate'
-    const themeBlob = [title, goal, topic, steps, themeText].filter(Boolean).join(' ')
-    const profile = [
-      title && `Title: ${String(title).trim().slice(0, 160)}`,
-      goal && `Goal: ${String(goal).trim().slice(0, 240)}`,
-      topic && `Topic: ${String(topic).trim().slice(0, 240)}`,
-      steps && `Steps:\n${normalizeStepList(steps).join('\n')}`.slice(0, 900),
-      themeText && `Context: ${String(themeText).trim().slice(0, 500)}`,
-      `Level: ${levelHint}`,
-      `Mode: ${practiceMode}`,
-    ].filter(Boolean).join('\n')
+    const targetCount = isDebate ? Math.min(requestedCount, 12) : requestedCount
+    const themeBlob = isDebate
+      ? [topic, title, themeText, goal].filter(Boolean).join(' ')
+      : [title, goal, topic, steps, themeText].filter(Boolean).join(' ')
+    const debateTopic = String(topic || title || themeText || '').trim().slice(0, 400)
+    const profile = (isDebate
+      ? [
+        `Topic: ${debateTopic}`,
+        goal && `Learner side: ${String(goal).trim().slice(0, 240)}`,
+        themeText && `Context: ${String(themeText).trim().slice(0, 500)}`,
+        `Level: ${levelHint}`,
+        'Mode: debate',
+      ]
+      : [
+        title && `Title: ${String(title).trim().slice(0, 160)}`,
+        goal && `Goal: ${String(goal).trim().slice(0, 240)}`,
+        topic && `Topic: ${String(topic).trim().slice(0, 240)}`,
+        steps && `Steps:\n${normalizeStepList(steps).join('\n')}`.slice(0, 900),
+        themeText && `Context: ${String(themeText).trim().slice(0, 500)}`,
+        `Level: ${levelHint}`,
+        `Mode: ${practiceMode}`,
+      ]).filter(Boolean).join('\n')
 
     let parsed = await callGenerateOnce({
       billableChatCreate,
@@ -387,10 +415,25 @@ export function createGenerateBoundListEntries(deps) {
       language: lang,
       mode: practiceMode,
       themeText: themeBlob,
-      steps,
-      min: 6,
+      steps: isDebate ? '' : steps,
+      min: isDebate ? 4 : 6,
       max: targetCount,
     })
+
+    if (isDebate && draft.items.length >= 4) {
+      const listTitle = typeof parsed?.title === 'string' && parsed.title.trim() && hasCyrillic(parsed.title)
+        ? parsed.title.trim().slice(0, 120)
+        : ''
+      return {
+        title: listTitle,
+        items: draft.items,
+        quality: {
+          rejected: draft.rejected,
+          theme_ratio: draft.theme_ratio,
+          count: draft.items.length,
+        },
+      }
+    }
 
     if (!draft.ok || draft.items.length < 6) {
       const err = new Error(
@@ -418,12 +461,15 @@ export function createGenerateBoundListEntries(deps) {
   }
 }
 
-export function normalizeConfirmEntries(rawItems, language) {
+export function normalizeConfirmEntries(rawItems, language, options = {}) {
+  const mode = options.mode === 'debate' ? 'debate' : options.mode === 'chat' ? 'chat' : 'roleplay'
   const draft = validateBoundListDraft(rawItems, {
     language,
-    min: 6,
+    mode,
+    min: options.min ?? (mode === 'debate' ? 4 : 6),
     max: MAX_LIST,
     themeText: '',
+    steps: mode === 'debate' ? '' : options.steps,
   })
   if (!draft.ok) {
     const err = new Error(

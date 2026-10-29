@@ -263,8 +263,15 @@ export function buildRoleplayPracticeContext(scenario: {
   };
 }
 
+function debateSide(value?: string | null) {
+  if (value === 'for') return 'за';
+  if (value === 'against') return 'против';
+  return (value || '').trim();
+}
+
 export function buildDebatePracticeContext(input: {
   topic?: string | null;
+  topicEn?: string | null;
   topicId?: string | null;
   topicKey?: string | null;
   userPosition?: string | null;
@@ -272,23 +279,26 @@ export function buildDebatePracticeContext(input: {
   difficulty?: string | null;
   origin?: 'system' | 'user' | null;
 } | null | undefined): PracticeListContext | null {
-  if (!input?.topic?.trim()) return null;
+  const title = (input?.topic || input?.topicEn || '').trim();
+  if (!title) return null;
+  const learnerSide = debateSide(input?.userPosition);
+  const partnerSide = debateSide(input?.aiPosition);
   const text = [
-    'debate argument opinion',
-    input.topic,
-    input.userPosition,
-    input.aiPosition,
+    input?.topicEn,
+    input?.topic,
+    learnerSide && `ученик ${learnerSide}`,
+    partnerSide && `собеседник ${partnerSide}`,
   ].filter((part) => typeof part === 'string' && part.trim()).join(' · ');
-  const ref = (input.topicId || input.topicKey || input.topic || '').trim();
+  const ref = (input?.topicId || input?.topicKey || title).trim().slice(0, 120);
   return {
     label: 'Подходит к теме дебата',
-    text,
-    level: input.difficulty || null,
+    text: text || title,
+    level: input?.difficulty || null,
     binding: buildListBinding({
       kind: 'debate',
       ref,
-      origin: input.origin === 'user' || input.topicId ? 'user' : 'system',
-      label: input.topic,
+      origin: input?.origin === 'user' ? 'user' : 'system',
+      label: title.slice(0, 140),
     }),
   };
 }

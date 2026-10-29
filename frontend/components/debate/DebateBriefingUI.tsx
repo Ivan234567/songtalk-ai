@@ -32,6 +32,7 @@ type DebateBriefingUIProps = {
   onEditStep?: (step: BriefingEditStep) => void;
   practiceWords?: PracticeWordsSession | null;
   topicOrigin?: 'system' | 'user';
+  topicId?: string | null;
 };
 
 const debateColors = {
@@ -143,6 +144,7 @@ export function DebateBriefingUI({
   onEditStep,
   practiceWords = null,
   topicOrigin = 'system',
+  topicId = null,
 }: DebateBriefingUIProps) {
   const userPositionText = userPosition === 'for' ? 'За' : 'Против';
   const aiPositionText = aiPosition === 'for' ? 'За' : 'Против';
@@ -319,6 +321,8 @@ export function DebateBriefingUI({
             {...practiceWords}
             listContext={buildDebatePracticeContext({
               topic: topicRu || topic,
+              topicEn: topic,
+              topicId,
               userPosition,
               aiPosition,
               difficulty,

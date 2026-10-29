@@ -2731,7 +2731,7 @@ Rules:
       : paidHint.outcome.completion
     const hint = (completion.choices?.[0]?.message?.content ?? '').trim()
     if (practiceHintContext) {
-      const classified = classifyPracticeHint(hint, practiceHintContext.targets)
+      const classified = classifyPracticeHint(hint)
       if (!classified.ok) return res.status(classified.status).json({ error: classified.error })
       const saved = await saveDialogueHint({
         supabase,

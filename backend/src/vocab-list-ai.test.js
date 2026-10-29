@@ -166,6 +166,44 @@ test('генерация списка под сцену возвращает tit
   assert.equal(result.items[0].word, 'rent')
 })
 
+test('дебатная генерация отдаёт слова темы, даже если их меньше двадцати', async () => {
+  let system = ''
+  let user = ''
+  const generate = createGenerateBoundListEntries({
+    billableChatCreate: async (_userId, _id, payload) => {
+      system = payload?.messages?.[0]?.content || ''
+      user = payload?.messages?.[1]?.content || ''
+      return {
+        ok: true,
+        result: {
+          text: JSON.stringify({
+            title: 'К теме фастфуда',
+            items: [
+              { word: 'fast food', gloss: 'фастфуд' },
+              { word: 'obesity', gloss: 'ожирение' },
+              { word: 'ban', gloss: 'запрет' },
+              { word: 'health', gloss: 'здоровье' },
+            ],
+          }),
+        },
+      }
+    },
+  })
+  const result = await generate({
+    userId: 'user',
+    language: 'en',
+    mode: 'debate',
+    topic: 'Fast food should be banned',
+    title: 'Фастфуд должен быть запрещен',
+    themeText: 'Fast food should be banned · Фастфуд должен быть запрещен · for',
+  })
+  assert.equal(result.items.length, 4)
+  assert.equal(result.items[0].word, 'fast food')
+  assert.match(user, /Fast food should be banned/)
+  assert.match(system, /DEBATE/)
+  assert.doesNotMatch(system, /Steps list/)
+})
+
 test('дебатная генерация отклоняет слишком короткий ответ одним вызовом', async () => {
   let calls = 0
   const generate = createGenerateBoundListEntries({

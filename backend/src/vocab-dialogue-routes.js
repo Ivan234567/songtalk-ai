@@ -179,13 +179,12 @@ export function buildDebatePracticeHintInstruction(targets, scene = null) {
     'Write ONE example reply the learner can say next in the debate.',
     'Use the same language as the opponent, usually English.',
     focus
-      ? `The example MUST include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
-      : 'Include one unused practice word if any remain.',
-    'The sentence must answer the opponent and fit the learner position.',
+      ? `If it fits the opponent's last point, include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
+      : 'No practice word is waiting.',
+    'If the word does not fit, or there is no word, ignore vocabulary and answer from the latest point and the current step.',
     'Output only that sentence. No labels.',
     ...sceneContextLines(scene),
-    'Words still to say:',
-    ...lines,
+    ...(lines.length ? ['Words still to say:', ...lines] : []),
   ].join('\n')
 }
 
@@ -200,13 +199,12 @@ export function buildRoleplayPracticeHintInstruction(targets, scene = null) {
     'Write ONE example reply the learner can say aloud in this roleplay.',
     'Use the same language as the other person, usually English.',
     focus
-      ? `The example MUST include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
-      : 'Include one unused practice word if any remain.',
-    'The sentence must answer the other person and fit the current step.',
+      ? `If it fits the other person's last line and the current step, include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
+      : 'No practice word is waiting.',
+    'If the word does not fit, or there is no word, ignore vocabulary and answer from the latest line and the current step.',
     'Output only that sentence. No labels.',
     ...sceneContextLines(scene),
-    'Words still to say:',
-    ...lines,
+    ...(lines.length ? ['Words still to say:', ...lines] : []),
   ].join('\n')
 }
 
@@ -217,12 +215,11 @@ export function buildChatPracticeHintInstruction(targets) {
     'Write ONE example reply the learner can say next.',
     'Use the same language as the assistant, usually English.',
     focus
-      ? `The example MUST include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
-      : 'Include one unused practice word if any remain.',
-    'The sentence must answer the latest message.',
+      ? `If it fits the latest message, include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
+      : 'No practice word is waiting.',
+    'If the word does not fit, or there is no word, ignore vocabulary and answer from the latest message.',
     'Output only that sentence. No labels.',
-    'Words still to say:',
-    ...lines,
+    ...(lines.length ? ['Words still to say:', ...lines] : []),
   ].join('\n')
 }
 
@@ -398,11 +395,9 @@ export function fallbackPracticeReply(language, targets, { seed = '', avoid = []
   return pool[Math.abs(hash) % pool.length]
 }
 
-export function classifyPracticeHint(hint, targets) {
+export function classifyPracticeHint(hint) {
   const text = typeof hint === 'string' ? hint.trim() : ''
-  if (!text || !/[А-Яа-яЁё]/.test(text) || replyContainsTarget(text, targets)) {
-    return { ok: false, status: 422, error: 'Подсказка не сохранена' }
-  }
+  if (!text) return { ok: false, status: 422, error: 'Подсказка не сохранена' }
   return { ok: true, hint: text }
 }
 
