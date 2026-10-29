@@ -233,8 +233,6 @@ export function validateBoundListDraft(rows, options = {}) {
         items.length = 0
         items.push(...thematic.slice(0, max))
         themeRatio = 1
-      } else if (mode === 'debate') {
-        reasons.push(`мало слов по теме сцены (${Math.round(themeRatio * 100)}%)`)
       }
     }
   }
@@ -351,7 +349,7 @@ export function createGenerateBoundListEntries(deps) {
       isDebate,
     })
 
-    let draft = validateBoundListDraft(parsed?.items, {
+    const draft = validateBoundListDraft(parsed?.items, {
       language: lang,
       mode: practiceMode,
       themeText: themeBlob,
@@ -359,28 +357,6 @@ export function createGenerateBoundListEntries(deps) {
       min: Math.max(6, targetCount - 4),
       max: targetCount,
     })
-
-    // Один платный retry при браке QC — за счёт пользователя, лучше чем мусор в словаре
-    if (!draft.ok) {
-      parsed = await callGenerateOnce({
-        billableChatCreate,
-        userId,
-        language: lang,
-        mode: practiceMode,
-        levelHint,
-        targetCount,
-        profile: `${profile}\n\nPrevious draft failed quality checks: ${draft.reasons.join('; ')}. Return only on-topic clean items.`,
-        isDebate,
-      })
-      draft = validateBoundListDraft(parsed?.items, {
-        language: lang,
-        mode: practiceMode,
-        themeText: themeBlob,
-        steps,
-        min: Math.max(6, targetCount - 4),
-        max: targetCount,
-      })
-    }
 
     if (!draft.ok || draft.items.length < 6) {
       const err = new Error(

@@ -10,6 +10,7 @@ import {
   parseListBindingInput,
   listBindingPatch,
   inferThemeKeys,
+  tallyDueByList,
 } from './vocab-lists-routes.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -125,6 +126,26 @@ test('маршруты библиотеки списков зарегистри�
     ['DELETE', '/api/vocabulary/lists/:id/words/:vocabularyId'],
     ['GET', '/api/vocabulary/lists/:id/listen'],
   ])
+})
+
+test('каталог считает повторы и не читает все слова списков', () => {
+  const due = tallyDueByList([
+    { list_id: 'a', vocabulary_id: '1' },
+    { list_id: 'a', vocabulary_id: '1' },
+    { list_id: 'a', vocabulary_id: '2' },
+    { list_id: 'b', vocabulary_id: '2' },
+  ])
+  assert.equal(due.get('a'), 2)
+  assert.equal(due.get('b'), 1)
+  const source = readFileSync(join(root, 'backend/src/vocab-lists-routes.js'), 'utf8')
+  const handler = source.slice(
+    source.indexOf('export function createListLibraryHandler'),
+    source.indexOf('export function createEmptyListHandler'),
+  )
+  assert.match(handler, /loadLibraryCounters/)
+  assert.match(handler, /vocab_list_items\(count\)/)
+  assert.doesNotMatch(handler, /await ensureDemoLists/)
+  assert.doesNotMatch(handler, /loadAllListWordStats/)
 })
 
 test('библиотека создаёт системные списки и отдаёт транскрипцию', () => {

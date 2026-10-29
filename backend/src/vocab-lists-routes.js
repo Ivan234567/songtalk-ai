@@ -395,6 +395,94 @@ async function loadAllListWordStats({ supabase, safeSupabaseCall, userId, listId
   return result
 }
 
+function readEmbeddedCount(value) {
+  const row = Array.isArray(value) ? value[0] : value
+  const count = Number(row?.count)
+  return Number.isFinite(count) ? count : null
+}
+
+/** Сколько слов списка пора повторить. Одна связь list+vocabulary считается один раз. */
+export function tallyDueByList(links) {
+  const due = new Map()
+  const seen = new Set()
+  for (const row of Array.isArray(links) ? links : []) {
+    if (!row?.list_id || !row?.vocabulary_id) continue
+    const key = `${row.list_id}:${row.vocabulary_id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    due.set(row.list_id, (due.get(row.list_id) || 0) + 1)
+  }
+  return due
+}
+
+async function loadLibraryCounters({ supabase, safeSupabaseCall, userId, lists, now = new Date() }) {
+  const stats = new Map(lists.map((row) => [row.id, emptyListStats()]))
+  const listIds = lists.map((row) => row.id).filter(Boolean)
+  let needsItemCount = false
+  for (const row of lists) {
+    const bucket = stats.get(row.id)
+    const embedded = readEmbeddedCount(row.vocab_list_items)
+    if (embedded == null) needsItemCount = true
+    else if (bucket) bucket.word_count = embedded
+  }
+  if (!listIds.length) return stats
+
+  if (needsItemCount) {
+    const { data: items, error } = await safeSupabaseCall(
+      () => supabase
+        .from('vocab_list_items')
+        .select('list_id')
+        .eq('user_id', userId)
+        .in('list_id', listIds),
+    )
+    if (error) throw error
+    for (const row of items || []) {
+      const bucket = stats.get(row.list_id)
+      if (bucket) bucket.word_count += 1
+    }
+  }
+
+  const { data: dueStates, error: dueError } = await safeSupabaseCall(
+    () => supabase
+      .from('vocab_srs_states')
+      .select('sense_id')
+      .eq('user_id', userId)
+      .eq('card_type', 'recognition')
+      .not('last_reviewed_at', 'is', null)
+      .lte('due_at', now.toISOString()),
+  )
+  if (dueError) throw dueError
+  const senseIds = (dueStates || []).map((row) => row.sense_id).filter(Boolean)
+  if (!senseIds.length) return stats
+
+  const { data: senses, error: sensesError } = await safeSupabaseCall(
+    () => supabase
+      .from('vocab_senses')
+      .select('vocabulary_id')
+      .eq('user_id', userId)
+      .in('id', senseIds),
+  )
+  if (sensesError) throw sensesError
+  const vocabularyIds = [...new Set((senses || []).map((row) => row.vocabulary_id).filter(Boolean))]
+  if (!vocabularyIds.length) return stats
+
+  const { data: links, error: linksError } = await safeSupabaseCall(
+    () => supabase
+      .from('vocab_list_items')
+      .select('list_id, vocabulary_id')
+      .eq('user_id', userId)
+      .in('list_id', listIds)
+      .in('vocabulary_id', vocabularyIds),
+  )
+  if (linksError) throw linksError
+  const dueByList = tallyDueByList(links)
+  for (const [listId, count] of dueByList) {
+    const bucket = stats.get(listId)
+    if (bucket) bucket.due = count
+  }
+  return stats
+}
+
 async function serializeList(row, stats = null, tags = []) {
   const boundKind = row.bound_kind || null
   const boundRef = row.bound_ref || null
@@ -445,19 +533,13 @@ export function createListLibraryHandler(deps) {
     const language = await requireLanguage(deps, userId, res)
     if (!language) return
 
-    // Sense-sync не блокирует каталог: он тяжёлый и нужен при открытии списка / практике.
+    // Дозаполнение наборов и sense-sync не блокируют каталог: слова читаются при открытии списка.
     ensureUserVocabularySenses({ supabase, userId, language }).catch((error) => {
       console.error('[api/vocabulary/lists] background sense sync failed', error?.message || error)
     })
-    try {
-      await ensureDemoLists({ supabase, safeSupabaseCall, userId, language })
-    } catch (error) {
-      console.error('[api/vocabulary/lists] failed to prepare demo lists', error?.message || error?.code || error)
-      res.status(500).json({
-        error: isMissingRelation(error) ? 'Списки ещё не включены в базе' : 'Failed to prepare vocabulary senses',
-      })
-      return
-    }
+    ensureDemoLists({ supabase, safeSupabaseCall, userId, language }).catch((error) => {
+      console.error('[api/vocabulary/lists] background demo fill failed', error?.message || error?.code || error)
+    })
 
     const q = typeof req.query?.q === 'string' ? req.query.q.trim().toLowerCase() : ''
     const boundKindFilter = typeof req.query?.bound_kind === 'string' ? req.query.bound_kind.trim() : ''
@@ -469,20 +551,28 @@ export function createListLibraryHandler(deps) {
 
     let lists
     try {
-      let query = supabase
-        .from('vocab_lists')
-        .select(LIST_ROW_FIELDS)
-        .eq('user_id', userId)
-        .eq('language', language)
-        .order('updated_at', { ascending: false })
-      if (boundKindFilter) query = query.eq('bound_kind', boundKindFilter)
-      if (boundRefFilter) query = query.eq('bound_ref', boundRefFilter)
-      const { data, error } = await safeSupabaseCall(() => query)
-      if (error) throw error
-      lists = data || []
-    } catch {
+      const loadLists = (fields) => {
+        let query = supabase
+          .from('vocab_lists')
+          .select(fields)
+          .eq('user_id', userId)
+          .eq('language', language)
+          .order('updated_at', { ascending: false })
+        if (boundKindFilter) query = query.eq('bound_kind', boundKindFilter)
+        if (boundRefFilter) query = query.eq('bound_ref', boundRefFilter)
+        return safeSupabaseCall(() => query)
+      }
+      let result = await loadLists(`${LIST_ROW_FIELDS}, vocab_list_items(count)`)
+      if (result?.error) {
+        result = await loadLists(LIST_ROW_FIELDS)
+      }
+      if (result?.error) throw result.error
+      lists = result?.data || []
+    } catch (error) {
       console.error('[api/vocabulary/lists] failed to load lists')
-      res.status(500).json({ error: 'Failed to load lists' })
+      res.status(500).json({
+        error: isMissingRelation(error) ? 'Списки ещё не включены в базе' : 'Failed to load lists',
+      })
       return
     }
 
@@ -496,11 +586,11 @@ export function createListLibraryHandler(deps) {
 
     let statsByList = new Map()
     try {
-      statsByList = await loadAllListWordStats({
+      statsByList = await loadLibraryCounters({
         supabase,
         safeSupabaseCall,
         userId,
-        listIds: lists.map((row) => row.id),
+        lists,
       })
     } catch (error) {
       console.error('[api/vocabulary/lists] failed to load list stats', error?.message || error)

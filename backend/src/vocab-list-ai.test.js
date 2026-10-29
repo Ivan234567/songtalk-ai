@@ -80,24 +80,24 @@ test('QC ролевой сцены не бракует слова кофейни
   assert.equal(draft.items.length, 8)
 })
 
-test('QC бракует off-topic черновик', () => {
+test('QC дебата не гоняет второй запрос из-за дословного совпадения', () => {
   const draft = validateBoundListDraft([
     { word: 'banana', gloss: 'банан' },
     { word: 'guitar', gloss: 'гитара' },
     { word: 'soccer', gloss: 'футбол' },
-    { word: 'pillow', gloss: 'подушка' },
-    { word: 'socks', gloss: 'носки' },
-    { word: 'fridge', gloss: 'холодильник' },
     { word: 'pencil', gloss: 'карандаш' },
     { word: 'window', gloss: 'окно' },
+    { word: 'ticket', gloss: 'билет' },
+    { word: 'river', gloss: 'река' },
+    { word: 'camera', gloss: 'камера' },
   ], {
     language: 'en',
     mode: 'debate',
     themeText: 'climate policy carbon emissions debate parliament',
     min: 6,
   })
-  assert.equal(draft.ok, false)
-  assert.ok(draft.reasons.some((reason) => /теме|мало/.test(reason)))
+  assert.equal(draft.ok, true)
+  assert.equal(draft.items.length, 8)
 })
 
 test('cleanEntry требует кириллический gloss', () => {
@@ -142,17 +142,22 @@ test('генерация списка под сцену возвращает tit
   assert.equal(result.items[0].word, 'rent')
 })
 
-test('дебатная генерация отклоняет слишком короткий ответ', async () => {
+test('дебатная генерация отклоняет слишком короткий ответ одним вызовом', async () => {
+  let calls = 0
   const generate = createGenerateBoundListEntries({
-    billableChatCreate: async () => ({
-      ok: true,
-      result: { text: JSON.stringify({ title: 'x', items: [{ word: 'a', gloss: 'б' }] }) },
-    }),
+    billableChatCreate: async () => {
+      calls += 1
+      return {
+        ok: true,
+        result: { text: JSON.stringify({ title: 'x', items: [{ word: 'a', gloss: 'б' }] }) },
+      }
+    },
   })
   await assert.rejects(
     () => generate({ userId: 'user', language: 'en', mode: 'debate', topic: 'Climate' }),
     (err) => err?.status === 422,
   )
+  assert.equal(calls, 1)
 })
 
 test('ZH не использует debate-режим внутри генератора', async () => {

@@ -26,6 +26,7 @@ import {
   ChatWordsSoftAsk,
   PracticeWordsGate,
 } from '@/components/agent/PracticeWordsGate';
+import { PracticeModeHome, type PracticeHomeStage } from '@/components/agent/PracticeModeHome';
 import type { PracticeWordsSession } from '@/components/agent/PracticeWordsInSheet';
 import {
   PracticeWordsProgress,
@@ -353,6 +354,7 @@ export function AgentTab() {
   const [zhListenReview, setZhListenReview] = useState<ZhListenReview | null>(null);
   const [zhRevealedMeta, setZhRevealedMeta] = useState<Record<number, boolean>>({});
   const [agentMode, setAgentMode] = useState<'chat' | 'roleplay' | 'debate'>('chat');
+  const [practiceHome, setPracticeHome] = useState<PracticeHomeStage | null>('modes');
   const [chatPracticeSenses, setChatPracticeSenses] = useState<ChatPracticeSense[]>([]);
   const [chatPracticeLocked, setChatPracticeLocked] = useState(false);
   const [chatDialogueSessionId, setChatDialogueSessionId] = useState<string | null>(null);
@@ -715,6 +717,7 @@ export function AgentTab() {
     progressTargetHandledRef.current = target;
     const playMode = parsePlayMode(searchParams.get('play_mode'));
     setProgressDeepLink({ id: scenarioId, playMode });
+    setPracticeHome(null);
     setAgentMode('roleplay');
     setScenarioModalOpen(true);
     if (learningLanguage !== 'zh') {
@@ -749,24 +752,10 @@ export function AgentTab() {
       setChatPracticeSenses([]);
     }
 
-    if (target.startsWith('rp:')) {
-      const scenarioId = target.slice(3).trim();
-      if (scenarioId) {
-        setProgressDeepLink({ id: scenarioId, playMode: parsePlayMode(searchParams.get('play_mode')) });
-        setAgentMode('roleplay');
-        setScenarioModalOpen(true);
-        if (learningLanguage !== 'zh') {
-          setScenarioView(isUserScenarioId(scenarioId) ? 'my' : 'catalog');
-        }
-      }
-    } else if (target.startsWith('db:') || modeParam === 'debate') {
-      setAgentMode('debate');
-      setDebateSetupOpen(true);
-    } else if (modeParam === 'chat' || (!target && listId)) {
-      setAgentMode('chat');
-      setWordsGateMode('chat');
-      setEnglishSettingsOpen(true);
-    }
+    setWordsGateMode(null);
+    setScenarioModalOpen(false);
+    setDebateSetupOpen(false);
+    setPracticeHome('modes');
 
     const next = new URLSearchParams(searchParams.toString());
     next.delete('from');
@@ -900,7 +889,7 @@ export function AgentTab() {
         setChatInviteDismissed(true);
         setChatSoftAskDone(true);
         setWordsGateSkipped({ roleplay: true, debate: true });
-        setAgentMode('chat');
+        setPracticeHome('modes');
       } catch {
         setError('Не удалось взять слова в практику');
       }
@@ -2415,6 +2404,42 @@ export function AgentTab() {
     ]
   );
 
+  const showPracticeHome = Boolean(
+    practiceHome
+    && !modesLocked
+    && !selectedSessionId
+    && !goalReached
+    && !debateCompleted
+    && !voiceTaskResult
+    && !selectedVoiceTask
+    && !scenarioModalOpen
+    && !debateSetupOpen,
+  );
+
+  const openPracticeMode = useCallback((mode: 'chat' | 'roleplay' | 'debate') => {
+    if (mode === 'debate' && learningLanguage === 'zh') return;
+    if (mode === 'chat') {
+      handleModeChange('chat');
+      setPracticeHome(null);
+      return;
+    }
+    setPracticeHome(mode);
+  }, [handleModeChange, learningLanguage]);
+
+  const openPracticeMenuView = useCallback((view: 'catalog' | 'create' | 'my') => {
+    const safe = guardCatalogView(view);
+    if (practiceHome === 'debate') {
+      handleModeChange('debate');
+      handleDebateViewChange(safe);
+      setDebateSetupOpen(true);
+    } else {
+      handleModeChange('roleplay');
+      handleScenarioViewChange(safe);
+      setScenarioModalOpen(true);
+    }
+    setPracticeHome(null);
+  }, [guardCatalogView, handleDebateViewChange, handleModeChange, handleScenarioViewChange, practiceHome]);
+
   useEffect(() => {
     if (learningLanguage === 'zh' && agentMode === 'debate') {
       handleModeChange('chat');
@@ -2944,6 +2969,7 @@ export function AgentTab() {
     setCurrentSessionId(null);
     setScenarioView(systemCatalogView);
     setScenarioModalOpen(true);
+    setPracticeHome(null);
   }, [systemCatalogView]);
 
   const closeScenarioCatalog = useCallback(() => {
@@ -2952,9 +2978,9 @@ export function AgentTab() {
     progressTargetHandledRef.current = null;
     setHighlightedUserScenarioId(null);
     if (!selectedScenario) {
-      handleModeChange('chat');
+      setPracticeHome('roleplay');
     }
-  }, [handleModeChange, selectedScenario]);
+  }, [selectedScenario]);
 
   /** Сброс (выход) из диалога досрочно — возврат в свободный диалог */
   const handleExitDialogue = useCallback(() => {
@@ -2993,6 +3019,7 @@ export function AgentTab() {
     setProgressDeepLink(null);
     progressTargetHandledRef.current = null;
     handleModeChange('chat');
+    setPracticeHome('modes');
   }, [handleModeChange, clearChatPractice]);
 
   useEffect(() => {
@@ -4298,9 +4325,9 @@ export function AgentTab() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: selectedSession || goalReached || debateCompleted || voiceTaskResult || selectedVoiceTask ? 'flex-start' : 'center',
-          padding: voiceTaskResult || selectedVoiceTask ? '5.5rem 1.5rem 2rem' : '2.5rem 1.5rem',
-          overflow: selectedSession || goalReached || debateCompleted || subtitlesVisible || voiceTaskResult || selectedVoiceTask ? 'auto' : 'hidden',
+          justifyContent: showPracticeHome || selectedSession || goalReached || debateCompleted || voiceTaskResult || selectedVoiceTask ? 'flex-start' : 'center',
+          padding: showPracticeHome || voiceTaskResult || selectedVoiceTask ? '5.5rem 1.5rem 2rem' : '2.5rem 1.5rem',
+          overflow: showPracticeHome || selectedSession || goalReached || debateCompleted || subtitlesVisible || voiceTaskResult || selectedVoiceTask ? 'auto' : 'hidden',
           background: 'radial-gradient(ellipse 100% 70% at 50% 30%, rgba(99, 102, 241, 0.08), transparent 55%), radial-gradient(ellipse 80% 40% at 50% 80%, rgba(139, 92, 246, 0.04), transparent 50%)',
           borderRadius: historyOpen || subtitlesVisible ? '0 28px 28px 0' : 28,
           border: '1px solid var(--sidebar-border)',
@@ -4436,6 +4463,17 @@ export function AgentTab() {
                   </svg>
                   <span>ИИ</span>
                 </button>
+                {!showPracticeHome && !modesLocked && !selectedSessionId && !goalReached && !debateCompleted && !selectedVoiceTask && !scenarioModalOpen && !debateSetupOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setPracticeHome('modes')}
+                    className="agent-toolbar-btn"
+                    title="К выбору режима"
+                  >
+                    К режимам
+                  </button>
+                )}
+                {!showPracticeHome && (
                 <RoleplayModeUI
                   key={learningLanguage}
                   learningLanguage={learningLanguage}
@@ -4463,6 +4501,7 @@ export function AgentTab() {
                   onDebateViewChange={handleDebateViewChange}
                   practiceWords={practiceWordsSession}
                 />
+                )}
                 {learningLanguage === 'zh' && scenarioModalOpen && (
                   <ZhScenariosErrorBoundary onClose={closeScenarioCatalog}>
                     <ZhScenariosUI
@@ -4586,7 +4625,7 @@ export function AgentTab() {
                   </div>
                 </div>
               )}
-              {agentMode === 'chat' && !selectedVoiceTask && token && chatPracticeSenses.length === 0 && !chatInviteDismissed && !chatPracticeLocked && (
+              {!showPracticeHome && agentMode === 'chat' && !selectedVoiceTask && token && chatPracticeSenses.length === 0 && !chatInviteDismissed && !chatPracticeLocked && (
                 <ChatWordsInviteStrip
                   onChoose={() => {
                     setEnglishSettingsOpen(true);
@@ -4596,7 +4635,7 @@ export function AgentTab() {
                 />
               )}
               {/* Настройки обучения для английского — единая панель во всех режимах */}
-              {learningLanguage !== 'zh' && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || (agentMode === 'debate' && debateStarted)) && (
+              {!showPracticeHome && learningLanguage !== 'zh' && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || (agentMode === 'debate' && debateStarted)) && (
                 <div
                   className="english-settings-panel"
                   style={{
@@ -5210,7 +5249,7 @@ export function AgentTab() {
               )}
 
               {/* Настройки для китайского 自由对话 */}
-              {learningLanguage === 'zh' && !voiceTaskResult && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || selectedVoiceTask) && (
+              {!showPracticeHome && learningLanguage === 'zh' && !voiceTaskResult && !goalReached && !debateCompleted && (agentMode === 'chat' || (agentMode === 'roleplay' && selectedScenario) || selectedVoiceTask) && (
                 <div
                   className="chinese-settings-panel"
                   style={{
@@ -5828,7 +5867,19 @@ export function AgentTab() {
           </div>
         )}
 
-        {selectedSession ? (
+        {showPracticeHome && practiceHome ? (
+          <PracticeModeHome
+            stage={practiceHome}
+            showDebate={learningLanguage !== 'zh'}
+            showCatalog={showSystemCatalog}
+            roleplayTitle={learningLanguage === 'zh' ? 'Ситуативный диалог' : 'Roleplays Mode'}
+            wordsReady={chatPracticeSenses.length > 0}
+            wordsFromList={Boolean(preferredPracticeListId || chatPracticeListId)}
+            onSelectMode={openPracticeMode}
+            onSelectView={openPracticeMenuView}
+            onBack={() => setPracticeHome('modes')}
+          />
+        ) : selectedSession ? (
           <div style={{ width: '100%', maxWidth: 560, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <button
               type="button"
@@ -6433,6 +6484,7 @@ export function AgentTab() {
                   setDebateCompletedStepIds([]);
                   setDebateView(systemCatalogView);
                   setDebateSetupOpen(true);
+                  setPracticeHome(null);
                   setWordsGateSkipped((prev) => ({ ...prev, debate: false }));
                 }}
                 style={{
@@ -6625,7 +6677,7 @@ export function AgentTab() {
               <button
                 type="button"
                 onClick={handleRecordClick}
-                className="agent-record-hint"
+                className={state === 'listening' ? 'agent-record-hint agent-record-hint--below-cancel' : 'agent-record-hint'}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -7017,7 +7069,7 @@ export function AgentTab() {
           onStart={handleStartDebate}
           onClose={() => {
             if (!debateStarted) {
-              setAgentMode('chat');
+              setPracticeHome('debate');
             }
             setDebateSetupOpen(false);
           }}

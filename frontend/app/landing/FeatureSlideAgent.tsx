@@ -114,7 +114,7 @@ function ModeTabsMock({ previewLang }: { previewLang: LandingPreviewLang }) {
             onClick={() => { setMode('debate'); setMenuOpen(false); }}
           >
             {ICO.chat}
-            Дебаты
+            Debate
             {ICO.chevron}
           </button>
         )}

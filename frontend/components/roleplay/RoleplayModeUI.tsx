@@ -663,10 +663,10 @@ export function RoleplayModeUI({
                   ...(modesLocked && mode !== 'debate' ? { opacity: 0.45, cursor: 'not-allowed' } : null),
                 }}
                 className="agent-mode-tab"
-                title={modesLocked && mode !== 'debate' ? lockedTitle : 'Дебаты — каталог, создать или мои темы'}
+                title={modesLocked && mode !== 'debate' ? lockedTitle : 'Debate — каталог, создать или мои темы'}
               >
                 <span style={{ opacity: mode === 'debate' ? 1 : 0.75, display: 'flex', flexShrink: 0 }}>{MODE_ICONS.debate}</span>
-                <span style={{ whiteSpace: 'nowrap' }}>Дебаты</span>
+                <span style={{ whiteSpace: 'nowrap' }}>Debate</span>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.7, transform: debateDropdownOpen ? 'rotate(180deg)' : 'none' }} aria-hidden>
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
