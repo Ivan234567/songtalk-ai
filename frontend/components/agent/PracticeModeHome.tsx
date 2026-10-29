@@ -33,12 +33,12 @@ function wordsTip(base: string, wordsReady: boolean, wordsFromList: boolean): st
 
 const MODE_ICON = {
   chat: (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   ),
   roleplay: (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -46,7 +46,7 @@ const MODE_ICON = {
     </svg>
   ),
   debate: (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       <path d="M8 9h8" />
       <path d="M8 13h5" />
@@ -56,7 +56,7 @@ const MODE_ICON = {
 
 const MENU_ICON = {
   catalog: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
@@ -64,14 +64,14 @@ const MENU_ICON = {
     </svg>
   ),
   create: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 8v8" />
       <path d="M8 12h8" />
     </svg>
   ),
   my: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
     </svg>
   ),
@@ -92,45 +92,43 @@ export function PracticeModeHome({
     const isDebate = stage === 'debate';
     const items: Array<{ view: PracticeMenuView; title: string; text: string }> = isDebate
       ? [
-          ...(showCatalog ? [{ view: 'catalog' as const, title: 'Каталог дебатов', text: 'Готовые темы спора' }] : []),
-          { view: 'create', title: 'Создать тему дебата', text: 'Своя тема и позиция' },
+          ...(showCatalog ? [{ view: 'catalog' as const, title: 'Каталог дебатов', text: 'Готовые темы, можно сразу в спор' }] : []),
+          { view: 'create', title: 'Создать тему', text: 'Своя тема и ваша позиция' },
           { view: 'my', title: 'Мои дебаты', text: 'Темы, которые вы уже сохранили' },
         ]
       : [
-          ...(showCatalog ? [{ view: 'catalog' as const, title: 'Каталог сценариев', text: 'Готовые бытовые ситуации' }] : []),
-          { view: 'create', title: 'Создать сценарий', text: 'Своя ситуация и цель' },
-          { view: 'my', title: 'Мои сценарии', text: 'Сценарии, которые вы уже сохранили' },
+          ...(showCatalog ? [{ view: 'catalog' as const, title: 'Каталог сценариев', text: 'Кафе, такси, магазин и другие сцены' }] : []),
+          { view: 'create', title: 'Создать сценарий', text: 'Своя ситуация, цель и шаги' },
+          { view: 'my', title: 'Мои сценарии', text: 'Сцены, которые вы уже сохранили' },
         ];
 
     return (
       <section className={styles.home} aria-label={isDebate ? 'Меню дебатов' : 'Меню сценариев'}>
-        <button type="button" className={styles.back} onClick={onBack}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M19 12H5" />
-            <path d="M12 19l-7-7 7-7" />
-          </svg>
-          К режимам
-        </button>
-        <header className={styles.head}>
-          <p className={styles.kicker}>{isDebate ? 'Дебаты' : 'Сценарии'}</p>
-          <h2 className={styles.title}>{isDebate ? 'Debate' : roleplayTitle}</h2>
-          <p className={styles.lead}>
-            {isDebate ? 'Выберите, откуда взять тему спора.' : 'Выберите, откуда взять ситуацию.'}
-          </p>
-        </header>
-        <div className={styles.menu}>
-          {items.map((item) => (
-            <button key={item.view} type="button" className={styles.menuItem} onClick={() => onSelectView(item.view)}>
-              <span className={styles.menuIcon}>{MENU_ICON[item.view]}</span>
-              <span className={styles.menuCopy}>
-                <span className={styles.menuTitle}>{item.title}</span>
-                <span className={styles.menuText}>{item.text}</span>
-              </span>
-              <svg className={styles.chevron} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-            </button>
-          ))}
+        <div className={styles.stage}>
+          <button type="button" className={styles.back} onClick={onBack}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M19 12H5" />
+              <path d="M12 19l-7-7 7-7" />
+            </svg>
+            К режимам
+          </button>
+          <header className={styles.head}>
+            <p className={styles.kicker}>{isDebate ? 'Дебаты' : 'Сценарии'}</p>
+            <h2 className={styles.title}>{isDebate ? 'Debate' : roleplayTitle}</h2>
+            <p className={styles.lead}>
+              {isDebate ? 'Откуда взять тему спора' : 'Откуда взять ситуацию'}
+            </p>
+          </header>
+          <div className={items.length === 2 ? styles.tilesTwo : styles.tiles}>
+            {items.map((item) => (
+              <button key={item.view} type="button" className={`${styles.tile} ${styles[item.view]}`} onClick={() => onSelectView(item.view)}>
+                <span className={styles.glow} aria-hidden />
+                <span className={styles.icon}>{MENU_ICON[item.view]}</span>
+                <span className={styles.cardTitle}>{item.title}</span>
+                <span className={styles.cardText}>{item.text}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </section>
     );
@@ -161,31 +159,31 @@ export function PracticeModeHome({
 
   return (
     <section className={styles.home} aria-label="Выбор режима практики">
-      <header className={styles.head}>
-        <p className={styles.kicker}>Практика</p>
-        <h2 className={styles.title}>Выберите режим</h2>
-        <p className={styles.lead}>Три способа говорить с ИИ. Слова из словаря подключаются после выбора.</p>
-      </header>
-      {(wordsReady || wordsFromList) && (
-        <p className={styles.listChip}>
-          {wordsReady ? 'Слова из словаря уже выбраны' : 'Список из словаря подключится к выбранному режиму'}
-        </p>
-      )}
-      <div className={showDebate ? styles.grid : styles.gridTwo}>
-        {cards.map((card) => (
-          <button key={card.id} type="button" className={styles.card} onClick={() => onSelectMode(card.id)}>
-            <span className={styles.icon}>{MODE_ICON[card.id]}</span>
-            <span className={styles.cardTitle}>{card.title}</span>
-            <span className={styles.cardText}>{card.text}</span>
-            <span className={styles.tip}>
-              <span className={styles.tipMark} aria-hidden>i</span>
-              <span>
+      <div className={styles.stage}>
+        <header className={styles.head}>
+          <p className={styles.kicker}>Практика</p>
+          <h2 className={styles.title}>Выберите режим</h2>
+          <p className={styles.lead}>Три способа говорить с ИИ. Слова подключаются после выбора.</p>
+        </header>
+        {(wordsReady || wordsFromList) && (
+          <p className={styles.listChip}>
+            {wordsReady ? 'Слова из словаря уже выбраны' : 'Список из словаря подключится к выбранному режиму'}
+          </p>
+        )}
+        <div className={showDebate ? styles.grid : styles.gridTwo}>
+          {cards.map((card) => (
+            <button key={card.id} type="button" className={`${styles.card} ${styles[card.id]}`} onClick={() => onSelectMode(card.id)}>
+              <span className={styles.glow} aria-hidden />
+              <span className={styles.icon}>{MODE_ICON[card.id]}</span>
+              <span className={styles.cardTitle}>{card.title}</span>
+              <span className={styles.cardText}>{card.text}</span>
+              <span className={styles.tip}>
                 <span className={styles.tipKicker}>Перед занятием</span>
                 <span className={styles.tipText}>{card.tip}</span>
               </span>
-            </span>
-          </button>
-        ))}
+            </button>
+          ))}
+        </div>
       </div>
     </section>
   );

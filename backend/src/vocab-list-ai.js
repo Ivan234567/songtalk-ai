@@ -33,6 +33,40 @@ function parseJsonObject(raw) {
   }
 }
 
+function unescapeJsonString(value) {
+  try {
+    return JSON.parse(`"${value}"`)
+  } catch {
+    return value
+  }
+}
+
+/** Достаёт готовые word/gloss, даже если модель оборвала JSON на полуслове. */
+export function salvageGeneratedItems(raw) {
+  const text = String(raw || '')
+  const items = []
+  const re = /"word"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]{0,280}?"gloss"\s*:\s*"((?:\\.|[^"\\])*)"/g
+  let match = re.exec(text)
+  while (match && items.length < MAX_LIST) {
+    const word = unescapeJsonString(match[1]).trim()
+    const gloss = unescapeJsonString(match[2]).trim()
+    if (word && gloss) items.push({ word, gloss })
+    match = re.exec(text)
+  }
+  return items
+}
+
+export function parseGeneratedList(raw) {
+  const parsed = parseJsonObject(raw)
+  const items = Array.isArray(parsed?.items) ? parsed.items : []
+  if (items.length >= 6) return { title: parsed?.title || '', items }
+  const salvaged = salvageGeneratedItems(raw)
+  if (salvaged.length > items.length) {
+    return { title: typeof parsed?.title === 'string' ? parsed.title : '', items: salvaged }
+  }
+  return parsed
+}
+
 function tokenize(text) {
   return String(text || '')
     .toLowerCase()
@@ -211,11 +245,11 @@ export function validateBoundListDraft(rows, options = {}) {
 
   if (steps.length) {
     const covered = coverSteps(items, steps, max)
-    if (covered.missing.length) {
-      reasons.push(`шаги без своих слов: ${covered.missing.join('; ')}`)
-    }
     items.length = 0
     items.push(...covered.items)
+    if (items.length < min && covered.missing.length) {
+      reasons.push(`шаги без своих слов: ${covered.missing.join('; ')}`)
+    }
   }
 
   if (items.length < min) {
@@ -300,7 +334,7 @@ async function callGenerateOnce({
     err.status = paid?.status || 402
     throw err
   }
-  return parseJsonObject(paid.result?.text)
+  return parseGeneratedList(paid.result?.text)
 }
 
 export function createGenerateBoundListEntries(deps) {
@@ -354,7 +388,7 @@ export function createGenerateBoundListEntries(deps) {
       mode: practiceMode,
       themeText: themeBlob,
       steps,
-      min: Math.max(6, targetCount - 4),
+      min: 6,
       max: targetCount,
     })
 

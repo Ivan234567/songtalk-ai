@@ -5,6 +5,7 @@ import {
   createGenerateBoundListEntries,
   validateBoundListDraft,
   cleanEntry,
+  parseGeneratedList,
 } from './vocab-list-ai.js'
 
 test('разбор ввода возвращает английские слова и русский перевод', async () => {
@@ -98,6 +99,29 @@ test('QC дебата не гоняет второй запрос из-за до
   })
   assert.equal(draft.ok, true)
   assert.equal(draft.items.length, 8)
+})
+
+test('неполный JSON всё равно отдаёт уже готовые слова', () => {
+  const parsed = parseGeneratedList('{"title":"Салон","items":[{"word":"haircut","gloss":"стрижка"},{"word":"appointment","gloss":"запись"')
+  assert.equal(parsed.items.length, 2)
+  assert.equal(parsed.items[0].word, 'haircut')
+})
+
+test('список сцены принимается, если слов хватает не на каждый шаг', () => {
+  const words = ['scissors', 'comb', 'shampoo', 'towel', 'mirror', 'chair'].map((word, index) => ({
+    word,
+    gloss: ['ножницы', 'расчёска', 'шампунь', 'полотенце', 'зеркало', 'кресло'][index],
+  }))
+  const draft = validateBoundListDraft(words, {
+    language: 'en',
+    mode: 'roleplay',
+    themeText: 'Салон. Запись на стрижку.',
+    steps: ['Выбрать мастера', 'Назвать время', 'Уточнить цену', 'Подтвердить запись'],
+    min: 6,
+    max: 20,
+  })
+  assert.equal(draft.ok, true)
+  assert.equal(draft.items.length, 6)
 })
 
 test('cleanEntry требует кириллический gloss', () => {

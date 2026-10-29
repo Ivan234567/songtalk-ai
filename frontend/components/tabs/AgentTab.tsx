@@ -888,7 +888,6 @@ export function AgentTab() {
         setChatPracticeRevealed({});
         setChatInviteDismissed(true);
         setChatSoftAskDone(true);
-        setWordsGateSkipped({ roleplay: true, debate: true });
         setPracticeHome('modes');
       } catch {
         setError('Не удалось взять слова в практику');
@@ -2312,9 +2311,10 @@ export function AgentTab() {
 
   // Обработчик смены режима - сброс дебата при переходе в другой режим
   const handleModeChange = useCallback(
-    (mode: 'chat' | 'roleplay' | 'debate') => {
+    (mode: 'chat' | 'roleplay' | 'debate', options?: { force?: boolean }) => {
       if (mode === 'debate' && learningLanguage === 'zh') return;
       if (
+        !options?.force &&
         mode !== agentMode &&
         ((agentMode === 'chat' && messages.length > 0 && !selectedVoiceTask) ||
           (agentMode === 'roleplay' && selectedScenario && !goalReached) ||
@@ -2328,7 +2328,6 @@ export function AgentTab() {
       setSelectedVoiceTask(null);
       resetVoiceTaskPlay();
       if (mode === 'chat') {
-        setWordsGateSkipped({});
         setEnglishSettingsOpen(true);
         setSelectedScenario(null);
         setDebateStarted(false);
@@ -2419,8 +2418,8 @@ export function AgentTab() {
   const openPracticeMode = useCallback((mode: 'chat' | 'roleplay' | 'debate') => {
     if (mode === 'debate' && learningLanguage === 'zh') return;
     if (mode === 'chat') {
-      handleModeChange('chat');
       setPracticeHome(null);
+      handleModeChange('chat');
       return;
     }
     setPracticeHome(mode);
@@ -3018,7 +3017,7 @@ export function AgentTab() {
     setVoiceTaskModalOpen(false);
     setProgressDeepLink(null);
     progressTargetHandledRef.current = null;
-    handleModeChange('chat');
+    handleModeChange('chat', { force: true });
     setPracticeHome('modes');
   }, [handleModeChange, clearChatPractice]);
 
@@ -5974,7 +5973,7 @@ export function AgentTab() {
         ) : goalReached && agentMode === 'roleplay' && selectedScenario ? (
           <div
             style={{
-              width: 'min(540px, 100%)',
+              width: 'min(1080px, 100%)',
               maxHeight: '100%',
               overflowY: 'auto',
               display: 'flex',
@@ -6255,10 +6254,11 @@ export function AgentTab() {
             style={{
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '1.75rem',
-              padding: '2rem',
+              alignItems: 'stretch',
+              width: 'min(1080px, 100%)',
+              margin: '1.5rem auto 0',
+              gap: '1.25rem',
+              padding: '0.5rem 0 1.5rem',
               textAlign: 'center',
             }}
           >
@@ -6266,6 +6266,7 @@ export function AgentTab() {
               style={{
                 width: 72,
                 height: 72,
+                alignSelf: 'center',
                 borderRadius: '50%',
                 background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(79, 70, 229, 0.2))',
                 border: '2px solid rgba(99, 102, 241, 0.4)',
@@ -6281,16 +6282,16 @@ export function AgentTab() {
             <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700, color: 'var(--sidebar-text)' }}>
               Дебат завершен
             </h2>
-            <p style={{ margin: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.8, maxWidth: 360 }}>
+            <p style={{ margin: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.8 }}>
               {debateTopic}
             </p>
             {debateFeedbackLoading && (
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: 0.7, maxWidth: 420 }}>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: 0.7 }}>
                 Готовим короткий фидбек по дебату…
               </p>
             )}
             {debateFeedback && (
-              <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--sidebar-text)', opacity: 0.85, maxWidth: 460 }}>
+              <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--sidebar-text)', opacity: 0.85 }}>
                 {debateFeedback}
               </p>
             )}
@@ -6298,7 +6299,6 @@ export function AgentTab() {
               <div
                 style={{
                   width: '100%',
-                  maxWidth: 640,
                   border: '1px solid var(--sidebar-border)',
                   borderRadius: 12,
                   background: 'var(--sidebar-hover)',
@@ -6411,7 +6411,7 @@ export function AgentTab() {
                   borderRadius: 10,
                   background: 'rgba(99, 102, 241, 0.08)',
                   border: '1px solid rgba(99, 102, 241, 0.25)',
-                  maxWidth: 460,
+                  width: '100%',
                   textAlign: 'left',
                 }}
               >
@@ -6431,7 +6431,7 @@ export function AgentTab() {
               </div>
             )}
             {debateFeedbackError && !debateFeedback && (
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: 0.6, maxWidth: 420 }}>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: 0.6 }}>
                 Не удалось получить короткий фидбек — можно попробовать оценку речи.
               </p>
             )}
@@ -6485,7 +6485,6 @@ export function AgentTab() {
                   setDebateView(systemCatalogView);
                   setDebateSetupOpen(true);
                   setPracticeHome(null);
-                  setWordsGateSkipped((prev) => ({ ...prev, debate: false }));
                 }}
                 style={{
                   padding: '0.75rem 1.5rem',
@@ -7573,7 +7572,7 @@ export function AgentTab() {
                   opacity: 0.88,
                 }}
               >
-                Текущий разговор будет сброшен, и вы вернётесь в свободный диалог. Несохранённый прогресс пропадёт.
+                Текущий разговор будет сброшен, и вы вернётесь к выбору режима. Несохранённый прогресс пропадёт.
               </p>
             </div>
             <div

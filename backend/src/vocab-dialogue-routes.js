@@ -60,7 +60,7 @@ function practiceTargetLines(targets) {
 
 function practiceHintTargetLines(targets) {
   return targets.map((target, index) => (
-    `${index + 1}. meaning: ${JSON.stringify(target.gloss_ru)} forbidden word: ${JSON.stringify(target.headword)}`
+    `${index + 1}. say this word: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
   ))
 }
 
@@ -176,17 +176,15 @@ export function buildDebatePracticeHintInstruction(targets, scene = null) {
   const focus = ordered[0]
   const lines = practiceHintTargetLines(ordered)
   return [
-    'The learner is practicing hidden words inside a debate.',
-    'Write the hint in Russian only.',
+    'Write ONE example reply the learner can say next in the debate.',
+    'Use the same language as the opponent, usually English.',
     focus
-      ? `Steer them to use this meaning in the next argument: ${JSON.stringify(focus.gloss_ru)}.`
-      : 'Steer them toward one unused meaning.',
-    'Tie the hint to the current debate topic and their position — not a generic vocab drill.',
-    'Describe the argument angle so they can recall the expression themselves.',
-    'Do not write any forbidden word, its spelling, or a foreign-language example containing it.',
-    'Do not output the suggested reply in the target language.',
-    'Keep the hint useful for the current debate.',
+      ? `The example MUST include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
+      : 'Include one unused practice word if any remain.',
+    'The sentence must answer the opponent and fit the learner position.',
+    'Output only that sentence. No labels.',
     ...sceneContextLines(scene),
+    'Words still to say:',
     ...lines,
   ].join('\n')
 }
@@ -199,17 +197,15 @@ export function buildRoleplayPracticeHintInstruction(targets, scene = null) {
   const focus = ordered[0]
   const lines = practiceHintTargetLines(ordered)
   return [
-    'The learner is practicing hidden words inside a roleplay.',
-    'Write the hint in Russian only.',
+    'Write ONE example reply the learner can say aloud in this roleplay.',
+    'Use the same language as the other person, usually English.',
     focus
-      ? `Steer them to say this meaning now: ${JSON.stringify(focus.gloss_ru)}.`
-      : 'Steer them toward one unused meaning for the current step.',
-    'Tie the hint to the current scenario step and goal — not a generic vocab drill.',
-    'Describe the situation so they can recall the expression themselves.',
-    'Do not write any forbidden word, its spelling, or a foreign-language example containing it.',
-    'Do not output the suggested reply in the target language.',
-    'Keep the hint useful for the current scenario step.',
+      ? `The example MUST include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
+      : 'Include one unused practice word if any remain.',
+    'The sentence must answer the other person and fit the current step.',
+    'Output only that sentence. No labels.',
     ...sceneContextLines(scene),
+    'Words still to say:',
     ...lines,
   ].join('\n')
 }
@@ -218,15 +214,14 @@ export function buildChatPracticeHintInstruction(targets) {
   const focus = targets[0]
   const lines = practiceHintTargetLines(targets)
   return [
-    'The learner is practicing hidden words in free conversation.',
-    'Write the hint in Russian only.',
+    'Write ONE example reply the learner can say next.',
+    'Use the same language as the assistant, usually English.',
     focus
-      ? `Steer them to use this meaning in the next reply: ${JSON.stringify(focus.gloss_ru)}.`
-      : 'Steer them toward one unused meaning.',
-    'The Russian hint should outline a reply that naturally needs that meaning — not a vague tip.',
-    'Describe the situation so they can recall the expression themselves.',
-    'Do not write any forbidden word, its spelling, or a foreign-language example containing it.',
-    'Do not output the suggested reply in the target language.',
+      ? `The example MUST include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
+      : 'Include one unused practice word if any remain.',
+    'The sentence must answer the latest message.',
+    'Output only that sentence. No labels.',
+    'Words still to say:',
     ...lines,
   ].join('\n')
 }

@@ -237,9 +237,10 @@ test('инструкция чата содержит форму из базы и
   assert.match(text, /Targets still unused/)
   assert.match(text, /This turn focus meaning/)
   const hint = buildChatPracticeHintInstruction([{ headword: 'apple', gloss_ru: 'яблоко' }])
-  assert.match(hint, /Russian only/)
-  assert.match(hint, /forbidden word/)
-  assert.match(hint, /Steer them to use this meaning/)
+  assert.match(hint, /MUST include this word/)
+  assert.match(hint, /apple/)
+  assert.match(hint, /яблоко/)
+  assert.doesNotMatch(hint, /Russian only/)
   const roleplay = buildRoleplayPracticeInstruction(
     [{ headword: 'apple', gloss_ru: 'яблоко' }],
     { title: 'At the market', goal: 'Buy fruit', currentStep: 'Ask for fruit' },
