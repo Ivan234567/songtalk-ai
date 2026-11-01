@@ -128,7 +128,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userEmail,
 }) => {
   const { learningLanguage } = useLearningLanguage();
-  const visibleTabs = tabs.filter((tab) => learningLanguage === 'en' || tab.key !== 'karaoke');
+  // Караоке временно скрыто из навигации.
+  const visibleTabs = tabs.filter((tab) => tab.key !== 'karaoke');
   const qrFg = learningLanguage === 'zh' ? '#c9a48c' : '#6bf0b0';
   const emailInitial = (userEmail || '').trim().charAt(0).toUpperCase() || '?';
   const emailHue = getEmailHue((userEmail || 'guest').toLowerCase());

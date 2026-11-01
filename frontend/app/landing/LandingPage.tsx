@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { FeatureSlideAgent } from './FeatureSlideAgent';
-import { FeatureSlideKaraoke } from './FeatureSlideKaraoke';
 import { FeatureSlideVoiceTasks } from './FeatureSlideVoiceTasks';
 import { FeatureSlideProgress } from './FeatureSlideProgress';
 import { FeatureSlideDictionary } from './FeatureSlideDictionary';
@@ -327,17 +326,11 @@ function LandingPageInner() {
           sectionId="feature-slide-agent"
           highlight={highlightSection === 'feature-slide-agent'}
         />
-        {previewLang === 'zh' ? (
+        {previewLang === 'zh' && (
           <FeatureSlideVoiceTasks
             key="zh-voice"
             sectionId="feature-slide-voice-tasks"
             highlight={highlightSection === 'feature-slide-voice-tasks'}
-          />
-        ) : (
-          <FeatureSlideKaraoke
-            key="en-karaoke"
-            sectionId="feature-slide-karaoke"
-            highlight={highlightSection === 'feature-slide-karaoke'}
           />
         )}
         <FeatureSlideProgress

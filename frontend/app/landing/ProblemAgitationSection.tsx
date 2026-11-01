@@ -6,7 +6,6 @@ import { useLandingPreviewLang } from './preview-lang';
 
 const FEATURE_IDS = {
   agent: 'feature-slide-agent',
-  karaoke: 'feature-slide-karaoke',
   voiceTasks: 'feature-slide-voice-tasks',
   progress: 'feature-slide-progress',
   dictionary: 'feature-slide-dictionary',
@@ -98,19 +97,14 @@ export function ProblemAgitationSection({ onScrollToFeature }: ProblemAgitationS
             <p className={styles.problemCardQuestion}>
               {isZh
                 ? 'Учите слова к HSK, но они вылетают из головы? Не видите, растёте ли вы вообще?'
-                : 'Учите слова по песням и сериалам, но они вылетают из головы? Не видите, растёте ли вы вообще?'}
+                : 'Учите слова, но они вылетают из головы? Не видите, растёте ли вы вообще?'}
             </p>
             <p className={styles.problemCardText}>
               {isZh
                 ? 'Нет системы повторений, пиньиня в контексте и понятного прогресса. Хочется собирать иероглифы в словаре и видеть результат в цифрах.'
-                : 'Нет системы повторений, контекста и понятного прогресса. Хочется собирать лексику из любимого контента и видеть результат в цифрах.'}
+                : 'Нет системы повторений, контекста и понятного прогресса. Хочется собирать лексику из диалогов и видеть результат в цифрах.'}
             </p>
             <div className={styles.problemCardCtaGroup}>
-              {!isZh && (
-                <button type="button" onClick={() => handleScrollTo('karaoke')} className={styles.problemCardCtaSmall}>
-                  Караоке
-                </button>
-              )}
               <button type="button" onClick={() => handleScrollTo('dictionary')} className={styles.problemCardCtaSmall}>
                 Словарь
               </button>

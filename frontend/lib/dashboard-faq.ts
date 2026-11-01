@@ -43,7 +43,7 @@ export function getFaqCategoryLabel(id: FaqCategoryId): string {
 export function getFaqCategories(lang: LearningLanguage): FaqCategory[] {
   const ids: Array<FaqCategoryId | 'all'> = lang === 'zh'
     ? ['all', 'start', 'practice', 'dictionary', 'progress', 'billing', 'account']
-    : ['all', 'start', 'practice', 'karaoke', 'dictionary', 'progress', 'billing', 'account'];
+    : ['all', 'start', 'practice', 'dictionary', 'progress', 'billing', 'account'];
   return ids.map((id) => ({
     id,
     label: id === 'all' ? 'Все' : CATEGORY_LABELS[id],
@@ -210,7 +210,7 @@ const SHARED_START: FaqItem[] = [
     question: 'Как переключить английский и китайский?',
     answer: [
       'В шапке дашборда есть переключатель English / 中文. Выбор сохраняется в профиле и не требует перезагрузки.',
-      'Словарь, сессии и прогресс у языков раздельные. Баланс общий. Караоке есть только в английском режиме.',
+      'Словарь, сессии и прогресс у языков раздельные. Баланс общий.',
     ],
     keywords: ['язык', 'режим', 'switch', 'english', '中文', 'китайский'],
   },
@@ -302,36 +302,12 @@ const EN_ITEMS: FaqItem[] = [
     keywords: ['сленг', 'мат', 'формальность', 'cefr', 'a1', 'b2'],
   },
   {
-    id: 'en-karaoke-how',
-    category: 'karaoke',
-    question: 'Как устроено караоке?',
-    answer: [
-      'Вставьте ссылку на YouTube. Появятся синхронизированные субтитры: текущая строка подсвечивается, можно кликнуть по сегменту и перейти к нему.',
-      'Скорость 0,5×–2×, режим «только текст». Караоке доступно только в английском режиме — для китайского этого раздела нет.',
-    ],
-    keywords: ['youtube', 'песня', 'субтитры', 'видео'],
-    relatedTab: 'karaoke',
-    relatedLabel: 'Открыть караоке',
-  },
-  {
-    id: 'en-karaoke-words',
-    category: 'karaoke',
-    question: 'Как добавить слово или идиому из песни?',
-    answer: [
-      'Кликните по слову в субтитрах — появится перевод и кнопка в словарь, с контекстом строки.',
-      'Отдельно можно разобрать идиомы и фразовые глаголы по тексту песни и добавить их одним действием.',
-    ],
-    keywords: ['клик', 'идиома', 'phrasal', 'добавить'],
-    relatedTab: 'karaoke',
-    relatedLabel: 'Открыть караоке',
-  },
-  {
     id: 'en-dict',
     category: 'dictionary',
     question: 'Что хранится в английском словаре?',
     answer: [
       'Три раздела: слова, идиомы и фразовые глаголы. У единиц есть перевод, примеры, уровень CEFR и повторение по интервалам (SRS).',
-      'Можно добавлять из диалога, переводчика, караоке или вручную. Есть экспорт и импорт, в том числе в Anki.',
+      'Можно добавлять из диалога, переводчика или вручную. Есть экспорт и импорт, в том числе в Anki.',
     ],
     keywords: ['srs', 'anki', 'идиомы', 'phrasal verbs'],
     relatedTab: 'dictionary',
@@ -393,12 +369,12 @@ const ZH_ITEMS: FaqItem[] = [
   {
     id: 'zh-no-karaoke',
     category: 'practice',
-    question: 'Почему нет караоке и дебатов?',
+    question: 'Почему нет дебатов?',
     answer: [
-      'В китайском треке их нет специально: караоке, дебаты и фразовые глаголы относятся к английскому режиму.',
+      'В китайском треке их нет специально: дебаты и фразовые глаголы относятся к английскому режиму.',
       'Для китайского сделаны ситуативные диалоги HSK, голосовые минутки и словарь с пиньинем. Переключите шапку на English, если нужен английский набор.',
     ],
-    keywords: ['караоке', 'дебаты', 'нет раздела'],
+    keywords: ['дебаты', 'нет раздела', 'фразовые'],
   },
   {
     id: 'zh-hsk',
@@ -541,7 +517,7 @@ export function getFaqQuickLinks(lang: LearningLanguage): FaqQuickLink[] {
   }
   return [
     { id: 'q-practice', title: 'Практика', text: 'Диалог, сценарии и дебаты', tab: 'agent' },
-    { id: 'q-karaoke', title: 'Караоке', text: 'Песня с YouTube и слова в словарь', tab: 'karaoke' },
+    { id: 'q-dict', title: 'Словарь', text: 'Слова, идиомы и фразовые глаголы', tab: 'dictionary' },
     { id: 'q-progress', title: 'Прогресс', text: 'Баллы и разбор сессий', tab: 'progress' },
   ];
 }

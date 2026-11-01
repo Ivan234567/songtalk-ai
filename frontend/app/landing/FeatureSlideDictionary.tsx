@@ -179,7 +179,7 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
       title: 'Контекст — всему голова',
       text: isZh
         ? 'Каждое слово хранится с примером из сценария, где ты его встретил. Так его легче вспомнить и правильно использовать.'
-        : 'Каждое слово хранится с примером из видео или диалога, где ты его встретил. Так его легче вспомнить и правильно использовать.',
+        : 'Каждое слово хранится с примером из диалога, где ты его встретил. Так его легче вспомнить и правильно использовать.',
       illo: (
         <div className={`${styles.featureBlockIllo} ${styles.prodIllo}`} role="img" aria-label="Контекст">
           <ContextMock previewLang={previewLang} />
