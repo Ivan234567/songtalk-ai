@@ -5904,7 +5904,8 @@ export function AgentTab() {
             situationalOnly={learningLanguage === 'zh'}
             listId={preferredPracticeListId || chatPracticeListId}
             initialSenseIds={chatPracticeSenses.map((sense) => sense.senseId)}
-            onStart={(mode, senses, listId) => {
+            level={learningLanguage === 'zh' ? `HSK${chineseHskLevel}` : englishCefrLevel}
+            onBeginScenario={(scenario, senses, listId) => {
               const requestId = crypto.randomUUID();
               chatPracticeSensesRef.current = senses;
               chatPracticeListIdRef.current = listId;
@@ -5915,7 +5916,26 @@ export function AgentTab() {
               setChatPracticeRequestId(requestId);
               setChatPracticeLocked(false);
               setChatInviteDismissed(true);
-              setPracticeHome(mode === 'debate' ? 'topics' : 'scenes');
+              handleSelectScenario(scenario);
+              setPracticeHome(null);
+            }}
+            onBeginDebate={(topic, senses, listId) => {
+              const requestId = crypto.randomUUID();
+              chatPracticeSensesRef.current = senses;
+              chatPracticeListIdRef.current = listId;
+              chatPracticeRequestIdRef.current = requestId;
+              setChatPracticeSenses(senses);
+              setChatPracticeListId(listId);
+              setPreferredPracticeListId(listId);
+              setChatPracticeRequestId(requestId);
+              setChatPracticeLocked(false);
+              setChatInviteDismissed(true);
+              setDebateTopicId(null);
+              setSceneSeed(topic);
+              handleModeChange('debate');
+              handleDebateViewChange('create');
+              setDebateSetupOpen(true);
+              setPracticeHome(null);
             }}
             onFreeChat={() => {
               clearChatPractice();
