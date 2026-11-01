@@ -1,0 +1,157 @@
+.home {
+  flex: 1;
+  width: min(760px, 100%);
+  display: flex;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.stage {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 0.5rem 0 1.5rem;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-align: center;
+}
+
+.kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5eead4;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  line-height: 1.15;
+}
+
+.lead {
+  margin: 0;
+  max-width: 36rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  opacity: 0.72;
+}
+
+.list,
+.words,
+.swap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row,
+.word,
+.choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(16, 18, 24, 0.92);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.word {
+  cursor: default;
+}
+
+.choice[data-on='1'] {
+  border-color: rgba(94, 234, 212, 0.45);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.name {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.meta,
+.note {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  opacity: 0.7;
+}
+
+.note {
+  color: #fcd34d;
+  opacity: 1;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.primary,
+.quiet,
+.link {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.primary {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: #5eead4;
+  color: #042f2e;
+  font-weight: 750;
+}
+
+.primary:disabled,
+.quiet:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.quiet,
+.link {
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.quiet {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.link {
+  align-self: center;
+}
+
+.status {
+  margin: 0;
+  text-align: center;
+  opacity: 0.7;
+}

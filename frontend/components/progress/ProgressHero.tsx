@@ -95,9 +95,9 @@ export function ProgressHero({
             <button
               type="button"
               className={styles.btn}
-              onClick={() => router.push('/dashboard?tab=dictionary')}
+              onClick={() => router.push('/dashboard?tab=agent')}
             >
-              Послушать слова
+              Сказать в сцене
             </button>
           </div>
         </div>

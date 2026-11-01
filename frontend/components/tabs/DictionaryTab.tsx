@@ -211,7 +211,6 @@ export const DictionaryTab: React.FC = () => {
   const levelOptions = useMemo(() => getLevelOptions(learningLanguage), [learningLanguage]);
 
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [dueCount, setDueCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -389,24 +388,6 @@ export const DictionaryTab: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (!accessToken) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const resp = await fetch(`${getApiUrl()}/api/vocabulary/srs/due`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!cancelled && resp.ok && Array.isArray(data?.items)) setDueCount(data.items.length);
-      } catch {
-        if (!cancelled) setDueCount(0);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken]);
 
   // Measure trigger for category portal dropdown position
   useLayoutEffect(() => {
@@ -1660,9 +1641,9 @@ export const DictionaryTab: React.FC = () => {
             <button
               type="button"
               className="zh-add-open-btn"
-              onClick={() => router.push('/dashboard?tab=dictionary&review=1')}
+              onClick={() => router.push('/dashboard?tab=agent')}
             >
-              Послушать слова{dueCount > 0 ? ` · ${dueCount}` : ''}
+              Сказать в сцене
             </button>
             {isChinese && (
             <button

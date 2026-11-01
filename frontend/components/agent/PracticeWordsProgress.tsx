@@ -50,15 +50,18 @@ function captionForSense(
 ): string {
   if (result) {
     if (result.verdict === 'produced') {
+      if (sense.movesSchedule === false) return 'Сказал сам · срок без изменений';
       const days = result.intervalDays;
       if (days != null && Number.isInteger(days) && days > 0) return `Сказал сам · через ${days} дн.`;
       return 'Сказал сам';
     }
+    if (result.verdict === 'wrong_sense' && sense.movesSchedule === false) return 'Другой смысл · срок без изменений';
     if (result.verdict === 'unused') return 'Не прозвучало';
     if (result.verdict === 'wrong_sense') return 'Другой смысл';
     if (result.verdict === 'echoed') return 'Повтор за ИИ';
     if (result.verdict === 'hinted') return 'После подсказки';
     if (result.verdict === 'mentioned') return 'Неясно';
+    if (result.verdict === 'no_opportunity') return 'Возможности не было';
     return result.verdict;
   }
   if (progress?.status === 'used') return 'Использовано в разговоре';

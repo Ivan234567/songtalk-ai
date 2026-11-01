@@ -18,6 +18,13 @@ type TimelineItem = {
   bound_ref: string | null;
   bound_label: string | null;
   list_id: string | null;
+  verdict?: string;
+  schedule_held?: boolean;
+};
+
+type SpeechSchedule = {
+  bucket: 'new' | 'due' | 'later';
+  due_at: string | null;
 };
 
 type CoursePayload = {
@@ -27,6 +34,7 @@ type CoursePayload = {
   produced_count: number;
   session_count: number;
   last_move_source: 'card' | 'session' | null;
+  speech?: SpeechSchedule | null;
   timeline: TimelineItem[];
 };
 
@@ -53,12 +61,23 @@ function modeLabel(mode: string) {
   return mode;
 }
 
-function wordStatusLabel(status: string) {
-  if (status === 'used') return 'сказал сам';
-  if (status === 'hinted') return 'с подсказкой';
-  if (status === 'missed') return 'мимо';
+function wordStatusLabel(status: string, held = false) {
+  if (status === 'used') return held ? 'сказал сам · срок без изменений' : 'сказал сам';
+  if (status === 'wrong_sense') return held ? 'другой смысл · срок без изменений' : 'другой смысл';
+  if (status === 'hinted') return 'после подсказки';
+  if (status === 'echoed') return 'повтор за собеседником';
+  if (status === 'mentioned') return 'неясно';
+  if (status === 'no_opportunity') return 'возможности не было';
+  if (status === 'missed') return 'не сказал';
   if (status === 'waiting') return 'в сессии';
   return status;
+}
+
+function speechLabel(speech: SpeechSchedule | null | undefined) {
+  if (!speech || speech.bucket === 'new') return 'новое';
+  const when = speech.due_at ? formatWhen(speech.due_at) : '';
+  if (speech.bucket === 'due') return when ? `пора сказать · ${when}` : 'пора сказать';
+  return when ? `следующий раз · ${when}` : 'следующий раз';
 }
 
 export function SenseCourseTimeline({
@@ -123,6 +142,7 @@ export function SenseCourseTimeline({
         <div className={styles.meta}>
           <span>{data.session_count} сесс.</span>
           <span>{data.produced_count} сам</span>
+          <span>{speechLabel(data.speech)}</span>
           {data.last_move_source ? (
             <span>{data.last_move_source === 'session' ? 'сдвиг: сессия' : 'сдвиг: карточка'}</span>
           ) : null}
@@ -144,12 +164,14 @@ export function SenseCourseTimeline({
                 <em className={
                   item.word_status === 'used'
                     ? styles.used
-                    : item.word_status === 'hinted'
+                    : item.word_status === 'hinted' || item.word_status === 'no_opportunity'
                       ? styles.hinted
-                      : styles.missed
+                      : item.word_status === 'missed' || item.word_status === 'wrong_sense'
+                        ? styles.missed
+                        : styles.hinted
                 }
                 >
-                  {wordStatusLabel(item.word_status)}
+                  {wordStatusLabel(item.word_status, item.schedule_held)}
                 </em>
               </div>
               {item.bound_kind === 'scenario' && item.bound_ref && item.list_id ? (

@@ -101,8 +101,8 @@ export function ProblemAgitationSection({ onScrollToFeature }: ProblemAgitationS
             </p>
             <p className={styles.problemCardText}>
               {isZh
-                ? 'Нет системы повторений, пиньиня в контексте и понятного прогресса. Хочется собирать иероглифы в словаре и видеть результат в цифрах.'
-                : 'Нет системы повторений, контекста и понятного прогресса. Хочется собирать лексику из диалогов и видеть результат в цифрах.'}
+                ? 'Список сам не возвращает слово в речь. В Speakeasy до пяти слов, которым пора, входят в ситуативный диалог. Собеседник создаёт ситуацию и иероглиф не пишет.'
+                : 'Список сам не возвращает слово в речь. В Speakeasy до пяти слов, которым пора, входят в сценарий или дебат. Собеседник создаёт ситуацию и слово не говорит.'}
             </p>
             <div className={styles.problemCardCtaGroup}>
               <button type="button" onClick={() => handleScrollTo('dictionary')} className={styles.problemCardCtaSmall}>

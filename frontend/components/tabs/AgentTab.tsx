@@ -27,6 +27,7 @@ import {
   PracticeWordsGate,
 } from '@/components/agent/PracticeWordsGate';
 import { PracticeModeHome, type PracticeHomeStage } from '@/components/agent/PracticeModeHome';
+import { PracticeTodayFive } from '@/components/agent/PracticeTodayFive';
 import type { PracticeWordsSession } from '@/components/agent/PracticeWordsInSheet';
 import {
   PracticeWordsProgress,
@@ -354,7 +355,7 @@ export function AgentTab() {
   const [zhListenReview, setZhListenReview] = useState<ZhListenReview | null>(null);
   const [zhRevealedMeta, setZhRevealedMeta] = useState<Record<number, boolean>>({});
   const [agentMode, setAgentMode] = useState<'chat' | 'roleplay' | 'debate'>('chat');
-  const [practiceHome, setPracticeHome] = useState<PracticeHomeStage | null>('modes');
+  const [practiceHome, setPracticeHome] = useState<PracticeHomeStage | 'today' | null>('today');
   const [chatPracticeSenses, setChatPracticeSenses] = useState<ChatPracticeSense[]>([]);
   const [chatPracticeLocked, setChatPracticeLocked] = useState(false);
   const [chatDialogueSessionId, setChatDialogueSessionId] = useState<string | null>(null);
@@ -759,7 +760,7 @@ export function AgentTab() {
     setWordsGateMode(null);
     setScenarioModalOpen(false);
     setDebateSetupOpen(false);
-    setPracticeHome('modes');
+    setPracticeHome('today');
 
     const next = new URLSearchParams(searchParams.toString());
     next.delete('from');
@@ -892,7 +893,7 @@ export function AgentTab() {
         setChatPracticeRevealed({});
         setChatInviteDismissed(true);
         setChatSoftAskDone(true);
-        setPracticeHome('modes');
+        setPracticeHome('today');
       } catch {
         setError('Не удалось взять слова в практику');
       }
@@ -1625,7 +1626,7 @@ export function AgentTab() {
             chatPracticeRequestIdRef.current = requestId;
             setChatPracticeRequestId(requestId);
             const practiceMode = practiceRoleplay ? 'roleplay' : practiceDebate ? 'debate' : 'chat';
-            let dialogueData: { dialogue_session_id?: string; agent_session_id?: string; targets?: Array<{ sense_id?: string; position?: number; headword?: string; gloss_ru?: string }> } = {};
+            let dialogueData: { dialogue_session_id?: string; agent_session_id?: string; targets?: Array<{ sense_id?: string; position?: number; headword?: string; gloss_ru?: string; moves_schedule?: boolean }> } = {};
             try {
               const dialogueResp = await fetch(`${getApiUrl()}/api/vocabulary/srs/dialogue`, {
                 method: 'POST',
@@ -1633,6 +1634,11 @@ export function AgentTab() {
                 body: JSON.stringify(withLearningLanguageBody({
                   agent_session_id: agentSessionId,
                   sense_ids: chatPracticeSensesRef.current.map((sense) => sense.senseId),
+                  ...(practiceMode === 'chat' ? {} : {
+                    early_sense_ids: chatPracticeSensesRef.current
+                      .filter((sense) => sense.movesSchedule === false)
+                      .map((sense) => sense.senseId),
+                  }),
                   request_id: requestId,
                   level_snapshot: chatPracticeLevelRef.current,
                   mode: practiceMode,
@@ -1654,7 +1660,12 @@ export function AgentTab() {
                   const senseId = typeof target.sense_id === 'string' ? target.sense_id : '';
                   const headword = typeof target.headword === 'string' ? target.headword.trim() : '';
                   const glossRu = typeof target.gloss_ru === 'string' ? target.gloss_ru.trim() : '';
-                  return senseId && headword && glossRu ? [{ senseId, headword, glossRu }] : [];
+                  return senseId && headword && glossRu ? [{
+                    senseId,
+                    headword,
+                    glossRu,
+                    movesSchedule: target.moves_schedule !== false,
+                  }] : [];
                 })
               : [];
             if (!dialogueData.dialogue_session_id || serverSenses.length === 0) {
@@ -2407,6 +2418,15 @@ export function AgentTab() {
     ]
   );
 
+  useEffect(() => {
+    setPracticeHome((current) => {
+      if (!current) return current;
+      if (current === 'modes') return 'today';
+      if (learningLanguage === 'zh' && current === 'debate') return 'today';
+      return current;
+    });
+  }, [learningLanguage]);
+
   const showPracticeHome = Boolean(
     practiceHome
     && !modesLocked
@@ -3022,8 +3042,8 @@ export function AgentTab() {
     setProgressDeepLink(null);
     progressTargetHandledRef.current = null;
     handleModeChange('chat', { force: true });
-    setPracticeHome('modes');
-  }, [handleModeChange, clearChatPractice]);
+    setPracticeHome('today');
+  }, [handleModeChange, clearChatPractice, learningLanguage]);
 
   useEffect(() => {
     if (!exitDialogueConfirmOpen) return;
@@ -4469,7 +4489,7 @@ export function AgentTab() {
                 {!showPracticeHome && !modesLocked && !selectedSessionId && !goalReached && !debateCompleted && !selectedVoiceTask && !scenarioModalOpen && !debateSetupOpen && (
                   <button
                     type="button"
-                    onClick={() => setPracticeHome('modes')}
+                    onClick={() => setPracticeHome('today')}
                     className="agent-toolbar-btn"
                     title="К выбору режима"
                   >
@@ -5870,7 +5890,33 @@ export function AgentTab() {
           </div>
         )}
 
-        {showPracticeHome && practiceHome ? (
+        {showPracticeHome && practiceHome === 'today' ? (
+          <PracticeTodayFive
+            apiUrl={getApiUrl()}
+            token={token}
+            learningLanguage={learningLanguage}
+            situationalOnly={learningLanguage === 'zh'}
+            listId={preferredPracticeListId || chatPracticeListId}
+            initialSenseIds={chatPracticeSenses.map((sense) => sense.senseId)}
+            onStart={(mode, senses, listId) => {
+              const requestId = crypto.randomUUID();
+              chatPracticeSensesRef.current = senses;
+              chatPracticeListIdRef.current = listId;
+              chatPracticeRequestIdRef.current = requestId;
+              setChatPracticeSenses(senses);
+              setChatPracticeListId(listId);
+              setPreferredPracticeListId(listId);
+              setChatPracticeRequestId(requestId);
+              setChatPracticeLocked(false);
+              setChatInviteDismissed(true);
+              setPracticeHome(mode);
+            }}
+            onFreeChat={() => {
+              clearChatPractice();
+              openPracticeMode('chat');
+            }}
+          />
+        ) : showPracticeHome && practiceHome && practiceHome !== 'today' ? (
           <PracticeModeHome
             stage={practiceHome}
             showDebate={learningLanguage !== 'zh'}
@@ -5880,7 +5926,7 @@ export function AgentTab() {
             wordsFromList={Boolean(preferredPracticeListId || chatPracticeListId)}
             onSelectMode={openPracticeMode}
             onSelectView={openPracticeMenuView}
-            onBack={() => setPracticeHome('modes')}
+            onBack={() => setPracticeHome('today')}
           />
         ) : selectedSession ? (
           <div style={{ width: '100%', maxWidth: 560, display: 'flex', flexDirection: 'column', gap: '1rem' }}>

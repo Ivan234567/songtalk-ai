@@ -46,18 +46,6 @@ function bindingBadgeText(item: VocabListCard): string | null {
   return label;
 }
 
-function practiceHrefForList(item: VocabListCard): string | null {
-  const kind = item.bound_kind || item.binding?.kind || null;
-  const ref = item.bound_ref || item.binding?.ref || null;
-  if (!kind || !item.id) return null;
-  const params = new URLSearchParams({ tab: 'agent', from: 'vocab', list: item.id });
-  if (kind === 'scenario' && ref) params.set('target', `rp:${ref}`);
-  else if (kind === 'debate' && ref) params.set('target', `db:${ref}`);
-  else if (kind === 'chat') params.set('mode', 'chat');
-  else return null;
-  return `/dashboard?${params.toString()}`;
-}
-
 type StarterPack = {
   key: string;
   title: string;
@@ -167,6 +155,7 @@ export function VocabLibrary() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<'due' | 'alpha' | 'new'>('due');
   const [moreOpen, setMoreOpen] = useState(false);
+  const [sceneCount, setSceneCount] = useState<number | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -257,7 +246,30 @@ export function VocabLibrary() {
     setResolved([]);
     setAssistHint(null);
     setEditingTitle(false);
+    setSceneCount(null);
   }, [listId]);
+
+  useEffect(() => {
+    if (!token || !listId) return;
+    let cancelled = false;
+    fetch(`${getApiUrl()}/api/vocabulary/srs/production/five`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ list_id: listId }),
+    })
+      .then(async (resp) => {
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || typeof data?.count !== 'number') throw new Error('five');
+        if (!cancelled) setSceneCount(data.count);
+      })
+      .catch(() => {
+        if (!cancelled) setSceneCount(null);
+      });
+    return () => { cancelled = true; };
+  }, [learningLanguage, listId, token]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -438,41 +450,6 @@ export function VocabLibrary() {
     : -1;
   const wordCardMeta = wordCardIndex >= 0 ? visibleWords[wordCardIndex] : null;
 
-  const chosenWords = () => {
-    const words = detail?.words || [];
-    if (!selecting || selected.size === 0) return words;
-    return words.filter((word) => selected.has(word.vocabulary_id));
-  };
-
-  const openListen = (id?: string, senses?: string[]) => {
-    const next = new URLSearchParams();
-    next.set('tab', 'dictionary');
-    next.set('review', '1');
-    if (id) next.set('list', id);
-    if (senses && senses.length) next.set('senses', senses.join(','));
-    router.push(`/dashboard?${next.toString()}`);
-  };
-
-  const listenCandidates = () => {
-    const pool = selecting && selected.size > 0
-      ? (detail?.words || []).filter((word) => selected.has(word.vocabulary_id))
-      : (detail?.words || []);
-    return pool.filter((word) => word.status === 'new' || word.status === 'due');
-  };
-
-  const listenList = () => {
-    if (!listId) return;
-    const words = listenCandidates();
-    const senseIds = words.flatMap((word) => word.sense_ids);
-    if (senseIds.length === 0) {
-      setError(selecting && selected.size > 0
-        ? 'В выбранных словах пока нечего слушать'
-        : 'Сейчас нечего слушать — нет новых или к повторению');
-      return;
-    }
-    openListen(listId, senseIds);
-  };
-
   const saveResolved = async () => {
     if (!token || !listId) return;
     const items = resolved.filter((item) => item.selected && !item.in_list);
@@ -575,18 +552,13 @@ export function VocabLibrary() {
     }
   };
 
-  const sayList = () => {
-    if (!detail) return;
-    const allSenseIds = chosenWords().flatMap((word) => word.sense_ids);
-    if (!allSenseIds.length) {
+  const sayInScene = () => {
+    if (!listId) return;
+    if (sceneCount === 0) {
       setError('В этом списке пока нечего сказать');
       return;
     }
-    const senseIds = allSenseIds.slice(0, 5);
-    if (allSenseIds.length > 5) {
-      setError(`В практику возьмём первые 5 из ${allSenseIds.length} слов`);
-    }
-    router.push(`/dashboard?tab=agent&senses=${senseIds.join(',')}`);
+    router.push(`/dashboard?tab=agent&from=vocab&list=${encodeURIComponent(listId)}`);
   };
 
   const toggleSelected = (id: string) => {
@@ -696,10 +668,6 @@ export function VocabLibrary() {
     const item = detail?.item;
     const words = visibleWords;
     const canSave = resolved.some((itemRow) => itemRow.selected && !itemRow.in_list);
-    const listenCount = listenCandidates().length;
-    const listenLabel = selecting && selected.size > 0
-      ? (listenCount > 0 ? `Послушать · ${listenCount}` : 'Послушать выбранные')
-      : (listenCount > 0 ? `Послушать · ${listenCount}` : 'Послушать');
     return (
       <div className={styles.page}>
         <div className={styles.header}>
@@ -755,15 +723,9 @@ export function VocabLibrary() {
             ) : null}
           </div>
           <div className={styles.actions}>
-            {item && practiceHrefForList(item) ? (
-              <button
-                type="button"
-                className={styles.primary}
-                onClick={() => router.push(practiceHrefForList(item)!)}
-              >
-                Практиковать
-              </button>
-            ) : null}
+            <button type="button" className={styles.primary} onClick={sayInScene}>
+              {sceneCount && sceneCount > 0 ? `Сказать в сцене · ${sceneCount}` : 'Сказать в сцене'}
+            </button>
             {item && (item.bound_kind || item.binding?.kind) ? (
               <button
                 type="button"
@@ -774,12 +736,11 @@ export function VocabLibrary() {
                 В прогрессе
               </button>
             ) : null}
-            <button type="button" onClick={listenList} className={item && practiceHrefForList(item) ? styles.secondary : styles.primary} disabled={listenCount === 0}>
-              {listenLabel}
-            </button>
-            <button type="button" onClick={sayList} className={styles.secondary}>Сказать эти слова</button>
           </div>
         </div>
+        {sceneCount === 0 && (
+          <p className={styles.muted}>В этом списке пока нечего сказать.</p>
+        )}
         <div className={styles.searchRow}>
           <input
             value={wordQuery}
@@ -1003,7 +964,6 @@ export function VocabLibrary() {
   }
 
   const lists = library?.items || [];
-  const dueCount = library?.summary?.due || 0;
 
   return (
     <div className={styles.page}>
@@ -1016,11 +976,6 @@ export function VocabLibrary() {
           <button type="button" onClick={() => (createMode ? closeCreate() : openCreate('starter'))} className={styles.primary}>
             {createMode ? 'Закрыть' : 'Создать'}
           </button>
-          {dueCount > 0 && (
-            <button type="button" onClick={() => openListen()} className={styles.secondary}>
-              Послушать · {dueCount}
-            </button>
-          )}
         </div>
       </div>
 

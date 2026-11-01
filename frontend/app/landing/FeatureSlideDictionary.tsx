@@ -240,8 +240,8 @@ export function FeatureSlideDictionary({ sectionId, highlight }: FeatureSlideDic
             </h2>
             <p className={styles.featureTagline}>
               {isZh
-                ? 'Собирай и повторяй 词语 и 汉字 с пиньинем в одном месте.'
-                : 'Собирай и повторяй слова, идиомы и фразовые глаголы в одном месте.'}
+                ? 'Собери список. Слова, которым пора, вернутся в диалог HSK.'
+                : 'Собери список. Слова, которым пора, вернутся в сценарий или дебат.'}
             </p>
             <div className={styles.featureBlocksGrid}>
               {featureBlocks.map((block, i) => (

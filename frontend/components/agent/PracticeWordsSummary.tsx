@@ -12,6 +12,7 @@ const VERDICT_LABELS: Record<string, string> = {
   hinted: 'После подсказки',
   mentioned: 'Неясно, то ли слово',
   unused: 'Не прозвучало',
+  no_opportunity: 'Возможности не было',
 };
 
 function intervalLabel(days?: number | null): string {
@@ -84,8 +85,12 @@ export function PracticeWordsSummary({
           const result = lines.find((item) => item.senseId === sense.senseId);
           const progress = progressById.get(sense.senseId);
           const status = progress?.status || 'waiting';
-          const when = result && (result.verdict === 'produced' || result.verdict === 'wrong_sense')
+          const held = sense.movesSchedule === false;
+          const when = result && !held && (result.verdict === 'produced' || result.verdict === 'wrong_sense')
             ? intervalLabel(result.intervalDays)
+            : '';
+          const holdNote = result && held && (result.verdict === 'produced' || result.verdict === 'wrong_sense')
+            ? ' · срок без изменений'
             : '';
           return (
             <li
@@ -98,7 +103,7 @@ export function PracticeWordsSummary({
                 <span className={styles.gloss}>{sense.glossRu}</span>
                 <span className={styles.meta}>
                   {result
-                    ? `${sense.headword}: ${VERDICT_LABELS[result.verdict] || result.verdict}${when ? ` · ${when}` : ''}`
+                    ? `${sense.headword}: ${VERDICT_LABELS[result.verdict] || result.verdict}${when ? ` · ${when}` : ''}${holdNote}`
                     : status === 'used'
                       ? `Использовано в разговоре${progress?.headword ? ` · ${progress.headword}` : ''}`
                       : status === 'not_counted'

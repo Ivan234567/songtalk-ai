@@ -79,17 +79,6 @@ export const DashboardTab: React.FC = () => {
     router.replace(`${base}?${next.toString()}`, { scroll: false });
   };
 
-  const openListen = () => {
-    const base = pathname || '/';
-    const next = new URLSearchParams(searchParams.toString());
-    next.set('tab', 'dictionary');
-    next.delete('review');
-    next.delete('senses');
-    next.delete('list');
-    next.delete('create');
-    router.replace(`${base}?${next.toString()}`, { scroll: false });
-  };
-
   const weeklyGoalProgress = Math.min(100, Math.round((metrics.weekMinutes / WEEKLY_GOAL_MINUTES) * 100));
   const weekMinutesLeft = Math.max(0, WEEKLY_GOAL_MINUTES - metrics.weekMinutes);
   const conversationShare = metrics.conversationMinutes > 0
@@ -231,22 +220,18 @@ export const DashboardTab: React.FC = () => {
       </section>
 
       <section className={styles.wordsSection} aria-label="Как учить слова">
-        <h2 className={styles.wordsLead}>Сначала послушай. Потом скажи сам.</h2>
+        <h2 className={styles.wordsLead}>Скажи слова в сцене</h2>
         <div className={styles.wordsGrid}>
           <article className={`${styles.card} ${styles.wordsStep}`}>
-            <p className={styles.wordsStepMark}>Шаг 1</p>
-            <h3 className={styles.wordsStepTitle}>Послушай</h3>
-            <p className={styles.wordsStepText}>Услышь слово и реши, знаешь ли ты его.</p>
-            <button type="button" className={styles.wordsStepButton} onClick={openListen}>
-              Послушать слова
-            </button>
-          </article>
-          <article className={`${styles.card} ${styles.wordsStep}`}>
-            <p className={styles.wordsStepMark}>Шаг 2</p>
-            <h3 className={styles.wordsStepTitle}>Скажи сам</h3>
-            <p className={styles.wordsStepText}>Назови слова своим голосом в разговоре.</p>
+            <p className={styles.wordsStepMark}>Практика</p>
+            <h3 className={styles.wordsStepTitle}>Сказать в сцене</h3>
+            <p className={styles.wordsStepText}>
+              {isChineseMode
+                ? 'Список соберёт до пяти слов, которым пора. Дальше ситуативный диалог.'
+                : 'Список соберёт до пяти слов, которым пора. Дальше сценарий или дебат.'}
+            </p>
             <button type="button" className={styles.wordsStepButton} onClick={() => goToTab('agent')}>
-              Сказать слова
+              Сказать в сцене
             </button>
           </article>
         </div>

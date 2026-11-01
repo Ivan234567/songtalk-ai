@@ -25,6 +25,7 @@ import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
 import { registerYookassaRoutes } from './yookassa.js'
 import { registerVocabSrsDueRoute } from './vocab-srs-routes.js'
+import { registerProductionFiveRoute } from './vocab-production-five.js'
 import { registerVocabListsRoutes } from './vocab-lists-routes.js'
 import { createResolveListEntries } from './vocab-list-ai.js'
 import { registerVocabularySystemListRoutes } from './vocabulary-system-lists.js'
@@ -1691,6 +1692,7 @@ app.post('/api/agent/chat', async (req, res) => {
           stepAction: (typeof rawScene?.stepAction === 'string' && rawScene.stepAction.trim())
             ? rawScene.stepAction.trim()
             : openStepEn,
+          replyLanguage: req.learningLanguage === 'zh' ? 'zh' : 'en',
         }
         chatMessages.unshift({
           role: 'system',
@@ -3293,6 +3295,14 @@ registerVocabSrsDueRoute(app, {
   asyncHandler,
 })
 
+registerProductionFiveRoute(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+})
+
 registerVocabListsRoutes(app, {
   supabase,
   resolveUserId,
@@ -3374,6 +3384,41 @@ app.post('/api/vocabulary/srs/dialogue/assess', asyncHandler(createDialogueAsses
       parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw)
     } catch {
       const error = new Error('Practice assessment did not confirm the meaning')
+      error.status = 502
+      throw error
+    }
+    return Array.isArray(parsed?.items) ? parsed.items : []
+  },
+  judgeOpportunities: async ({ userId, items }) => {
+    const paid = await billableChatCreate(
+      userId,
+      crypto.randomUUID(),
+      {
+        messages: [
+          {
+            role: 'system',
+            content: 'You judge whether the assistant created a natural need for each meaning. Return JSON only: {"items":[{"sense_id":"...","opportunity":true}]}. opportunity is true only if the learner had a real communicative reason to express that gloss. Do not require the headword to appear. If the assistant never made the meaning useful, opportunity is false.',
+          },
+          { role: 'user', content: JSON.stringify({ items }) },
+        ],
+        max_tokens: 300,
+        temperature: 0,
+        metadata: { vocab_dialogue_opportunity: true },
+      },
+    )
+    if (!paid.ok) {
+      const error = new Error(paid.error || 'Practice opportunity was not judged')
+      error.status = paid.status || 502
+      throw error
+    }
+    const raw = String(paid.result?.text || paid.outcome?.completion?.choices?.[0]?.message?.content || '').trim()
+    const jsonStart = raw.indexOf('{')
+    const jsonEnd = raw.lastIndexOf('}')
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw)
+    } catch {
+      const error = new Error('Practice opportunity was not judged')
       error.status = 502
       throw error
     }

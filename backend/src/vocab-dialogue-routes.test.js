@@ -252,6 +252,17 @@ test('инструкция чата содержит форму из базы и
   assert.match(roleplay, /IN CHARACTER/)
   assert.match(roleplay, /what would you do next/)
   assert.match(roleplay, /At the market/)
+  assert.match(roleplay, /Never tell the learner to use/)
+  assert.match(roleplay, /do not say the headword/)
+  assert.match(roleplay, /fill-in-the-blank/)
+  const chinese = buildRoleplayPracticeInstruction(
+    [{ headword: '苹果', gloss_ru: 'яблоко' }],
+    { title: 'В магазине', currentStep: 'Купить фрукт', replyLanguage: 'zh' },
+  )
+  assert.match(chinese, /Simplified Chinese/)
+  assert.match(chinese, /苹果/)
+  assert.match(chinese, /do not say the headword/)
+  assert.doesNotMatch(chinese, /debate/)
   const debate = buildDebatePracticeInstruction(
     [{ headword: 'apple', gloss_ru: 'яблоко' }],
     { topic: 'School lunches', userPosition: 'For fruit' },
@@ -260,6 +271,8 @@ test('инструкция чата содержит форму из базы и
   assert.match(debate, /Do not say/)
   assert.match(debate, /Targets still unused/)
   assert.match(debate, /School lunches/)
+  assert.match(debate, /Never tell the learner to use/)
+  assert.match(debate, /private headword, never quote it/)
 })
 
 test('ответ с целевым словом заменяется одной безопасной репликой', () => {
@@ -365,6 +378,23 @@ test('список отдаёт свои значения языка и не р�
   assert.equal(res.body.items.some((item) => item.headword === 'secret' || item.headword === '水' || item.headword === 'blank'), false)
 })
 
+test('раннее значение сохраняется без сдвига графика', async () => {
+  const { store, supabase } = createStore()
+  const { dialogue } = handlers(supabase)
+  const res = mockRes()
+  await dialogue(authedReq({
+    agent_session_id: AGENT_ID,
+    sense_ids: [SENSE_A, SENSE_B],
+    early_sense_ids: [SENSE_A],
+    request_id: 'early-1',
+    level_snapshot: 'B1',
+  }), res)
+  assert.equal(res.statusCode, 200)
+  assert.equal(store.targets.find((row) => row.sense_id === SENSE_A).moves_schedule, false)
+  assert.equal(store.targets.find((row) => row.sense_id === SENSE_B).moves_schedule, true)
+  assert.equal(res.body.targets.find((row) => row.sense_id === SENSE_A).moves_schedule, false)
+})
+
 test('цели берутся из значений базы, повтор не создаёт вторую сессию', async () => {
   const { store, supabase } = createStore()
   const { dialogue } = handlers(supabase)
@@ -384,6 +414,8 @@ test('цели берутся из значений базы, повтор не 
   assert.equal(first.body.mode, 'chat')
   assert.equal(store.sessions.length, 1)
   assert.equal(store.targets[0].headword, 'apple')
+  assert.equal(store.targets[0].moves_schedule, true)
+  assert.equal(store.targets[1].moves_schedule, true)
   assert.equal(store.sessions[0].mode, 'chat')
   const second = mockRes()
   await dialogue(authedReq(body), second)
@@ -547,8 +579,9 @@ test('ошибка записи целей удаляет сессию и не �
 test('модуль практики не трогает карточки SRS, чат вызывает проверку сессии', () => {
   const source = fs.readFileSync(new URL('./vocab-dialogue-routes.js', import.meta.url), 'utf8')
   const index = fs.readFileSync(new URL('./index.js', import.meta.url), 'utf8')
-  // Практика сессии не пишет SRS; read-only vocab_srs_states допустим только в sense course (отдельный handler).
-  assert.doesNotMatch(source, /vocab_review_events|commit_vocab_srs_review/)
+  // Запуск сессии не пишет SRS. Курс может прочитать записанные вердикты, но не меняет журнал.
+  assert.doesNotMatch(source, /commit_vocab_srs_review/)
+  assert.doesNotMatch(source, /from\('vocab_review_events'\)[\s\S]{0,160}\.(insert|update|upsert)\(/)
   assert.doesNotMatch(source, /\.from\('vocab_srs_states'\)[\s\S]{0,200}\.(insert|upsert|update)\(/)
   assert.match(index, /assertChatPracticeRequest\(/)
   assert.match(index, /assertRoleplayPracticeRequest\(/)

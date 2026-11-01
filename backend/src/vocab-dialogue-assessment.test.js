@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
   applyJudgeVerdicts,
+  applyOpportunityVerdicts,
   buildAssessmentItems,
   buildPracticeProgressItems,
   classifyDialogueTargets,
@@ -43,6 +44,27 @@ test('курсные статусы слов: used / hinted / missed / waiting',
   assert.equal(courseWordStatus('unused', 'active'), 'waiting')
   assert.equal(courseWordStatus('unused', 'assessed'), 'missed')
   assert.equal(courseWordStatus('unused', 'abandoned'), 'missed')
+  assert.equal(courseWordStatus('no_opportunity', 'assessed'), 'no_opportunity')
+  assert.notEqual(courseWordStatus('no_opportunity', 'assessed'), 'missed')
+  const { describeProductionSpeech, overlayStoredVerdicts } = await import('./vocab-course-view.js')
+  assert.deepEqual(describeProductionSpeech({ due_at: '2020-01-01T00:00:00.000Z', last_reviewed_at: null }, new Date('2026-06-01T00:00:00.000Z')), { bucket: 'new', due_at: null })
+  assert.equal(describeProductionSpeech({
+    due_at: '2026-06-09T00:00:00.000Z',
+    last_reviewed_at: '2026-06-01T00:00:00.000Z',
+  }, new Date('2026-06-02T00:00:00.000Z')).bucket, 'later')
+  const overlaid = overlayStoredVerdicts(
+    [{ sense_id: 'a', status: 'missed', verdict: 'unused' }],
+    [{ sense_id: 'a', verdict: 'no_opportunity', due_before: '2026-06-09T00:00:00.000Z', due_after: '2026-06-09T00:00:00.000Z' }],
+    'assessed',
+  )
+  assert.equal(overlaid[0].status, 'no_opportunity')
+  assert.equal(overlaid[0].schedule_held, false)
+  const held = overlayStoredVerdicts(
+    [{ sense_id: 'a', status: 'used', verdict: 'produced' }],
+    [{ sense_id: 'a', verdict: 'produced', due_before: '2026-06-09T00:00:00.000Z', due_after: '2026-06-09T00:00:00.000Z' }],
+    'assessed',
+  )
+  assert.equal(held[0].schedule_held, true)
   const items = buildCourseProgressItems(
     [{ sense_id: SENSE_A, headword: 'apple', gloss_ru: 'яблоко' }],
     [{ sense_id: SENSE_A, verdict: 'unused' }],
@@ -142,6 +164,91 @@ test('ошибка судьи не становится самостоятель
   })
   assert.equal(produced[0].quality, 5)
   assert.equal(produced[0].next_interval_days, 1)
+  const second = buildAssessmentItems({
+    classified: [{ sense_id: SENSE_A, verdict: 'produced', evidence_text: 'I ate an apple', needsSense: false }],
+    states: new Map([[SENSE_A, {
+      card_type: 'production',
+      ease_factor: 2.5,
+      interval_days: 1,
+      repetitions: 1,
+      lapses: 0,
+      due_at: '2026-06-02T12:00:00.000Z',
+    }]]),
+    now: NOW,
+  })
+  assert.equal(second[0].next_interval_days, 6)
+  const wrong = buildAssessmentItems({
+    classified: [{ sense_id: SENSE_A, verdict: 'wrong_sense', evidence_text: null, needsSense: false }],
+    states: new Map([[SENSE_A, {
+      card_type: 'production',
+      ease_factor: 2.5,
+      interval_days: 6,
+      repetitions: 2,
+      lapses: 0,
+      due_at: '2026-06-01T00:00:00.000Z',
+    }]]),
+    now: NOW,
+  })
+  assert.equal(wrong[0].quality, 1)
+  assert.equal(wrong[0].next_interval_days, 1)
+  assert.equal(wrong[0].next_repetitions, 0)
+  const early = buildAssessmentItems({
+    classified: [{ sense_id: SENSE_A, verdict: 'produced', evidence_text: 'I ate an apple', needsSense: false }],
+    states: new Map([[SENSE_A, {
+      card_type: 'production',
+      ease_factor: 2.5,
+      interval_days: 6,
+      repetitions: 2,
+      lapses: 0,
+      due_at: '2026-06-09T00:00:00.000Z',
+    }]]),
+    now: NOW,
+    movesBySense: new Map([[SENSE_A, false]]),
+  })
+  assert.equal(early[0].quality, 5)
+  assert.equal(early[0].next_interval_days, 6)
+  assert.equal(early[0].next_due_at, '2026-06-09T00:00:00.000Z')
+  const earlyWrong = buildAssessmentItems({
+    classified: [{ sense_id: SENSE_A, verdict: 'wrong_sense', evidence_text: null, needsSense: false }],
+    states: new Map([[SENSE_A, {
+      card_type: 'production',
+      ease_factor: 2.5,
+      interval_days: 6,
+      repetitions: 2,
+      lapses: 0,
+      due_at: '2026-06-09T00:00:00.000Z',
+    }]]),
+    now: NOW,
+    movesBySense: new Map([[SENSE_A, false]]),
+  })
+  assert.equal(earlyWrong[0].next_due_at, '2026-06-09T00:00:00.000Z')
+  assert.equal(earlyWrong[0].next_repetitions, 2)
+  const quiet = applyOpportunityVerdicts(
+    [
+      { sense_id: SENSE_A, verdict: 'unused' },
+      { sense_id: '33333333-3333-4333-8333-333333333333', verdict: 'unused' },
+    ],
+    [{ sense_id: SENSE_A, opportunity: true }],
+  )
+  assert.equal(quiet[0].verdict, 'unused')
+  assert.equal(quiet[1].verdict, 'no_opportunity')
+  for (const verdict of ['hinted', 'echoed', 'unused', 'no_opportunity', 'mentioned']) {
+    const held = buildAssessmentItems({
+      classified: [{ sense_id: SENSE_A, verdict, evidence_text: null, needsSense: false }],
+      states: new Map([[SENSE_A, {
+        card_type: 'production',
+        ease_factor: 2.5,
+        interval_days: 6,
+        repetitions: 2,
+        lapses: 0,
+        due_at: '2026-06-09T00:00:00.000Z',
+      }]]),
+      now: NOW,
+    })
+    assert.equal(held[0].quality, 0)
+    assert.equal(held[0].next_interval_days, 6)
+    assert.equal(held[0].next_due_at, '2026-06-09T00:00:00.000Z')
+  }
 })
 
 function mockRes() {
@@ -197,7 +304,8 @@ test('разбор не вызывает судью для несказанно�
     rpc(name, args) {
       calls.push(name)
       assert.equal(name, 'commit_vocab_dialogue_assessment')
-      assert.equal(args.p_items[0].verdict, 'unused')
+      assert.equal(args.p_items[0].verdict, 'no_opportunity')
+      assert.equal(args.p_items[0].next_interval_days, 0)
       assert.equal(args.p_items[0].card_type, undefined)
       return Promise.resolve({
         data: { status: 'applied', items: [{ sense_id: SENSE_A, verdict: 'unused', interval_days: 0 }] },
@@ -307,4 +415,10 @@ test('миграция разбора пишет только карточку �
   assert.equal(debateSql.match(/v_session\.mode NOT IN \('chat', 'roleplay', 'debate'\)/g)?.length, 2)
   assert.match(debateSql, /append_vocab_dialogue_exchange/)
   assert.match(debateSql, /commit_vocab_dialogue_assessment/)
+  const holdSql = fs.readFileSync(new URL('../../supabase/migrations/20261101140000_hold_early_production_schedule.sql', import.meta.url), 'utf8')
+  assert.match(holdSql, /moves_schedule BOOLEAN NOT NULL DEFAULT TRUE/)
+  assert.match(holdSql, /'no_opportunity'/)
+  assert.equal(holdSql.match(/v_verdict IN \('produced', 'wrong_sense'\) AND v_target\.moves_schedule IS TRUE/g)?.length, 2)
+  assert.match(holdSql, /IF v_moving THEN/)
+  assert.match(holdSql, /AND card_type = 'production'/)
 })

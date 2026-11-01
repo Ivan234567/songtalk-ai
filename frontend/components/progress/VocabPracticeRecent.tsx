@@ -7,7 +7,7 @@ import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { supabase } from '@/lib/supabase';
 import styles from './vocab-practice-recent.module.css';
 
-type WordStatus = 'used' | 'hinted' | 'missed' | 'waiting' | 'other';
+type WordStatus = 'used' | 'hinted' | 'missed' | 'waiting' | 'other' | 'no_opportunity' | 'wrong_sense' | 'echoed' | 'mentioned';
 
 type RecentTarget = {
   sense_id: string;
@@ -76,6 +76,10 @@ function wordStatusTitle(target: RecentTarget) {
   if (target.status === 'used') return `${gloss} · сказал сам`;
   if (target.status === 'hinted') return `${gloss} · с подсказкой`;
   if (target.status === 'missed') return `${gloss} · не сказал`;
+  if (target.status === 'no_opportunity') return `${gloss} · возможности не было`;
+  if (target.status === 'wrong_sense') return `${gloss} · другой смысл`;
+  if (target.status === 'echoed') return `${gloss} · повтор за собеседником`;
+  if (target.status === 'mentioned') return `${gloss} · неясно`;
   if (target.status === 'waiting') return `${gloss} · ещё в сессии`;
   return gloss;
 }

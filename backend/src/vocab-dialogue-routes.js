@@ -1,12 +1,14 @@
 /**
- * Выбор значений и учебная сессия свободного чата.
- * Карточки SRS и журнал повторений этот модуль не читает и не пишет.
+ * Выбор значений и учебная сессия.
+ * Запуск сессии карточки SRS не пишет. Курс слова читает карточку говорения
+ * и уже записанные вердикты, но не меняет их.
  * Сессия и цели пишутся двумя запросами: если цели не вставились, сессия удаляется
  * и клиент не получает успешный запуск. Это не одна транзакция Postgres.
  */
 import { ensureUserVocabularySenses } from './vocab-sense-sync.js'
 import { classifyRecognitionState } from './vocab-lists-routes.js'
 import { classifySenseMilestone, MILESTONE_LABELS } from './vocab-session-picks.js'
+import { describeProductionSpeech, overlayStoredVerdicts } from './vocab-course-view.js'
 
 export const DIALOGUE_TARGET_LIMIT = 5
 export const DIALOGUE_REQUEST_ID_MAX = 200
@@ -54,7 +56,7 @@ export function normalizePracticeMode(raw) {
 
 function practiceTargetLines(targets) {
   return targets.map((target, index) => (
-    `${index + 1}. headword: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
+    `${index + 1}. private headword, never quote it: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
   ))
 }
 
@@ -104,7 +106,8 @@ export function buildDebatePracticeInstruction(targets, scene = null) {
   const lines = practiceTargetLines(ordered)
   return [
     'Hidden vocabulary practice is ACTIVE inside this debate — weave meanings into THIS topic, not a side drill.',
-    'Each reply must push the learner to use one unused target meaning in their own argument.',
+    'Each reply must create a real argumentative need for one unused target meaning.',
+    'Never tell the learner to use, say, practice, or insert a word. The meaning itself has to be what the answer needs.',
     focus
       ? `This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`
       : 'Create pressure for the next unused meaning.',
@@ -135,10 +138,14 @@ export function buildRoleplayPracticeInstruction(targets, scene = null) {
     'Every reply is one short in-world turn that moves the current scenario step.',
     'Never leave the scene. Forbidden: "what would you do next", "what did you try", "what changed", "what would make this easier", "and then", lesson recap, or any meta question about the exercise.',
   ]
+  if (scene?.replyLanguage === 'zh') {
+    linesOut.push('Reply in Simplified Chinese only. Stay within the learner HSK. The private headword is hanzi: do not write it or say it before the learner does.')
+  }
   if (!sameStep) {
     linesOut.push('The hidden words belong to an earlier step. Ignore them. Play only the current step. Do not start a side quest for leftover words.')
   } else if (focus) {
-    linesOut.push('Create an in-world need for one unused target meaning that completes THIS step, without naming the hidden word.')
+    linesOut.push('Create an in-world situation where the learner must express one unused target meaning to complete THIS step.')
+    linesOut.push('Never tell the learner to use, say, practice, or insert a word. Do not turn the turn into a fill-in-the-blank.')
     linesOut.push(`This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`)
     linesOut.push('Never say, spell, translate, or leak any unused headword before the learner uses it.')
     linesOut.push('Do not list targets. Keep persona, place, and the current step.')
@@ -681,7 +688,22 @@ function publicTargets(rows) {
       position: row.position,
       headword: row.headword,
       gloss_ru: row.gloss_ru,
+      moves_schedule: row.moves_schedule !== false,
     }))
+}
+
+function parseEarlySenseIds(value, senseIds) {
+  if (value == null) return new Set()
+  if (!Array.isArray(value)) throw new DialogueRouteError(400, 'Early practice senses are invalid')
+  const early = new Set()
+  for (const raw of value) {
+    const id = typeof raw === 'string' ? raw.trim() : ''
+    if (!isUuid(id) || !senseIds.includes(id)) {
+      throw new DialogueRouteError(400, 'Early practice sense is not in this session')
+    }
+    early.add(id)
+  }
+  return early
 }
 
 async function reuseOrReject(deps, existing, { userId, language, agentSessionId, senseIds, mode }) {
@@ -798,6 +820,7 @@ export function createDialogueSessionHandler({
       }
       if (!LEVEL_RE.test(levelSnapshot)) throw new DialogueRouteError(400, 'Practice level is invalid')
       const senseIds = parseSenseIds(req.body?.sense_ids)
+      const earlySenseIds = parseEarlySenseIds(req.body?.early_sense_ids, senseIds)
       const language = await loadLearningLanguage({ supabase, safeSupabaseCall, userId })
       const rawListId = typeof req.body?.list_id === 'string' ? req.body.list_id.trim() : ''
       let listId = null
@@ -910,10 +933,11 @@ export function createDialogueSessionHandler({
         headword: row.headword.trim(),
         gloss_ru: row.gloss_ru.trim(),
         context_text: typeof row.context_text === 'string' && row.context_text.trim() ? row.context_text : null,
+        moves_schedule: !earlySenseIds.has(row.id),
       }))
       const targetsInserted = await callSupabase(
         safeSupabaseCall,
-        () => supabase.from('vocab_dialogue_targets').insert(targetRows).select('sense_id, position, headword, gloss_ru'),
+        () => supabase.from('vocab_dialogue_targets').insert(targetRows).select('sense_id, position, headword, gloss_ru, moves_schedule'),
       )
       if (!targetsInserted || targetsInserted.error || !Array.isArray(targetsInserted.data) || targetsInserted.data.length !== senseIds.length) {
         await deleteDialogueSession(deps, dialogueSessionId, userId)
@@ -936,6 +960,42 @@ export function createDialogueSessionHandler({
       })
     }
   }
+}
+
+async function loadStoredVerdicts(supabase, safeSupabaseCall, userId, sessionIds) {
+  const grouped = new Map()
+  if (!sessionIds.length) return grouped
+  const result = await callSupabase(
+    safeSupabaseCall,
+    () => supabase
+      .from('vocab_review_events')
+      .select('dialogue_session_id, sense_id, verdict, due_before, due_after')
+      .eq('user_id', userId)
+      .eq('source', 'dialogue')
+      .eq('card_type', 'production')
+      .in('dialogue_session_id', sessionIds),
+  )
+  if (!result || result.error || !Array.isArray(result.data)) return grouped
+  for (const row of result.data) {
+    if (!grouped.has(row.dialogue_session_id)) grouped.set(row.dialogue_session_id, [])
+    grouped.get(row.dialogue_session_id).push(row)
+  }
+  return grouped
+}
+
+function courseItemsForSession({ session, targets, turns, hints, events, classify, toCourse }) {
+  let items = targets.map((target) => ({
+    ...target,
+    status: session.status === 'active' ? 'waiting' : 'missed',
+    verdict: 'unused',
+  }))
+  if (classify && toCourse && targets.length) {
+    items = toCourse(targets, classify({ targets, turns, hints }), session.status)
+  }
+  if (session.status === 'assessed') {
+    items = overlayStoredVerdicts(items, events, session.status)
+  }
+  return items
 }
 
 export function createRecentDialogueSessionsHandler({
@@ -998,8 +1058,9 @@ export function createRecentDialogueSessionsHandler({
 
       let turnsBySession = new Map()
       let hintsBySession = new Map()
+      let verdictsBySession = new Map()
       if (sessionIds.length) {
-        const [turnsResult, hintsResult] = await Promise.all([
+        const [turnsResult, hintsResult, verdicts] = await Promise.all([
           callSupabase(
             safeSupabaseCall,
             () => supabase
@@ -1017,7 +1078,9 @@ export function createRecentDialogueSessionsHandler({
               .eq('user_id', userId)
               .in('dialogue_session_id', sessionIds),
           ),
+          loadStoredVerdicts(supabase, safeSupabaseCall, userId, sessionIds),
         ])
+        verdictsBySession = verdicts
         if (turnsResult && !turnsResult.error && Array.isArray(turnsResult.data)) {
           turnsBySession = turnsResult.data.reduce((map, row) => {
             if (!map.has(row.dialogue_session_id)) map.set(row.dialogue_session_id, [])
@@ -1056,19 +1119,15 @@ export function createRecentDialogueSessionsHandler({
         items: sessions.map((session) => {
           const list = session.list_id ? listsById.get(session.list_id) : null
           const targets = targetsBySession.get(session.id) || []
-          let courseTargets = targets.map((target) => ({
-            ...target,
-            status: session.status === 'active' ? 'waiting' : 'missed',
-            verdict: 'unused',
-          }))
-          if (classify && toCourse && targets.length) {
-            const classified = classify({
-              targets,
-              turns: turnsBySession.get(session.id) || [],
-              hints: hintsBySession.get(session.id) || [],
-            })
-            courseTargets = toCourse(targets, classified, session.status)
-          }
+          const courseTargets = courseItemsForSession({
+            session,
+            targets,
+            turns: turnsBySession.get(session.id) || [],
+            hints: hintsBySession.get(session.id) || [],
+            events: verdictsBySession.get(session.id) || [],
+            classify,
+            toCourse,
+          })
           const usedCount = courseTargets.filter((item) => item.status === 'used').length
           const hintedCount = courseTargets.filter((item) => item.status === 'hinted').length
           const missedCount = courseTargets.filter((item) => item.status === 'missed').length
@@ -1204,6 +1263,7 @@ export function createSenseCourseHandler({
       let turnsBySession = new Map()
       let hintsBySession = new Map()
       let allTargetsBySession = new Map()
+      let verdictsBySession = new Map()
       if (sessions.length) {
         const ids = sessions.map((row) => row.id)
         const [turnsResult, hintsResult, allTargetsResult] = await Promise.all([
@@ -1253,6 +1313,7 @@ export function createSenseCourseHandler({
             return map
           }, new Map())
         }
+        verdictsBySession = await loadStoredVerdicts(supabase, safeSupabaseCall, userId, ids)
       }
 
       const classify = typeof classifyTargets === 'function' ? classifyTargets : null
@@ -1261,22 +1322,15 @@ export function createSenseCourseHandler({
       const timeline = []
       for (const session of sessions) {
         const sessionTargets = allTargetsBySession.get(session.id) || []
-        let courseItems = sessionTargets.map((target) => ({
-          sense_id: target.sense_id,
-          status: session.status === 'active' ? 'waiting' : 'missed',
-          verdict: 'unused',
-        }))
-        if (classify && toCourse && sessionTargets.length) {
-          courseItems = toCourse(
-            sessionTargets,
-            classify({
-              targets: sessionTargets,
-              turns: turnsBySession.get(session.id) || [],
-              hints: hintsBySession.get(session.id) || [],
-            }),
-            session.status,
-          )
-        }
+        const courseItems = courseItemsForSession({
+          session,
+          targets: sessionTargets,
+          turns: turnsBySession.get(session.id) || [],
+          hints: hintsBySession.get(session.id) || [],
+          events: verdictsBySession.get(session.id) || [],
+          classify,
+          toCourse,
+        })
         const self = courseItems.find((item) => item.sense_id === senseId)
         const status = self?.status || (session.status === 'active' ? 'waiting' : 'missed')
         if (status === 'used') producedCount += 1
@@ -1287,6 +1341,7 @@ export function createSenseCourseHandler({
           status: session.status,
           word_status: status,
           verdict: self?.verdict || 'unused',
+          schedule_held: self?.schedule_held === true,
           created_at: session.created_at,
           assessed_at: session.assessed_at,
           list_id: session.list_id || null,
@@ -1320,6 +1375,7 @@ export function createSenseCourseHandler({
         recognition_status: recognitionStatus,
         recognition,
         production,
+        speech: describeProductionSpeech(production, now()),
         milestone,
         milestone_label: MILESTONE_LABELS[milestone] || milestone,
         produced_count: producedCount,

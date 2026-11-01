@@ -5,6 +5,7 @@
  */
 import { applySm2Review } from './srs.js'
 import { replyContainsTarget, sameLemma, DialogueRouteError } from './vocab-dialogue-routes.js'
+import { courseWordStatus } from './vocab-course-view.js'
 
 const MOVING = new Set(['produced', 'wrong_sense'])
 
@@ -102,14 +103,31 @@ export function applyJudgeVerdicts(classified, judged) {
   })
 }
 
-export function buildAssessmentItems({ classified, states, now }) {
+/**
+ * Несказанное слово без подтверждённой возможности не штрафует график.
+ * opportunity: true оставляет unused. Всё остальное становится no_opportunity.
+ */
+export function applyOpportunityVerdicts(classified, opportunities) {
+  const open = new Set(
+    (Array.isArray(opportunities) ? opportunities : [])
+      .filter((item) => item && item.opportunity === true && typeof item.sense_id === 'string')
+      .map((item) => item.sense_id),
+  )
+  return (Array.isArray(classified) ? classified : []).map((item) => {
+    if (!item || item.verdict !== 'unused') return item
+    return { ...item, verdict: open.has(item.sense_id) ? 'unused' : 'no_opportunity' }
+  })
+}
+
+export function buildAssessmentItems({ classified, states, now, movesBySense }) {
   return classified.map((item) => {
     const state = states.get(item.sense_id)
     if (!state || state.card_type !== 'production') {
       throw new DialogueRouteError(404, 'Practice card was not found')
     }
     const quality = item.verdict === 'produced' ? 5 : item.verdict === 'wrong_sense' ? 1 : 0
-    const moving = MOVING.has(item.verdict)
+    const held = item.moves_schedule === false || movesBySense?.get(item.sense_id) === false
+    const moving = !held && MOVING.has(item.verdict)
     const next = moving
       ? applySm2Review({
         easeFactor: Number(state.ease_factor),
@@ -170,16 +188,7 @@ export function buildPracticeProgressItems(targets, classified) {
   })
 }
 
-/** Статусы для витрины курса: used / hinted / missed / waiting / other */
-export function courseWordStatus(verdict, sessionStatus = 'active') {
-  const value = typeof verdict === 'string' ? verdict : 'unused'
-  if (value === 'produced') return 'used'
-  if (value === 'hinted') return 'hinted'
-  if (value === 'unused') {
-    return sessionStatus === 'active' ? 'waiting' : 'missed'
-  }
-  return 'other'
-}
+export { courseWordStatus } from './vocab-course-view.js'
 
 export function buildCourseProgressItems(targets, classified, sessionStatus = 'active') {
   const byId = new Map((Array.isArray(classified) ? classified : []).map((row) => [row.sense_id, row]))
@@ -284,6 +293,7 @@ export function createDialogueAssessmentHandler({
   safeSupabaseCall = (fn) => fn(),
   now = () => new Date(),
   judgeSenses,
+  judgeOpportunities,
 }) {
   return async function dialogueAssessmentHandler(req, res) {
     const token = getBearerToken(req)
@@ -336,7 +346,7 @@ export function createDialogueAssessmentHandler({
         safeSupabaseCall,
         () => supabase
           .from('vocab_dialogue_targets')
-          .select('sense_id, position, headword, gloss_ru, user_id')
+          .select('sense_id, position, headword, gloss_ru, user_id, moves_schedule')
           .eq('dialogue_session_id', dialogueSessionId)
           .eq('user_id', userId)
           .order('position', { ascending: true }),
@@ -390,6 +400,32 @@ export function createDialogueAssessmentHandler({
         }
         classified = applyJudgeVerdicts(classified, judged)
       }
+      const unspoken = classified.filter((item) => item.verdict === 'unused')
+      const assistantText = (Array.isArray(turns) ? turns : [])
+        .filter((row) => row && row.role === 'assistant' && typeof row.content === 'string')
+        .map((row) => row.content.trim())
+        .filter(Boolean)
+        .join('\n')
+      let opportunities = []
+      if (unspoken.length > 0 && assistantText && typeof judgeOpportunities === 'function') {
+        try {
+          opportunities = await judgeOpportunities({
+            userId,
+            items: unspoken.map((item) => {
+              const target = targets.find((row) => row.sense_id === item.sense_id)
+              return {
+                sense_id: item.sense_id,
+                gloss_ru: target?.gloss_ru || '',
+                assistant_text: assistantText,
+              }
+            }),
+          })
+        } catch {
+          opportunities = []
+        }
+      }
+      classified = applyOpportunityVerdicts(classified, opportunities)
+      const movesBySense = new Map(targets.map((row) => [row.sense_id, row.moves_schedule !== false]))
       const stateRows = await readRows(
         safeSupabaseCall,
         () => supabase
@@ -402,7 +438,7 @@ export function createDialogueAssessmentHandler({
       const states = new Map((Array.isArray(stateRows) ? stateRows : [])
         .filter((row) => row && row.user_id === userId && row.card_type === 'production')
         .map((row) => [row.sense_id, row]))
-      const items = buildAssessmentItems({ classified, states, now: reviewedAt })
+      const items = buildAssessmentItems({ classified, states, now: reviewedAt, movesBySense })
       const committed = await readRows(
         safeSupabaseCall,
         () => supabase.rpc('commit_vocab_dialogue_assessment', {
