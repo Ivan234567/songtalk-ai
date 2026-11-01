@@ -337,6 +337,7 @@ export type PersonalScenariosUIProps = {
   initialBriefingId?: string | null;
   initialPlayMode?: PlayMode;
   practiceWords?: PracticeWordsSession | null;
+  seedPrompt?: string | null;
 };
 
 /** Превращает UserScenario в RoleplayScenario для передачи в AgentTab */
@@ -653,11 +654,12 @@ export function PersonalScenariosUI({
   initialBriefingId,
   initialPlayMode,
   practiceWords = null,
+  seedPrompt = null,
 }: PersonalScenariosUIProps) {
   const [view, setView] = useState<'create' | 'my' | 'edit'>(initialView);
 
   // Create flow
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState(seedPrompt || '');
   const [topic, setTopic] = useState('');
   const [place, setPlace] = useState('');
   const [userRole, setUserRole] = useState('');

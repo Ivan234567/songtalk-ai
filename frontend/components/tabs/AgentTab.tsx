@@ -28,6 +28,8 @@ import {
 } from '@/components/agent/PracticeWordsGate';
 import { PracticeModeHome, type PracticeHomeStage } from '@/components/agent/PracticeModeHome';
 import { PracticeTodayFive } from '@/components/agent/PracticeTodayFive';
+import { PracticeSceneMatch } from '@/components/agent/PracticeSceneMatch';
+import { practiceSeed } from '@/lib/practice-scene-match';
 import type { PracticeWordsSession } from '@/components/agent/PracticeWordsInSheet';
 import {
   PracticeWordsProgress,
@@ -355,7 +357,9 @@ export function AgentTab() {
   const [zhListenReview, setZhListenReview] = useState<ZhListenReview | null>(null);
   const [zhRevealedMeta, setZhRevealedMeta] = useState<Record<number, boolean>>({});
   const [agentMode, setAgentMode] = useState<'chat' | 'roleplay' | 'debate'>('chat');
-  const [practiceHome, setPracticeHome] = useState<PracticeHomeStage | 'today' | null>('today');
+  const [practiceHome, setPracticeHome] = useState<PracticeHomeStage | 'today' | 'scenes' | 'topics' | null>('today');
+  const [sceneSeed, setSceneSeed] = useState<string | null>(null);
+  const [debateTopicId, setDebateTopicId] = useState<string | null>(null);
   const [chatPracticeSenses, setChatPracticeSenses] = useState<ChatPracticeSense[]>([]);
   const [chatPracticeLocked, setChatPracticeLocked] = useState(false);
   const [chatDialogueSessionId, setChatDialogueSessionId] = useState<string | null>(null);
@@ -3001,7 +3005,7 @@ export function AgentTab() {
     progressTargetHandledRef.current = null;
     setHighlightedUserScenarioId(null);
     if (!selectedScenario) {
-      setPracticeHome('roleplay');
+      setPracticeHome(chatPracticeSensesRef.current.length ? 'scenes' : 'roleplay');
     }
   }, [selectedScenario]);
 
@@ -4533,6 +4537,7 @@ export function AgentTab() {
                       initialScenarioId={progressDeepLink?.id}
                       initialPlayMode={progressDeepLink?.playMode}
                       practiceWords={practiceWordsSession}
+                      seedPrompt={sceneSeed}
                       onSelectScenario={(s) => {
                         handleSelectScenario(s);
                         setScenarioModalOpen(false);
@@ -4554,6 +4559,7 @@ export function AgentTab() {
                     initialBriefingId={progressDeepLink?.id}
                     initialPlayMode={progressDeepLink?.playMode}
                     practiceWords={practiceWordsSession}
+                    seedPrompt={sceneSeed}
                     onSelectScenario={(s) => {
                       handleSelectScenario(s);
                       setScenarioModalOpen(false);
@@ -5909,14 +5915,68 @@ export function AgentTab() {
               setChatPracticeRequestId(requestId);
               setChatPracticeLocked(false);
               setChatInviteDismissed(true);
-              setPracticeHome(mode);
+              setPracticeHome(mode === 'debate' ? 'topics' : 'scenes');
             }}
             onFreeChat={() => {
               clearChatPractice();
               openPracticeMode('chat');
             }}
           />
-        ) : showPracticeHome && practiceHome && practiceHome !== 'today' ? (
+        ) : showPracticeHome && (practiceHome === 'scenes' || practiceHome === 'topics') && (preferredPracticeListId || chatPracticeListId) ? (
+          <PracticeSceneMatch
+            apiUrl={getApiUrl()}
+            token={token}
+            learningLanguage={learningLanguage}
+            mode={practiceHome === 'topics' ? 'debate' : 'roleplay'}
+            listId={(preferredPracticeListId || chatPracticeListId) as string}
+            words={chatPracticeSenses}
+            onBack={() => setPracticeHome('today')}
+            onPickScenario={(scenario) => {
+              handleSelectScenario(scenario);
+              setPracticeHome(null);
+            }}
+            onPickTopic={(topicId) => {
+              setSceneSeed(null);
+              setDebateTopicId(topicId);
+              handleModeChange('debate');
+              handleDebateViewChange('catalog');
+              setDebateSetupOpen(true);
+              setPracticeHome(null);
+            }}
+            onCreate={() => {
+              const seed = practiceSeed(
+                chatPracticeSenses.map((sense) => sense.glossRu),
+                practiceHome === 'topics' ? 'topic' : 'scene',
+              );
+              setDebateTopicId(null);
+              setSceneSeed(seed);
+              if (practiceHome === 'topics') {
+                handleModeChange('debate');
+                handleDebateViewChange('create');
+                setDebateSetupOpen(true);
+              } else {
+                handleModeChange('roleplay');
+                handleScenarioViewChange('create');
+                setScenarioModalOpen(true);
+              }
+              setPracticeHome(null);
+            }}
+            onBrowseAll={() => {
+              setSceneSeed(null);
+              setDebateTopicId(null);
+              if (practiceHome === 'topics') {
+                handleModeChange('debate');
+                handleDebateViewChange('catalog');
+                setDebateSetupOpen(true);
+              } else {
+                handleModeChange('roleplay');
+                handleScenarioViewChange(showSystemCatalog ? 'catalog' : 'my');
+                setScenarioModalOpen(true);
+              }
+              setPracticeHome(null);
+            }}
+          />
+        ) : showPracticeHome && practiceHome && practiceHome !== 'today' && practiceHome !== 'scenes' && practiceHome !== 'topics' ? (
           <PracticeModeHome
             stage={practiceHome}
             showDebate={learningLanguage !== 'zh'}
@@ -7110,15 +7170,17 @@ export function AgentTab() {
       )}
       {debateSetupOpen && agentMode === 'debate' && learningLanguage !== 'zh' && (
         <DebateSetupUI
-          key={learningLanguage}
+          key={`${learningLanguage}|${debateTopicId || ''}|${sceneSeed || ''}|${debateView}`}
           learningLanguage={learningLanguage}
           userId={userId}
           view={guardCatalogView(debateView)}
+          initialTopicId={debateTopicId}
+          initialCustomTopic={debateView === 'create' ? sceneSeed : null}
           practiceWords={practiceWordsSession}
           onStart={handleStartDebate}
           onClose={() => {
             if (!debateStarted) {
-              setPracticeHome('debate');
+              setPracticeHome(chatPracticeSensesRef.current.length ? 'topics' : 'debate');
             }
             setDebateSetupOpen(false);
           }}

@@ -6,7 +6,10 @@ import type { LearningLanguage } from '@/lib/learning-language';
 import type { ChatPracticeSense } from './ChatPracticeWords';
 import styles from './practice-today.module.css';
 
-type TodaySense = ChatPracticeSense & { movesSchedule: boolean };
+type TodaySense = ChatPracticeSense & {
+  movesSchedule: boolean;
+  bucket: 'due' | 'new' | 'early';
+};
 
 type VocabListCard = {
   id: string;
@@ -34,17 +37,26 @@ function mapFiveItem(item: {
   headword?: unknown;
   gloss_ru?: unknown;
   moves_schedule?: unknown;
+  bucket?: unknown;
 }): TodaySense | null {
   const senseId = typeof item?.sense_id === 'string' ? item.sense_id : '';
   const headword = typeof item?.headword === 'string' ? item.headword.trim() : '';
   const glossRu = typeof item?.gloss_ru === 'string' ? item.gloss_ru.trim() : '';
   if (!senseId || !headword || !glossRu) return null;
+  const bucket = item.bucket === 'due' || item.bucket === 'early' || item.bucket === 'new' ? item.bucket : 'new';
   return {
     senseId,
     headword,
     glossRu,
     movesSchedule: item.moves_schedule !== false,
+    bucket,
   };
+}
+
+function bucketLabel(word: TodaySense): string {
+  if (word.bucket === 'due') return 'Пора сказать';
+  if (word.bucket === 'early' || word.movesSchedule === false) return 'Раньше срока. Дата не сдвинется';
+  return 'Новое. В сцене ещё не звучало';
 }
 
 export function PracticeTodayFive({
@@ -204,9 +216,7 @@ export function PracticeTodayFive({
           </h2>
           <p className={styles.lead}>
             {activeList
-              ? situationalOnly
-                ? `Список «${activeList.title}». Дальше ситуативный диалог: собеседник создаст ситуацию, а не попросит вставить слово.`
-                : `Список «${activeList.title}». Дальше сценарий или дебат: собеседник создаст ситуацию, а не попросит вставить слово.`
+              ? `Список «${activeList.title}». Их нужно сказать в сцене. Слова можно заменить. Потом выбрать, куда идти.`
               : 'Выберите список. Из него возьмутся слова, которые пора сказать, и новые.'}
           </p>
         </header>
@@ -244,9 +254,9 @@ export function PracticeTodayFive({
                 <span className={styles.main}>
                   <span className={styles.name}>{word.headword}</span>
                   <span className={styles.meta}>{word.glossRu}</span>
-                  {word.movesSchedule === false && (
-                    <span className={styles.note}>Раньше срока, график не сдвинется</span>
-                  )}
+                  <span className={word.bucket === 'early' || word.movesSchedule === false ? styles.note : styles.meta}>
+                    {bucketLabel(word)}
+                  </span>
                 </span>
               </li>
             ))}
@@ -294,7 +304,7 @@ export function PracticeTodayFive({
                 disabled={words.length < 1}
                 onClick={() => onStart('roleplay', words, activeList.id)}
               >
-                Ситуативный диалог
+                Подобрать диалог
               </button>
             ) : (
               <>
@@ -304,7 +314,7 @@ export function PracticeTodayFive({
                   disabled={words.length < 1}
                   onClick={() => onStart('roleplay', words, activeList.id)}
                 >
-                  Сценарий
+                  Подобрать сцену
                 </button>
                 <button
                   type="button"
@@ -312,7 +322,7 @@ export function PracticeTodayFive({
                   disabled={words.length < 1}
                   onClick={() => onStart('debate', words, activeList.id)}
                 >
-                  Дебат
+                  Подобрать дебат
                 </button>
               </>
             )}

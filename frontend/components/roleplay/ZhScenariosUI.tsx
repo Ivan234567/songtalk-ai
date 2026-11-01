@@ -35,6 +35,7 @@ type ZhScenariosUIProps = {
   initialScenarioId?: string | null;
   initialPlayMode?: ZhPlayMode;
   practiceWords?: import('@/components/agent/PracticeWordsInSheet').PracticeWordsSession | null;
+  seedPrompt?: string | null;
 };
 
 type ZhScenariosErrorBoundaryProps = {
@@ -190,11 +191,13 @@ const labelStyle: React.CSSProperties = {
 function ZhIntentForm({
   onGenerated,
   onManualCreate,
+  initialPrompt = '',
 }: {
   onGenerated: (draft: ZhScenario) => void;
   onManualCreate: (draft: ZhScenario) => void;
+  initialPrompt?: string;
 }) {
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [textbook, setTextbook] = useState('');
   const [lesson, setLesson] = useState('');
   const [goal, setGoal] = useState('');
@@ -376,6 +379,7 @@ export function ZhScenariosUI({
   initialScenarioId,
   initialPlayMode,
   practiceWords = null,
+  seedPrompt = null,
 }: ZhScenariosUIProps) {
   const [view, setView] = useState<'catalog' | 'create' | 'my'>(
     initialView === 'create' || initialView === 'catalog' ? initialView : 'my'
@@ -838,6 +842,7 @@ export function ZhScenariosUI({
           />
         ) : view === 'create' ? (
           <ZhIntentForm
+            initialPrompt={seedPrompt || ''}
             onGenerated={(next) => { setSaveError(null); setDraft(next); }}
             onManualCreate={(next) => { setSaveError(null); setDraft(next); }}
           />

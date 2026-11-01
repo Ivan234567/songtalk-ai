@@ -49,6 +49,8 @@ type DebateSetupUIProps = {
   /** Внешний экран: 'catalog' | 'create' | 'my' — управляется через dropdown */
   view?: 'catalog' | 'create' | 'my';
   practiceWords?: import('@/components/agent/PracticeWordsInSheet').PracticeWordsSession | null;
+  initialTopicId?: string | null;
+  initialCustomTopic?: string | null;
 };
 
 type TopicView = 'list' | 'custom' | 'my';
@@ -186,7 +188,16 @@ const PROFANITY_OPTIONS: Array<{ value: DebateProfanityIntensity; label: string 
   { value: 'hard', label: 'Жестко' },
 ];
 
-export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view: externalView, practiceWords = null }: DebateSetupUIProps) {
+export function DebateSetupUI({
+  learningLanguage,
+  onStart,
+  onClose,
+  userId,
+  view: externalView,
+  practiceWords = null,
+  initialTopicId = null,
+  initialCustomTopic = null,
+}: DebateSetupUIProps) {
   const showSystemCatalog = hasEnglishSystemCatalog(learningLanguage);
   const [setupStep, setSetupStep] = useState<SetupStep>('topic');
   const mapExternalView = (v?: 'catalog' | 'create' | 'my'): TopicView => {
@@ -224,6 +235,20 @@ export function DebateSetupUI({ learningLanguage, onStart, onClose, userId, view
   const [debateAiMayUseProfanity, setDebateAiMayUseProfanity] = useState(false);
   const [debateProfanityIntensity, setDebateProfanityIntensity] = useState<DebateProfanityIntensity>('light');
   const [showBriefing, setShowBriefing] = useState(false);
+
+  useEffect(() => {
+    if (initialCustomTopic) {
+      setCustomTopic(initialCustomTopic);
+      setTopicView('custom');
+      return;
+    }
+    if (!initialTopicId) return;
+    const found = DEBATE_TOPICS.find((topic) => topic.id === initialTopicId);
+    if (!found) return;
+    setSelectedTopic(found);
+    setTopicView('list');
+    setShowBriefing(true);
+  }, [initialCustomTopic, initialTopicId]);
 
   // «Мои темы» enhanced state
   const [mySearchQuery, setMySearchQuery] = useState('');
