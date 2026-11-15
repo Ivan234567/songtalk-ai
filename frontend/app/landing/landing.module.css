@@ -1817,7 +1817,7 @@
 
 .pricingGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1.5rem;
   align-items: stretch;
 }
@@ -2011,6 +2011,12 @@
 
 .pricingCardFeatured .pricingCardButton {
   box-shadow: 0 6px 24px rgba(var(--land-a), 0.35);
+}
+
+@media (max-width: 1200px) {
+  .pricingGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 960px) {

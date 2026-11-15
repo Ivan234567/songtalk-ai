@@ -51,6 +51,18 @@ function IconWallet() {
 // Номиналы зачисления. К оплате добавляется комиссия ЮKassa, минимальная у СБП.
 const TOPUP_OPTIONS = [
   {
+    amount: 50,
+    name: 'Базовый',
+    dialogue: '≈ 15 мин практики',
+    orLine: 'или до 70 озвучек',
+    featured: false,
+    perks: [
+      { title: 'Диалог с агентом', get: '≈ 15 мин', hint: 'сценарии, дебаты или свободный разговор', Icon: IconMic },
+      { title: 'Озвучка', get: 'до 70 озвучек', hint: 'слова и фразы в словаре', Icon: IconTts },
+      { title: 'Один баланс', get: 'на все разделы', hint: 'подписки нет, сумма не сгорает', Icon: IconWallet },
+    ],
+  },
+  {
     amount: 300,
     name: 'Стартовый',
     dialogue: '≈ 1 ч 30 мин практики',
@@ -770,7 +782,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
           <p className={styles.topupKicker}>Пакеты</p>
           <h3 id="topup-title" className={styles.topupTitle}>Выберите объём практики</h3>
           <p className={styles.topupLead}>
-            На баланс зачисляется 300, 500 или 1 000 ₽. Один баланс на все разделы, подписки нет.
+            На баланс зачисляется 50, 300, 500 или 1 000 ₽. Один баланс на все разделы, подписки нет.
             Часы и число озвучек — ориентир: фактический расход зависит от длины реплик.
           </p>
         </div>
