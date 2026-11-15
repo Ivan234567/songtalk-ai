@@ -120,7 +120,10 @@
   font-weight: 600;
 }
 
-.pri:hover { filter: brightness(1.07); }
+.btn.pri:hover {
+  background: color-mix(in srgb, var(--accent) 84%, white);
+  filter: none;
+}
 
 .hero {
   grid-column: span 8;

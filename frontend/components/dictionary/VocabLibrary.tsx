@@ -1017,6 +1017,13 @@ export function VocabLibrary() {
   const matched = lists.filter((item) => !needle || item.title.toLowerCase().includes(needle));
   const own = matched.filter((item) => !item.system_key);
   const packs = matched.filter((item) => Boolean(item.system_key));
+  const catalog = library?.starter_packs || [];
+  const offeredPacks = catalog.filter((pack) => {
+    if (pack.in_library || packAll.some((item) => item.system_key === pack.key)) return false;
+    if (!needle) return true;
+    return pack.title.toLowerCase().includes(needle) || pack.description.toLowerCase().includes(needle);
+  });
+  const packTotal = packAll.length + catalog.filter((pack) => !pack.in_library && !packAll.some((item) => item.system_key === pack.key)).length;
   const dueTotal = typeof library?.summary?.due === 'number'
     ? library.summary.due
     : lists.reduce((sum, item) => sum + (item.stats?.due || 0), 0);
@@ -1084,9 +1091,9 @@ export function VocabLibrary() {
         </label>
         <div className={styles.seg} role="group" aria-label="Показать">
           {([
-            ['all', 'Все', lists.length],
+            ['all', 'Все', ownAll.length + packTotal],
             ['mine', 'Мои', ownAll.length],
-            ['packs', 'Наборы', packAll.length],
+            ['packs', 'Наборы', packTotal],
           ] as const).map(([id, label, count]) => (
             <button key={id} type="button" aria-pressed={listScope === id} onClick={() => setListScope(id)}>
               {label}<b>{count}</b>
@@ -1096,7 +1103,7 @@ export function VocabLibrary() {
       </div>
 
       {loading && <p className={styles.mut}>Загружаем библиотеку…</p>}
-      {!loading && matched.length === 0 && (
+      {!loading && (showMine ? own.length : 0) === 0 && (showPacks ? packs.length + offeredPacks.length : 0) === 0 && (
         <div className={styles.empty}>
           <b>{needle ? 'Ничего не нашли' : 'Пока нет списков'}</b>
           {needle ? 'Попробуйте другое название.' : 'Возьмите готовый набор или начните с пустого.'}
@@ -1108,10 +1115,28 @@ export function VocabLibrary() {
           <div className={styles.grid}>{own.map(listCard)}</div>
         </>
       )}
-      {showPacks && packs.length > 0 && (
+      {showPacks && (packs.length > 0 || offeredPacks.length > 0) && (
         <>
           {listScope === 'all' && <h2 className={styles.h2}>Готовые наборы</h2>}
-          <div className={styles.grid}>{packs.map(listCard)}</div>
+          <div className={styles.grid}>
+            {packs.map(listCard)}
+            {offeredPacks.map((pack) => (
+              <button
+                key={pack.key}
+                type="button"
+                className={styles.card}
+                disabled={busyKey === pack.key}
+                onClick={() => void addStarter(pack.key)}
+              >
+                <div className={styles.top}>
+                  <b>{pack.title}</b>
+                  <span className={styles.chip}>{pack.level}</span>
+                </div>
+                <span className={styles.meta}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
+                <span className={styles.mut}>{busyKey === pack.key ? 'Добавляем…' : pack.description}</span>
+              </button>
+            ))}
+          </div>
         </>
       )}
 

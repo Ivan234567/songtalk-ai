@@ -108,25 +108,16 @@ export const DashboardTab: React.FC<{ displayName?: string }> = ({ displayName =
     next.delete('mode');
     next.delete('target');
     next.delete('repick');
-    if (item.action === 'recognition') {
-      next.set('tab', 'dictionary');
-      next.set('review', '1');
-    } else if (item.action === 'free') {
-      next.set('tab', 'agent');
-      next.set('from', 'vocab');
-      next.set('mode', 'free');
-    } else if ((item.action === 'retention' || item.action === 'transfer') && item.senses.length >= 1) {
-      next.set('tab', 'agent');
+    next.set('tab', 'agent');
+    const spokenPractice = item.action !== 'free' && item.action !== 'recognition';
+    if (spokenPractice && (item.action === 'retention' || item.action === 'transfer') && item.senses.length >= 1) {
       next.set('from', 'vocab');
       next.set('mode', item.action);
       next.set('senses', item.senses.map((sense) => sense.sense_id).join(','));
-    } else if (item.list_id && item.senses.length >= 2) {
-      next.set('tab', 'agent');
+    } else if (spokenPractice && item.list_id && item.senses.length >= 2) {
       next.set('from', 'vocab');
       next.set('list', item.list_id);
       next.set('senses', item.senses.map((sense) => sense.sense_id).join(','));
-    } else {
-      next.set('tab', 'agent');
     }
     router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
   };
@@ -254,13 +245,7 @@ export const DashboardTab: React.FC<{ displayName?: string }> = ({ displayName =
               ) : null}
               <div className={styles.acts}>
                 <button type="button" className={`${styles.btn} ${styles.pri}`} onClick={() => openRecommendation(recommendation)}>
-                  {recommendation.action === 'free'
-                    ? 'Свободный разговор'
-                    : recommendation.action === 'recognition'
-                      ? 'Повторить'
-                      : recommendation.action === 'retention' || recommendation.action === 'transfer'
-                        ? 'Начать разговор'
-                        : 'Начать занятие'}
+                  Начать разговор
                   <Arrow />
                 </button>
               </div>

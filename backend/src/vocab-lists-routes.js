@@ -535,6 +535,13 @@ export function createListLibraryHandler(deps) {
     const language = await requireLanguage(deps, userId, res)
     if (!language) return
 
+    // Пустой словарь нового аккаунта сразу получает обычные наборы. Уже непустой не трогаем.
+    try {
+      await ensureEmptyLibraryLists({ supabase, safeSupabaseCall, userId, language })
+    } catch (error) {
+      console.error('[api/vocabulary/lists] initial lists failed', error?.message || error?.code || error)
+    }
+
     // Дозаполнение наборов и sense-sync не блокируют каталог: слова читаются при открытии списка.
     ensureUserVocabularySenses({ supabase, userId, language }).catch((error) => {
       console.error('[api/vocabulary/lists] background sense sync failed', error?.message || error)
@@ -927,6 +934,43 @@ async function ensurePackLexicon({ supabase, safeSupabaseCall, language, pack })
       }, { onConflict: 'word,language' }),
     )
     if (insertError) throw insertError
+  }
+}
+
+async function ensureEmptyLibraryLists({ supabase, safeSupabaseCall, userId, language }) {
+  const packs = STARTER_PACKS.filter((pack) => pack.language === language)
+  if (!packs.length) return
+  const { count, error } = await safeSupabaseCall(
+    () => supabase
+      .from('vocab_lists')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('language', language),
+  )
+  if (error) throw error
+  if (Number(count) > 0) return
+  for (const pack of packs) {
+    const { data: list, error: listError } = await safeSupabaseCall(
+      () => supabase
+        .from('vocab_lists')
+        .insert({
+          user_id: userId,
+          language,
+          title: pack.title,
+          description: pack.description,
+          source: 'system',
+          system_key: pack.key,
+        })
+        .select('id')
+        .single(),
+    )
+    if (listError) {
+      if (errorCode(listError) === '23505') continue
+      throw listError
+    }
+    if (list?.id) {
+      await fillPackWords({ supabase, safeSupabaseCall, userId, language, pack, listId: list.id })
+    }
   }
 }
 

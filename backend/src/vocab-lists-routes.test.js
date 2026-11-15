@@ -60,6 +60,20 @@ test('listen из списка не подмешивает карточки не
   assert.doesNotMatch(source, /\[\.\.\.dueFirst, \.\.\.rest\]/)
 })
 
+test('пустой словарь получает системные списки, непустой не пересоздаёт удалённые', () => {
+  const source = readFileSync(join(root, 'backend/src/vocab-lists-routes.js'), 'utf8')
+  const handler = source.slice(
+    source.indexOf('export function createListLibraryHandler'),
+    source.indexOf('export function createEmptyListHandler'),
+  )
+  assert.match(handler, /await ensureEmptyLibraryLists/)
+  const fnStart = source.indexOf('async function ensureEmptyLibraryLists')
+  const fnEnd = source.indexOf('async function ensureDemoLists', fnStart)
+  const body = source.slice(fnStart, fnEnd)
+  assert.match(body, /if \(Number\(count\) > 0\) return/)
+  assert.match(body, /system_key: pack\.key/)
+})
+
 test('ensureDemoLists не создаёт удалённые system-наборы заново', () => {
   const source = readFileSync(join(root, 'backend/src/vocab-lists-routes.js'), 'utf8')
   const fnStart = source.indexOf('async function ensureDemoLists')

@@ -8,18 +8,15 @@ import {
 } from '@/lib/roleplay';
 import { createUserScenario, type UserScenarioLevel } from '@/lib/user-scenarios';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
-import { SpeechVoicePicker } from '@/components/roleplay/SpeechVoicePicker';
 import { hasRoleplaySystemCatalog, type LearningLanguage } from '@/lib/learning-language';
 import {
-  PLAY_MODES,
-  PLAY_MODE_LABELS,
   masteredModesFromCompletions,
   parsePlayMode,
   scaffoldPolicy,
   type MasteredModes,
   type PlayMode,
 } from '@/lib/play-mode';
-import { EN_PLAY_MODE_HINTS, defaultEnStressTwistRu } from '@/lib/en-play-mode';
+import { defaultEnStressTwistRu } from '@/lib/en-play-mode';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 import { supabase } from '@/lib/supabase';
 import {
@@ -1330,35 +1327,6 @@ export function BriefingView({
             ))}
           </div>
         )}
-        <div style={{ marginTop: 14, padding: '0.85rem 1rem', borderRadius: 12, border: '1px solid var(--sidebar-border)' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-            Режим этой попытки
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {PLAY_MODES.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setPlayMode(mode)}
-                style={{
-                  padding: '0.55rem 0.85rem',
-                  borderRadius: 12,
-                  border: '1px solid var(--sidebar-border)',
-                  background: playMode === mode ? 'var(--sidebar-active)' : 'transparent',
-                  color: 'var(--sidebar-text)',
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                }}
-              >
-                {PLAY_MODE_LABELS[mode]}
-              </button>
-            ))}
-          </div>
-          <p style={{ margin: '0.65rem 0 0', fontSize: '0.8125rem', opacity: 0.75, lineHeight: 1.5, overflowWrap: 'break-word' }}>
-            {EN_PLAY_MODE_HINTS[playMode]} Только для этой попытки, карточка не меняется.
-          </p>
-        </div>
-
         {hasBriefing ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', minWidth: 0 }}>
             {rehearsal && setting && (
@@ -1427,31 +1395,6 @@ export function BriefingView({
             subtitle="Подбор и ИИ — под выбранную сцену. Можно оставить пустым."
           />
         )}
-        <div
-          style={{
-            padding: '1rem 1.125rem',
-            borderRadius: 12,
-            border: '1px solid var(--sidebar-border)',
-            background: 'var(--sidebar-bg)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.75rem',
-          }}
-        >
-          <SpeechVoicePicker
-            slangMode={slangMode}
-            allowProfanity={allowProfanity}
-            aiMayUseProfanity={aiMayUseProfanity}
-            profanityIntensity={profanityIntensity}
-            confirmSource="roleplay_briefing"
-            onChange={(next) => {
-              setSlangMode(next.slangMode);
-              setAllowProfanity(next.allowProfanity);
-              setAiMayUseProfanity(next.aiMayUseProfanity);
-              setProfanityIntensity(next.profanityIntensity);
-            }}
-          />
-        </div>
         <button
           type="button"
           onClick={async () => {

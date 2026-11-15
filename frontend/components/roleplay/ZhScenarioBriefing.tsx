@@ -3,9 +3,6 @@
 import React, { useState } from 'react';
 import type { RoleplayScenario } from '@/lib/roleplay';
 import {
-  ZH_PLAY_MODES,
-  ZH_PLAY_MODE_HINTS,
-  ZH_PLAY_MODE_LABELS,
   defaultStressTwist,
   parseZhPlayMode,
   type ZhPlayMode,
@@ -111,7 +108,7 @@ export function ZhScenarioBriefing({
 }: ZhScenarioBriefingProps) {
   const isPreview = variant === 'preview';
   const [starter, setStarter] = useState<ZhStarter>(scenario.starter || 'ai');
-  const [playMode, setPlayMode] = useState<ZhPlayMode>(parseZhPlayMode(initialPlayMode));
+  const playMode = parseZhPlayMode(initialPlayMode);
   const [starting, setStarting] = useState(false);
   const vocab = Array.isArray(scenario.vocabulary) ? scenario.vocabulary : [];
   const mustSay = vocab.filter((v) => v && v.usage === 'must_say');
@@ -181,34 +178,6 @@ export function ZhScenarioBriefing({
           )}
         </div>
       </div>
-
-      {!isPreview && (
-        <div style={{ padding: '0.85rem 1rem', borderRadius: 12, border: '1px solid var(--sidebar-border)' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-            Режим этой попытки
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {ZH_PLAY_MODES.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setPlayMode(mode)}
-                style={{
-                  ...btnSecondary,
-                  background: playMode === mode ? 'var(--sidebar-active)' : 'transparent',
-                  fontSize: '0.875rem',
-                  padding: '0.55rem 0.85rem',
-                }}
-              >
-                {ZH_PLAY_MODE_LABELS[mode]}
-              </button>
-            ))}
-          </div>
-          <p style={{ margin: '0.65rem 0 0', fontSize: '0.8125rem', opacity: 0.75, lineHeight: 1.4 }}>
-            {ZH_PLAY_MODE_HINTS[playMode]} Только для этой попытки, карточка не меняется.
-          </p>
-        </div>
-      )}
 
       {dense && typeof scenario.setting_ru === 'string' && scenario.setting_ru && (
         <Card title="Место">
