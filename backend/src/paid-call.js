@@ -1,5 +1,6 @@
 import { llmCeilingRub, llmSettledChargeRub } from './balance-rates.js'
 import { createLedger } from './reservation-ledger.js'
+import { readProviderCostRub, readProviderRequestId, settleProviderCall } from './provider-cost.js'
 
 export function isUncertainProviderError(err) {
   const name = String(err?.name || '')
@@ -80,6 +81,20 @@ export async function runReserved(spec, deps) {
       providerCostRub: outcome?.providerCostRub ?? null,
       result: outcome?.result ?? null,
     })
+    if (settled.ok && !settled.already && Number(settled.finalChargeRub) > 0 && typeof deps.commitUsage === 'function') {
+      try {
+        await deps.commitUsage({
+          userId: spec.userId,
+          operationId,
+          service: spec.service || null,
+          model: spec.model || spec.service || null,
+          providerCostRub: outcome?.providerCostRub ?? null,
+          providerRequestId: outcome?.providerRequestId ?? null,
+        })
+      } catch (err) {
+        console.error('[billing] provider cost was not committed', err?.message || err)
+      }
+    }
     return {
       ok: true,
       status: 200,
@@ -107,17 +122,20 @@ export async function runBillableChat(deps, llm, model, spec) {
     operationId: spec.operationId,
     ceilingRub: llmCeilingRub(spec.messages, cap),
     service: model || 'deepseek-v3.2',
+    model: model || 'deepseek-v3.2',
     metadata: spec.metadata || null,
     execute: async () => {
-      const completion = await llm.chat.completions.create({
+      const { data: completion, response } = await settleProviderCall(llm.chat.completions.create({
         model,
         messages: spec.messages,
         max_tokens: cap,
         ...(spec.temperature != null ? { temperature: spec.temperature } : {}),
-      })
+      }))
       const priced = llmSettledChargeRub(completion?.usage, spec.messages, cap)
       return {
         chargeRub: priced.charge,
+        providerCostRub: readProviderCostRub(completion?.usage, response),
+        providerRequestId: readProviderRequestId(response, completion),
         completion,
         result: { text: completion?.choices?.[0]?.message?.content || '' },
       }

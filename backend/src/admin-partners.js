@@ -1,5 +1,6 @@
 import { readAppAdmin } from './admin-access.js'
 import { parseOptionalPromoCode } from './referral.js'
+import { refreshProviderCosts } from './provider-cost.js'
 
 const STATUSES = new Set(['all', 'active', 'paused', 'disabled'])
 const PARTNER_STATUSES = new Set(['active', 'paused', 'disabled'])
@@ -46,6 +47,7 @@ export function registerAdminPartnerRoutes(app, { supabase, asyncHandler, resolv
     if (query.length > 128 || !STATUSES.has(status || 'all')) {
       return res.status(400).json({ ok: false, error: 'invalid_input' })
     }
+    await refreshProviderCosts(supabase)
 
     const listed = await supabase.rpc('admin_list_issued_partners', {
       p_admin_id: userId,
@@ -67,6 +69,7 @@ export function registerAdminPartnerRoutes(app, { supabase, asyncHandler, resolv
     if (!admin.ok) {
       return res.status(admin.error === 'not_admin' ? 403 : 500).json({ ok: false, error: admin.error })
     }
+    await refreshProviderCosts(supabase)
     const listed = await supabase.rpc('admin_reconciliation', { p_admin_id: userId })
     if (listed.error) {
       const mapped = knownError(listed.error)
@@ -83,6 +86,7 @@ export function registerAdminPartnerRoutes(app, { supabase, asyncHandler, resolv
     if (!admin.ok) {
       return res.status(admin.error === 'not_admin' ? 403 : 500).json({ ok: false, error: admin.error })
     }
+    await refreshProviderCosts(supabase)
     const listed = await supabase.rpc('admin_partner_accruals', { p_admin_id: userId })
     if (listed.error) {
       const mapped = knownError(listed.error)
@@ -99,6 +103,7 @@ export function registerAdminPartnerRoutes(app, { supabase, asyncHandler, resolv
     if (!admin.ok) {
       return res.status(admin.error === 'not_admin' ? 403 : 500).json({ ok: false, error: admin.error })
     }
+    await refreshProviderCosts(supabase)
     const listed = await supabase.rpc('admin_partner_payouts', { p_admin_id: userId })
     if (listed.error) {
       const mapped = knownError(listed.error)
@@ -131,6 +136,7 @@ export function registerAdminPartnerRoutes(app, { supabase, asyncHandler, resolv
     if (!admin.ok) {
       return res.status(admin.error === 'not_admin' ? 403 : 500).json({ ok: false, error: admin.error })
     }
+    await refreshProviderCosts(supabase)
     const listed = await supabase.rpc('admin_list_withdrawals', { p_admin_id: userId })
     if (listed.error) {
       const mapped = knownError(listed.error)
@@ -151,6 +157,7 @@ export function registerAdminPartnerRoutes(app, { supabase, asyncHandler, resolv
       return res.status(400).json({ ok: false, error: 'invalid_input' })
     }
     const note = typeof req.body?.note === 'string' ? req.body.note : ''
+    await refreshProviderCosts(supabase)
     const decided = await supabase.rpc('admin_decide_withdrawal', {
       p_admin_id: userId,
       p_request_id: req.params.id,

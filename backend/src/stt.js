@@ -5,6 +5,7 @@
  */
 
 import OpenAI from 'openai'
+import { readProviderCostRub, readProviderRequestId, settleProviderCall } from './provider-cost.js'
 
 let client = null
 
@@ -32,7 +33,7 @@ function getModel() {
  * Транскрибирует аудио из потока.
  * @param {import('stream').Readable} fileStream — поток аудиофайла (fs.createReadStream)
  * @param {{ language?: string }} [options] — опции (например language: 'en')
- * @returns {Promise<{ text: string }>}
+ * @returns {Promise<{ text: string, providerCostRub: number | null, providerRequestId: string | null }>}
  */
 export async function transcribe(fileStream, options = {}) {
   const sttClient = getClient()
@@ -42,9 +43,15 @@ export async function transcribe(fileStream, options = {}) {
   }
   if (options.language) params.language = options.language
 
-  const transcription = await sttClient.audio.transcriptions.create(params)
+  const { data: transcription, response } = await settleProviderCall(
+    sttClient.audio.transcriptions.create(params),
+  )
   const text = (transcription && typeof transcription.text === 'string')
     ? transcription.text.trim()
     : ''
-  return { text }
+  return {
+    text,
+    providerCostRub: readProviderCostRub(transcription?.usage, response),
+    providerRequestId: readProviderRequestId(response, transcription),
+  }
 }

@@ -4,6 +4,8 @@
  * Списание и пополнение выполняются через RPC в одной транзакции.
  */
 
+import { commitUsageFinancials } from './provider-cost.js'
+
 /**
  * Возвращает текущий баланс пользователя в рублях.
  * Если записи нет (ленивое создание) — возвращает 0.
@@ -184,6 +186,7 @@ export function reservationDeps(supabase) {
     settle: (args) => settleOperation(supabase, args),
     fail: (args) => failOperation(supabase, args),
     abandon: (args) => abandonOperation(supabase, args),
+    commitUsage: (args) => commitUsageFinancials(supabase, args),
   }
 }
 

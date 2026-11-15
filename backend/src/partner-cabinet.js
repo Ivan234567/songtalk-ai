@@ -1,3 +1,5 @@
+import { refreshProviderCosts } from './provider-cost.js'
+
 const MONTH_RE = /^(\d{4})-(\d{2})$/
 
 export function parsePartnerMonth(value) {
@@ -51,6 +53,7 @@ export function registerPartnerCabinetRoutes(app, { supabase, asyncHandler, reso
     if (!userId) return
     const month = parsePartnerMonth(req.query.month)
     if (month === undefined) return res.status(400).json({ ok: false, error: 'invalid_input' })
+    await refreshProviderCosts(supabase)
     return readPartner(res, supabase, userId, 'partner_cabinet_overview', {
       p_user_id: userId,
       p_month: month,
@@ -75,6 +78,7 @@ export function registerPartnerCabinetRoutes(app, { supabase, asyncHandler, reso
   app.get('/api/partner/months', asyncHandler(async (req, res) => {
     const userId = await requireUser(req, res)
     if (!userId) return
+    await refreshProviderCosts(supabase)
     return readPartner(res, supabase, userId, 'partner_cabinet_months', { p_user_id: userId })
   }))
 
@@ -83,6 +87,7 @@ export function registerPartnerCabinetRoutes(app, { supabase, asyncHandler, reso
     if (!userId) return
     const month = parsePartnerMonth(req.params.month)
     if (!month) return res.status(400).json({ ok: false, error: 'invalid_input' })
+    await refreshProviderCosts(supabase)
     return readPartner(res, supabase, userId, 'partner_cabinet_month', {
       p_user_id: userId,
       p_month: month,
@@ -92,12 +97,14 @@ export function registerPartnerCabinetRoutes(app, { supabase, asyncHandler, reso
   app.get('/api/partner/payouts', asyncHandler(async (req, res) => {
     const userId = await requireUser(req, res)
     if (!userId) return
+    await refreshProviderCosts(supabase)
     return readPartner(res, supabase, userId, 'partner_cabinet_payouts', { p_user_id: userId })
   }))
 
   app.get('/api/partner/withdrawals', asyncHandler(async (req, res) => {
     const userId = await requireUser(req, res)
     if (!userId) return
+    await refreshProviderCosts(supabase)
     return readPartner(res, supabase, userId, 'partner_withdrawal_state', { p_user_id: userId })
   }))
 
@@ -109,6 +116,7 @@ export function registerPartnerCabinetRoutes(app, { supabase, asyncHandler, reso
     if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000) {
       return res.status(400).json({ ok: false, error: 'invalid_input' })
     }
+    await refreshProviderCosts(supabase)
     const { data, error } = await supabase.rpc('partner_request_withdrawal', {
       p_user_id: userId,
       p_amount: amount,

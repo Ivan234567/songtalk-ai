@@ -20,6 +20,7 @@ import { getBalance, getBalanceComposition, deductBalance, topupBalance, readOpe
 import { clipOptional, createClickLimiter, normalizeAnonymousId, normalizeReferralCode } from './referral.js'
 import { getCost, prepareSttBilling, clampVoiceMaxTokens, llmCeilingRub, llmSettledChargeRub, ttsReservationRub, ttsSettledChargeRub, SERVER_MAX_OUTPUT_TOKENS } from './balance-rates.js'
 import { runReserved, runBillableChat, completionFromPaid } from './paid-call.js'
+import { readProviderCostRub, readProviderRequestId, settleProviderCall } from './provider-cost.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction, buildEnglishProfanityPolicy, CEFR_LEVEL_INSTRUCTIONS } from './learning-language.js'
 import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
@@ -322,17 +323,24 @@ async function billableChatCreate(userId, operationId, { messages, max_tokens, t
     operationId: operationId || crypto.randomUUID(),
     ceilingRub: ceiling,
     service: 'deepseek-v3.2',
+    model: AITUNNEL_MODEL,
     metadata: metadata || null,
     execute: async () => {
-      const completion = await llm.chat.completions.create({
+      const { data: completion, response } = await settleProviderCall(llm.chat.completions.create({
         model: AITUNNEL_MODEL,
         messages,
         max_tokens: cap,
         ...(temperature != null ? { temperature } : {}),
-      })
+      }))
       const priced = llmSettledChargeRub(completion?.usage, messages, cap)
       const text = completion?.choices?.[0]?.message?.content || ''
-      return { chargeRub: priced.charge, completion, result: { text } }
+      return {
+        chargeRub: priced.charge,
+        providerCostRub: readProviderCostRub(completion?.usage, response),
+        providerRequestId: readProviderRequestId(response, completion),
+        completion,
+        result: { text },
+      }
     },
   }, billingDeps())
 }
@@ -1046,10 +1054,12 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
         fileStream.on('error', (streamErr) => {
           console.error('[api/transcribe] File stream error:', streamErr)
         })
-        const { text } = await sttTranscribe(fileStream, { language: 'en' })
+        const transcribed = await sttTranscribe(fileStream, { language: 'en' })
         return {
           chargeRub: getCost('whisper-1', { duration_sec: billed.seconds }),
-          result: { text: text || '' },
+          providerCostRub: transcribed.providerCostRub,
+          providerRequestId: transcribed.providerRequestId,
+          result: { text: transcribed.text || '' },
         }
       },
     }, billingDeps())
@@ -1183,6 +1193,7 @@ app.post('/api/tts', async (req, res) => {
         return {
           chargeRub: priced.charge,
           providerCostRub: synthesized.supplierCostRub,
+          providerRequestId: synthesized.providerRequestId,
           buffer: synthesized.buffer,
           result: { characters: synthesized.characters, exceeded: priced.exceeded },
         }
@@ -1347,10 +1358,12 @@ app.post('/api/agent/stt', upload.single('audio'), async (req, res) => {
         fileStream.on('error', (streamErr) => {
           console.error('[api/agent/stt] File stream error:', streamErr)
         })
-        const { text } = await sttTranscribe(fileStream, sttLanguage ? { language: sttLanguage } : {})
+        const transcribed = await sttTranscribe(fileStream, sttLanguage ? { language: sttLanguage } : {})
         return {
           chargeRub: getCost('whisper-1', { duration_sec: billed.seconds }),
-          result: { text: text || '' },
+          providerCostRub: transcribed.providerCostRub,
+          providerRequestId: transcribed.providerRequestId,
+          result: { text: transcribed.text || '' },
         }
       },
     }, billingDeps())
@@ -1480,6 +1493,7 @@ app.post('/api/agent/tts', async (req, res) => {
         return {
           chargeRub: priced.charge,
           providerCostRub: synthesized.supplierCostRub,
+          providerRequestId: synthesized.providerRequestId,
           buffer: synthesized.buffer,
           result: { characters: synthesized.characters, exceeded: priced.exceeded },
         }
@@ -1872,14 +1886,16 @@ app.post('/api/agent/chat', async (req, res) => {
       operationId: chatOperationId,
       ceilingRub: llmCeilingRub(chatMessages, maxTokens),
       service: 'deepseek-v3.2',
+      model: AITUNNEL_MODEL,
       metadata: { agent_chat: true, max_tokens: maxTokens },
       execute: async ({ noteProduced }) => {
-        const stream = await llm.chat.completions.create({
+        const { data: stream, response: providerResponse } = await settleProviderCall(llm.chat.completions.create({
           model: AITUNNEL_MODEL,
           messages: chatMessages,
           max_tokens: maxTokens,
           stream: true,
-        })
+          stream_options: { include_usage: true },
+        }))
         res.setHeader('Content-Type', 'application/x-ndjson')
         res.setHeader('Cache-Control', 'no-cache')
         res.setHeader('Connection', 'keep-alive')
@@ -1893,7 +1909,9 @@ app.post('/api/agent/chat', async (req, res) => {
         let chunkCount = 0
         let fullReply = ''
         let streamUsage = null
+        let streamId = null
         for await (const chunk of stream) {
+          if (chunk?.id) streamId = chunk.id
           if (chunk?.usage) streamUsage = chunk.usage
           const elapsed = Date.now() - startTime
           if (elapsed > AITUNNEL_TIMEOUT_MS) {
@@ -1975,7 +1993,13 @@ app.post('/api/agent/chat', async (req, res) => {
           duration: (Date.now() - startTime) + 'ms',
         })
         const priced = llmSettledChargeRub(streamUsage, chatMessages, maxTokens)
-        return { chargeRub: priced.charge, result: { text: fullReply }, fullReply }
+        return {
+          chargeRub: priced.charge,
+          providerCostRub: readProviderCostRub(streamUsage, providerResponse),
+          providerRequestId: readProviderRequestId(providerResponse, { id: streamId }),
+          result: { text: fullReply },
+          fullReply,
+        }
       },
     }, billingDeps())
     if (!paidReply.ok) return res.status(paidReply.status).json({ error: paidReply.error })
