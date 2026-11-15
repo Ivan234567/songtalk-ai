@@ -11,7 +11,7 @@ export async function bindPracticeList(
   const api = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
   const ref = binding.ref.trim();
   const label = binding.label.trim().slice(0, 160);
-  if (!listId || !ref || !token || !api) return;
+  if (!listId || !ref || !token) return;
   const response = await fetch(`${api}/api/vocabulary/lists/${encodeURIComponent(listId)}`, {
     method: 'PATCH',
     headers: {

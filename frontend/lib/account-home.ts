@@ -9,7 +9,6 @@ export type AccountHome = 'loading' | 'guest' | 'user' | 'partner'
 
 async function backendTokenForSession(access: string): Promise<string | null> {
   const api = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
-  if (!api) return null
   const response = await fetch(`${api}/api/auth/exchange-supabase-token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

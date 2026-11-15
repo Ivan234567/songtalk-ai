@@ -70,7 +70,6 @@ const API = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
 
 export async function partnerGet<T>(path: string, token = getStoredBackendToken()): Promise<T | PartnerFailure> {
   if (!token) return { ok: false, status: 401, error: 'unauthorized' }
-  if (!API) return { ok: false, status: 0, error: 'partner_read_failed' }
   const response = await fetch(`${API}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -91,7 +90,6 @@ export async function partnerSend<T>(
   body?: unknown,
 ): Promise<T | PartnerFailure> {
   if (!token) return { ok: false, status: 401, error: 'unauthorized' }
-  if (!API) return { ok: false, status: 0, error: 'partner_read_failed' }
   const response = await fetch(`${API}${path}`, {
     method: 'POST',
     headers: {

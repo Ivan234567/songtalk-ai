@@ -72,7 +72,7 @@ export function recordReferralClick(code: string): Promise<'recorded' | 'rejecte
   const job = (async () => {
     const anonymous_id = anonymousId()
     const api = apiBase()
-    if (!anonymous_id || !api) return 'failed' as const
+    if (!anonymous_id) return 'failed' as const
     const campaign = new URLSearchParams(window.location.search).get('campaign')
     const response = await fetch(`${api}/api/referral/click`, {
       method: 'POST',

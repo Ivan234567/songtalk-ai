@@ -3,7 +3,7 @@ import { referralExchangeFields } from '@/lib/referral'
 
 export async function exchangeSupabaseToken(supabaseToken: string): Promise<string | null> {
   const api = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
-  if (!api || !supabaseToken) return null
+  if (!supabaseToken) return null
   const response = await fetch(`${api}/api/auth/exchange-supabase-token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
