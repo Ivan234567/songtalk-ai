@@ -49,6 +49,21 @@
   color: var(--text-muted);
 }
 
+.plan {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+}
+
+.plan p {
+  margin: 0;
+}
+
+.note {
+  color: var(--text-muted);
+}
+
 .list {
   list-style: none;
   margin: 0;
@@ -116,3 +131,54 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+.facts {
+  display: flex;
+  gap: 20px;
+  margin-top: 16px;
+  font-size: 14px;
+  color: #a29fb3;
+}
+
+.facts b {
+  display: block;
+  font-size: 20px;
+  color: #f2f0ea;
+}
+
+.sheetSec { margin-top: 26px; }
+
+.sheetSec > h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #a29fb3;
+}
+
+.sheetMuted {
+  margin: 0;
+  color: #a29fb3;
+}
+
+.hist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.hist li {
+  background: #1f1e28;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.hist small {
+  display: block;
+  color: #a29fb3;
+}
+
+.ok { color: #6fdc9a; }
+.no { color: #ff9b9b; }

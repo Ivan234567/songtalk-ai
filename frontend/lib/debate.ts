@@ -13,13 +13,25 @@ export interface DebateSettings {
   aiMayUseProfanity?: boolean;
   profanityIntensity?: DebateProfanityIntensity;
 }
+export type DebateCefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
+
 export interface DebateTopicMeta {
   source: DebateTopicSource;
   original: string;
   normalized: string;
   language: DebateTopicLanguage;
   validationStatus: DebateTopicValidationStatus;
+  /** Точная ступень, если её выбрали в мастере. Для каталога может не быть. */
+  cefrLevel?: DebateCefrLevel | null;
 }
+
+const CEFR_SPOKEN_LOCK: Record<DebateCefrLevel, string> = {
+  A1: 'CEFR A1 ONLY. Very simple words and short sentences. Maximum about 6–8 words. Present simple. No complex clauses, idioms, or rare words.',
+  A2: 'CEFR A2 ONLY. Everyday phrases and short connected sentences. Common past and future are fine. No abstract academic words, dense idioms, or long nested clauses.',
+  B1: 'CEFR B1 ONLY. Natural everyday English with common connectors. One to three sentences. No C1 idioms, rare words, or essay-like phrasing.',
+  B2: 'CEFR B2 ONLY. Varied vocabulary and natural flowing sentences. Some nuance is fine. No literary or specialist jargon past B2.',
+  C1: 'CEFR C1 ONLY. Idiomatic, natural spoken English with nuance. Conversational, not a written essay. Do not drop to classroom A2 or B1 phrasing.',
+};
 export type DebateMicroGoalId =
   | 'connectors'
   | 'concession'
@@ -366,7 +378,8 @@ export function buildDebateSystemPrompt(
   difficulty?: DebateDifficulty,
   microGoalIds: DebateMicroGoalId[] = [],
   whoStarts: DebateWhoStarts = 'ai',
-  settings?: DebateSettings
+  settings?: DebateSettings,
+  cefrLevel?: DebateCefrLevel | null
 ): string {
   const safeTopic = sanitizeDebateTopicForPrompt(topic);
   const userPositionText = userPosition === 'for' ? 'FOR' : 'AGAINST';
@@ -383,9 +396,24 @@ ${selectedMicroGoals.map((g, i) => `${i + 1}. ${g.labelEn}: ${g.hintRu}`).join('
 As you debate, naturally encourage the user to practice these goals without breaking the flow.`
     : '';
 
-  // Difficulty instructions
+  const cefrKey = String(cefrLevel || '').trim().toUpperCase() as DebateCefrLevel;
+  const cefrLock = CEFR_SPOKEN_LOCK[cefrKey];
+  // Сложность easy/medium/hard остаётся только для шагов. Речь держит выбранный CEFR.
   let difficultyBlock = '';
-  if (difficultyLevel === 'easy') {
+  let adaptationBlock = `ADAPTATION TO USER LEVEL:
+- Observe the user's actual language level from their messages
+- If they use simple vocabulary and short phrases: use simpler language, shorter arguments (2-3 sentences), offer gentle recasts
+- If they speak fluently: use more sophisticated arguments, challenge with deeper points, use varied vocabulary
+- Match their complexity and pace - adapt in real-time`;
+  if (cefrLock) {
+    difficultyBlock = `CEFR LEVEL LOCK (mandatory): ${cefrLock}
+Speak AT ${cefrKey} only. Not harder and not easier.
+Do not adapt up if the learner sounds fluent. Do not simplify below ${cefrKey}.
+This lock overrides every other style note in this prompt.`;
+    adaptationBlock = `LEVEL IS FIXED:
+- The learner chose ${cefrKey}. Stay on ${cefrKey} for the whole debate.
+- Do not mirror a higher or lower level from their messages.`;
+  } else if (difficultyLevel === 'easy') {
     difficultyBlock = `DIFFICULTY LEVEL: Easy
 - Use simple arguments and vocabulary, keep responses concise (2-3 sentences)
 - Avoid complex reasoning or advanced terminology
@@ -410,11 +438,7 @@ DEBATE TOPIC: "${safeTopic}"
 
 ${difficultyBlock}
 
-ADAPTATION TO USER LEVEL:
-- Observe the user's actual language level from their messages
-- If they use simple vocabulary and short phrases: use simpler language, shorter arguments (2-3 sentences), offer gentle recasts
-- If they speak fluently: use more sophisticated arguments, challenge with deeper points, use varied vocabulary
-- Match their complexity and pace - adapt in real-time
+${adaptationBlock}
 
 NATURAL DEBATE STYLE:
 - Sound like a real person in a debate, not a robot

@@ -112,7 +112,7 @@ interface TopupEntry {
   charge_rub: number | null;
   status: TopupStatus;
   payment_method: 'sbp' | 'other' | null;
-  source: 'gateway' | 'manual';
+  source: 'gateway' | 'manual' | 'welcome';
 }
 
 function formatDate(iso: string): string {
@@ -133,6 +133,7 @@ function formatRub(value: number): string {
 }
 
 function topupMethodLabel(entry: TopupEntry): string {
+  if (entry.source === 'welcome') return 'Приветственный бонус';
   if (entry.source === 'manual') return 'Вручную';
   if (entry.payment_method === 'sbp') return 'СБП';
   if (entry.payment_method === 'other') return 'Карта и другие';
@@ -238,6 +239,12 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [confirmingTopup, setConfirmingTopup] = useState(false);
   const [balanceRub, setBalanceRub] = useState<number | null>(null);
+  const [composition, setComposition] = useState<{
+    available: boolean;
+    bonus: number | null;
+    paid: number | null;
+    legacy: number | null;
+  } | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -277,6 +284,16 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
       if (!res.ok) throw new Error(res.status === 402 ? 'Пополните баланс' : 'Не удалось загрузить баланс');
       const data = await res.json();
       setBalanceRub(data.balance_rub ?? 0);
+      if (data.composition_available === true) {
+        setComposition({
+          available: true,
+          bonus: Number(data.bonus_rub),
+          paid: Number(data.paid_rub),
+          legacy: Number(data.legacy_rub),
+        });
+      } else {
+        setComposition({ available: false, bonus: null, paid: null, legacy: null });
+      }
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка загрузки баланса');
@@ -601,8 +618,11 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
       <section className={styles.balanceHero}>
         <div className={styles.balanceHeroHead}>
           <div>
-            <p className={styles.balanceLabel}>Осталось</p>
+            <p className={styles.balanceLabel}>Баланс</p>
             <p className={`${styles.balanceValue} ${isLowBalance ? styles.balanceValueLow : ''}`}>
+              {balanceRub != null ? formatRub(balanceRub) : '—'}
+            </p>
+            <p className={styles.balanceHint}>
               {balanceRub != null ? formatPracticeRemaining(balanceRub) : '—'}
             </p>
           </div>
@@ -646,6 +666,32 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
             )}
           </div>
         ) : null}
+        {composition?.available
+          && composition.bonus != null
+          && composition.paid != null
+          && composition.legacy != null
+          && [composition.bonus, composition.paid, composition.legacy].every((value) => Number.isFinite(value)) && (
+          <dl className={styles.composition}>
+            <div className={styles.compositionItem}>
+              <dt className={styles.compositionLabel}>Бонусные</dt>
+              <dd className={styles.compositionValue}>{formatRub(composition.bonus)}</dd>
+              <dd className={styles.compositionHint}>Приветственный бонус. Это не оплата.</dd>
+            </div>
+            <div className={styles.compositionItem}>
+              <dt className={styles.compositionLabel}>Оплаченные</dt>
+              <dd className={styles.compositionValue}>{formatRub(composition.paid)}</dd>
+              <dd className={styles.compositionHint}>После подтверждённой оплаты.</dd>
+            </div>
+            <div className={styles.compositionItem}>
+              <dt className={styles.compositionLabel}>Ранее зачисленные</dt>
+              <dd className={styles.compositionValue}>{formatRub(composition.legacy)}</dd>
+              <dd className={styles.compositionHint}>Старые и ручные суммы без разбора.</dd>
+            </div>
+          </dl>
+        )}
+        {composition && !composition.available && (
+          <p className={styles.balanceHint}>Состав баланса не определён. Общая сумма выше взята из учётной записи.</p>
+        )}
         {confirmingTopup && (
           <p className={styles.balanceHint}>Проверяем оплату…</p>
         )}
@@ -655,7 +701,7 @@ export const BalanceTab: React.FC<BalanceTabProps> = ({ notice }) => {
         <div>
           <h3 id="topup-journal-title" className={styles.sectionTitle}>Журнал пополнений</h3>
           <p className={styles.journalLead}>
-            Каждая оплата: сколько зачислили на баланс, сколько списали со счёта и дошёл ли платёж.
+            Оплаты и приветственный бонус. В колонке «Оплачено» стоит прочерк, если деньги со счёта не списывались.
           </p>
         </div>
         {topupsError && (

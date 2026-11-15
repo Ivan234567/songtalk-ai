@@ -111,6 +111,44 @@
   color: var(--danger, #dc2626);
 }
 
+.composition {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.25rem 0 0;
+}
+
+.compositionItem {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.compositionLabel {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.compositionValue {
+  margin: 0.35rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.compositionHint {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
 .balanceProgressBlock {
   margin-top: 1.25rem;
 }
@@ -1252,6 +1290,12 @@
   }
 
   .feeNote {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .composition {
     grid-template-columns: 1fr;
   }
 }

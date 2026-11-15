@@ -84,7 +84,7 @@ function wordStatusTitle(target: RecentTarget) {
   return gloss;
 }
 
-export function VocabPracticeRecent() {
+export function VocabPracticeRecent({ hideTitle = false }: { hideTitle?: boolean }) {
   const router = useRouter();
   const { learningLanguage } = useLearningLanguage();
   const [token, setToken] = useState<string | null>(null);
@@ -125,7 +125,7 @@ export function VocabPracticeRecent() {
     return (
       <section className={styles.section} aria-label="Слова в практике">
         <div className={styles.head}>
-          <h2 className={styles.title}>Недавние уроки слов</h2>
+          {hideTitle ? null : <h2 className={styles.title}>Недавние уроки слов</h2>}
         </div>
         <p className={styles.muted}>Загружаем недавние сессии…</p>
       </section>
@@ -136,7 +136,7 @@ export function VocabPracticeRecent() {
     return (
       <section className={styles.section} aria-label="Слова в практике">
         <div className={styles.head}>
-          <h2 className={styles.title}>Недавние уроки слов</h2>
+          {hideTitle ? null : <h2 className={styles.title}>Недавние уроки слов</h2>}
           <p className={styles.lead}>
             После сессии со словами здесь будет пятёрка: сказал сам / с подсказкой / мимо.
           </p>
@@ -164,7 +164,7 @@ export function VocabPracticeRecent() {
   return (
     <section className={styles.section} aria-label="Слова в практике">
       <div className={styles.head}>
-        <h2 className={styles.title}>Недавние уроки слов</h2>
+        {hideTitle ? null : <h2 className={styles.title}>Недавние уроки слов</h2>}
         <p className={styles.lead}>
           Зелёный — сказал сам, жёлтый — с подсказкой, красный — не сказал. Это урок, не оценка сцены.
         </p>

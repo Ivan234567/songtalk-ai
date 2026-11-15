@@ -70,17 +70,23 @@ export function SpeechVoicePicker({
   profanityIntensity,
   onChange,
   confirmSource,
+  hideLabel = false,
+  columns = 1,
 }: SpeechVoiceSettings & {
   onChange: (next: SpeechVoiceSettings) => void;
   confirmSource: string;
+  hideLabel?: boolean;
+  columns?: number;
 }) {
   const active = matchSpeechVoice({ slangMode, allowProfanity, aiMayUseProfanity, profanityIntensity });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', position: 'relative', zIndex: 5, pointerEvents: 'auto' }}>
-      <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
+    <div style={{ display: columns > 1 ? 'grid' : 'flex', gridTemplateColumns: columns > 1 ? `repeat(${columns}, minmax(0, 1fr))` : undefined, flexDirection: columns > 1 ? undefined : 'column', gap: 8, position: 'relative', zIndex: 5, pointerEvents: 'auto' }}>
+      {!hideLabel && (
+      <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55, gridColumn: '1 / -1' }}>
         Как говорит персонаж
       </span>
+      )}
       {SPEECH_VOICES.map((voice) => {
         const isActive = active?.id === voice.id;
         return (
@@ -109,8 +115,8 @@ export function SpeechVoicePicker({
               gap: 2,
               width: '100%',
               textAlign: 'left',
-              border: isActive ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid var(--sidebar-border)',
-              background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'var(--sidebar-hover)',
+              border: isActive ? '1px solid var(--accent)' : '1px solid var(--sidebar-border)',
+              background: isActive ? 'var(--accent-soft)' : 'transparent',
               color: 'var(--sidebar-text)',
               borderRadius: 10,
               padding: '0.5rem 0.65rem',
@@ -120,7 +126,7 @@ export function SpeechVoicePicker({
               zIndex: 5,
             }}
           >
-            <span style={{ fontSize: '0.8125rem', fontWeight: isActive ? 700 : 600, color: isActive ? 'rgb(129, 140, 248)' : 'var(--sidebar-text)' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: isActive ? 700 : 600, color: isActive ? 'var(--accent)' : 'var(--sidebar-text)' }}>
               {voice.title}
             </span>
             <span style={{ fontSize: '0.75rem', opacity: 0.7, lineHeight: 1.35 }}>

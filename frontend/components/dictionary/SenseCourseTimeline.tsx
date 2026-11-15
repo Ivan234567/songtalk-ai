@@ -27,6 +27,21 @@ type SpeechSchedule = {
   due_at: string | null;
 };
 
+type RetentionWindow = {
+  days: number;
+  state: 'waiting' | 'available' | 'confirmed' | 'unconfirmed';
+  due_at: string;
+  checked_at: string | null;
+  interval_days: number | null;
+};
+
+type RetentionPlan = {
+  anchored_at: string;
+  check_7_at: string;
+  check_30_at: string;
+  windows?: RetentionWindow[];
+};
+
 type CoursePayload = {
   milestone: string;
   milestone_label: string;
@@ -35,6 +50,7 @@ type CoursePayload = {
   session_count: number;
   last_move_source: 'card' | 'session' | null;
   speech?: SpeechSchedule | null;
+  retention?: RetentionPlan | null;
   timeline: TimelineItem[];
 };
 
@@ -73,6 +89,43 @@ function wordStatusLabel(status: string, held = false) {
   return status;
 }
 
+function pluralDays(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'сутки';
+  return 'суток';
+}
+
+function retentionWindowLine(window: RetentionWindow) {
+  const name = window.days === 30 ? 'Вторая проверка' : 'Первая проверка';
+  if (window.state === 'confirmed' && window.interval_days != null && window.checked_at) {
+    return `${name}: удерживает, ${window.interval_days} ${pluralDays(window.interval_days)}. Проверено ${formatWhen(window.checked_at)}.`;
+  }
+  if (window.state === 'available') return `${name} доступна.`;
+  if (window.state === 'unconfirmed') return `${name}: попытка не подтвердила удержание.`;
+  return `${name} ожидается ${formatWhen(window.due_at)}.`;
+}
+
+function RetentionPlanView({ plan }: { plan: RetentionPlan | null | undefined }) {
+  if (!plan?.anchored_at || !plan.check_7_at || !plan.check_30_at) return null;
+  const windows = Array.isArray(plan.windows) ? plan.windows : [];
+  return (
+    <div className={styles.plan} aria-label="Удержание">
+      <p className={styles.kicker}>Удержание</p>
+      <p>Повторно сказано {formatWhen(plan.anchored_at)}</p>
+      {windows.length > 0 ? windows.map((window) => (
+        <p key={window.days}>{retentionWindowLine(window)}</p>
+      )) : (
+        <>
+          <p>Первая проверка ожидается {formatWhen(plan.check_7_at)}</p>
+          <p>Вторая проверка ожидается {formatWhen(plan.check_30_at)}</p>
+        </>
+      )}
+      <p className={styles.note}>Это отдельно от карточки узнавания и обычного срока повторения.</p>
+    </div>
+  );
+}
+
 function speechLabel(speech: SpeechSchedule | null | undefined) {
   if (!speech || speech.bucket === 'new') return 'новое';
   const when = speech.due_at ? formatWhen(speech.due_at) : '';
@@ -83,9 +136,11 @@ function speechLabel(speech: SpeechSchedule | null | undefined) {
 export function SenseCourseTimeline({
   senseId,
   compact = false,
+  variant = 'card',
 }: {
   senseId: string | null | undefined;
   compact?: boolean;
+  variant?: 'card' | 'sheet';
 }) {
   const router = useRouter();
   const { learningLanguage } = useLearningLanguage();
@@ -125,6 +180,42 @@ export function SenseCourseTimeline({
     return () => { cancelled = true; };
   }, [token, senseId, learningLanguage]);
 
+  if (variant === 'sheet') {
+    return (
+      <>
+        <div className={styles.facts}>
+          <span><b>{data?.session_count ?? 0}</b>в диалогах</span>
+          <span><b>{data?.produced_count ?? 0}</b>сказано самому</span>
+        </div>
+        <RetentionPlanView plan={data?.retention} />
+        <div className={styles.sheetSec}>
+          <h3>История</h3>
+          {state === 'loading' && !data ? <p className={styles.sheetMuted}>История в практике…</p> : null}
+          {data && data.timeline.length > 0 ? (
+            <ul className={styles.hist}>
+              {data.timeline.slice(0, 6).map((item) => {
+                const ok = item.word_status === 'used' || item.word_status === 'produced';
+                return (
+                  <li key={item.dialogue_session_id}>
+                    <span className={ok ? styles.ok : styles.no}>
+                      {ok ? '✓' : '↺'} {wordStatusLabel(item.word_status, item.schedule_held)}
+                    </span>
+                    <small>
+                      {formatWhen(item.created_at)}
+                      {item.bound_label || item.list_title ? ` · ${item.bound_label || item.list_title}` : ''}
+                    </small>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : state === 'loading' ? null : (
+            <p className={styles.sheetMuted}>Пока не было в диалоге.</p>
+          )}
+        </div>
+      </>
+    );
+  }
+
   if (!senseId) return null;
   if (state === 'loading' && !data) {
     return <p className={styles.muted}>История в практике…</p>;
@@ -148,6 +239,8 @@ export function SenseCourseTimeline({
           ) : null}
         </div>
       </div>
+
+      <RetentionPlanView plan={data.retention} />
 
       {data.timeline.length === 0 ? (
         <p className={styles.muted}>Пока не было в диалоге — возьми в практику из списка.</p>

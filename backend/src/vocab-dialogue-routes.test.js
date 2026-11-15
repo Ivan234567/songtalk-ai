@@ -450,7 +450,7 @@ test('чужое значение, другой язык, сценарий и ш
   const missing = mockRes()
   await dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [FOREIGN],
+    sense_ids: [SENSE_A, FOREIGN],
     request_id: 'foreign',
     level_snapshot: 'B1',
   }), missing)
@@ -462,7 +462,7 @@ test('чужое значение, другой язык, сценарий и ш
   const foreign = mockRes()
   await handlers(foreignAgent).dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'foreign-agent',
     level_snapshot: 'B1',
   }), foreign)
@@ -474,7 +474,7 @@ test('чужое значение, другой язык, сценарий и ш
   const language = mockRes()
   await handlers(otherLanguage).dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'lang',
     level_snapshot: 'B1',
   }), language)
@@ -486,7 +486,7 @@ test('чужое значение, другой язык, сценарий и ш
   const roleplay = mockRes()
   await handlers(scenario).dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'roleplay',
     level_snapshot: 'B1',
   }), roleplay)
@@ -495,7 +495,7 @@ test('чужое значение, другой язык, сценарий и ш
   const badMode = mockRes()
   await dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'bad-mode',
     level_snapshot: 'B1',
     mode: 'lecture',
@@ -505,7 +505,7 @@ test('чужое значение, другой язык, сценарий и ш
   const debateOnScenario = mockRes()
   await handlers(scenario).dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'debate-on-scenario',
     level_snapshot: 'B1',
     mode: 'debate',
@@ -519,7 +519,7 @@ test('дебат закрепляет слова за сессией без сц
   const res = mockRes()
   await dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'debate-ok',
     level_snapshot: 'medium',
     mode: 'debate',
@@ -527,7 +527,7 @@ test('дебат закрепляет слова за сессией без сц
   assert.equal(res.statusCode, 200)
   assert.equal(res.body.mode, 'debate')
   assert.equal(store.sessions[0].mode, 'debate')
-  assert.equal(store.targets.length, 1)
+  assert.equal(store.targets.length, 2)
 })
 
 test('ролевой сценарий закрепляет слова только за сессией этого сценария', async () => {
@@ -539,7 +539,7 @@ test('ролевой сценарий закрепляет слова тольк
   const { supabase: freeChat } = createStore()
   await handlers(freeChat).dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'roleplay-without-scenario',
     level_snapshot: 'B1',
     mode: 'roleplay',
@@ -549,7 +549,7 @@ test('ролевой сценарий закрепляет слова тольк
   const started = mockRes()
   await dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'roleplay-1',
     level_snapshot: 'B1',
     mode: 'roleplay',
@@ -565,7 +565,7 @@ test('ошибка записи целей удаляет сессию и не �
   const res = mockRes()
   await handlers(supabase).dialogue(authedReq({
     agent_session_id: AGENT_ID,
-    sense_ids: [SENSE_A],
+    sense_ids: [SENSE_A, SENSE_B],
     request_id: 'fail',
     level_snapshot: 'A2',
   }), res)

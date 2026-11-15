@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { useTtsVoice } from '@/context/TtsVoiceContext';
 import styles from './vocab-library.module.css';
-import { ListIcon } from '@/components/tabs/CreateWordListModal';
+import { useListScope } from './ListScopeSwitch';
 import { WordDetailCard, type WordCardPayload } from './WordDetailCard';
 
 type ListStats = { new: number; learning: number; due: number; mastered: number };
@@ -74,6 +74,9 @@ type ListWord = {
   progress: number;
   next_review_at: string | null;
   sense_ids: string[];
+  speech?: 'none' | 'said' | 'repeated';
+  recognizes?: boolean;
+  sense_speech?: Array<{ sense_id: string; speech: 'none' | 'said' | 'repeated'; recognizes: boolean }>;
 };
 
 type ResolvedItem = {
@@ -118,11 +121,53 @@ const STATUS_LABEL: Record<ListWord['status'], string> = {
 };
 
 const STATUS_COLOR: Record<ListWord['status'], string> = {
-  new: '#60a5fa',
-  learning: '#fb923c',
-  due: '#f87171',
-  mastered: '#4ade80',
+  new: '#7aa2ff',
+  learning: '#ffa14d',
+  due: '#ff7a7a',
+  mastered: '#6fdc9a',
 };
+
+const STATUS_ORDER: Array<ListWord['status']> = ['due', 'learning', 'new', 'mastered'];
+const SPEECH_LABEL = {
+  none: 'Новое',
+  said: 'Сказал сам',
+  repeated: 'Повторно использовал',
+} as const;
+const PACK_GLYPH: Record<string, string> = {
+  spark: '✦',
+  people: '☺',
+  calendar: '⌂',
+  utensils: '◒',
+  bolt: '⚡',
+};
+
+function speechStage(speech: ListWord['speech']) {
+  if (speech === 'repeated') return 2;
+  if (speech === 'said') return 1;
+  return 0;
+}
+
+function openedSenseSpeech(card: WordCardPayload | null, word: ListWord | null) {
+  const senseId = card?.senses?.[0]?.id || null;
+  if (senseId && word?.sense_speech) {
+    const match = word.sense_speech.find((row) => row.sense_id === senseId);
+    if (match) return { speech: match.speech, recognizes: match.recognizes };
+    return { speech: 'none' as const, recognizes: false };
+  }
+  return {
+    speech: word?.speech || 'none' as const,
+    recognizes: Boolean(word?.recognizes),
+  };
+}
+
+function reviewLabel(word: ListWord | null) {
+  if (!word) return null;
+  if (word.status === 'due') return 'пора сказать';
+  if (!word.next_review_at) return null;
+  const date = new Date(word.next_review_at);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+}
 
 export function VocabLibrary() {
   const router = useRouter();
@@ -137,6 +182,7 @@ export function VocabLibrary() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [listScope, setListScope] = useListScope();
   const [createTab, setCreateTab] = useState<'starter' | 'empty'>('starter');
   const [emptyTitle, setEmptyTitle] = useState('');
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -147,11 +193,9 @@ export function VocabLibrary() {
   const [wordFilter, setWordFilter] = useState<'all' | ListWord['status']>('all');
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  const [addOpen, setAddOpen] = useState(false);
   const [assistBusy, setAssistBusy] = useState(false);
   const [assistHint, setAssistHint] = useState<string | null>(null);
   const [resolved, setResolved] = useState<ResolvedItem[]>([]);
-  const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<'due' | 'alpha' | 'new'>('due');
   const [moreOpen, setMoreOpen] = useState(false);
@@ -163,6 +207,7 @@ export function VocabLibrary() {
   const [wordCardLoading, setWordCardLoading] = useState(false);
   const [wordCardError, setWordCardError] = useState<string | null>(null);
   const moreRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   const setParams = useCallback((patch: Record<string, string | null>) => {
     const next = new URLSearchParams(searchParams.toString());
@@ -208,10 +253,7 @@ export function VocabLibrary() {
     setDetailLoading(true);
     setError(null);
     try {
-      const resp = await fetch(apiPath(`/api/vocabulary/lists/${id}`, {
-        filter: wordFilter !== 'all' ? wordFilter : undefined,
-        q: wordQuery.trim() || undefined,
-      }), {
+      const resp = await fetch(apiPath(`/api/vocabulary/lists/${id}`), {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const data = await resp.json().catch(() => ({}));
@@ -223,13 +265,13 @@ export function VocabLibrary() {
     } finally {
       setDetailLoading(false);
     }
-  }, [wordFilter, wordQuery]);
+  }, []);
 
   useEffect(() => {
     if (!token) return;
     if (listId) void loadDetail(token, listId);
-    else void loadLibrary(token, query);
-  }, [token, listId, loadDetail, loadLibrary, query, learningLanguage]);
+    else void loadLibrary(token);
+  }, [token, listId, loadDetail, loadLibrary, learningLanguage]);
 
   useEffect(() => {
     if (!flashId) return;
@@ -238,9 +280,7 @@ export function VocabLibrary() {
   }, [flashId]);
 
   useEffect(() => {
-    setSelecting(false);
     setSelected(new Set());
-    setAddOpen(false);
     setMoreOpen(false);
     setDraft('');
     setResolved([]);
@@ -283,7 +323,7 @@ export function VocabLibrary() {
   }, [moreOpen]);
 
   useEffect(() => {
-    if (!addOpen || !token || !listId) return;
+    if (!token || !listId) return;
     const text = draft.trim();
     if (text.length < 2) {
       setResolved([]);
@@ -327,7 +367,7 @@ export function VocabLibrary() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [addOpen, draft, listId, token]);
+  }, [draft, listId, token]);
 
   const openCreate = (tab: 'starter' | 'empty' = 'starter') => {
     setCreateTab(tab);
@@ -419,10 +459,28 @@ export function VocabLibrary() {
   };
 
   const openWordCard = async (vocabularyId: string) => {
-    if (!token || !listId || selecting) return;
-    setWordCard(null);
+    if (!token || !listId) return;
+    const known = detail?.words.find((word) => word.vocabulary_id === vocabularyId);
     setWordCardError(null);
     setWordCardLoading(true);
+    if (known) {
+      setWordCard({
+        vocabulary_id: known.vocabulary_id,
+        headword: known.headword,
+        phonetic: known.phonetic,
+        pinyin: known.pinyin || null,
+        part_of_speech: known.part_of_speech,
+        senses: [{
+          id: known.sense_ids?.[0] || null,
+          gloss_ru: known.gloss_ru || '',
+          part_of_speech: known.part_of_speech,
+          examples: [],
+        }],
+        examples: [],
+      });
+    } else {
+      setWordCard(null);
+    }
     try {
       const resp = await fetch(apiPath(`/api/vocabulary/lists/${listId}/words/${vocabularyId}`), {
         headers: { Authorization: `Bearer ${token}` },
@@ -444,11 +502,44 @@ export function VocabLibrary() {
     setWordCardLoading(false);
   };
 
-  const visibleWords = detail ? sortListWords(detail.words || [], sortMode) : [];
+  const sourceWords = detail?.words || [];
+  const visibleWords = detail ? sortListWords(sourceWords.filter((word) => {
+    if (wordFilter !== 'all' && word.status !== wordFilter) return false;
+    const needle = wordQuery.trim().toLowerCase();
+    if (!needle) return true;
+    return word.headword.toLowerCase().includes(needle)
+      || (word.gloss_ru || '').toLowerCase().includes(needle);
+  }), sortMode) : [];
   const wordCardIndex = wordCard
     ? visibleWords.findIndex((word) => word.vocabulary_id === wordCard.vocabulary_id)
     : -1;
   const wordCardMeta = wordCardIndex >= 0 ? visibleWords[wordCardIndex] : null;
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (event.key === 'Escape') {
+        if (wordCard || wordCardLoading) closeWordCard();
+        else if (createMode) closeCreate();
+        else if (editingTitle) setEditingTitle(false);
+        else if (moreOpen) setMoreOpen(false);
+        return;
+      }
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (event.key === '/') {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (!wordCard || (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') || wordCardIndex < 0) return;
+      const nextIndex = event.key === 'ArrowRight'
+        ? Math.min(visibleWords.length - 1, wordCardIndex + 1)
+        : Math.max(0, wordCardIndex - 1);
+      const next = visibleWords[nextIndex];
+      if (next && next.vocabulary_id !== wordCard.vocabulary_id) void openWordCard(next.vocabulary_id);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [createMode, editingTitle, moreOpen, visibleWords, wordCard, wordCardIndex, wordCardLoading]);
 
   const saveResolved = async () => {
     if (!token || !listId) return;
@@ -479,7 +570,6 @@ export function VocabLibrary() {
       setDraft('');
       setResolved([]);
       setAssistHint(null);
-      setAddOpen(false);
       await loadDetail(token, listId);
       if (alreadyId) setFlashId(alreadyId);
       else if (data.added?.[0]?.vocabulary_id) setFlashId(data.added[0].vocabulary_id);
@@ -570,463 +660,554 @@ export function VocabLibrary() {
     });
   };
 
-  const createPanel = (
-    <div className={styles.createPanel}>
-      <div className={styles.createTabs}>
-        <button
-          type="button"
-          className={`${styles.createTab} ${createTab === 'starter' ? styles.createTabActive : ''}`}
-          onClick={() => setCreateTab('starter')}
-        >
-          Наборы
-        </button>
-        <button
-          type="button"
-          className={`${styles.createTab} ${createTab === 'empty' ? styles.createTabActive : ''}`}
-          onClick={() => setCreateTab('empty')}
-        >
-          Пустой
-        </button>
+  const removeSelected = async () => {
+    const ids = [...selected];
+    for (const id of ids) {
+      await removeWord(id);
+    }
+    setSelected(new Set());
+  };
+
+  const openDueScene = () => {
+    const pool = library?.items || [];
+    const target = [...pool].sort((a, b) => (b.stats?.due || 0) - (a.stats?.due || 0))[0];
+    if (!target || !(target.stats?.due || 0)) return;
+    router.push(`/dashboard?tab=agent&from=vocab&list=${encodeURIComponent(target.id)}`);
+  };
+
+  const draftCount = draft.split(',').map((part) => part.trim()).filter(Boolean).length;
+
+  const statusBar = (stats: ListStats | undefined, compact = false) => {
+    const parts = STATUS_ORDER
+      .map((key) => ({ key, count: stats?.[key] || 0 }))
+      .filter((part) => part.count > 0);
+    return (
+      <div className={`${styles.sbar} ${compact ? styles.sm : ''}`} aria-hidden="true">
+        {parts.map((part) => (
+          <i key={part.key} style={{ ['--c' as string]: STATUS_COLOR[part.key], flex: part.count }} />
+        ))}
       </div>
-      {createTab === 'starter' && (
-        <>
-          {loading && <p className={styles.muted}>Загружаем наборы…</p>}
-          {!loading && !(library?.starter_packs || []).length && (
-            <p className={styles.muted}>
-              {learningLanguage === 'zh'
-                ? 'Наборов для китайского пока нет. Создайте пустой список.'
-                : 'Наборов пока нет. Создайте пустой список.'}
-            </p>
-          )}
-          <div className={styles.packGrid}>
-            {(library?.starter_packs || []).map((pack) => {
-              const look = PACK_LOOK[pack.key] || { color: '#7ad7a7', icon: 'spark', subtitle: pack.description };
-              const existingId = library?.items.find((item) => item.system_key === pack.key)?.id;
-              return (
-                <button
-                  key={pack.key}
-                  type="button"
-                  className={styles.packCard}
-                  disabled={busyKey === pack.key}
-                  onClick={() => void (pack.in_library && existingId
-                    ? openList(existingId)
-                    : addStarter(pack.key))}
-                >
-                  <div className={styles.packTop}>
-                    <span className={styles.iconWrap} style={{ background: `${look.color}22` }}>
-                      <ListIcon name={look.icon} color={look.color} />
-                    </span>
-                    <div className={styles.packMeta}>
-                      {pack.in_library ? (
-                        <span className={styles.libraryBadge}>В библиотеке</span>
-                      ) : (
-                        <span className={styles.packCount}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
-                      )}
-                    </div>
-                  </div>
-                  <strong>{pack.title}</strong>
-                  <span className={styles.muted}>{look.subtitle}</span>
-                  {pack.in_library && (
-                    <span className={styles.packCount}>{pack.word_count} {wordCountLabel(pack.word_count)}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-      {createTab === 'empty' && (
-        <form
-          className={styles.form}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void createEmpty();
-          }}
-        >
-          <div>
-            <label className={styles.label} htmlFor="empty-list-name">Название списка</label>
-            <input
-              id="empty-list-name"
-              className={styles.search}
-              value={emptyTitle}
-              onChange={(event) => setEmptyTitle(event.target.value)}
-              placeholder="Например, Путешествия"
-            />
-          </div>
-          <div className={styles.actions}>
-            <button type="button" className={styles.secondary} onClick={closeCreate}>Отмена</button>
-            <button type="submit" className={styles.primary} disabled={!emptyTitle.trim() || busyKey === 'empty'}>
-              {busyKey === 'empty' ? 'Создаём…' : 'Создать список'}
-            </button>
-          </div>
-        </form>
-      )}
-    </div>
-  );
+    );
+  };
+
+  const listCard = (item: VocabListCard) => {
+    const due = item.stats?.due || 0;
+    const badge = bindingBadgeText(item);
+    return (
+      <button key={item.id} type="button" className={styles.card} onClick={() => openList(item.id)}>
+        <div className={styles.top}>
+          <b>{item.title}</b>
+          {due > 0 && <span className={styles.due}>{due} повторить</span>}
+        </div>
+        {badge && <span className={styles.chip} style={{ alignSelf: 'flex-start' }}>{badge}</span>}
+        <span className={styles.meta}>
+          {item.word_count} {wordCountLabel(item.word_count)}
+          {item.level ? ` · ${item.level}` : ''}
+        </span>
+        {statusBar(item.stats, true)}
+      </button>
+    );
+  };
 
   if (listId) {
     const item = detail?.item;
-    const words = visibleWords;
-    const canSave = resolved.some((itemRow) => itemRow.selected && !itemRow.in_list);
+    const due = item?.stats?.due || sourceWords.filter((word) => word.status === 'due').length;
+    const badge = item ? bindingBadgeText(item) : null;
+    const filters: Array<{ id: 'all' | ListWord['status']; label: string }> = [
+      { id: 'all', label: 'Все' },
+      ...STATUS_ORDER.map((id) => ({ id, label: STATUS_LABEL[id] })),
+    ];
     return (
-      <div className={styles.page}>
-        <div className={styles.header}>
-          <div className={styles.headerText}>
-            <button type="button" onClick={backToLibrary} className={styles.ghost}>← Назад</button>
-            {editingTitle ? (
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void renameList();
-                }}
-              >
-                <input
-                  className={styles.titleInput}
-                  value={titleDraft}
-                  onChange={(event) => setTitleDraft(event.target.value)}
-                  autoFocus
-                  onBlur={() => {
-                    if (!titleDraft.trim()) {
-                      setEditingTitle(false);
-                      return;
-                    }
-                    void renameList();
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape') {
-                      event.preventDefault();
-                      setEditingTitle(false);
-                    }
-                  }}
-                />
-              </form>
-            ) : (
-              <button
-                type="button"
-                className={styles.titleButton}
-                onClick={() => {
-                  setTitleDraft(item?.title || '');
-                  setEditingTitle(true);
-                }}
-                title="Переименовать"
-              >
-                <h1 className={styles.title}>
-                  {item?.title || 'Список'}
-                  {item?.level ? <span> {item.level}</span> : null}
-                </h1>
-              </button>
-            )}
-            {item && bindingBadgeText(item) ? (
-              <div className={styles.boundBadge} title="Привязка к модулю практики">
-                {bindingBadgeText(item)}
-              </div>
-            ) : null}
-          </div>
-          <div className={styles.actions}>
-            <button type="button" className={styles.primary} onClick={sayInScene}>
-              {sceneCount && sceneCount > 0 ? `Сказать в сцене · ${sceneCount}` : 'Сказать в сцене'}
-            </button>
-            {item && (item.bound_kind || item.binding?.kind) ? (
-              <button
-                type="button"
-                className={styles.secondary}
-                onClick={() => router.push('/dashboard?tab=progress')}
-                title="Как усваивается этот модуль"
-              >
-                В прогрессе
-              </button>
-            ) : null}
+      <div className={styles.app}>
+        <div className={styles.bar}>
+          <div className={styles.crumbs}>
+            <button type="button" onClick={backToLibrary}>Словарь</button>
+            <span className={styles.sep}>/</span>
+            <span className={styles.cur}>{item?.title || 'Список'}</span>
           </div>
         </div>
-        {sceneCount === 0 && (
-          <p className={styles.muted}>В этом списке пока нечего сказать.</p>
-        )}
-        <div className={styles.searchRow}>
-          <input
-            value={wordQuery}
-            onChange={(event) => setWordQuery(event.target.value)}
-            placeholder="Поиск слов..."
-            className={styles.search}
-          />
-          <select
-            className={styles.select}
-            value={sortMode}
-            onChange={(event) => setSortMode(event.target.value as 'due' | 'alpha' | 'new')}
-            aria-label="Сортировка"
-          >
-            <option value="due">По повторению</option>
-            <option value="alpha">По алфавиту</option>
-            <option value="new">Сначала новые</option>
-          </select>
-          <button
-            type="button"
-            onClick={() => {
-              setAddOpen((open) => !open);
-              setAssistHint(null);
-              setResolved([]);
-            }}
-            className={`${styles.primary} ${styles.compact}`}
-          >
-            + Добавить
-          </button>
-          <button
-            type="button"
-            className={`${styles.secondary} ${styles.compact}`}
-            style={selecting ? { background: 'var(--accent-soft)' } : undefined}
-            onClick={() => {
-              setSelecting((on) => {
-                if (on) setSelected(new Set());
-                return !on;
-              });
-            }}
-          >
-            {selecting ? `Выбрано · ${selected.size}` : 'Выбрать'}
-          </button>
-          <div className={styles.more} ref={moreRef}>
-            <button
-              type="button"
-              className={`${styles.secondary} ${styles.compact}`}
-              onClick={() => setMoreOpen((open) => !open)}
-            >
-              Ещё
-            </button>
-            {moreOpen && (
-              <div className={styles.moreMenu}>
-                <button type="button" className={styles.danger} onClick={() => void deleteList()}>
-                  Удалить список
+        {error && <p className={styles.err}>{error}</p>}
+        {!item ? (
+          <p className={styles.mut}>{detailLoading ? 'Открываем список…' : 'Список не найден'}</p>
+        ) : (
+          <>
+            <div className={styles.head}>
+              <div className={styles.titleWrap}>
+                {editingTitle ? (
+                  <input
+                    className={`${styles.field} ${styles.titleField}`}
+                    value={titleDraft}
+                    aria-label="Название списка"
+                    autoFocus
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void renameList();
+                      }
+                    }}
+                    onBlur={() => {
+                      if (titleDraft.trim() && titleDraft.trim() !== item.title) void renameList();
+                      else setEditingTitle(false);
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.titleBtn}
+                    title="Переименовать"
+                    onClick={() => {
+                      setTitleDraft(item.title);
+                      setEditingTitle(true);
+                      setMoreOpen(false);
+                    }}
+                  >
+                    <h1 className={styles.h1}>{item.title}</h1>
+                  </button>
+                )}
+                <div className={styles.chips}>
+                  {item.level && <span className={`${styles.chip} ${styles.lv}`}>{item.level}</span>}
+                  {badge && <span className={styles.chip}>{badge}</span>}
+                  <span className={styles.chip}>{item.word_count} {wordCountLabel(item.word_count)}</span>
+                </div>
+              </div>
+              <div className={styles.acts} ref={moreRef}>
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.pri}`}
+                  disabled={due <= 0 || busyKey === 'scene'}
+                  onClick={sayInScene}
+                >
+                  {due > 0 ? `Сказать в сцене · ${due}` : 'Нечего повторять'}
                 </button>
+                <button
+                  type="button"
+                  className={`${styles.ib} ${styles.menuBtn}`}
+                  aria-label="Ещё"
+                  aria-expanded={moreOpen}
+                  onClick={() => setMoreOpen((open) => !open)}
+                >
+                  <Glyph name="m" />
+                </button>
+                {moreOpen && (
+                  <div className={styles.menu}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTitleDraft(item.title);
+                        setEditingTitle(true);
+                        setMoreOpen(false);
+                      }}
+                    >
+                      Переименовать
+                    </button>
+                    <button type="button" className={styles.del} onClick={() => { setMoreOpen(false); void deleteList(); }}>
+                      Удалить список
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-        <div className={styles.filters}>
-          {(['all', 'due', 'new', 'learning', 'mastered'] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              className={`${styles.chip} ${wordFilter === key ? styles.chipActive : ''}`}
-              onClick={() => setWordFilter(key)}
+            </div>
+
+            <div className={styles.fl} role="group" aria-label="Фильтр по статусу">
+              {filters.map((filter) => {
+                const count = filter.id === 'all'
+                  ? sourceWords.length
+                  : sourceWords.filter((word) => word.status === filter.id).length;
+                return (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    aria-pressed={wordFilter === filter.id}
+                    onClick={() => setWordFilter(filter.id)}
+                  >
+                    {filter.id !== 'all' && <i className={styles.dot} style={{ ['--c' as string]: STATUS_COLOR[filter.id] }} />}
+                    {filter.label} <b>{count}</b>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className={styles.ctl}>
+              <label className={styles.inp}>
+                <Glyph name="s" />
+                <input
+                  ref={searchRef}
+                  className={styles.field}
+                  type="text"
+                  value={wordQuery}
+                  placeholder="Найти слово   ( / )"
+                  aria-label="Поиск слов"
+                  onChange={(event) => setWordQuery(event.target.value)}
+                />
+              </label>
+              <select
+                className={styles.sel}
+                aria-label="Сортировка"
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as 'due' | 'alpha' | 'new')}
+              >
+                <option value="due">Сначала на повторение</option>
+                <option value="alpha">По алфавиту</option>
+                <option value="new">Сначала новые</option>
+              </select>
+            </div>
+
+            <form
+              className={styles.add}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveResolved();
+              }}
             >
-              {key === 'all' ? 'Все' : STATUS_LABEL[key]}
-            </button>
-          ))}
-        </div>
-        {addOpen && (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveResolved();
-            }}
-            className={styles.addForm}
-          >
-            <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder={learningLanguage === 'zh'
-                ? '汉字, перевод или несколько слов'
-                : 'room, комната или window, table, chair'}
-              className={styles.search}
-              rows={2}
-              autoFocus
-            />
-            <button type="submit" disabled={!canSave || busyKey === 'add-word' || assistBusy} className={styles.primary}>
-              {busyKey === 'add-word' ? 'Добавляем…' : resolved.length > 1 ? 'Добавить отмеченные' : 'Сохранить'}
-            </button>
-            {assistHint && <p className={styles.assistHint}>{assistHint}</p>}
+              <label className={styles.inp}>
+                <Glyph name="p" />
+                <input
+                  className={styles.field}
+                  type="text"
+                  value={draft}
+                  placeholder="Добавить слова через запятую: room, window, table"
+                  aria-label="Добавить слова"
+                  onChange={(event) => setDraft(event.target.value)}
+                />
+              </label>
+              <button className={`${styles.btn} ${styles.pri}`} type="submit" disabled={!draft.trim() || busyKey === 'add-word'}>
+                {busyKey === 'add-word' ? 'Добавляем…' : `Добавить${draftCount ? ` · ${draftCount}` : ''}`}
+              </button>
+            </form>
+            {assistHint && <p className={styles.hint}>{assistHint}</p>}
             {resolved.length > 0 && (
-              <div className={styles.previewList}>
-                {resolved.map((itemRow) => (
-                  <label key={itemRow.word} className={styles.previewRow} data-in-list={itemRow.in_list ? 'true' : 'false'}>
+              <div className={styles.picks}>
+                {resolved.map((entry, index) => (
+                  <label key={`${entry.word}-${index}`} className={styles.pick}>
                     <input
                       type="checkbox"
-                      checked={Boolean(itemRow.selected)}
-                      disabled={itemRow.in_list}
-                      onChange={() => {
-                        setResolved((current) => current.map((row) => (
-                          row.word === itemRow.word ? { ...row, selected: !row.selected } : row
-                        )));
-                      }}
+                      checked={Boolean(entry.selected) && !entry.in_list}
+                      disabled={entry.in_list}
+                      onChange={() => setResolved((current) => current.map((row, rowIndex) => (
+                        rowIndex === index ? { ...row, selected: !row.selected } : row
+                      )))}
                     />
-                    <strong>{itemRow.word}</strong>
-                    <span className={styles.muted}>{itemRow.phonetic || itemRow.pinyin || itemRow.part_of_speech || ''}</span>
-                    <span>{itemRow.gloss}</span>
-                    {itemRow.in_list && <span className={styles.muted}>уже в списке</span>}
+                    <span>{entry.word}</span>
+                    <span className={styles.mut}>{entry.in_list ? 'уже в списке' : entry.gloss}</span>
                   </label>
                 ))}
               </div>
             )}
-          </form>
-        )}
-        {error && <p className={styles.error}>{error}</p>}
-        {detailLoading && <p className={styles.muted}>Загружаем слова…</p>}
-        <div className={styles.grid}>
-          {words.map((word) => (
-            <article
-              key={word.vocabulary_id}
-              className={styles.wordCard}
-              data-selected={selected.has(word.vocabulary_id) ? 'true' : 'false'}
-              data-flash={flashId === word.vocabulary_id ? 'true' : 'false'}
-              onClick={() => {
-                if (selecting) toggleSelected(word.vocabulary_id);
-                else void openWordCard(word.vocabulary_id);
-              }}
-              style={{ cursor: selecting ? undefined : 'pointer' }}
-            >
-              <div className={styles.wordTop}>
-                {selecting && (
-                  <input
-                    className={styles.check}
-                    type="checkbox"
-                    checked={selected.has(word.vocabulary_id)}
-                    onChange={() => toggleSelected(word.vocabulary_id)}
-                    onClick={(event) => event.stopPropagation()}
-                    aria-label={`Выбрать ${word.headword}`}
-                  />
-                )}
-                <strong>{word.headword}</strong>
-                <span
-                  className={styles.statusChip}
-                  style={{ color: STATUS_COLOR[word.status], background: `${STATUS_COLOR[word.status]}22` }}
-                >
-                  {STATUS_LABEL[word.status]}
-                </span>
-                <button
-                  type="button"
-                  className={styles.speaker}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void speakWord(word);
-                  }}
-                  aria-label={`Произнести ${word.headword}`}
-                  title="Превью произношения"
-                >
-                  {speakingId === word.vocabulary_id ? '…' : <SpeakerIcon />}
-                </button>
-                <button
-                  type="button"
-                  className={styles.remove}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void removeWord(word.vocabulary_id);
-                  }}
-                  aria-label={`Убрать ${word.headword}`}
-                >
-                  ×
+
+            {visibleWords.length ? (
+              <div className={styles.rows}>
+                {visibleWords.map((word) => {
+                  const stage = speechStage(word.speech);
+                  return (
+                    <div
+                      key={word.vocabulary_id}
+                      className={styles.r}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={selected.has(word.vocabulary_id)}
+                      data-flash={flashId === word.vocabulary_id ? 'true' : undefined}
+                      onClick={() => void openWordCard(word.vocabulary_id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void openWordCard(word.vocabulary_id);
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Выбрать ${word.headword}`}
+                        checked={selected.has(word.vocabulary_id)}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => toggleSelected(word.vocabulary_id)}
+                      />
+                      <div className={styles.w}>
+                        <b>{word.headword}</b>
+                        {word.part_of_speech && <span className={styles.pos}>{word.part_of_speech}</span>}
+                        <small className={styles.ipa}>{word.phonetic || word.pinyin || ''}</small>
+                      </div>
+                      <div className={`${styles.gl} ${styles.mut}`}>{word.gloss_ru || ''}</div>
+                      <div className={styles.pips} title={SPEECH_LABEL[word.speech || 'none']}>
+                        {[1, 2].map((step) => (
+                          <i key={step} className={step <= stage ? styles.on : undefined} />
+                        ))}
+                      </div>
+                      <span className={styles.st} style={{ ['--c' as string]: STATUS_COLOR[word.status] }}>
+                        {STATUS_LABEL[word.status]}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.ib}
+                        aria-label={`Произнести ${word.headword}`}
+                        disabled={speakingId === word.vocabulary_id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void speakWord(word);
+                        }}
+                      >
+                        <Glyph name="v" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className={styles.empty}>
+                <b>{wordFilter !== 'all' || wordQuery.trim() ? 'Ничего не найдено' : 'Список пуст'}</b>
+                {wordFilter !== 'all' || wordQuery.trim() ? (
+                  <button
+                    type="button"
+                    className={styles.btn}
+                    style={{ marginTop: 10 }}
+                    onClick={() => {
+                      setWordQuery('');
+                      setWordFilter('all');
+                    }}
+                  >
+                    Сбросить фильтры
+                  </button>
+                ) : 'Добавьте первые слова строкой выше.'}
+              </div>
+            )}
+
+            {selected.size > 0 && (
+              <div className={styles.bulk}>
+                <b>Выбрано {selected.size}</b>
+                <button type="button" className={`${styles.btn} ${styles.pri}`} onClick={sayInScene}>В практику</button>
+                <button type="button" className={styles.btn} onClick={() => void removeSelected()}>Удалить</button>
+                <button type="button" className={styles.ib} aria-label="Снять выбор" onClick={() => setSelected(new Set())}>
+                  <Glyph name="x" />
                 </button>
               </div>
-              <div className={styles.ipa}>
-                {word.phonetic || word.pinyin || '—'}
-                {word.part_of_speech ? <span>{word.part_of_speech}</span> : null}
-              </div>
-              <div className={styles.gloss}>{word.gloss_ru || '—'}</div>
-            </article>
-          ))}
-        </div>
-        {!detailLoading && detail && detail.words.length === 0 && (
-          <p className={styles.muted}>
-            {wordFilter !== 'all' || wordQuery.trim()
-              ? 'По этому фильтру слов нет.'
-              : 'В этом списке пока нет слов.'}
-          </p>
-        )}
-        {(wordCard || wordCardLoading || wordCardError) && (
-          <WordDetailCard
-            card={wordCard}
-            loading={wordCardLoading}
-            error={wordCardError}
-            speaking={Boolean(wordCard && speakingId === wordCard.vocabulary_id)}
-            status={wordCardMeta?.status || null}
-            progress={wordCardMeta?.progress ?? null}
-            index={Math.max(0, wordCardIndex)}
-            total={visibleWords.length}
-            onClose={closeWordCard}
-            onSpeak={() => {
-              if (!wordCard) return;
-              void speakText(wordCard.headword, wordCard.vocabulary_id);
-            }}
-            onPrev={wordCardIndex > 0
-              ? () => void openWordCard(visibleWords[wordCardIndex - 1].vocabulary_id)
-              : undefined}
-            onNext={wordCardIndex >= 0 && wordCardIndex < visibleWords.length - 1
-              ? () => void openWordCard(visibleWords[wordCardIndex + 1].vocabulary_id)
-              : undefined}
-            onRemove={wordCard
-              ? () => {
-                const id = wordCard.vocabulary_id;
-                closeWordCard();
-                void removeWord(id);
-              }
-              : undefined}
-          />
+            )}
+
+            {(wordCard || wordCardLoading || wordCardError) && (
+              <WordDetailCard
+                card={wordCard}
+                loading={wordCardLoading}
+                error={wordCardError}
+                speaking={Boolean(wordCard && speakingId === wordCard.vocabulary_id)}
+                status={wordCardMeta?.status || null}
+                speech={openedSenseSpeech(wordCard, wordCardMeta).speech}
+                recognizes={openedSenseSpeech(wordCard, wordCardMeta).recognizes}
+                progress={wordCardMeta?.progress ?? null}
+                nextLabel={reviewLabel(wordCardMeta)}
+                index={Math.max(0, wordCardIndex)}
+                total={visibleWords.length}
+                onClose={closeWordCard}
+                onSpeak={() => {
+                  if (!wordCard) return;
+                  void speakText(wordCard.headword, wordCard.vocabulary_id);
+                }}
+                onPrev={wordCardIndex > 0 ? () => void openWordCard(visibleWords[wordCardIndex - 1].vocabulary_id) : undefined}
+                onNext={wordCardIndex >= 0 && wordCardIndex < visibleWords.length - 1
+                  ? () => void openWordCard(visibleWords[wordCardIndex + 1].vocabulary_id)
+                  : undefined}
+                onPractice={sayInScene}
+              />
+            )}
+          </>
         )}
       </div>
     );
   }
 
   const lists = library?.items || [];
+  const needle = query.trim().toLowerCase();
+  const ownAll = lists.filter((item) => !item.system_key);
+  const packAll = lists.filter((item) => Boolean(item.system_key));
+  const matched = lists.filter((item) => !needle || item.title.toLowerCase().includes(needle));
+  const own = matched.filter((item) => !item.system_key);
+  const packs = matched.filter((item) => Boolean(item.system_key));
+  const dueTotal = typeof library?.summary?.due === 'number'
+    ? library.summary.due
+    : lists.reduce((sum, item) => sum + (item.stats?.due || 0), 0);
+  const totals = lists.reduce((acc, item) => {
+    acc.new += item.stats?.new || 0;
+    acc.learning += item.stats?.learning || 0;
+    acc.due += item.stats?.due || 0;
+    acc.mastered += item.stats?.mastered || 0;
+    return acc;
+  }, { new: 0, learning: 0, due: 0, mastered: 0 });
+  const libraryCount = totals.new + totals.learning + totals.due + totals.mastered;
+  const showMine = listScope !== 'packs';
+  const showPacks = listScope !== 'mine';
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>
-          Словарь
-          <span className={styles.countBadge}>{library ? `${library.count} ${listWord(library.count)}` : '…'}</span>
-        </h1>
-        <div className={styles.actions}>
-          <button type="button" onClick={() => (createMode ? closeCreate() : openCreate('starter'))} className={styles.primary}>
-            {createMode ? 'Закрыть' : 'Создать'}
+    <div className={styles.app}>
+      <div className={styles.bar}>
+        <div className={styles.crumbs}>
+          <button type="button">Словарь</button>
+        </div>
+        <button type="button" className={`${styles.btn} ${styles.pri}`} onClick={() => openCreate('starter')}>
+          <Glyph name="p" />
+          Создать список
+        </button>
+      </div>
+      {error && <p className={styles.err}>{error}</p>}
+      <section className={styles.hero}>
+        <div>
+          <span className={styles.mut}>Сегодня</span>
+          <div className={styles.big}>
+            {dueTotal}
+            <small>{wordCountLabel(dueTotal)} к повторению</small>
+          </div>
+          <button type="button" className={`${styles.btn} ${styles.pri}`} disabled={dueTotal <= 0} onClick={openDueScene}>
+            {dueTotal > 0 ? 'Повторить в сцене' : 'Всё повторено'}
           </button>
+        </div>
+        <div>
+          <span className={styles.mut}>Вся библиотека · {libraryCount} {wordCountLabel(libraryCount)}</span>
+          {statusBar(totals)}
+          <div className={styles.legend}>
+            {STATUS_ORDER.map((key) => (
+              <span key={key}>
+                <i className={styles.dot} style={{ ['--c' as string]: STATUS_COLOR[key] }} />
+                {STATUS_LABEL[key]}
+                <b>{totals[key]}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className={styles.ctl}>
+        <label className={styles.inp}>
+          <Glyph name="s" />
+          <input
+            ref={searchRef}
+            className={styles.field}
+            type="text"
+            value={query}
+            placeholder="Найти список   ( / )"
+            aria-label="Поиск списков"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <div className={styles.seg} role="group" aria-label="Показать">
+          {([
+            ['all', 'Все', lists.length],
+            ['mine', 'Мои', ownAll.length],
+            ['packs', 'Наборы', packAll.length],
+          ] as const).map(([id, label, count]) => (
+            <button key={id} type="button" aria-pressed={listScope === id} onClick={() => setListScope(id)}>
+              {label}<b>{count}</b>
+            </button>
+          ))}
         </div>
       </div>
 
-      {createMode && createPanel}
-
-      <div className={styles.searchRow}>
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Поиск списков..."
-          className={styles.search}
-        />
-      </div>
-
-      {error && <p className={styles.error}>{error}</p>}
-      {loading && <p className={styles.muted}>Загружаем библиотеку…</p>}
-
-      {!loading && lists.length === 0 && !createMode && (
+      {loading && <p className={styles.mut}>Загружаем библиотеку…</p>}
+      {!loading && matched.length === 0 && (
         <div className={styles.empty}>
-          <h2>Пока нет списков</h2>
-          <p>Возьмите готовый набор или начните с пустого.</p>
-          <div className={styles.emptyActions}>
-            <button type="button" className={styles.primary} onClick={() => openCreate('starter')}>Взять набор</button>
-            <button type="button" className={styles.secondary} onClick={() => openCreate('empty')}>Пустой список</button>
+          <b>{needle ? 'Ничего не нашли' : 'Пока нет списков'}</b>
+          {needle ? 'Попробуйте другое название.' : 'Возьмите готовый набор или начните с пустого.'}
+        </div>
+      )}
+      {showMine && own.length > 0 && (
+        <>
+          {listScope === 'all' && <h2 className={styles.h2}>Мои списки</h2>}
+          <div className={styles.grid}>{own.map(listCard)}</div>
+        </>
+      )}
+      {showPacks && packs.length > 0 && (
+        <>
+          {listScope === 'all' && <h2 className={styles.h2}>Готовые наборы</h2>}
+          <div className={styles.grid}>{packs.map(listCard)}</div>
+        </>
+      )}
+
+      {createMode && (
+        <div className={`${styles.scrim} ${styles.center}`} onClick={closeCreate}>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Создать список"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={styles.nav}>
+              <h1 className={styles.h1} style={{ fontSize: 22 }}>Новый список</h1>
+              <button type="button" className={styles.ib} aria-label="Закрыть" onClick={closeCreate}>
+                <Glyph name="x" />
+              </button>
+            </div>
+            <div className={`${styles.seg} ${styles.tabs}`}>
+              <button type="button" aria-pressed={createTab === 'starter'} onClick={() => setCreateTab('starter')}>
+                Готовые наборы
+              </button>
+              <button type="button" aria-pressed={createTab === 'empty'} onClick={() => setCreateTab('empty')}>
+                Пустой список
+              </button>
+            </div>
+            {createTab === 'starter' ? (
+              <div className={styles.pk}>
+                {(library?.starter_packs || []).map((pack) => {
+                  const look = PACK_LOOK[pack.key] || { color: '#7ad7a7', icon: 'spark', subtitle: pack.description };
+                  const existingId = library?.items.find((entry) => entry.system_key === pack.key)?.id;
+                  return (
+                    <button
+                      key={pack.key}
+                      type="button"
+                      disabled={busyKey === pack.key}
+                      onClick={() => void (pack.in_library && existingId ? openList(existingId) : addStarter(pack.key))}
+                    >
+                      <span className={styles.ic} style={{ background: `${look.color}26`, color: look.color }}>
+                        {PACK_GLYPH[look.icon] || '✦'}
+                      </span>
+                      <b>{pack.title}</b>
+                      <span className={styles.mut} style={{ fontSize: 13.5 }}>{look.subtitle}</span>
+                      <span className={styles.chip} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
+                        {pack.in_library ? 'В библиотеке' : `${pack.word_count} ${wordCountLabel(pack.word_count)}`}
+                      </span>
+                    </button>
+                  );
+                })}
+                {!loading && !(library?.starter_packs || []).length && (
+                  <p className={styles.mut}>Наборов пока нет. Создайте пустой список.</p>
+                )}
+              </div>
+            ) : (
+              <form
+                className={styles.modalForm}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void createEmpty();
+                }}
+              >
+                <input
+                  className={styles.field}
+                  type="text"
+                  value={emptyTitle}
+                  placeholder="Например, Путешествия"
+                  aria-label="Название списка"
+                  onChange={(event) => setEmptyTitle(event.target.value)}
+                />
+                <div className={styles.modalActs}>
+                  <button type="button" className={styles.btn} onClick={closeCreate}>Отмена</button>
+                  <button className={`${styles.btn} ${styles.pri}`} type="submit" disabled={!emptyTitle.trim() || busyKey === 'empty'}>
+                    {busyKey === 'empty' ? 'Создаём…' : 'Создать'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
-
-      <div className={styles.listGrid}>
-        {lists.map((item) => (
-          <button key={item.id} type="button" onClick={() => openList(item.id)} className={styles.listCard}>
-            <div className={styles.listCardHead}>
-              <div className={styles.listCardTitle}>{item.title}</div>
-              {item.stats.due > 0 && (
-                <span className={styles.dueChip}>{item.stats.due} к повторению</span>
-              )}
-            </div>
-            {(() => {
-              const badge = bindingBadgeText(item);
-              return badge ? (
-                <div className={styles.boundBadge} title="Привязка к модулю практики">{badge}</div>
-              ) : null;
-            })()}
-            <div className={styles.listCardMeta}>{item.word_count} {wordCountLabel(item.word_count)}</div>
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
 
+function Glyph({ name }: { name: 's' | 'p' | 'x' | 'm' | 'l' | 'r' | 'v' }) {
+  const common = { className: styles.ico, viewBox: '0 0 24 24', 'aria-hidden': true as const };
+  if (name === 's') {
+    return <svg {...common}><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>;
+  }
+  if (name === 'p') return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
+  if (name === 'x') return <svg {...common}><path d="M6 6l12 12M18 6L6 18" /></svg>;
+  if (name === 'm') return <svg {...common}><path d="M5 12h.01M12 12h.01M19 12h.01" /></svg>;
+  if (name === 'l') return <svg {...common}><path d="M15 6l-6 6 6 6" /></svg>;
+  if (name === 'r') return <svg {...common}><path d="M9 6l6 6-6 6" /></svg>;
+  return <svg {...common}><path d="M4 9.5v5h4l5 4v-13l-5 4zM16.5 8.5a5 5 0 010 7" /></svg>;
+}
 function sortListWords(words: ListWord[], sortMode: 'due' | 'alpha' | 'new') {
   const copy = [...words];
   if (sortMode === 'alpha') {
@@ -1055,19 +1236,3 @@ function wordCountLabel(count: number) {
   return 'слов';
 }
 
-function SpeakerIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 10v4h4l5 4V6L8 10H4z" fill="currentColor" />
-      <path d="M16 9.5a3.5 3.5 0 010 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function listWord(count: number) {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'список';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'списка';
-  return 'списков';
-}

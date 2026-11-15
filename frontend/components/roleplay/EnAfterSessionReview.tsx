@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { nextPlayModeCta, type PlayMode } from '@/lib/play-mode';
+import type { PlayMode } from '@/lib/play-mode';
 import { EN_DEFAULT_REPAIR_PHRASES } from '@/lib/en-play-mode';
 
 const card: React.CSSProperties = {
@@ -15,14 +15,11 @@ const card: React.CSSProperties = {
 
 export function EnAfterSessionReview({
   playMode,
-  onNextMode,
 }: {
   playMode: PlayMode;
-  onNextMode?: () => void;
 }) {
-  const nextCta = nextPlayModeCta(playMode);
   const showPhrases = playMode === 'life' || playMode === 'stress';
-  if (!nextCta && !showPhrases) return null;
+  if (!showPhrases) return null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', width: '100%' }}>
@@ -38,24 +35,6 @@ export function EnAfterSessionReview({
             </div>
           ))}
         </div>
-      )}
-      {nextCta && onNextMode && (
-        <button
-          type="button"
-          onClick={onNextMode}
-          style={{
-            padding: '0.55rem 1.1rem',
-            borderRadius: 10,
-            border: '1px solid rgba(79, 168, 134, 0.45)',
-            background: 'rgba(79, 168, 134, 0.14)',
-            color: 'var(--sidebar-text)',
-            fontSize: '0.8125rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          {nextCta}
-        </button>
       )}
     </div>
   );

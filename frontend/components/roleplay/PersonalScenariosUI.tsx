@@ -15,17 +15,17 @@ import {
   type UserScenarioLevel,
 } from '@/lib/user-scenarios';
 import { FieldAiButton, fieldFlashStyle } from '@/components/roleplay/FieldAiButton';
+import createStyles from './scenario-create.module.css';
 import { LevelDropdown } from '@/components/ui/LevelDropdown';
 import { LevelRequiredNotice } from '@/components/ui/HskLevelPicker';
-import { BriefingView } from './RoleplayModeUI';
 import {
   PracticeWordsInSheet,
   type PracticeWordsSession,
 } from '@/components/agent/PracticeWordsInSheet';
 import { buildRoleplayPracticeContext } from '@/lib/practice-list-context';
-import { getStoredBackendToken } from '@/lib/backend-jwt';
+import { bindPracticeList } from '@/lib/practice-list-binding';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
-import { parsePlayMode, type PlayMode } from '@/lib/play-mode';
+import type { PlayMode } from '@/lib/play-mode';
 import { SpeechVoicePicker } from '@/components/roleplay/SpeechVoicePicker';
 
 type SlangMode = 'off' | 'light' | 'heavy';
@@ -37,9 +37,6 @@ const LEVELS: { value: UserScenarioLevel; label: string }[] = [
   { value: 'B1', label: 'B1' },
   { value: 'B2', label: 'B2' },
   { value: 'C1', label: 'C1' },
-  { value: 'easy', label: 'Лёгкий' },
-  { value: 'medium', label: 'Средний' },
-  { value: 'hard', label: 'Сложный' },
 ];
 
 function getScenarioStyleBadges(
@@ -326,6 +323,18 @@ function BriefingPreview({ payload, title, compact }: { payload: Record<string, 
   );
 }
 
+export type ScenarioCreateSeed = {
+  level?: UserScenarioLevel | null;
+  prompt?: string;
+  topic?: string;
+  place?: string;
+  role?: string;
+  goal?: string;
+  generated?: GenerateScenarioResult | null;
+  /** Уже сохранённый сценарий этого списка: повторное сохранение обновляет его, а не создаёт второй. */
+  savedId?: string | null;
+};
+
 export type PersonalScenariosUIProps = {
   /** При выборе сценария для игры (Play) */
   onSelectScenario: (scenario: RoleplayScenario) => void;
@@ -338,6 +347,8 @@ export type PersonalScenariosUIProps = {
   initialPlayMode?: PlayMode;
   practiceWords?: PracticeWordsSession | null;
   seedPrompt?: string | null;
+  /** Практика: открыть мастер уже с уровнем, целью и текстом сцены, не перескакивая шаги */
+  initialSeed?: ScenarioCreateSeed | null;
 };
 
 /** Превращает UserScenario в RoleplayScenario для передачи в AgentTab */
@@ -652,31 +663,32 @@ export function PersonalScenariosUI({
   initialView,
   highlightedScenarioId,
   initialBriefingId,
-  initialPlayMode,
   practiceWords = null,
   seedPrompt = null,
+  initialSeed = null,
 }: PersonalScenariosUIProps) {
   const [view, setView] = useState<'create' | 'my' | 'edit'>(initialView);
 
   // Create flow
-  const [prompt, setPrompt] = useState(seedPrompt || '');
-  const [topic, setTopic] = useState('');
-  const [place, setPlace] = useState('');
-  const [userRole, setUserRole] = useState('');
-  const [goalStructured, setGoalStructured] = useState('');
+  const [prompt, setPrompt] = useState(initialSeed?.prompt || seedPrompt || '');
+  const [topic, setTopic] = useState(initialSeed?.topic || '');
+  const [place, setPlace] = useState(initialSeed?.place || '');
+  const [userRole, setUserRole] = useState(initialSeed?.role || '');
+  const [goalStructured, setGoalStructured] = useState(initialSeed?.goal || '');
   const [createSlangMode, setCreateSlangMode] = useState<SlangMode>('light');
   const [createAllowProfanity, setCreateAllowProfanity] = useState(false);
   const [createAiMayUseProfanity, setCreateAiMayUseProfanity] = useState(false);
   const [createProfanityIntensity, setCreateProfanityIntensity] = useState<ProfanityIntensity>('light');
-  const [level, setLevel] = useState<UserScenarioLevel | null>(null);
+  const [level, setLevel] = useState<UserScenarioLevel | null>(initialSeed?.level ?? null);
   const [levelNotice, setLevelNotice] = useState(false);
   const [generateLoading, setGenerateLoading] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
-  const [generated, setGenerated] = useState<GenerateScenarioResult | null>(null);
+  const [generated, setGenerated] = useState<GenerateScenarioResult | null>(initialSeed?.generated ?? null);
   const draftListRef = useRef(`draft-${crypto.randomUUID()}`);
   const [fieldBusy, setFieldBusy] = useState<UserScenarioField | null>(null);
   const [flashField, setFlashField] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
+  const [editTitle, setEditTitle] = useState(initialSeed?.generated?.title || '');
+  const savedScenarioIdRef = useRef<string | null>(initialSeed?.savedId || null);
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   /** Шаг мастера (1 = опишите ситуацию, 2 = цель и шаги, 3 = название и сохранение). */
@@ -690,6 +702,8 @@ export function PersonalScenariosUI({
   const [archivingId, setArchivingId] = useState<string | null>(null);
   /** Сценарий, выбранный для игры: показываем брифинг перед стартом */
   const [briefingScenario, setBriefingScenario] = useState<UserScenario | null>(null);
+  const [readyScenario, setReadyScenario] = useState<UserScenario | null>(null);
+  const [whoStarts, setWhoStarts] = useState<'ai' | 'user'>('ai');
   /** Поиск по названию и фильтр по уровню в «Мои сценарии» */
   const [mySearchQuery, setMySearchQuery] = useState('');
   const [myLevelFilter, setMyLevelFilter] = useState<string>('all');
@@ -739,7 +753,7 @@ export function PersonalScenariosUI({
     const found = scenarios.find((s) => s.id === initialBriefingId);
     if (!found) return;
     openedBriefingRef.current = true;
-    setBriefingScenario(found);
+    fillFromScenario(found);
   }, [initialBriefingId, scenarios]);
 
   const query = mySearchQuery.trim().toLowerCase();
@@ -923,6 +937,24 @@ export function PersonalScenariosUI({
     }
   };
 
+  const pinScenarioForList = async (result: GenerateScenarioResult, title: string) => {
+    const listId = practiceWords?.listId;
+    if (!listId) return;
+    const name = title.trim() || result.title.trim();
+    if (!name) return;
+    const existingId = savedScenarioIdRef.current;
+    const saved = existingId
+      ? await updateUserScenario(existingId, { title: name, level: result.level, payload: result.payload })
+      : await createUserScenario({ title: name, level: result.level, payload: result.payload });
+    savedScenarioIdRef.current = saved.id;
+    await bindPracticeList(listId, {
+      kind: 'scenario',
+      ref: saved.id,
+      origin: 'user',
+      label: saved.title || name,
+    });
+  };
+
   const handleGenerate = async () => {
     if (!level) {
       askForLevel();
@@ -947,6 +979,11 @@ export function PersonalScenariosUI({
         },
       });
       applyGenerated({ ...result, level });
+      try {
+        await pinScenarioForList({ ...result, level }, result.title);
+      } catch {
+        setGenerateError('Сцена собрана, но не удалось закрепить её за списком');
+      }
       flash('form');
     } catch (err) {
       setGenerateError(err instanceof Error ? err.message : 'Ошибка генерации');
@@ -955,51 +992,78 @@ export function PersonalScenariosUI({
     }
   };
 
+  const fillFromScenario = (s: UserScenario) => {
+    setBriefingScenario(null);
+    setReadyScenario(s);
+    setView('create');
+    setEditTitle(s.title || '');
+    setLevel(s.level);
+    setPlace(s.settingRu || s.setting || '');
+    setUserRole(s.yourRoleRu || s.yourRole || '');
+    setGoalStructured(s.goalRu || s.goal || '');
+    setPrompt(s.scenarioTextRu || s.scenarioText || s.description || '');
+    setTopic(s.title || '');
+    setCreateSlangMode((s.slangMode as SlangMode) || 'light');
+    setCreateAllowProfanity(Boolean(s.allowProfanity));
+    setCreateAiMayUseProfanity(Boolean(s.aiMayUseProfanity));
+    setCreateProfanityIntensity((s.profanityIntensity as ProfanityIntensity) || 'light');
+    setGenerated({
+      title: s.title,
+      level: s.level,
+      payload: { ...s },
+    });
+    setCreateStep(3);
+    setWhoStarts(s.characterOpening?.trim() ? 'ai' : 'user');
+  };
+
+  const beginPrepared = (saved: UserScenario) => {
+    onSelectScenario({
+      ...toRoleplayScenario(saved),
+      title: editTitle.trim() || saved.title,
+      settingRu: place,
+      yourRoleRu: userRole,
+      goalRu: goalStructured,
+      scenarioTextRu: prompt,
+      slangMode: createSlangMode,
+      allowProfanity: createAllowProfanity,
+      aiMayUseProfanity: createAllowProfanity ? createAiMayUseProfanity : false,
+      profanityIntensity: createProfanityIntensity,
+      level: level || saved.level,
+      playMode: 'rehearsal',
+      characterOpening: whoStarts === 'ai' ? saved.characterOpening : undefined,
+      openingInstruction: whoStarts === 'ai' ? saved.openingInstruction : undefined,
+    });
+  };
+
   const handleSaveNew = async () => {
     if (!generated || !editTitle.trim()) return;
     setSaveLoading(true);
     setSaveError(null);
     try {
-      const created = await createUserScenario({
-        title: editTitle.trim(),
-        level: generated.level,
-        payload: generated.payload,
-      });
-      setGenerated(null);
-      setEditTitle('');
-      setCreateStep(1);
-      setPrompt('');
-      setTopic('');
-      setPlace('');
-      setUserRole('');
-      setGoalStructured('');
-      setCreateSlangMode('light');
-      setCreateAllowProfanity(false);
-      setCreateAiMayUseProfanity(false);
-      setCreateProfanityIntensity('light');
-      setView('my');
+      const title = editTitle.trim();
+      const existingId = savedScenarioIdRef.current;
+      const created = existingId
+        ? await updateUserScenario(existingId, {
+          title,
+          level: level || generated.level,
+          payload: generated.payload,
+        })
+        : await createUserScenario({
+          title,
+          level: level || generated.level,
+          payload: generated.payload,
+        });
+      savedScenarioIdRef.current = created.id;
+      setReadyScenario(created);
       loadList();
-      const listId = practiceWords?.listId;
-      const token = getStoredBackendToken();
-      const api = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
-      if (listId && created?.id && token && api) {
-        void fetch(`${api}/api/vocabulary/lists/${encodeURIComponent(listId)}`, {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            binding: {
-              kind: 'scenario',
-              ref: created.id,
-              origin: 'user',
-              label: created.title || editTitle.trim(),
-            },
-          }),
-        }).catch(() => { /* список уже в словаре */ });
+      if (practiceWords?.listId && created.id) {
+        await bindPracticeList(practiceWords.listId, {
+          kind: 'scenario',
+          ref: created.id,
+          origin: 'user',
+          label: created.title || title,
+        }).catch(() => { /* сцена уже сохранена */ });
       }
-      setBriefingScenario(created);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Ошибка сохранения');
     } finally {
@@ -1008,14 +1072,7 @@ export function PersonalScenariosUI({
   };
 
   const handlePlay = (s: UserScenario) => {
-    setBriefingScenario(s);
-  };
-
-  const handleStartFromBriefing = (scenarioWithSettings: RoleplayScenario) => {
-    if (!briefingScenario) return;
-    // Только onSelectScenario: родитель закрывает модал. Не вызывать onClose() —
-    // там сброс в freestyle при selectedScenario ещё null (гонка setState).
-    onSelectScenario(scenarioWithSettings);
+    fillFromScenario(s);
   };
 
   const handleArchive = async (id: string, archive: boolean) => {
@@ -1232,406 +1289,393 @@ export function PersonalScenariosUI({
       </button>
     </div>
   );
-
-  const isWizardStep2Or3 = generated && createStep >= 2;
-  const isWizardStep3 = generated && createStep === 3;
-  const stepLabels = ['Опишите ситуацию', 'Цель и шаги', 'Название и сохранение'] as const;
-
   const renderCreateForm = () => {
-    const currentStepNum = !generated ? 1 : createStep;
-    return (
-      <>
-        {renderHeader('Создать сценарий', true)}
-        <div
-          style={{
-            padding: '1.25rem 1.5rem',
-            overflow: 'hidden',
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 0,
-            scrollbarGutter: 'stable',
-          }}
-        >
-          {/* Индикатор шагов */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              marginBottom: '1rem',
-              padding: '0.5rem 0',
-              borderBottom: '1px solid var(--sidebar-border)',
-              flexShrink: 0,
-            }}
-          >
-            {([1, 2, 3] as const).map((num) => (
-              <React.Fragment key={num}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    fontSize: '0.9375rem',
-                    fontWeight: currentStepNum === num ? 600 : 500,
-                    color: 'var(--sidebar-text)',
-                    opacity: currentStepNum === num ? 1 : currentStepNum > num ? 0.8 : 0.5,
+  const shownStep: 1 | 2 | 3 = !generated ? 1 : createStep;
+  const rawSteps = Array.isArray(generated?.payload.steps)
+    ? (generated.payload.steps as { id?: string; titleRu?: string; titleEn?: string }[])
+    : [];
+  const firstLine = typeof generated?.payload.suggestedFirstLine === 'string' ? generated.payload.suggestedFirstLine.trim() : '';
+  const situationText = (typeof generated?.payload.scenarioTextRu === 'string' && generated.payload.scenarioTextRu.trim())
+    ? generated.payload.scenarioTextRu
+    : prompt.trim();
+  const tipsRaw = typeof generated?.payload.maxScoreTipsRu === 'string' ? generated.payload.maxScoreTipsRu.trim() : '';
+  const tipItems = tipsRaw
+    ? (tipsRaw.split(/\s*(?:\d+[.)]\s+)/).map((item) => item.trim()).filter(Boolean).length > 1
+      ? tipsRaw.split(/\s*(?:\d+[.)]\s+)/).map((item) => item.trim()).filter(Boolean)
+      : tipsRaw.split(/\n+/).map((item) => item.trim()).filter(Boolean))
+    : [];
+  const roleText = userRole.trim();
+  const youCaption = roleText && roleText.length <= 28 && !roleText.includes(':') ? roleText : 'Ваша роль';
+  const roleNote = roleText && roleText !== youCaption ? roleText : '';
+  const partnerName = 'Собеседник';
+  const visibleSteps = rawSteps.filter((step) => step.titleRu?.trim());
+  const stepPhrases = (step: { titleRu?: string; titleEn?: string }, index: number) => {
+    const phrases: { en: string; ru?: string }[] = [];
+    if (index === 0 && firstLine) phrases.push({ en: firstLine });
+    const english = step.titleEn?.trim() || '';
+    if (english && english !== step.titleRu?.trim() && english !== firstLine) phrases.push({ en: english });
+    return phrases;
+  };
+  const stepNames = ['Ситуация', 'Цель и шаги', 'Название'] as const;
+  const primaryLabel = shownStep === 1
+    ? 'Дальше: цель и шаги'
+    : shownStep === 2
+      ? 'Дальше: название и сохранение'
+      : readyScenario ? 'Начать диалог' : saveLoading ? 'Сохранение…' : 'Сохранить сценарий';
+
+  const goStep = (num: 1 | 2 | 3) => {
+    if (num === 1) {
+      setCreateStep(1);
+      return;
+    }
+    if (!level) {
+      askForLevel();
+      return;
+    }
+    if (!generated) {
+      handleContinue();
+      return;
+    }
+    setCreateStep(num);
+  };
+
+  const aiBtn = (field: UserScenarioField, label: string, text?: string) => (
+    <FieldAiButton
+      iconOnly={!text}
+      text={text}
+      label={label}
+      busy={fieldBusy === field}
+      disabled={Boolean(fieldBusy) || generateLoading}
+      onClick={() => handleFieldRegen(field)}
+    />
+  );
+
+  return (
+    <div className={createStyles.shell}>
+      <header className={createStyles.top}>
+        <h2>Подготовка сцены</h2>
+        <div className={createStyles.seg} role="group" aria-label="Раздел">
+          <button type="button" aria-pressed="true" onClick={() => setView('create')}>Создать</button>
+          <button type="button" aria-pressed="false" onClick={() => { setView('my'); loadList(); }}>Мои сценарии</button>
+        </div>
+        <button type="button" className={createStyles.x} onClick={onClose} aria-label="Закрыть">✕</button>
+      </header>
+      <ol className={createStyles.stepper}>
+        {stepNames.map((name, index) => {
+          const num = (index + 1) as 1 | 2 | 3;
+          const state = shownStep === num ? createStyles.on : shownStep > num ? createStyles.done : '';
+          return (
+            <li key={name} className={state}>
+              <button type="button" onClick={() => goStep(num)} aria-current={shownStep === num ? 'step' : undefined}>
+                <span className={createStyles.dot}>{shownStep > num ? '✓' : num}</span>
+                <span className={createStyles.lbl}>{name}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      <div className={createStyles.track} aria-hidden="true"><i style={{ width: `${(shownStep / 3) * 100}%` }} /></div>
+      <div className={createStyles.body}>
+        <div className={createStyles.form}>
+          {shownStep === 1 && (
+            <>
+              <h3>О чём будет сцена</h3>
+              <p className={createStyles.sub}>Опишите ситуацию своими словами и ИИ соберёт сцену. Или заполните поля вручную.</p>
+              <div className={createStyles.hero}>
+                <textarea className={createStyles.field} rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Описание ситуации" placeholder="Диалог в кафе — заказать кофе и десерт, уточнить счёт" />
+                <div className={createStyles.heroFoot}>
+                  <small>Поля ниже заполнятся автоматически</small>
+                  <button type="button" className={createStyles.assemble} onClick={handleGenerate} disabled={generateLoading || Boolean(fieldBusy)}>
+                    {generateLoading ? 'Собираю…' : 'Собрать сцену'}
+                  </button>
+                </div>
+              </div>
+              <div className={createStyles.row2}>
+                <label className={createStyles.fld}>
+                  <span>Тема</span>
+                  <div className={createStyles.inp}>
+                    <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="кафе, такси" style={fieldFlashStyle(flashField === 'topic')} />
+                    {aiBtn('topic', 'Другая тема')}
+                  </div>
+                </label>
+                <label className={createStyles.fld}>
+                  <span>Место</span>
+                  <div className={createStyles.inp}>
+                    <input value={place} onChange={(e) => { setPlace(e.target.value); if (generated) patchGeneratedPayload({ settingRu: e.target.value }); }} placeholder="аэропорт, офис" style={fieldFlashStyle(flashField === 'place')} />
+                    {aiBtn('place', 'Другое место')}
+                  </div>
+                </label>
+              </div>
+              <label className={createStyles.fld}>
+                <span>Ваша роль</span>
+                <div className={createStyles.inp}>
+                  <input value={userRole} onChange={(e) => { setUserRole(e.target.value); if (generated) patchGeneratedPayload({ yourRoleRu: e.target.value }); }} placeholder="клиент, пассажир" style={fieldFlashStyle(flashField === 'role')} />
+                  {aiBtn('role', 'Другая роль')}
+                </div>
+              </label>
+              <div className={createStyles.grp} role="group" aria-label="Уровень">
+                <span>Уровень</span>
+                <div className={createStyles.levels}>
+                  {LEVELS.map((item) => (
+                    <button key={item.value} type="button" aria-pressed={level === item.value} onClick={() => setLevel(item.value)}>{item.label}</button>
+                  ))}
+                </div>
+                <p className={createStyles.note}>От уровня зависят сложность реплик и подбор слов. В диалоге ИИ подстраивается под вашу речь.</p>
+              </div>
+              {generateError && <p className={createStyles.err}>{generateError}</p>}
+            </>
+          )}
+
+          {shownStep === 2 && generated && (
+            <>
+              <h3>Цель и шаги</h3>
+              <p className={createStyles.sub}>Цель — что вы хотите получить от разговора. Шаги — по каким точкам пройдёт диалог.</p>
+              <label className={createStyles.fld}>
+                <span>Цель диалога</span>
+                <div className={createStyles.inp}>
+                <textarea
+                  className={createStyles.field}
+                  rows={3}
+                  value={goalStructured}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setGoalStructured(value);
+                    const manual = generated.payload.manual === true;
+                    patchGeneratedPayload({
+                      goalRu: value,
+                      goal: value,
+                      ...(manual ? { systemPrompt: composeManualSystemPrompt(value) } : {}),
+                    });
                   }}
-                >
-                  <span
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: '50%',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      background: currentStepNum === num ? 'rgba(99, 102, 241, 0.2)' : 'var(--sidebar-hover)',
-                      border: currentStepNum === num ? '2px solid rgba(99, 102, 241, 0.6)' : '1px solid var(--sidebar-border)',
-                      color: currentStepNum === num ? 'rgba(99, 102, 241, 1)' : 'var(--sidebar-text)',
-                    }}
-                  >
-                    {num}
-                  </span>
-                  <span>{stepLabels[num - 1]}</span>
+                  style={fieldFlashStyle(flashField === 'goal')}
+                />
+                {aiBtn('goal', 'Другая цель')}
                 </div>
-                {num < 3 && (
-                  <div style={{ flex: 1, minWidth: 20, height: 1, margin: '0 0.5rem', background: 'var(--sidebar-border)', opacity: 0.5 }} aria-hidden />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '0.25rem', scrollbarGutter: 'stable' }}>
-          {/* Контент шага — flex чтобы заполнить без скролла */}
-          <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {/* Шаг 1: Опишите ситуацию */}
-          {(!generated || createStep === 1) && (
-            <>
-              <p style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: 'var(--sidebar-text)', opacity: 0.85, lineHeight: 1.45, flexShrink: 0 }}>
-                Заполните поля и нажмите «Дальше» или сгенерируйте сценарий. Уровень нужен в обоих случаях.
-              </p>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                  gap: '1rem 1.25rem',
-                  maxWidth: 980,
-                  alignContent: 'start',
-                }}
-              >
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <span style={createSectionTitle}>Запрос</span>
-                  <label style={{ display: 'block' }}>
-                    <span style={createLabelStyle}>Свободный текст</span>
-                    <textarea
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      placeholder="Например: диалог в кафе — заказать кофе и десерт, уточнить счёт"
-                      rows={2}
-                      style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
+              </label>
+              <div className={createStyles.grp}>
+                <span>Шаги по порядку {aiBtn('steps', 'Другие шаги', 'Другие шаги')}</span>
+                {rawSteps.map((step, index) => (
+                  <div key={step.id || index} className={createStyles.stepRow}>
+                    <input
+                      className={createStyles.plain}
+                      value={step.titleRu || ''}
+                      aria-label={`Шаг ${index + 1}`}
+                      placeholder={`Шаг ${index + 1}`}
+                      onChange={(e) => {
+                        const next = rawSteps.map((item, i) => (i === index ? { ...item, titleRu: e.target.value } : item));
+                        patchGeneratedPayload({ steps: next });
+                      }}
                     />
-                  </label>
-                </div>
-                <div>
-                  <span style={createSectionTitle}>Детали (по желанию)</span>
-                  <label style={{ display: 'block', marginBottom: '0.75rem' }}>
-                    <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      Тема
-                      {generated && (
-                        <FieldAiButton label="Другая тема" busy={fieldBusy === 'topic'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('topic')} />
-                      )}
-                    </span>
-                    <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="кафе, такси" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'topic') }} />
-                  </label>
-                  <label style={{ display: 'block', marginBottom: '0.75rem' }}>
-                    <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      Место
-                      {generated && (
-                        <FieldAiButton label="Другое место" busy={fieldBusy === 'place'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('place')} />
-                      )}
-                    </span>
-                    <input type="text" value={place} onChange={(e) => { setPlace(e.target.value); if (generated) patchGeneratedPayload({ settingRu: e.target.value }); }} placeholder="аэропорт, офис" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'place') }} />
-                  </label>
-                  <label style={{ display: 'block' }}>
-                    <span style={{ ...createLabelStyle, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                      Уровень
-                      <span
-                        title="Уровень задаёт сложность сценария при генерации и фильтры; в диалоге ИИ подстраивается под вашу речь."
-                        style={{ cursor: 'help', display: 'inline-flex', color: 'var(--sidebar-text)', opacity: 0.65 }}
-                        aria-label="Подсказка про уровень"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="12" cy="12" r="10" />
-                          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                          <line x1="12" y1="17" x2="12.01" y2="17" />
-                        </svg>
-                      </span>
-                    </span>
-                    <LevelDropdown
-                      value={level}
-                      onChange={setLevel}
-                      options={LEVELS}
-                      placeholder="Выберите уровень"
-                      ariaLabel="Уровень сценария"
-                    />
-                  </label>
-                </div>
-                <div>
-                  <span style={createSectionTitle}>Роль и цель</span>
-                  <label style={{ display: 'block', marginBottom: '0.75rem' }}>
-                    <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      Ваша роль
-                      {generated && (
-                        <FieldAiButton label="Другая роль" busy={fieldBusy === 'role'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('role')} />
-                      )}
-                    </span>
-                    <input type="text" value={userRole} onChange={(e) => { setUserRole(e.target.value); if (generated) patchGeneratedPayload({ yourRoleRu: e.target.value }); }} placeholder="клиент, пассажир" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'role') }} />
-                  </label>
-                  <label style={{ display: 'block' }}>
-                    <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      Цель диалога
-                      {generated && (
-                        <FieldAiButton label="Другая цель" busy={fieldBusy === 'goal'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('goal')} />
-                      )}
-                    </span>
-                    <input type="text" value={goalStructured} onChange={(e) => { setGoalStructured(e.target.value); if (generated) patchGeneratedPayload({ goalRu: e.target.value }); }} placeholder="заказать такси до отеля" style={{ ...inputStyle, ...fieldFlashStyle(flashField === 'goal') }} />
-                  </label>
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <SpeechVoicePicker
-                    slangMode={createSlangMode}
-                    allowProfanity={createAllowProfanity}
-                    aiMayUseProfanity={createAiMayUseProfanity}
-                    profanityIntensity={createProfanityIntensity}
-                    confirmSource="personal_scenario_create"
-                    onChange={(next) => {
-                      setCreateSlangMode(next.slangMode);
-                      setCreateAllowProfanity(next.allowProfanity);
-                      setCreateAiMayUseProfanity(next.aiMayUseProfanity);
-                      setCreateProfanityIntensity(next.profanityIntensity);
-                    }}
-                  />
-                </div>
-              </div>
-              {generated && Array.isArray(generated.payload.steps) && (
-                <div style={{ marginTop: '0.9rem', ...fieldFlashStyle(flashField === 'steps') }}>
-                  <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    Шаги
-                    <FieldAiButton label="Другие шаги" busy={fieldBusy === 'steps'} disabled={Boolean(fieldBusy) || generateLoading} onClick={() => handleFieldRegen('steps')} />
-                  </span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {(generated.payload.steps as { id?: string; titleRu?: string; titleEn?: string; order?: number }[]).map((step, index) => (
-                      <input
-                        key={step.id || index}
-                        type="text"
-                        value={step.titleRu || ''}
-                        onChange={(e) => {
-                          const next = (generated.payload.steps as { titleRu?: string }[]).map((item, i) => (
-                            i === index ? { ...item, titleRu: e.target.value } : item
-                          ));
-                          patchGeneratedPayload({ steps: next });
-                        }}
-                        style={inputStyle}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {generated && (
-                <p style={{ margin: '0.75rem 0 0', fontSize: '0.85rem', opacity: 0.7 }}>
-                  Значок меняет только это поле. Поля можно править, пока диалог не начат.
-                </p>
-              )}
-              {generateError && (
-                <p style={{ margin: '0.75rem 0 0', padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--sidebar-text)', fontSize: '0.9375rem', flexShrink: 0 }}>
-                  {generateError}
-                </p>
-              )}
-            </>
-          )}
-
-          {/* Шаг 2: Цель и шаги + превью (компактно, без скролла) */}
-          {isWizardStep2Or3 && !isWizardStep3 && generated && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 260px) 1fr', gap: '0.75rem', flex: 1, minHeight: 0, alignContent: 'start', alignItems: 'stretch' }}>
-                <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: 0 }}>
-                  <div
-                    style={{
-                      padding: '0.6rem 0.9rem',
-                      borderRadius: 10,
-                      background: 'var(--sidebar-hover)',
-                      border: '1px solid var(--sidebar-border)',
-                      flex: '0 1 auto',
-                      minHeight: 0,
-                    }}
-                  >
-                    <label style={{ display: 'block', marginBottom: '0.65rem' }}>
-                      <span style={createLabelStyle}>Цель</span>
-                      <textarea
-                        value={goalStructured}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setGoalStructured(value);
-                          const manual = generated.payload.manual === true;
-                          patchGeneratedPayload({
-                            goalRu: value,
-                            goal: value,
-                            ...(manual ? { systemPrompt: composeManualSystemPrompt(value) } : {}),
-                          });
-                        }}
-                        rows={2}
-                        style={{ ...inputStyle, resize: 'vertical' }}
-                      />
-                    </label>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, opacity: 0.7, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Шаги</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {((generated.payload.steps as { id?: string; titleRu?: string; titleEn?: string; order?: number }[]) || []).map((step, index) => (
-                        <div key={step.id || index} style={{ display: 'flex', gap: 6 }}>
-                          <input
-                            type="text"
-                            value={step.titleRu || ''}
-                            onChange={(e) => {
-                              const next = ((generated.payload.steps as { titleRu?: string }[]) || []).map((item, i) => (
-                                i === index ? { ...item, titleRu: e.target.value } : item
-                              ));
-                              patchGeneratedPayload({ steps: next });
-                            }}
-                            placeholder={`Шаг ${index + 1}`}
-                            style={inputStyle}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = ((generated.payload.steps as unknown[]) || []).filter((_, i) => i !== index);
-                              patchGeneratedPayload({ steps: next.length ? next : [{ id: 'step1', order: 1, titleRu: '', titleEn: '' }] });
-                            }}
-                            style={{ ...btnSecondary, padding: '0.45rem 0.7rem' }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const current = (generated.payload.steps as { id?: string; order?: number }[]) || [];
-                          patchGeneratedPayload({
-                            steps: [...current, { id: `step${current.length + 1}`, order: current.length + 1, titleRu: '', titleEn: '' }],
-                          });
-                        }}
-                        style={{ ...btnSecondary, alignSelf: 'flex-start' }}
-                      >
-                        Добавить шаг
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flexShrink: 0 }}>
-                    <button type="button" onClick={() => setCreateStep(3)} style={btnPrimary}>
-                      Далее — название и сохранение
-                    </button>
-                    <button type="button" onClick={handleGenerate} disabled={generateLoading} style={btnSecondary}>
-                      {generateLoading ? 'Генерация…' : 'Сгенерировать сценарий'}
-                    </button>
-                    <button type="button" onClick={() => setCreateStep(1)} style={btnSecondary}>
-                      Назад
-                    </button>
-                  </div>
-                </div>
-                <div style={{ borderRadius: 10, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', padding: '0.5rem', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', width: '100%' }}>
-                  <BriefingPreview payload={generated.payload} title="Превью брифинга" compact />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Шаг 3: Название и сохранение — та же раскладка, что и шаг 2 (слева форма, справа превью) */}
-          {isWizardStep3 && generated && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 260px) 1fr', gap: '0.75rem', flex: 1, minHeight: 0, alignContent: 'start', alignItems: 'stretch' }}>
-                <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: '1rem', color: 'var(--sidebar-text)', opacity: 0.85, flexShrink: 0 }}>
-                    Задайте название и сохраните — сценарий появится в «Мои сценарии».
-                  </p>
-                  <div style={{ flexShrink: 0 }}>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Название сценария</span>
-                      <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Например: Заказ в кафе" style={inputStyle} />
-                    </label>
-                  </div>
-                  {saveError && (
-                    <p style={{ margin: '0 0 0.5rem', padding: 0, fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.9, flexShrink: 0 }}>
-                      {saveError}
-                    </p>
-                  )}
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
-                    <button type="button" onClick={handleSaveNew} disabled={saveLoading} style={{ ...btnPrimary, opacity: saveLoading ? 0.7 : 1 }}>
-                      {saveLoading ? 'Сохранение…' : 'Сохранить сценарий'}
-                    </button>
-                    <button type="button" onClick={() => setCreateStep(2)} style={btnSecondary}>
-                      Назад
-                    </button>
                     <button
                       type="button"
-                      onClick={() => { setGenerated(null); setEditTitle(''); setCreateStep(1); }}
-                      style={btnSecondary}
+                      aria-label={`Убрать шаг ${index + 1}`}
+                      onClick={() => {
+                        const next = rawSteps.filter((_, i) => i !== index);
+                        patchGeneratedPayload({ steps: next.length ? next : [{ id: 'step1', order: 1, titleRu: '', titleEn: '' }] });
+                      }}
                     >
-                      Отмена
+                      ×
                     </button>
                   </div>
-                </div>
-                <div style={{ borderRadius: 10, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', padding: '0.5rem', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.65rem', width: '100%' }}>
-                  <BriefingPreview payload={generated.payload} title="Брифинг перед стартом" compact />
-                  {practiceWords && (
-                    <PracticeWordsInSheet
-                      {...practiceWords}
-                      listContext={buildRoleplayPracticeContext({
-                        id: draftListRef.current,
-                        title: editTitle.trim() || 'Новый сценарий',
-                        goalRu: typeof generated.payload.goalRu === 'string' ? generated.payload.goalRu : null,
-                        goal: typeof generated.payload.goal === 'string' ? generated.payload.goal : null,
-                        settingRu: typeof generated.payload.settingRu === 'string' ? generated.payload.settingRu : null,
-                        scenarioTextRu: typeof generated.payload.scenarioTextRu === 'string' ? generated.payload.scenarioTextRu : null,
-                        yourRoleRu: typeof generated.payload.yourRoleRu === 'string' ? generated.payload.yourRoleRu : null,
-                        steps: Array.isArray(generated.payload.steps) ? generated.payload.steps as Array<{ titleRu?: string | null; titleEn?: string | null }> : null,
-                      })}
-                      toolsMode="scene"
-                      title="Слова под этот сценарий"
-                      subtitle="ИИ соберёт около 20 слов под название, цель и шаги. Список сохранится в словарь."
-                    />
-                  )}
-                </div>
+                ))}
+                <button
+                  type="button"
+                  className={createStyles.ghost}
+                  onClick={() => {
+                    patchGeneratedPayload({
+                      steps: [...rawSteps, { id: `step${rawSteps.length + 1}`, order: rawSteps.length + 1, titleRu: '', titleEn: '' }],
+                    });
+                  }}
+                >
+                  Добавить шаг
+                </button>
+                <p className={createStyles.note}>Значок меняет только это поле. Поля можно править, пока диалог не начат.</p>
               </div>
             </>
           )}
-          </div>
-          </div>
-          {(!generated || createStep === 1) && (
-            <div
-              style={{
-                display: 'flex',
-                gap: '0.75rem',
-                flexWrap: 'wrap',
-                flexShrink: 0,
-                marginTop: '1rem',
-                paddingTop: '0.85rem',
-                borderTop: '1px solid var(--sidebar-border)',
-                background: 'var(--sidebar-bg)',
-              }}
-            >
-              <button type="button" onClick={handleContinue} disabled={generateLoading || Boolean(fieldBusy)} style={btnPrimary}>
-                Дальше — цель и шаги
-              </button>
-              <button type="button" onClick={handleGenerate} disabled={generateLoading || Boolean(fieldBusy)} style={{ ...btnSecondary, opacity: generateLoading ? 0.7 : 1 }}>
-                {generateLoading ? 'Генерация…' : 'Сгенерировать сценарий'}
-              </button>
-            </div>
+
+          {shownStep === 3 && generated && (
+            <>
+              <h3>Название и слова</h3>
+              <p className={createStyles.sub}>Сценарий появится в «Моих сценариях». Слова из списка сохранятся в ваш словарь.</p>
+              <label className={createStyles.fld}>
+                <span>Название сценария</span>
+                <input className={createStyles.plain} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Например: Заказ в кафе" />
+              </label>
+              <div className={createStyles.grp} role="group" aria-label="Кто начинает">
+                <span>Кто начинает</span>
+                <div className={createStyles.levels}>
+                  <button type="button" aria-pressed={whoStarts === 'ai'} onClick={() => setWhoStarts('ai')}>ИИ начинает</button>
+                  <button type="button" aria-pressed={whoStarts === 'user'} onClick={() => setWhoStarts('user')}>Я начну</button>
+                </div>
+                <p className={createStyles.note}>
+                  {whoStarts === 'ai' ? 'Собеседник говорит первым.' : 'Вы подходите и говорите первым.'}
+                </p>
+              </div>
+              {practiceWords && (
+                <PracticeWordsInSheet
+                  {...practiceWords}
+                  listContext={buildRoleplayPracticeContext({
+                    id: draftListRef.current,
+                    title: editTitle.trim() || 'Новый сценарий',
+                    goalRu: typeof generated.payload.goalRu === 'string' ? generated.payload.goalRu : null,
+                    goal: typeof generated.payload.goal === 'string' ? generated.payload.goal : null,
+                    settingRu: typeof generated.payload.settingRu === 'string' ? generated.payload.settingRu : null,
+                    scenarioTextRu: typeof generated.payload.scenarioTextRu === 'string' ? generated.payload.scenarioTextRu : null,
+                    yourRoleRu: typeof generated.payload.yourRoleRu === 'string' ? generated.payload.yourRoleRu : null,
+                    steps: rawSteps,
+                  })}
+                  toolsMode="scene"
+                  title="Слова под этот сценарий"
+                  subtitle="ИИ соберёт около 20 слов под название, цель и шаги. Список сохранится в словарь."
+                />
+              )}
+              {saveError && <p className={createStyles.err}>{saveError}</p>}
+            </>
           )}
           <LevelRequiredNotice open={levelNotice} message="Сначала выберите уровень" />
         </div>
-      </>
-    );
-  };
+        <aside className={createStyles.side} aria-label="Бриф сцены">
+          <article className={createStyles.brief}>
+            <header className={createStyles.bHead}>
+              <div className={createStyles.bChips}>
+                <span className={`${createStyles.bChip} ${createStyles.bLv}`}>{level || 'Уровень'}</span>
+                {place.trim() && (
+                  <span className={createStyles.bChip}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2"/></svg>
+                    {place.trim()}
+                  </span>
+                )}
+              </div>
+              <h3 className={createStyles.bTitle}>{editTitle.trim() || topic.trim() || 'Без названия'}</h3>
+              <p className={createStyles.bSit}>{situationText || 'Опишите ситуацию своими словами.'}</p>
+              <div className={createStyles.bWho}>
+                <div className={createStyles.bPerson}>
+                  <span className={`${createStyles.bAv} ${createStyles.bMe}`}>В</span>
+                  <span><b>Вы</b><small>{youCaption}</small></span>
+                </div>
+                <span className={createStyles.bSwap} aria-hidden>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 8h12l-3-3M17 16H5l3 3"/></svg>
+                </span>
+                <div className={`${createStyles.bPerson} ${createStyles.bPersonOther}`}>
+                  <span className={`${createStyles.bAv} ${createStyles.bOther}`}>{partnerName.charAt(0)}</span>
+                  <span><b>{partnerName}</b><small>{partnerName === 'Собеседник' ? 'Персонаж' : 'Собеседник'}</small></span>
+                </div>
+              </div>
+              {roleNote && <p className={createStyles.bNote}>{roleNote}</p>}
+            </header>
+            <section className={createStyles.bGoal}>
+              <h4 className={createStyles.bH}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>
+                Цель сцены
+              </h4>
+              <p>{goalStructured.trim() || 'Цель появится на следующем шаге'}</p>
+            </section>
+            {visibleSteps.length > 0 && (
+              <section className={createStyles.bSec}>
+                <h4 className={createStyles.bH}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>
+                  Шаги · {visibleSteps.length}
+                </h4>
+                <ol className={createStyles.bSteps}>
+                  {visibleSteps.map((step, index) => {
+                    const phrases = stepPhrases(step, index);
+                    return (
+                      <li key={step.id || index}>
+                        {phrases.length > 0 ? (
+                          <details name="brief-step" open={index === 0}>
+                            <summary>
+                              <span className={createStyles.bNum}>{index + 1}</span>
+                              <span className={createStyles.bStepText}>{step.titleRu}</span>
+                              <span className={createStyles.bHint}>
+                                Как сказать
+                                <svg className={createStyles.bChev} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M6 9l6 6 6-6"/></svg>
+                              </span>
+                            </summary>
+                            <div className={createStyles.bPhrases}>
+                              {phrases.map((phrase) => (
+                                <div key={phrase.en} className={createStyles.bPhrase}>
+                                  <b>{phrase.en}</b>
+                                  {phrase.ru && <small>{phrase.ru}</small>}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ) : (
+                          <span className={createStyles.bPlain}>
+                            <span className={createStyles.bNum}>{index + 1}</span>
+                            {step.titleRu}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+            )}
+            {(tipItems.length > 0 || visibleSteps.length > 0) && (
+              <footer className={createStyles.bScore}>
+                <h4 className={createStyles.bH}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8L3.5 9.7l5.9-.9z"/></svg>
+                  Как набрать максимум баллов
+                </h4>
+                {visibleSteps.length > 0 && (
+                  <div className={createStyles.bPips} aria-hidden>
+                    {visibleSteps.map((step, index) => <i key={step.id || index} />)}
+                  </div>
+                )}
+                {tipItems.length > 0 && (
+                  <ul className={createStyles.bTips}>
+                    {tipItems.map((tip) => (
+                      <li key={tip}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                        <span>{tip}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </footer>
+            )}
+          </article>
+        </aside>
+      </div>
+      <footer className={createStyles.actions}>
+        <button
+          type="button"
+          className={createStyles.btn}
+          onClick={() => {
+            if (shownStep === 1) onClose();
+            else setCreateStep((shownStep - 1) as 1 | 2);
+          }}
+        >
+          Назад
+        </button>
+        {shownStep === 3 && (
+          <button
+            type="button"
+            className={createStyles.btn}
+            onClick={() => { setGenerated(null); setEditTitle(''); setCreateStep(1); setReadyScenario(null); }}
+          >
+            Отмена
+          </button>
+        )}
+        <button
+          type="button"
+          className={createStyles.primary}
+          disabled={saveLoading || generateLoading}
+          onClick={() => {
+            if (shownStep === 1) handleContinue();
+            else if (shownStep === 2) setCreateStep(3);
+            else if (readyScenario) beginPrepared(readyScenario);
+            else handleSaveNew();
+          }}
+        >
+          {primaryLabel}
+        </button>
+      </footer>
+    </div>
+  );
+};
 
   const truncate = (str: string | undefined, max: number) => {
     if (!str || !str.trim()) return '';
@@ -2126,77 +2170,12 @@ export function PersonalScenariosUI({
     );
   };
 
-  const renderBriefing = () => {
-    if (!briefingScenario) return null;
-    return (
-      <div
-        className="roleplay-briefing"
-        style={{
-          padding: '1rem 1.25rem',
-          overflowY: 'auto',
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-        }}
-      >
-        <BriefingView
-          scenario={toRoleplayScenario(briefingScenario)}
-          onBack={() => setBriefingScenario(null)}
-          onStart={handleStartFromBriefing}
-          initialPlayMode={parsePlayMode(initialPlayMode)}
-          practiceWords={practiceWords}
-        />
-      </div>
-    );
-  };
-
   return (
     <>
-      <div role="dialog" aria-modal="true" aria-label={briefingScenario ? 'Перед началом диалога' : 'Личные сценарии'} style={modalOverlayStyle} onClick={briefingScenario ? undefined : onClose}>
-        <div style={{ ...modalPanelStyle, maxWidth: briefingScenario ? 8100 : 14400, maxHeight: '94vh' }} onClick={(e) => e.stopPropagation()}>
-          {briefingScenario ? (
-            <>
-              <div
-                style={{
-                  padding: '1rem 1.25rem',
-                  borderBottom: '1px solid var(--sidebar-border)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <span style={{ fontSize: '0.9375rem', color: 'var(--sidebar-text)', opacity: 0.75 }}>
-                  Перед началом диалога
-                </span>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="Закрыть"
-                  style={{
-                    padding: '0.35rem',
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--sidebar-text)',
-                    opacity: 0.7,
-                    cursor: 'pointer',
-                    borderRadius: 8,
-                  }}
-                >
-                  <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <line x1={18} y1={6} x2={6} y2={18} />
-                    <line x1={6} y1={6} x2={18} y2={18} />
-                  </svg>
-                </button>
-              </div>
-              {renderBriefing()}
-            </>
-          ) : (
-            <>
-              {view === 'create' && renderCreateForm()}
-              {view === 'my' && renderMyList()}
-            </>
-          )}
+      <div role="dialog" aria-modal="true" aria-label="Личные сценарии" style={modalOverlayStyle} onClick={onClose}>
+        <div style={{ ...modalPanelStyle, maxWidth: view === 'my' ? 960 : 1120, height: 'min(860px, calc(100vh - 48px))', maxHeight: '94vh' }} onClick={(e) => e.stopPropagation()}>
+          {view === 'create' && renderCreateForm()}
+          {view === 'my' && renderMyList()}
         </div>
       </div>
       {renderEditModal()}

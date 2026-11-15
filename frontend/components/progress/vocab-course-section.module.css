@@ -37,6 +37,49 @@
   color: var(--text-muted);
 }
 
+.embedded {
+  margin: 0;
+  padding: 0;
+}
+
+.embedded .head {
+  display: none;
+}
+
+.subtabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 16px;
+  border-bottom: 1px solid var(--stroke, rgba(255, 255, 255, 0.12));
+  font-family: Onest, "Segoe UI", system-ui, sans-serif;
+}
+
+.subtabs button {
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 10px 16px;
+  color: var(--text-muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.subtabs button[aria-selected="true"] {
+  color: var(--text-primary);
+}
+
+.subtabs button[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent, #7ad7a7);
+}
+
 .wrap :global(section) {
   margin-left: 0;
   margin-right: 0;

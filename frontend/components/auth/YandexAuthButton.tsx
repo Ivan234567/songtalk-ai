@@ -2,13 +2,17 @@
 
 import { useState } from 'react'
 import { startYandexAuth } from '@/lib/yandex-auth'
+import { commitRegistrationPromo } from '@/lib/referral'
+import { rememberAuthNext } from '@/lib/auth-next'
 import styles from '../../app/auth/auth.module.css'
 
 type YandexAuthButtonProps = {
   disabled?: boolean
+  returnTo?: string
+  referralCode?: string
 }
 
-export default function YandexAuthButton({ disabled = false }: YandexAuthButtonProps) {
+export default function YandexAuthButton({ disabled = false, returnTo, referralCode }: YandexAuthButtonProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -16,6 +20,25 @@ export default function YandexAuthButton({ disabled = false }: YandexAuthButtonP
     setError(null)
     setLoading(true)
     try {
+      if (referralCode !== undefined) {
+        const promoResult = await commitRegistrationPromo(referralCode)
+        if (promoResult === 'invalid') {
+          setLoading(false)
+          setError('Промокод: латиница, цифры, дефис или подчёркивание, от 2 до 32 символов.')
+          return
+        }
+        if (promoResult === 'rejected') {
+          setLoading(false)
+          setError('Такой промокод не найден или партнёр сейчас не принимает приглашения.')
+          return
+        }
+        if (promoResult === 'failed') {
+          setLoading(false)
+          setError('Промокод не удалось проверить. Вход через Яндекс не начат.')
+          return
+        }
+      }
+      if (returnTo) rememberAuthNext(returnTo)
       await startYandexAuth()
     } catch {
       setLoading(false)

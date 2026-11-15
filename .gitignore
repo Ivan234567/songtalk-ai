@@ -49,6 +49,9 @@ logs/
 # Whisper uploads
 backend/uploads/
 
+# Local copy of Chinese launch votes
+backend/data/
+
 # TTS output
 backend/tts_output/
 

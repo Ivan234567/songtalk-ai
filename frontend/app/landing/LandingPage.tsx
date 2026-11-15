@@ -20,6 +20,7 @@ import { FooterSection } from './FooterSection';
 import { LandingPreviewLangProvider, LangPreviewToggle, useLandingPreviewLang } from './preview-lang';
 import styles from './landing.module.css';
 import { clearBackendToken } from '@/lib/backend-jwt';
+import { cabinetLabel, cabinetPath, useAccountHome, type AccountHome } from '@/lib/account-home';
 
 const HIGHLIGHT_DURATION_MS = 2600;
 
@@ -141,7 +142,7 @@ function getEmailHue(email: string): number {
   return Math.abs(hash) % 360;
 }
 
-function UserAvatar({ email }: { email: string }) {
+function UserAvatar({ email, home }: { email: string; home: AccountHome }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const menuId = 'landing-user-menu';
@@ -201,15 +202,17 @@ function UserAvatar({ email }: { email: string }) {
             <p className={styles.avatarDropdownName}>{displayName}</p>
             <p className={styles.avatarDropdownEmail}>{email}</p>
           </div>
-          <Link
-            ref={firstItemRef}
-            href="/dashboard"
-            className={styles.avatarDropdownItem}
-            onClick={() => setOpen(false)}
-            role="menuitem"
-          >
-            Перейти в дашборд
-          </Link>
+          {home === 'user' || home === 'partner' ? (
+            <Link
+              ref={firstItemRef}
+              href={cabinetPath(home)}
+              className={styles.avatarDropdownItem}
+              onClick={() => setOpen(false)}
+              role="menuitem"
+            >
+              {cabinetLabel(home)}
+            </Link>
+          ) : null}
           <button
             className={styles.avatarDropdownItem}
             onClick={async () => {
@@ -242,6 +245,7 @@ function LandingPageInner() {
   const [highlightSection, setHighlightSection] = useState<string | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const home = useAccountHome();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -278,8 +282,11 @@ function LandingPageInner() {
           <Logo />
         </Link>
         <nav className={styles.nav} aria-label="Основная навигация">
+          <Link href="/partner" className={styles.navBtnOutline}>
+            Партнёрам
+          </Link>
           {userEmail ? (
-            <UserAvatar email={userEmail} />
+            <UserAvatar email={userEmail} home={home} />
           ) : (
             <>
               <Link href="/auth/login" className={styles.navBtnOutline}>
@@ -308,8 +315,15 @@ function LandingPageInner() {
             Выбери язык превью — меняются слайды, отзывы, FAQ и акцентный цвет.
           </p>
           <div className={styles.heroCtaWrap}>
-            <Link href={userEmail ? '/dashboard' : '/auth/register'} className={styles.heroCtaGlass}>
-              {userEmail ? 'Перейти в дашборд' : 'Начать'}
+            <Link
+              href={!userEmail ? '/auth/register' : home === 'partner' ? '/partner' : '/dashboard'}
+              className={styles.heroCtaGlass}
+              aria-disabled={Boolean(userEmail) && home === 'loading'}
+              onClick={(event) => {
+                if (userEmail && home === 'loading') event.preventDefault()
+              }}
+            >
+              {!userEmail ? 'Начать' : home === 'partner' ? 'Партнёрский кабинет' : home === 'loading' ? 'Кабинет' : 'Перейти в дашборд'}
               <span className={styles.heroCtaArrow} aria-hidden>→</span>
             </Link>
           </div>

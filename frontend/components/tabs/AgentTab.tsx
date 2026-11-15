@@ -4,10 +4,11 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { extractChineseCharacters } from '@/lib/vocabulary';
-import { buildMessagesForAgentChat, withPlayMode, type RoleplayScenario } from '@/lib/roleplay';
-import { getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt';
+import { buildMessagesForAgentChat, type RoleplayScenario } from '@/lib/roleplay';
+import { getStoredBackendToken } from '@/lib/backend-jwt';
+import { exchangeSupabaseToken } from '@/lib/exchange-backend-token';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
-import { PersonalScenariosUI } from '@/components/roleplay/PersonalScenariosUI';
+import { PersonalScenariosUI, type ScenarioCreateSeed } from '@/components/roleplay/PersonalScenariosUI';
 import { ZhScenariosErrorBoundary, ZhScenariosUI } from '@/components/roleplay/ZhScenariosUI';
 import { ZhVoiceTasksUI } from '@/components/voice-tasks/ZhVoiceTasksUI';
 import { ZhVoiceTaskResult } from '@/components/voice-tasks/ZhVoiceTaskResult';
@@ -36,6 +37,18 @@ import {
   mapPracticeProgressPayload,
   type PracticeProgressItem,
 } from '@/components/agent/PracticeWordsProgress';
+
+function practiceWordSpoken(
+  senseId: string,
+  progress: PracticeProgressItem[] | null,
+  results: Array<{ senseId: string; verdict: string }> | null,
+): boolean {
+  const heard = progress?.find((item) => item.senseId === senseId);
+  if (heard && (heard.status === 'used' || heard.verdict === 'hinted')) return true;
+  return (results || []).some((item) => (
+    item.senseId === senseId && (item.verdict === 'produced' || item.verdict === 'hinted')
+  ));
+}
 import {
   buildDebatePracticeContext,
   buildModePracticeContext,
@@ -58,7 +71,7 @@ import {
   isZhCriteriaScores,
   type ZhSpeakingAssessmentResult,
 } from '@/lib/zh-speaking-assessment';
-import { nextPlayMode, parsePlayMode, playModeSpeechRate, scaffoldPolicy, type PlayMode } from '@/lib/play-mode';
+import { parsePlayMode, playModeSpeechRate, scaffoldPolicy, type PlayMode } from '@/lib/play-mode';
 import {
   fallbackRewindForks,
   normalizeZhListenReview,
@@ -69,7 +82,7 @@ import {
   type ZhListenReview,
   type ZhRewindFork,
 } from '@/lib/zh-play-mode';
-import { upsertZhScenarioMemory, withZhPlayMode } from '@/lib/zh-scenarios';
+import { upsertZhScenarioMemory } from '@/lib/zh-scenarios';
 import { isUserScenarioId } from '@/lib/user-scenarios';
 import { TranslatorPanel } from '@/components/TranslatorPanel';
 import { DebateSetupUI } from '@/components/debate/DebateSetupUI';
@@ -78,13 +91,13 @@ import {
   getDebateMicroGoalsByDifficulty,
   getDebateStepsByDifficulty,
   normalizeDebateTopic,
+  type DebateCefrLevel,
   type DebateSettings,
   type DebateMicroGoalId,
   type DebateTopicMeta,
   type DebateWhoStarts,
 } from '@/lib/debate';
 import { DEBATE_TOPICS, getTopicById } from '@/lib/debate-topics';
-import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { useTtsVoice } from '@/context/TtsVoiceContext';
 import { hasRoleplaySystemCatalog } from '@/lib/learning-language';
@@ -215,53 +228,6 @@ type SbiBlock = {
 };
 type FreestyleSlangMode = 'off' | 'light' | 'heavy';
 type FreestyleProfanityIntensity = 'light' | 'medium' | 'hard';
-type FreestyleVoiceId = 'calm' | 'friend' | 'raw';
-
-const FREESTYLE_VOICES: Array<{
-  id: FreestyleVoiceId;
-  title: string;
-  sample: string;
-  slang: FreestyleSlangMode;
-  allowProfanity: boolean;
-  aiMayUseProfanity: boolean;
-  intensity: FreestyleProfanityIntensity;
-  formality: number;
-  directness: number;
-}> = [
-  {
-    id: 'calm',
-    title: 'Спокойный',
-    sample: 'That\u2019s annoying. Want to talk about it?',
-    slang: 'off',
-    allowProfanity: false,
-    aiMayUseProfanity: false,
-    intensity: 'light',
-    formality: 50,
-    directness: 50,
-  },
-  {
-    id: 'friend',
-    title: 'Как друг',
-    sample: 'Yeah, that\u2019s kinda annoying. What happened?',
-    slang: 'light',
-    allowProfanity: false,
-    aiMayUseProfanity: false,
-    intensity: 'light',
-    formality: 30,
-    directness: 55,
-  },
-  {
-    id: 'raw',
-    title: 'Может материться',
-    sample: 'Oh for fuck\u2019s sake. What happened?',
-    slang: 'heavy',
-    allowProfanity: true,
-    aiMayUseProfanity: true,
-    intensity: 'medium',
-    formality: 25,
-    directness: 70,
-  },
-];
 type FreestyleHintMode = 'natural' | 'simpler' | 'more_native';
 type EnglishCefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 
@@ -329,6 +295,23 @@ function AgentOrbFace() {
   );
 }
 
+function practiceSeedFromScenario(scenario: RoleplayScenario, level: EnglishCefrLevel): ScenarioCreateSeed {
+  const { id: _id, ...payload } = scenario;
+  return {
+    level,
+    prompt: scenario.scenarioTextRu || scenario.description || scenario.title,
+    topic: scenario.title,
+    place: scenario.settingRu || scenario.setting || '',
+    role: scenario.yourRoleRu || scenario.yourRole || '',
+    goal: scenario.goalRu || scenario.goal || '',
+    generated: {
+      title: scenario.title,
+      level,
+      payload: payload as Record<string, unknown>,
+    },
+  };
+}
+
 export function AgentTab() {
   const { learningLanguage } = useLearningLanguage();
   const { ttsVoice } = useTtsVoice();
@@ -358,6 +341,7 @@ export function AgentTab() {
   const [zhRevealedMeta, setZhRevealedMeta] = useState<Record<number, boolean>>({});
   const [agentMode, setAgentMode] = useState<'chat' | 'roleplay' | 'debate'>('chat');
   const [practiceHome, setPracticeHome] = useState<PracticeHomeStage | 'today' | 'scenes' | 'topics' | null>('today');
+  const [freeChooser, setFreeChooser] = useState(false);
   const [sceneSeed, setSceneSeed] = useState<string | null>(null);
   const [debateTopicId, setDebateTopicId] = useState<string | null>(null);
   const [chatPracticeSenses, setChatPracticeSenses] = useState<ChatPracticeSense[]>([]);
@@ -370,6 +354,15 @@ export function AgentTab() {
   const [chatPracticeAssessError, setChatPracticeAssessError] = useState<string | null>(null);
   const [chatPracticeStoreWarning, setChatPracticeStoreWarning] = useState<string | null>(null);
   const [chatPracticeResults, setChatPracticeResults] = useState<Array<{ senseId: string; verdict: string; intervalDays?: number | null }> | null>(null);
+  const [retentionPractice, setRetentionPractice] = useState(false);
+  const [transferPractice, setTransferPractice] = useState(false);
+  const [retentionResults, setRetentionResults] = useState<Array<{
+    senseId: string;
+    headword: string;
+    confirmed: boolean;
+    intervalDays: number | null;
+    checkedAt: string | null;
+  }> | null>(null);
   const [chatPracticeProgress, setChatPracticeProgress] = useState<PracticeProgressItem[] | null>(null);
   const [chatPracticeProgressCounts, setChatPracticeProgressCounts] = useState<{ used: number; total: number } | null>(null);
   const chatPracticeAssessRequestRef = useRef<string | null>(null);
@@ -421,6 +414,10 @@ export function AgentTab() {
 
   /** Id сценария, только что скопированного из каталога в «Мои» — для подсветки в списке */
   const [highlightedUserScenarioId, setHighlightedUserScenarioId] = useState<string | null>(null);
+  const [catalogThemeId, setCatalogThemeId] = useState<string | null>(null);
+  const [scenarioCreateSeed, setScenarioCreateSeed] = useState<ScenarioCreateSeed | null>(null);
+  const [practiceScenePrep, setPracticeScenePrep] = useState(false);
+  const [pinnedMenuScenario, setPinnedMenuScenario] = useState<RoleplayScenario | null>(null);
   const [progressDeepLink, setProgressDeepLink] = useState<{ id: string; playMode: PlayMode } | null>(null);
   const progressTargetHandledRef = useRef<string | null>(null);
   const [translatorOpen, setTranslatorOpen] = useState(false);
@@ -509,6 +506,7 @@ export function AgentTab() {
   const [debateUserPosition, setDebateUserPosition] = useState<'for' | 'against' | null>(null);
   const [debateAIPosition, setDebateAIPosition] = useState<'for' | 'against' | null>(null);
   const [debateDifficulty, setDebateDifficulty] = useState<'easy' | 'medium' | 'hard' | null>(null);
+  const [debateCefrLevel, setDebateCefrLevel] = useState<DebateCefrLevel | null>(null);
   const [debateMicroGoals, setDebateMicroGoals] = useState<DebateMicroGoalId[]>([]);
   const [debateWhoStarts, setDebateWhoStarts] = useState<DebateWhoStarts>('ai');
   const [debateSettings, setDebateSettings] = useState<DebateSettings>({
@@ -573,23 +571,6 @@ export function AgentTab() {
     }),
     [freestyleToneFormality, freestyleToneDirectness]
   );
-  const freestyleVoice = useMemo(
-    () =>
-      FREESTYLE_VOICES.find(
-        (voice) =>
-          voice.slang === freestyleSlangMode &&
-          voice.allowProfanity === freestyleAllowProfanity &&
-          voice.aiMayUseProfanity === freestyleAiMayUseProfanity &&
-          voice.intensity === freestyleProfanityIntensity &&
-          voice.formality === freestyleToneFormality &&
-          voice.directness === freestyleToneDirectness
-      ) ?? FREESTYLE_VOICES[0],
-    [freestyleSlangMode, freestyleAllowProfanity, freestyleAiMayUseProfanity, freestyleProfanityIntensity, freestyleToneFormality, freestyleToneDirectness]
-  );
-  const freestyleSettingsSummary = useMemo(
-    () => `Речь: ${freestyleVoice.title}`,
-    [freestyleVoice]
-  );
   /** Payload китайских настроек для отправки на бэкенд */
   const chineseSettingsPayload = useMemo(
     () => ({
@@ -615,10 +596,10 @@ export function AgentTab() {
       return selectedScenario.level || selectedScenario.difficulty || 'B1';
     }
     if (agentMode === 'debate') {
-      return debateDifficulty || 'medium';
+      return debateCefrLevel || debateDifficulty || 'medium';
     }
     return englishCefrLevel;
-  }, [agentMode, selectedScenario, debateDifficulty, englishCefrLevel]);
+  }, [agentMode, selectedScenario, debateCefrLevel, debateDifficulty, englishCefrLevel]);
   const englishLevelEditable = agentMode === 'chat';
   const practiceWordsSession = useMemo<PracticeWordsSession | null>(() => {
     if (!token) return null;
@@ -757,14 +738,27 @@ export function AgentTab() {
       setChatPracticeListId(listId);
       chatPracticeListIdRef.current = listId;
     }
-    if (repick) {
+    setFreeChooser(modeParam === 'free');
+    const retention = modeParam === 'retention';
+    const transfer = modeParam === 'transfer';
+    setRetentionPractice(retention);
+    retentionPracticeRef.current = retention;
+    setTransferPractice(transfer);
+    transferPracticeRef.current = transfer;
+    if (repick || modeParam === 'free') {
       setChatPracticeSenses([]);
     }
 
     setWordsGateMode(null);
     setScenarioModalOpen(false);
     setDebateSetupOpen(false);
-    setPracticeHome('today');
+    if (retention || transfer) {
+      setAgentMode('chat');
+      setPracticeHome(null);
+      setFreeChooser(false);
+    } else {
+      setPracticeHome('today');
+    }
 
     const next = new URLSearchParams(searchParams.toString());
     next.delete('from');
@@ -849,9 +843,12 @@ export function AgentTab() {
   const messagesRef = useRef<Message[]>([]);
   const sessionsRef = useRef<Session[]>([]);
   const chatPracticeSensesRef = useRef<ChatPracticeSense[]>([]);
+  const retentionPracticeRef = useRef(false);
+  const transferPracticeRef = useRef(false);
   const chatDialogueSessionIdRef = useRef<string | null>(null);
   const chatPracticeAgentSessionIdRef = useRef<string | null>(null);
   const chatPracticeRequestIdRef = useRef<string | null>(null);
+  const practiceMenuReturnRef = useRef<'today' | 'scenes' | null>(null);
   const chatPracticeLevelRef = useRef('B1');
   const practiceSensesLinkRef = useRef<string | null>(null);
 
@@ -867,6 +864,28 @@ export function AgentTab() {
     next.set('tab', 'agent');
     router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
     if (!ids.length || chatPracticeLocked) return;
+    if (searchParams.get('mode') === 'retention' || searchParams.get('mode') === 'transfer' || retentionPracticeRef.current || transferPracticeRef.current) {
+      const hidden = ids.map((senseId) => ({ senseId, headword: '', glossRu: '', movesSchedule: false }));
+      const requestId = crypto.randomUUID();
+      const transfer = searchParams.get('mode') === 'transfer' || transferPracticeRef.current;
+      retentionPracticeRef.current = !transfer;
+      transferPracticeRef.current = transfer;
+      setRetentionPractice(!transfer);
+      setTransferPractice(transfer);
+      chatPracticeSensesRef.current = hidden;
+      chatPracticeRequestIdRef.current = requestId;
+      setChatPracticeSenses(hidden);
+      setChatPracticeRequestId(requestId);
+      setChatPracticeLocked(false);
+      setChatPracticeRevealed({});
+      setRetentionResults(null);
+      setChatInviteDismissed(true);
+      setChatSoftAskDone(true);
+      setAgentMode('chat');
+      setPracticeHome(null);
+      setFreeChooser(false);
+      return;
+    }
     void (async () => {
       try {
         const resp = await fetch(`${getApiUrl()}/api/vocabulary/srs/senses`, {
@@ -951,18 +970,8 @@ export function AgentTab() {
         if (mounted && sessionData.session?.user?.id) setUserId(sessionData.session.user.id);
         let t = getBackendToken();
         if (!t && sessionData.session?.access_token) {
-          const resp = await fetch(`${getApiUrl()}/api/auth/exchange-supabase-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ supabase_token: sessionData.session.access_token }),
-          });
-          if (resp.ok) {
-            const json = await resp.json().catch(() => ({}));
-            if (json?.token) {
-              storeBackendToken(json.token);
-              t = json.token;
-            }
-          }
+          const exchanged = await exchangeSupabaseToken(sessionData.session.access_token);
+          if (exchanged) t = exchanged;
         }
         if (mounted) setToken(t);
       } catch {
@@ -1268,6 +1277,11 @@ export function AgentTab() {
     setChatPracticeAssessError(null);
     setChatPracticeStoreWarning(null);
     setChatPracticeResults(null);
+    setRetentionResults(null);
+    setRetentionPractice(false);
+    retentionPracticeRef.current = false;
+    setTransferPractice(false);
+    transferPracticeRef.current = false;
     setChatPracticeProgress(null);
     setChatPracticeProgressCounts(null);
     chatPracticeAssessRequestRef.current = null;
@@ -1303,7 +1317,11 @@ export function AgentTab() {
 
   useEffect(() => {
     if (!token || !chatDialogueSessionId || !chatPracticeAgentSessionId || !chatPracticeLocked) return;
-    const mode = agentMode === 'roleplay' ? 'roleplay' : agentMode === 'debate' ? 'debate' : 'chat';
+    const mode = transferPracticeRef.current
+      ? 'transfer'
+      : retentionPracticeRef.current
+        ? 'retention'
+        : agentMode === 'roleplay' ? 'roleplay' : agentMode === 'debate' ? 'debate' : 'chat';
     let cancelled = false;
     fetch(
       `${getApiUrl()}/api/vocabulary/srs/dialogue/${encodeURIComponent(chatDialogueSessionId)}/progress?agent_session_id=${encodeURIComponent(chatPracticeAgentSessionId)}&mode=${encodeURIComponent(mode)}`,
@@ -1351,6 +1369,42 @@ export function AgentTab() {
         const verdict = typeof item?.verdict === 'string' ? item.verdict : '';
         return senseId && verdict ? [{ senseId, verdict, intervalDays: item.interval_days }] : [];
       }));
+      if (Array.isArray(data?.transfer)) {
+        setRetentionResults(data.transfer.flatMap((item: {
+          sense_id?: string;
+          headword?: string;
+          transfer_confirmed?: boolean;
+        }) => {
+          const senseId = typeof item?.sense_id === 'string' ? item.sense_id : '';
+          if (!senseId) return [];
+          return [{
+            senseId,
+            headword: typeof item.headword === 'string' ? item.headword : '',
+            confirmed: item.transfer_confirmed === true,
+            intervalDays: null,
+            checkedAt: null,
+          }];
+        }));
+      }
+      if (Array.isArray(data?.retention)) {
+        setRetentionResults(data.retention.flatMap((item: {
+          sense_id?: string;
+          headword?: string;
+          confirmed?: boolean;
+          interval_days?: number | null;
+          checked_at?: string | null;
+        }) => {
+          const senseId = typeof item?.sense_id === 'string' ? item.sense_id : '';
+          if (!senseId) return [];
+          return [{
+            senseId,
+            headword: typeof item.headword === 'string' ? item.headword : '',
+            confirmed: item.confirmed === true,
+            intervalDays: Number.isInteger(item.interval_days) ? item.interval_days : null,
+            checkedAt: typeof item.checked_at === 'string' ? item.checked_at : null,
+          }];
+        }));
+      }
     } catch {
       setChatPracticeAssessError('Не удалось разобрать слова');
     } finally {
@@ -1570,7 +1624,14 @@ export function AgentTab() {
         let practiceDialogueId: string | null = null;
         const practiceRoleplay = agentMode === 'roleplay' && Boolean(selectedScenario);
         const practiceDebate = agentMode === 'debate' && debateStarted;
-        if ((agentMode === 'chat' || practiceRoleplay || practiceDebate) && !selectedVoiceTaskRef.current && chatPracticeSensesRef.current.length > 0) {
+        const practiceCount = chatPracticeSensesRef.current.length;
+        if ((agentMode === 'chat' || practiceRoleplay || practiceDebate) && !selectedVoiceTaskRef.current && practiceCount > 0 && (practiceCount < 2 || practiceCount > 5)) {
+          setMessages((prev) => prev.slice(0, -1));
+          setError('В диалоге от 2 до 5 слов');
+          setState('idle');
+          return;
+        }
+        if ((agentMode === 'chat' || practiceRoleplay || practiceDebate) && !selectedVoiceTaskRef.current && practiceCount > 0) {
           const existingDialogueId = chatDialogueSessionIdRef.current;
           const existingAgentId = chatPracticeAgentSessionIdRef.current;
           if (existingDialogueId && existingAgentId) {
@@ -1629,7 +1690,11 @@ export function AgentTab() {
             const requestId = chatPracticeRequestIdRef.current || crypto.randomUUID();
             chatPracticeRequestIdRef.current = requestId;
             setChatPracticeRequestId(requestId);
-            const practiceMode = practiceRoleplay ? 'roleplay' : practiceDebate ? 'debate' : 'chat';
+            const practiceMode = transferPracticeRef.current
+              ? 'transfer'
+              : retentionPracticeRef.current
+                ? 'retention'
+                : practiceRoleplay ? 'roleplay' : practiceDebate ? 'debate' : 'chat';
             let dialogueData: { dialogue_session_id?: string; agent_session_id?: string; targets?: Array<{ sense_id?: string; position?: number; headword?: string; gloss_ru?: string; moves_schedule?: boolean }> } = {};
             try {
               const dialogueResp = await fetch(`${getApiUrl()}/api/vocabulary/srs/dialogue`, {
@@ -1638,7 +1703,7 @@ export function AgentTab() {
                 body: JSON.stringify(withLearningLanguageBody({
                   agent_session_id: agentSessionId,
                   sense_ids: chatPracticeSensesRef.current.map((sense) => sense.senseId),
-                  ...(practiceMode === 'chat' ? {} : {
+                  ...(practiceMode === 'chat' || practiceMode === 'retention' || practiceMode === 'transfer' ? {} : {
                     early_sense_ids: chatPracticeSensesRef.current
                       .filter((sense) => sense.movesSchedule === false)
                       .map((sense) => sense.senseId),
@@ -1664,11 +1729,12 @@ export function AgentTab() {
                   const senseId = typeof target.sense_id === 'string' ? target.sense_id : '';
                   const headword = typeof target.headword === 'string' ? target.headword.trim() : '';
                   const glossRu = typeof target.gloss_ru === 'string' ? target.gloss_ru.trim() : '';
-                  return senseId && headword && glossRu ? [{
+                  const hidden = practiceMode === 'retention' || practiceMode === 'transfer';
+                  return senseId && (hidden || (headword && glossRu)) ? [{
                     senseId,
-                    headword,
-                    glossRu,
-                    movesSchedule: target.moves_schedule !== false,
+                    headword: hidden ? '' : headword,
+                    glossRu: hidden ? '' : glossRu,
+                    movesSchedule: hidden ? false : target.moves_schedule !== false,
                   }] : [];
                 })
               : [];
@@ -1726,7 +1792,8 @@ export function AgentTab() {
                       debateDifficulty || undefined,
                       debateMicroGoals,
                       debateWhoStarts,
-                      debateSettings
+                      debateSettings,
+                      debateCefrLevel
                     ),
                   },
                   ...history,
@@ -1784,7 +1851,11 @@ export function AgentTab() {
                   ? { practice_mode: 'roleplay' }
                   : agentMode === 'debate'
                     ? { practice_mode: 'debate' }
-                    : {}),
+                    : transferPracticeRef.current
+                      ? { practice_mode: 'transfer' }
+                      : retentionPracticeRef.current
+                        ? { practice_mode: 'retention' }
+                        : {}),
                 ...(agentMode === 'roleplay' && selectedScenario
                   ? {
                     practice_scene: (() => {
@@ -2085,6 +2156,7 @@ export function AgentTab() {
       debateUserPosition,
       debateAIPosition,
       debateDifficulty,
+      debateCefrLevel,
       debateMicroGoals,
       debateStepsForCurrentDifficulty,
       debateWhoStarts,
@@ -2116,7 +2188,8 @@ export function AgentTab() {
       microGoalIds: DebateMicroGoalId[] = [],
       topicMeta?: DebateTopicMeta,
       whoStarts: DebateWhoStarts = 'ai',
-      settings?: DebateSettings
+      settings?: DebateSettings,
+      cefrLevel?: DebateCefrLevel | null
     ) => {
       if (!token) return;
       setMessages([]);
@@ -2134,7 +2207,7 @@ export function AgentTab() {
             messages: [
               {
                 role: 'system',
-                content: buildDebateSystemPrompt(normalizeDebateTopic(topic), userPosition, aiPosition, difficulty, microGoalIds, whoStarts, settings),
+                content: buildDebateSystemPrompt(normalizeDebateTopic(topic), userPosition, aiPosition, difficulty, microGoalIds, whoStarts, settings, cefrLevel),
               },
               {
                 role: 'user',
@@ -2360,6 +2433,7 @@ export function AgentTab() {
         setDebateUserPosition(null);
         setDebateAIPosition(null);
         setDebateDifficulty(null);
+        setDebateCefrLevel(null);
         setDebateMicroGoals([]);
         setDebateSettings({ slangMode: 'off', allowProfanity: false, aiMayUseProfanity: false, profanityIntensity: 'light' });
         setDebateCurrentSessionId(null);
@@ -2387,6 +2461,7 @@ export function AgentTab() {
         setDebateUserPosition(null);
         setDebateAIPosition(null);
         setDebateDifficulty(null);
+        setDebateCefrLevel(null);
         setDebateMicroGoals([]);
         setDebateSettings({ slangMode: 'off', allowProfanity: false, aiMayUseProfanity: false, profanityIntensity: 'light' });
         setDebateCurrentSessionId(null);
@@ -2773,6 +2848,14 @@ export function AgentTab() {
       setDebateUserPosition(userPosition);
       setDebateAIPosition(userPosition === 'for' ? 'against' : 'for');
       setDebateDifficulty(difficulty || 'medium');
+      {
+        const picked = topicMeta?.cefrLevel;
+        setDebateCefrLevel(
+          picked === 'A1' || picked === 'A2' || picked === 'B1' || picked === 'B2' || picked === 'C1'
+            ? picked
+            : null
+        );
+      }
       setDebateMicroGoals(microGoalIds);
       setDebateWhoStarts(whoStarts || 'ai');
       setDebateSettings({
@@ -2830,7 +2913,8 @@ export function AgentTab() {
           validationStatus: debateTopicValidationStatus,
         },
         debateWhoStarts,
-        debateSettings
+        debateSettings,
+        debateCefrLevel
       );
     }
     // Сбрасываем флаг при сбросе дебата
@@ -2844,6 +2928,7 @@ export function AgentTab() {
     debateUserPosition,
     debateAIPosition,
     debateDifficulty,
+    debateCefrLevel,
     debateMicroGoals,
     debateTopicSource,
     debateTopicOriginal,
@@ -2859,6 +2944,11 @@ export function AgentTab() {
 
   const handleSelectScenario = useCallback(
     (scenario: RoleplayScenario) => {
+      practiceMenuReturnRef.current = null;
+      setPracticeScenePrep(false);
+      setScenarioCreateSeed(null);
+      setCatalogThemeId(null);
+      setPinnedMenuScenario(null);
       setGoalReached(false);
       setAssessmentResult(null);
       setSavedSessionAssessment(null);
@@ -2918,38 +3008,6 @@ export function AgentTab() {
     requestScenarioFirstMessage(selectedScenario);
   }, [selectedScenario, requestScenarioFirstMessage]);
 
-  const handleNextPlayMode = useCallback(() => {
-    if (!selectedScenario) return;
-    const next = nextPlayMode(parsePlayMode(selectedScenario.playMode));
-    if (!next) return;
-    const nextScenario =
-      selectedScenario.language === 'zh'
-        ? withZhPlayMode(selectedScenario, next)
-        : withPlayMode(selectedScenario, next);
-    setGoalReached(false);
-    setAssessmentResult(null);
-    setSavedSessionAssessment(null);
-    setAssessmentError(null);
-    setRoleplayFeedback(null);
-    setRoleplayUsefulPhrase(null);
-    setRoleplayUsefulPhraseRu(null);
-    setRoleplayUsefulPhrasePinyin(null);
-    setRoleplayStyleNote(null);
-    setRoleplayRewriteNeutral(null);
-    setRoleplayFeedbackError(null);
-    setMessages([]);
-    setCurrentSessionId(null);
-    setRoleplayCompletedStepIds([]);
-    setZhSaidMustSay([]);
-    setZhVocabPeeked(false);
-    setZhRewindUsed(false);
-    setZhRewindHint(null);
-    setZhListenReview(null);
-    setZhRevealedMeta({});
-    setSelectedScenario(nextScenario);
-    requestScenarioFirstMessage(nextScenario);
-  }, [selectedScenario, requestScenarioFirstMessage]);
-
   const handleZhRewind = useCallback(
     (fork: ZhRewindFork) => {
       if (zhRewindUsed) return;
@@ -3004,10 +3062,96 @@ export function AgentTab() {
     setProgressDeepLink(null);
     progressTargetHandledRef.current = null;
     setHighlightedUserScenarioId(null);
+    setCatalogThemeId(null);
+    setPinnedMenuScenario(null);
+    setPracticeScenePrep(false);
+    setScenarioCreateSeed(null);
+    const back = practiceMenuReturnRef.current;
+    practiceMenuReturnRef.current = null;
     if (!selectedScenario) {
-      setPracticeHome(chatPracticeSensesRef.current.length ? 'scenes' : 'roleplay');
+      if (back) setPracticeHome(back);
+      else setPracticeHome(chatPracticeSensesRef.current.length ? 'scenes' : 'roleplay');
     }
   }, [selectedScenario]);
+
+  const openSceneMenu = useCallback((scenario: RoleplayScenario, senses: ChatPracticeSense[], listId: string) => {
+    const requestId = crypto.randomUUID();
+    chatPracticeSensesRef.current = senses;
+    chatPracticeListIdRef.current = listId;
+    chatPracticeRequestIdRef.current = requestId;
+    setChatPracticeSenses(senses);
+    setChatPracticeListId(listId);
+    setPreferredPracticeListId(listId);
+    setChatPracticeRequestId(requestId);
+    setChatPracticeLocked(false);
+    setChatInviteDismissed(true);
+    practiceMenuReturnRef.current = 'today';
+    setPracticeScenePrep(true);
+    setProgressDeepLink(null);
+    setAgentMode('roleplay');
+    setScenarioModalOpen(true);
+    setHighlightedUserScenarioId(null);
+    setCatalogThemeId(null);
+    setPinnedMenuScenario(null);
+    setPracticeHome(null);
+    if (learningLanguage === 'zh') {
+      setScenarioCreateSeed(null);
+      setScenarioView('my');
+      return;
+    }
+    setScenarioCreateSeed(practiceSeedFromScenario(scenario, englishCefrLevel));
+    setScenarioView('create');
+  }, [learningLanguage, englishCefrLevel]);
+
+  const openScenarioDraft = useCallback((seed: ScenarioCreateSeed, senses: ChatPracticeSense[], listId: string) => {
+    const requestId = crypto.randomUUID();
+    chatPracticeSensesRef.current = senses;
+    chatPracticeListIdRef.current = listId;
+    chatPracticeRequestIdRef.current = requestId;
+    setChatPracticeSenses(senses);
+    setChatPracticeListId(listId);
+    setPreferredPracticeListId(listId);
+    setChatPracticeRequestId(requestId);
+    setChatPracticeLocked(false);
+    setChatInviteDismissed(true);
+    practiceMenuReturnRef.current = 'today';
+    setPracticeScenePrep(true);
+    setScenarioCreateSeed(seed);
+    setProgressDeepLink(null);
+    setAgentMode('roleplay');
+    setScenarioModalOpen(true);
+    setHighlightedUserScenarioId(null);
+    setScenarioView('create');
+    setCatalogThemeId(null);
+    setPinnedMenuScenario(null);
+    setPracticeHome(null);
+  }, []);
+
+  const preparePracticeScene = useCallback((scenario: RoleplayScenario) => {
+    setScenarioCreateSeed(practiceSeedFromScenario(scenario, englishCefrLevel));
+    setScenarioView('create');
+    setCatalogThemeId(null);
+    setPinnedMenuScenario(null);
+    setProgressDeepLink(null);
+  }, [englishCefrLevel]);
+
+  const dismissSceneMenu = useCallback(() => {
+    setProgressDeepLink(null);
+    progressTargetHandledRef.current = null;
+    setHighlightedUserScenarioId(null);
+    setCatalogThemeId(null);
+    setPinnedMenuScenario(null);
+    setPracticeScenePrep(false);
+    setScenarioCreateSeed(null);
+    const back = practiceMenuReturnRef.current;
+    practiceMenuReturnRef.current = null;
+    if (selectedScenario) return;
+    if (back) {
+      setPracticeHome(back);
+      return;
+    }
+    handleModeChange('chat');
+  }, [handleModeChange, selectedScenario]);
 
   /** Сброс (выход) из диалога досрочно — возврат в свободный диалог */
   const handleExitDialogue = useCallback(() => {
@@ -3543,7 +3687,7 @@ export function AgentTab() {
           last_assistant_message: lastAssistant.content.trim(),
           history: historyPayload,
           goal_ru: DEBATE_GOAL_RU,
-          level: debateDifficulty ?? 'medium',
+          level: debateCefrLevel || debateDifficulty || 'medium',
           topic: debateTopic,
           user_position: debateUserPosition,
           ai_position: debateAIPosition,
@@ -3566,7 +3710,7 @@ export function AgentTab() {
         };
       } else if (agentMode === 'chat') {
         bodyPayload = {
-          mode: 'chat',
+          mode: transferPracticeRef.current ? 'transfer' : retentionPracticeRef.current ? 'retention' : 'chat',
           last_assistant_message: lastAssistant.content.trim(),
           history: historyPayload,
           level: englishCefrLevel,
@@ -3612,6 +3756,7 @@ export function AgentTab() {
     debateUserPosition,
     debateAIPosition,
     debateDifficulty,
+    debateCefrLevel,
     debateStepsForCurrentDifficulty,
     debateCompletedStepIds,
     freestyleSettingsPayload,
@@ -3625,21 +3770,6 @@ export function AgentTab() {
     englishCefrLevel,
     zhSaidMustSay,
   ]);
-
-  const applyFreestyleVoice = useCallback(async (id: FreestyleVoiceId) => {
-    const voice = FREESTYLE_VOICES.find((item) => item.id === id);
-    if (!voice) return;
-    if (voice.allowProfanity) {
-      const confirmed = await ensureAdultConfirmation('freestyle_voice_raw');
-      if (!confirmed) return;
-    }
-    setFreestyleSlangMode(voice.slang);
-    setFreestyleAllowProfanity(voice.allowProfanity);
-    setFreestyleAiMayUseProfanity(voice.aiMayUseProfanity);
-    setFreestyleProfanityIntensity(voice.intensity);
-    setFreestyleToneFormality(voice.formality);
-    setFreestyleToneDirectness(voice.directness);
-  }, []);
 
   const clearAssessment = useCallback(() => {
     setAssessmentResult(null);
@@ -4514,6 +4644,7 @@ export function AgentTab() {
                   onClearScenario={() => setSelectedScenario(null)}
                   scenarioModalOpen={scenarioModalOpen}
                   onScenarioModalOpenChange={setScenarioModalOpen}
+                  onScenarioDismiss={dismissSceneMenu}
                   scenarioView={scenarioView}
                   onScenarioViewChange={handleScenarioViewChange}
                   onCopyToMineSuccess={(id) => {
@@ -4522,6 +4653,9 @@ export function AgentTab() {
                   }}
                   initialScenarioId={learningLanguage !== 'zh' ? progressDeepLink?.id : undefined}
                   initialPlayMode={learningLanguage !== 'zh' ? progressDeepLink?.playMode : undefined}
+                  initialExpandedThemeId={catalogThemeId}
+                  pinnedScenario={pinnedMenuScenario}
+                  onPracticePrepare={practiceScenePrep ? preparePracticeScene : undefined}
                   debateSetupOpen={debateSetupOpen}
                   onDebateSetupOpenChange={setDebateSetupOpen}
                   debateView={debateView}
@@ -4560,6 +4694,7 @@ export function AgentTab() {
                     initialPlayMode={progressDeepLink?.playMode}
                     practiceWords={practiceWordsSession}
                     seedPrompt={sceneSeed}
+                    initialSeed={scenarioCreateSeed}
                     onSelectScenario={(s) => {
                       handleSelectScenario(s);
                       setScenarioModalOpen(false);
@@ -4715,9 +4850,7 @@ export function AgentTab() {
                         </span>
                         {!englishSettingsOpen && (
                           <span style={{ fontSize: '0.6875rem', opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {agentMode === 'chat'
-                              ? `${englishSettingsSummary}${freestyleSettingsSummary ? ` · ${freestyleSettingsSummary}` : ''}`
-                              : englishSettingsSummary}
+                            {englishSettingsSummary}
                           </span>
                         )}
                       </div>
@@ -4749,7 +4882,40 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
-                      {token && !selectedVoiceTask && agentMode === 'chat' && (
+                      {token && !selectedVoiceTask && agentMode === 'chat' && (retentionPractice || transferPractice) && (
+                        <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16, padding: '0.9rem 1rem', background: 'rgba(255,255,255,0.04)' }}>
+                          <p style={{ margin: 0, color: '#e8ecf4' }}>{transferPractice ? 'Проверка переноса' : 'Проверка удержания'}</p>
+                          <p style={{ margin: '0.35rem 0 0', color: 'rgba(232,236,244,0.72)', fontSize: 14, lineHeight: 1.45 }}>
+                            Слова и переводы скрыты. Говори так, как сказал бы в обычном разговоре.
+                          </p>
+                          {retentionResults ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                              {retentionResults.map((item) => (
+                                <p key={item.senseId} style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>
+                                  <b>{item.headword || 'Смысл'}</b>
+                                  {' · '}
+                                  {transferPractice
+                                    ? (item.confirmed ? 'Перенос подтверждён' : 'Перенос не подтверждён')
+                                    : item.confirmed && item.intervalDays != null
+                                      ? `Удерживает, ${item.intervalDays} ${item.intervalDays % 10 === 1 && item.intervalDays % 100 !== 11 ? 'сутки' : 'суток'}${item.checkedAt ? `. Проверено ${new Date(item.checkedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short' })}` : ''}.`
+                                      : 'Удержание пока не подтверждено'}
+                                </p>
+                              ))}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => { void assessChatPractice(); }}
+                              disabled={!chatPracticeLocked || chatPracticeAssessing || !messages.some((message) => message.role === 'user')}
+                              style={{ marginTop: 12, border: 0, borderRadius: 999, padding: '0.55rem 0.9rem', background: '#7ad7a7', color: '#0c2418', fontWeight: 700 }}
+                            >
+                              {chatPracticeAssessing ? 'Смотрим разговор…' : 'Завершить проверку'}
+                            </button>
+                          )}
+                          {chatPracticeAssessError ? <p style={{ margin: '0.6rem 0 0', color: '#ffb4b4', fontSize: 13 }}>{chatPracticeAssessError}</p> : null}
+                        </div>
+                      )}
+                      {token && !selectedVoiceTask && agentMode === 'chat' && !retentionPractice && !transferPractice && (
                         <ChatPracticeWords
                           apiUrl={getApiUrl()}
                           token={token}
@@ -4794,8 +4960,7 @@ export function AgentTab() {
                             practiceWords={chatPracticeSenses.map((sense) => ({
                               id: sense.senseId,
                               headword: sense.headword,
-                              used: (chatPracticeProgress || []).some((item) => item.senseId === sense.senseId && item.status === 'used')
-                                || (chatPracticeResults || []).some((item) => item.senseId === sense.senseId && item.verdict === 'produced'),
+                              used: practiceWordSpoken(sense.senseId, chatPracticeProgress, chatPracticeResults),
                             }))}
                           />
                           {(selectedScenario.goalRu || selectedScenario.goal) && (
@@ -4894,8 +5059,7 @@ export function AgentTab() {
                               {debateSidebarStepsOpen && chatPracticeSenses.length > 0 && (
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: '0.55rem' }}>
                                   {chatPracticeSenses.map((sense) => {
-                                    const used = (chatPracticeProgress || []).some((item) => item.senseId === sense.senseId && item.status === 'used')
-                                      || (chatPracticeResults || []).some((item) => item.senseId === sense.senseId && item.verdict === 'produced');
+                                    const used = practiceWordSpoken(sense.senseId, chatPracticeProgress, chatPracticeResults);
                                     return (
                                       <span
                                         key={sense.senseId}
@@ -5233,45 +5397,6 @@ export function AgentTab() {
                             : 'ИИ будет указывать на все ошибки и предлагать правильные варианты'}
                         </p>
                       </div>
-                      {agentMode === 'chat' && (
-                        <>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                          <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                            Как говорит бот
-                          </span>
-                          {FREESTYLE_VOICES.map((voice) => {
-                            const isActive = freestyleVoice.id === voice.id;
-                            return (
-                              <button
-                                key={voice.id}
-                                type="button"
-                                onClick={() => applyFreestyleVoice(voice.id)}
-                                style={{
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  alignItems: 'flex-start',
-                                  gap: 2,
-                                  textAlign: 'left',
-                                  border: isActive ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid var(--sidebar-border)',
-                                  background: isActive ? 'rgba(99, 102, 241, 0.12)' : 'var(--sidebar-bg)',
-                                  color: 'var(--sidebar-text)',
-                                  borderRadius: 10,
-                                  padding: '0.5rem 0.65rem',
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                <span style={{ fontSize: '0.8125rem', fontWeight: isActive ? 700 : 600, color: isActive ? 'rgb(129, 140, 248)' : 'var(--sidebar-text)' }}>
-                                  {voice.title}
-                                </span>
-                                <span style={{ fontSize: '0.75rem', opacity: 0.7, lineHeight: 1.35 }}>
-                                  {voice.sample}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        </>
-                      )}
                       </div>
                   </div>
                 </div>
@@ -5366,7 +5491,40 @@ export function AgentTab() {
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0 0.875rem 1.5rem' }}>
-                      {token && !selectedVoiceTask && agentMode === 'chat' && (
+                      {token && !selectedVoiceTask && agentMode === 'chat' && (retentionPractice || transferPractice) && (
+                        <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16, padding: '0.9rem 1rem', background: 'rgba(255,255,255,0.04)' }}>
+                          <p style={{ margin: 0, color: '#e8ecf4' }}>{transferPractice ? 'Проверка переноса' : 'Проверка удержания'}</p>
+                          <p style={{ margin: '0.35rem 0 0', color: 'rgba(232,236,244,0.72)', fontSize: 14, lineHeight: 1.45 }}>
+                            Слова и переводы скрыты. Говори так, как сказал бы в обычном разговоре.
+                          </p>
+                          {retentionResults ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                              {retentionResults.map((item) => (
+                                <p key={item.senseId} style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>
+                                  <b>{item.headword || 'Смысл'}</b>
+                                  {' · '}
+                                  {transferPractice
+                                    ? (item.confirmed ? 'Перенос подтверждён' : 'Перенос не подтверждён')
+                                    : item.confirmed && item.intervalDays != null
+                                      ? `Удерживает, ${item.intervalDays} ${item.intervalDays % 10 === 1 && item.intervalDays % 100 !== 11 ? 'сутки' : 'суток'}${item.checkedAt ? `. Проверено ${new Date(item.checkedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short' })}` : ''}.`
+                                      : 'Удержание пока не подтверждено'}
+                                </p>
+                              ))}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => { void assessChatPractice(); }}
+                              disabled={!chatPracticeLocked || chatPracticeAssessing || !messages.some((message) => message.role === 'user')}
+                              style={{ marginTop: 12, border: 0, borderRadius: 999, padding: '0.55rem 0.9rem', background: '#7ad7a7', color: '#0c2418', fontWeight: 700 }}
+                            >
+                              {chatPracticeAssessing ? 'Смотрим разговор…' : 'Завершить проверку'}
+                            </button>
+                          )}
+                          {chatPracticeAssessError ? <p style={{ margin: '0.6rem 0 0', color: '#ffb4b4', fontSize: 13 }}>{chatPracticeAssessError}</p> : null}
+                        </div>
+                      )}
+                      {token && !selectedVoiceTask && agentMode === 'chat' && !retentionPractice && !transferPractice && (
                         <ChatPracticeWords
                           apiUrl={getApiUrl()}
                           token={token}
@@ -5499,8 +5657,7 @@ export function AgentTab() {
                           practiceWords={chatPracticeSenses.map((sense) => ({
                             id: sense.senseId,
                             headword: sense.headword,
-                            used: (chatPracticeProgress || []).some((item) => item.senseId === sense.senseId && item.status === 'used')
-                              || (chatPracticeResults || []).some((item) => item.senseId === sense.senseId && item.verdict === 'produced'),
+                            used: practiceWordSpoken(sense.senseId, chatPracticeProgress, chatPracticeResults),
                           }))}
                         />
                       )}
@@ -5902,6 +6059,8 @@ export function AgentTab() {
             token={token}
             learningLanguage={learningLanguage}
             situationalOnly={learningLanguage === 'zh'}
+            initialMode={freeChooser ? 'free' : 'words'}
+            onChooserOpen={setFreeChooser}
             listId={preferredPracticeListId || chatPracticeListId}
             initialSenseIds={chatPracticeSenses.map((sense) => sense.senseId)}
             level={learningLanguage === 'zh' ? `HSK${chineseHskLevel}` : englishCefrLevel}
@@ -5918,6 +6077,16 @@ export function AgentTab() {
               setChatInviteDismissed(true);
               handleSelectScenario(scenario);
               setPracticeHome(null);
+            }}
+            onOpenSceneMenu={openSceneMenu}
+            onOpenScenarioDraft={openScenarioDraft}
+            onBrowseScenes={(senses, listId) => {
+              chatPracticeSensesRef.current = senses;
+              chatPracticeListIdRef.current = listId;
+              setChatPracticeSenses(senses);
+              setChatPracticeListId(listId);
+              setPreferredPracticeListId(listId);
+              setPracticeHome('scenes');
             }}
             onBeginDebate={(topic, senses, listId) => {
               const requestId = crypto.randomUUID();
@@ -5938,8 +6107,17 @@ export function AgentTab() {
               setPracticeHome(null);
             }}
             onFreeChat={() => {
+              setFreeChooser(false);
               clearChatPractice();
               openPracticeMode('chat');
+            }}
+            onFreeRoleplay={() => {
+              clearChatPractice();
+              openPracticeMode('roleplay');
+            }}
+            onFreeDebate={() => {
+              clearChatPractice();
+              openPracticeMode('debate');
             }}
           />
         ) : showPracticeHome && (practiceHome === 'scenes' || practiceHome === 'topics') && (preferredPracticeListId || chatPracticeListId) ? (
@@ -5952,6 +6130,12 @@ export function AgentTab() {
             words={chatPracticeSenses}
             onBack={() => setPracticeHome('today')}
             onPickScenario={(scenario) => {
+              const senses = chatPracticeSensesRef.current;
+              const pickedListId = chatPracticeListIdRef.current || preferredPracticeListId || chatPracticeListId;
+              if (senses.length >= 2 && pickedListId) {
+                openSceneMenu(scenario, senses, pickedListId);
+                return;
+              }
               handleSelectScenario(scenario);
               setPracticeHome(null);
             }}
@@ -6301,13 +6485,11 @@ export function AgentTab() {
                 review={zhListenReview}
                 rewindUsed={zhRewindUsed}
                 onRewind={handleZhRewind}
-                onNextMode={nextPlayMode(parsePlayMode(selectedScenario?.playMode)) ? handleNextPlayMode : undefined}
               />
             )}
             {learningLanguage !== 'zh' && selectedScenario && (
               <EnAfterSessionReview
                 playMode={parsePlayMode(selectedScenario.playMode)}
-                onNextMode={nextPlayMode(parsePlayMode(selectedScenario.playMode)) ? handleNextPlayMode : undefined}
               />
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', paddingTop: '0.15rem' }}>
@@ -6600,6 +6782,7 @@ export function AgentTab() {
                   setDebateUserPosition(null);
                   setDebateAIPosition(null);
                   setDebateDifficulty(null);
+                  setDebateCefrLevel(null);
                   setDebateMicroGoals([]);
                   setDebateSettings({ slangMode: 'off', allowProfanity: false, aiMayUseProfanity: false, profanityIntensity: 'light' });
                   setMessages([]);
@@ -7166,13 +7349,11 @@ export function AgentTab() {
                   review={zhListenReview}
                   rewindUsed={zhRewindUsed}
                   onRewind={handleZhRewind}
-                  onNextMode={nextPlayMode(parsePlayMode(selectedScenario.playMode)) ? handleNextPlayMode : undefined}
                 />
               )}
               {learningLanguage !== 'zh' && selectedScenario && (
                 <EnAfterSessionReview
                   playMode={parsePlayMode(selectedScenario.playMode)}
-                  onNextMode={nextPlayMode(parsePlayMode(selectedScenario.playMode)) ? handleNextPlayMode : undefined}
                 />
               )}
             </div>

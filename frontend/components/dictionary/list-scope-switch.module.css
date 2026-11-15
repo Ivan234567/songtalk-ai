@@ -1,0 +1,33 @@
+.switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 16px;
+}
+
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0.42rem 0.8rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.option[aria-pressed='true'] {
+  color: #042f2e;
+  background: #5eead4;
+  border-color: transparent;
+}
+
+.count {
+  min-width: 1.1rem;
+  font-size: 0.75rem;
+  font-weight: 750;
+  opacity: 0.72;
+}

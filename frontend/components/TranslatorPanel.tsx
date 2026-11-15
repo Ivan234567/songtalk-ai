@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getStoredBackendToken, isBackendTokenExpired, storeBackendToken } from '@/lib/backend-jwt';
+import { getStoredBackendToken, isBackendTokenExpired } from '@/lib/backend-jwt';
+import { exchangeSupabaseToken } from '@/lib/exchange-backend-token';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { containsChinese, containsEnglish, extractChineseCharacters } from '@/lib/vocabulary';
 import {
@@ -690,18 +691,8 @@ export function TranslatorPanel({ onClose, token, userId, getApiUrl, onInsuffici
     try {
       const supabaseToken = await getSupabaseToken();
       if (supabaseToken) {
-        const resp = await fetch(`${getApiUrl()}/api/auth/exchange-supabase-token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ supabase_token: supabaseToken }),
-        });
-        if (resp.ok) {
-          const json = await resp.json().catch(() => ({}));
-          if (json?.token) {
-            storeBackendToken(json.token);
-            return json.token;
-          }
-        }
+        const exchanged = await exchangeSupabaseToken(supabaseToken);
+        if (exchanged) return exchanged;
       }
     } catch (e) {
       console.error('Error exchanging token:', e);

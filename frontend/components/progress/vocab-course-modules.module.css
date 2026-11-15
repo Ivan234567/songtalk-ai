@@ -353,9 +353,9 @@
 }
 
 .primary {
-  border: 1px solid color-mix(in srgb, var(--accent, #60a5fa) 40%, transparent);
-  background: color-mix(in srgb, var(--accent, #3b82f6) 16%, transparent);
-  color: color-mix(in srgb, var(--accent, #93c5fd) 90%, white);
+  border: 0;
+  background: var(--accent, #7ad7a7);
+  color: #0c2418;
 }
 
 .secondary {

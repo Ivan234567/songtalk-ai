@@ -32,6 +32,70 @@ import {
 } from '@/lib/user-debate-topics';
 import { ensureAdultConfirmation } from '@/lib/adultConfirmation';
 import { hasEnglishSystemCatalog, type LearningLanguage } from '@/lib/learning-language';
+import { bindPracticeList } from '@/lib/practice-list-binding';
+import createStyles from './debate-setup.module.css';
+
+type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
+
+const CEFR_LEVELS: CefrLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1'];
+
+const CEFR_INFO: Record<CefrLevel, { name: string; text: string; sample: string }> = {
+  A1: { name: 'Начальный', text: 'Простые фразы: «мне нравится», «потому что». Один короткий аргумент.', sample: 'I like remote work. It is easy.' },
+  A2: { name: 'Элементарный', text: 'Короткие предложения с because, but, so. Мнение и одна причина.', sample: 'I think remote work is good because I save time.' },
+  B1: { name: 'Средний', text: 'Связная речь: мнение, причина, пример. Простые уступки.', sample: "I believe remote work is better, because you don't lose time on the way to the office." },
+  B2: { name: 'Выше среднего', text: 'Развёрнутые аргументы, контраргументы и связки между идеями.', sample: 'Although the office helps teamwork, remote work gives people more freedom and focus.' },
+  C1: { name: 'Продвинутый', text: 'Гибкая, точная речь. Нюансы, оговорки и сложные конструкции.', sample: 'While face-to-face contact has value, the productivity gains of remote work are hard to ignore.' },
+};
+
+const TOPIC_IDEAS = [
+  'Remote work is better than office work',
+  'School uniforms should be mandatory',
+  'Social media does more harm than good',
+];
+
+function cefrToDifficulty(level: CefrLevel): DebateDifficulty {
+  if (level === 'A1' || level === 'A2') return 'easy';
+  if (level === 'C1') return 'hard';
+  return 'medium';
+}
+
+const DEBATE_CEFR_MEMORY_KEY = 'speakeasy.debateCefr.v1';
+
+function debateTopicMemoryKey(topic: string): string {
+  return topic.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function recallDebateCefr(topic: string): CefrLevel | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(DEBATE_CEFR_MEMORY_KEY);
+    const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+    const level = parsed?.[debateTopicMemoryKey(topic)];
+    return level === 'A1' || level === 'A2' || level === 'B1' || level === 'B2' || level === 'C1' ? level : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberDebateCefr(topic: string, level: CefrLevel) {
+  if (typeof window === 'undefined') return;
+  const key = debateTopicMemoryKey(topic);
+  if (!key) return;
+  try {
+    const raw = window.localStorage.getItem(DEBATE_CEFR_MEMORY_KEY);
+    const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+    parsed[key] = level;
+    window.localStorage.setItem(DEBATE_CEFR_MEMORY_KEY, JSON.stringify(parsed));
+  } catch {
+    // Память уровня не должна мешать старту дебата.
+  }
+}
+
+function difficultyToCefr(level: DebateDifficulty): CefrLevel {
+  if (level === 'easy') return 'A2';
+  if (level === 'hard') return 'C1';
+  return 'B1';
+}
 
 type DebateSetupUIProps = {
   learningLanguage: LearningLanguage;
@@ -210,6 +274,7 @@ export function DebateSetupUI({
   const [selectedTopic, setSelectedTopic] = useState<DebateTopic | null>(null);
   const [customTopic, setCustomTopic] = useState('');
   const [customDifficulty, setCustomDifficulty] = useState<DebateDifficulty>('medium');
+  const [cefr, setCefr] = useState<CefrLevel>('B1');
   const [topicPrepareError, setTopicPrepareError] = useState<string | null>(null);
   const [topicPreparing, setTopicPreparing] = useState(false);
   const [topicAiBusy, setTopicAiBusy] = useState<'create' | 'edit' | null>(null);
@@ -378,6 +443,7 @@ export function DebateSetupUI({
     if (topicView !== 'my' || !selectedMyTopic) return;
     const diff = selectedMyTopic.difficulty ?? 'medium';
     setCustomDifficulty(diff);
+    setCefr(recallDebateCefr(selectedMyTopic.topic) || difficultyToCefr(diff));
     setUserPosition(selectedMyTopic.user_position ?? null);
     setWhoStarts(selectedMyTopic.who_starts ?? 'ai');
     setDebateSlangMode(selectedMyTopic.slang_mode ?? 'off');
@@ -724,6 +790,14 @@ export function DebateSetupUI({
         if (saved) {
           await loadMyTopics();
           setSelectedMyTopicId(saved.id);
+          if (practiceWords?.listId) {
+            await bindPracticeList(practiceWords.listId, {
+              kind: 'debate',
+              ref: saved.id,
+              origin: 'user',
+              label: saved.topic || topic,
+            }).catch(() => { /* тема уже в «Мои темы» */ });
+          }
         }
       } catch (err) {
         console.error('Failed to save custom debate topic:', err);
@@ -755,12 +829,16 @@ export function DebateSetupUI({
       setTopicPrepareError(prepared.warnings[0]);
     }
 
+    const rememberedCefr = topicView === 'my' ? recallDebateCefr(topic) : null;
+    const chosenCefr = topicView === 'custom' ? cefr : rememberedCefr;
+    if (topicView === 'custom' && chosenCefr) rememberDebateCefr(topic, chosenCefr);
     const topicMeta: DebateTopicMeta = {
       source,
       original: source === 'catalog' ? topic : customTopic,
       normalized: prepared.normalizedTopic,
       language: prepared.language,
       validationStatus: prepared.status,
+      ...(chosenCefr ? { cefrLevel: chosenCefr } : {}),
     };
     const difficulty = source === 'catalog' ? selectedTopic?.difficulty ?? 'medium' : customDifficulty;
     onStart(topicMeta.normalized, userPosition, difficulty, selectedMicroGoalIds, topicMeta, whoStarts, debateSettingsForStart);
@@ -1236,180 +1314,47 @@ export function DebateSetupUI({
     <>
     <div style={modalOverlayStyle} onClick={onClose ? (e) => e.target === e.currentTarget && onClose() : undefined}>
       <div
-        style={{
-          ...modalPanelStyle,
-          maxWidth: setupStep === 'topic' ? 'calc(100vw - 4rem)' : modalPanelStyle.maxWidth,
-        }}
+        className={createStyles.modal}
+        style={topicView === 'list' && setupStep === 'topic' ? { maxWidth: 'calc(100vw - 4rem)' } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          style={{
-            padding: '1rem 1.25rem',
-            borderBottom: '1px solid var(--sidebar-border)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-          }}
-        >
+        <div className={createStyles.head}>
           {setupStep === 'position' && (
-            <button
-              type="button"
-              onClick={() => setSetupStep('topic')}
-              style={{ ...btnSecondary, padding: '0.4rem' }}
-              aria-label="Назад"
-            >
-              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
+            <button type="button" className={createStyles.ib} onClick={() => setSetupStep('topic')} aria-label="Назад">
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
             </button>
           )}
-          {(topicView === 'custom' || topicView === 'my') && setupStep === 'topic' && (
-            <div
-              style={{
-                display: 'inline-flex',
-                padding: 4,
-                borderRadius: 14,
-                background: 'var(--sidebar-hover)',
-                border: '1px solid var(--sidebar-border)',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.04)',
-                marginRight: 'auto',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => { setTopicView('custom'); setSetupStep('topic'); }}
-                style={{
-                  padding: '0.5rem 0.875rem',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: topicView === 'custom' ? 'var(--sidebar-active)' : 'transparent',
-                  color: 'var(--sidebar-text)',
-                  fontSize: '0.8125rem',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'background 0.2s ease, box-shadow 0.2s ease',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  boxShadow: topicView === 'custom' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-                }}
-              >
-                Создать
-              </button>
-              <button
-                type="button"
-                onClick={() => { setTopicView('my'); setSetupStep('topic'); }}
-                style={{
-                  padding: '0.5rem 0.875rem',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: topicView === 'my' ? 'var(--sidebar-active)' : 'transparent',
-                  color: 'var(--sidebar-text)',
-                  fontSize: '0.8125rem',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'background 0.2s ease, box-shadow 0.2s ease',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  boxShadow: topicView === 'my' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-                }}
-              >
-                Мои темы
-              </button>
+          {topicView !== 'list' && (
+            <div className={createStyles.tabs} role="tablist">
+              <button type="button" role="tab" aria-selected={topicView === 'custom'} onClick={() => { setTopicView('custom'); setSetupStep('topic'); }}>Создать</button>
+              <button type="button" role="tab" aria-selected={topicView === 'my'} onClick={() => { setTopicView('my'); setSetupStep('topic'); }}>Мои темы</button>
             </div>
           )}
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: 'var(--sidebar-text)', flex: 1 }}>
-            {topicView === 'list' ? 'Каталог дебатов' : topicView === 'custom' ? 'Создать тему дебата' : 'Мои темы'}
+          <h2 className={createStyles.title}>
+            {topicView === 'list' ? 'Каталог дебатов' : topicView === 'custom' ? 'Новый дебат' : 'Мои темы'}
           </h2>
           {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть"
-              style={{ ...btnSecondary, padding: '0.4rem' }}
-            >
-              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <line x1={18} y1={6} x2={6} y2={18} />
-                <line x1={6} y1={6} x2={18} y2={18} />
-              </svg>
+            <button type="button" className={createStyles.ib} onClick={onClose} aria-label="Закрыть">
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6L6 18M6 6l12 12" /></svg>
             </button>
           )}
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '1.25rem 1.5rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '1.25rem',
-          }}
-        >
-          {/* Step indicator — shows for all views */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '0.5rem 0',
-              borderBottom: '1px solid var(--sidebar-border)',
-              flexShrink: 0,
-            }}
-          >
-            {([
-              { num: 1, step: 'topic' as SetupStep, label: topicView === 'list' ? 'Выберите тему' : topicView === 'my' ? 'Мои темы' : 'Опишите тему' },
-              { num: 2, step: 'position' as SetupStep, label: 'Настройки' },
-            ]).map(({ num, step, label }) => {
-              const isActive = setupStep === step;
-              const isPast = setupStep === 'position' && step === 'topic';
-              return (
-                <React.Fragment key={num}>
-                  <button
-                    type="button"
-                    disabled={!isPast}
-                    onClick={isPast ? () => setSetupStep(step) : undefined}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      fontSize: '0.9375rem',
-                      fontWeight: isActive ? 600 : 500,
-                      color: 'var(--sidebar-text)',
-                      opacity: isActive ? 1 : isPast ? 0.8 : 0.5,
-                      border: 'none',
-                      background: 'transparent',
-                      padding: 0,
-                      cursor: isPast ? 'pointer' : 'default',
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: '50%',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        background: isActive ? 'rgba(99, 102, 241, 0.2)' : isPast ? 'rgba(34, 197, 94, 0.15)' : 'var(--sidebar-hover)',
-                        border: isActive ? '2px solid rgba(99, 102, 241, 0.6)' : isPast ? '2px solid rgba(34, 197, 94, 0.5)' : '1px solid var(--sidebar-border)',
-                        color: isActive ? 'rgba(99, 102, 241, 1)' : isPast ? 'rgba(34, 197, 94, 1)' : 'var(--sidebar-text)',
-                        fontSize: '0.875rem',
-                      }}
-                    >
-                      {isPast ? (
-                        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                      ) : num}
-                    </span>
-                    <span>{label}</span>
-                  </button>
-                  {num < 2 && (
-                    <div style={{ flex: 1, minWidth: 20, height: 1, margin: '0 0.5rem', background: isPast ? 'rgba(34, 197, 94, 0.4)' : 'var(--sidebar-border)', opacity: 0.5, transition: 'background 0.3s ease' }} aria-hidden />
-                  )}
-                </React.Fragment>
-              );
-            })}
+        <div className={createStyles.body}>
+          <div className={createStyles.steps}>
+            <button
+              type="button"
+              className={`${createStyles.step} ${setupStep === 'topic' ? createStyles.on : createStyles.past}`}
+              onClick={setupStep === 'position' ? () => setSetupStep('topic') : undefined}
+            >
+              <span className={createStyles.n}>{setupStep === 'position' ? '✓' : '1'}</span>
+              {topicView === 'list' ? 'Выберите тему' : topicView === 'my' ? 'Мои темы' : 'Опишите тему'}
+            </button>
+            <span className={`${createStyles.ln} ${setupStep === 'position' ? createStyles.done : ''}`} />
+            <button type="button" className={`${createStyles.step} ${setupStep === 'position' ? createStyles.on : ''}`} disabled>
+              <span className={createStyles.n}>2</span>
+              Настройки
+            </button>
           </div>
 
           {setupStep === 'topic' ? (
@@ -1721,139 +1666,82 @@ export function DebateSetupUI({
                 </>
               ) : topicView === 'custom' || (topicView === 'list' && !showSystemCatalog) ? (
                 <>
-                  <p style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: 'var(--sidebar-text)', opacity: 0.85, lineHeight: 1.45, flexShrink: 0 }}>
-                    Введите тему на английском или русском. Выберите сложность, чтобы настроить уровень аргументов.
+                  <p className={createStyles.lead}>
+                    Сформулируйте тему на английском или русском и выберите уровень. По нему подберётся сложность аргументов.
                   </p>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem 1.25rem', maxWidth: 900, alignContent: 'start' }}>
-                    {/* Topic section — full width */}
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <span style={createSectionTitle}>Тема дебата</span>
-                      <label style={{ display: 'block' }}>
-                        <span style={{ ...createLabelStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                          Формулировка темы
-                          <FieldAiButton
-                            label={customTopic.trim() ? 'Другая тема' : 'Придумать тему'}
-                            busy={topicAiBusy === 'create'}
-                            disabled={topicAiBusy !== null}
-                            onClick={() => handleTopicAi('create')}
-                          />
-                        </span>
-                        <textarea
-                          value={customTopic}
-                          onChange={(e) => {
-                            setCustomTopic(e.target.value);
-                            setTopicPrepareError(null);
-                            if (topicAiWhere === 'create') setTopicAiError(null);
-                          }}
-                          placeholder="Например: Remote work is better than office work"
-                          rows={3}
-                          style={{ ...inputStyle, ...fieldFlashStyle(topicFlash === 'create'), resize: 'vertical', fontFamily: 'inherit', minHeight: 80 }}
+                  <div className={createStyles.grid}>
+                    <div>
+                      <div className={createStyles.k}>
+                        Тема дебата
+                        <FieldAiButton
+                          label={customTopic.trim() ? 'Другая тема' : 'Придумать тему'}
+                          text={customTopic.trim() ? 'Другая тема' : 'Придумать'}
+                          busy={topicAiBusy === 'create'}
+                          disabled={topicAiBusy !== null}
+                          onClick={() => handleTopicAi('create')}
                         />
-                      </label>
-                      <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                        <p
-                          style={{
-                            margin: 0,
-                            fontSize: '0.8125rem',
-                            color:
-                              (topicAiWhere === 'create' && topicAiError) || customTopicValidation.status === 'rejected'
-                                ? 'rgb(239, 68, 68)'
-                                : customTopicValidation.status === 'warning'
-                                  ? 'rgb(202, 138, 4)'
-                                  : 'var(--sidebar-text)',
-                            opacity: customTopicValidation.status === 'valid' ? 0.72 : 0.95,
-                          }}
-                        >
+                      </div>
+                      <textarea
+                        className={createStyles.area}
+                        value={customTopic}
+                        onChange={(e) => {
+                          setCustomTopic(e.target.value);
+                          setTopicPrepareError(null);
+                          if (topicAiWhere === 'create') setTopicAiError(null);
+                        }}
+                        placeholder="Например: Remote work is better than office work"
+                        rows={3}
+                        style={fieldFlashStyle(topicFlash === 'create')}
+                      />
+                      <div className={createStyles.meta}>
+                        <span>
                           {(topicAiWhere === 'create' && topicAiError) ||
                             customTopicValidation.errors[0] ||
                             customTopicValidation.warnings[0] ||
-                            `Рекомендуемая длина: ${CUSTOM_TOPIC_MIN_LEN}–${CUSTOM_TOPIC_MAX_LEN} символов.`}
-                        </p>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--sidebar-text)', opacity: 0.7, flexShrink: 0 }}>
-                          {normalizeDebateTopic(customTopic).length}/{CUSTOM_TOPIC_MAX_LEN}
+                            `От ${CUSTOM_TOPIC_MIN_LEN} до ${CUSTOM_TOPIC_MAX_LEN} символов`}
                         </span>
+                        <b className={customTopicValidation.status === 'rejected' ? createStyles.bad : createStyles.ok}>
+                          {normalizeDebateTopic(customTopic).length} / {CUSTOM_TOPIC_MAX_LEN}
+                        </b>
+                      </div>
+                      <div className={createStyles.ideas}>
+                        <span>Идеи</span>
+                        {TOPIC_IDEAS.map((idea) => (
+                          <button key={idea} type="button" className={createStyles.idea} onClick={() => { setCustomTopic(idea); setTopicPrepareError(null); }}>
+                            {idea}
+                          </button>
+                        ))}
                       </div>
                     </div>
-
-                    {/* Difficulty section — left column */}
-                    <div>
-                      <span style={createSectionTitle}>Сложность</span>
-                      <label style={{ display: 'block' }}>
-                        <span style={createLabelStyle}>Уровень аргументов</span>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          {(['easy', 'medium', 'hard'] as const).map((level) => (
-                            <button
-                              key={level}
-                              type="button"
-                              onClick={() => setCustomDifficulty(level)}
-                              style={{
-                                ...btnSecondary,
-                                padding: '0.5rem 0.85rem',
-                                fontSize: '0.875rem',
-                                background: customDifficulty === level ? 'var(--sidebar-active)' : 'transparent',
-                                borderColor: customDifficulty === level ? 'rgba(99, 102, 241, 0.45)' : 'var(--sidebar-border)',
-                                fontWeight: customDifficulty === level ? 600 : 500,
-                                transition: 'all 0.2s ease',
-                              }}
-                            >
-                              {DIFFICULTY_BADGE[level].label}
-                            </button>
-                          ))}
-                        </div>
-                      </label>
+                    <div className={createStyles.tip}>
+                      <b><i>?</i> Как написать тему</b>
+                      <p>Хорошая тема — это утверждение, с которым можно согласиться или поспорить.</p>
+                      <q>Social media does more harm than good to society</q>
                     </div>
-
-                    {/* Tips section — right column */}
-                    <div>
-                      <span style={createSectionTitle}>Советы</span>
-                      <div
-                        style={{
-                          padding: '0.75rem 1rem',
-                          borderRadius: 12,
-                          border: '1px solid var(--sidebar-border)',
-                          background: 'var(--sidebar-hover)',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 8,
-                          position: 'relative',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: 'linear-gradient(180deg, rgba(245, 158, 11, 1), transparent)', opacity: 0.6, borderRadius: '12px 0 0 12px' }} aria-hidden />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: 2 }}>
-                          <span
-                            style={{
-                              width: 32,
-                              height: 32,
-                              borderRadius: 10,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              background: 'rgba(245, 158, 11, 0.12)',
-                              color: 'rgba(245, 158, 11, 1)',
-                              flexShrink: 0,
-                            }}
+                    <div className={`${createStyles.levelBlock} ${createStyles.full}`}>
+                      <div className={createStyles.k}>Уровень языка</div>
+                      <div className={createStyles.levels}>
+                        {CEFR_LEVELS.map((level) => (
+                          <button
+                            key={level}
+                            type="button"
+                            aria-pressed={cefr === level}
+                            onClick={() => { setCefr(level); setCustomDifficulty(cefrToDifficulty(level)); }}
                           >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
-                          </span>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--sidebar-text)', opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                            Как написать тему
-                          </span>
-                        </div>
-                        <p style={{ margin: 0, paddingLeft: 44, fontSize: '0.875rem', lineHeight: 1.5, color: 'var(--sidebar-text)', opacity: 0.9 }}>
-                          Хорошая тема — утверждение, с которым можно согласиться или поспорить.
-                        </p>
-                        <p style={{ margin: 0, paddingLeft: 44, fontSize: '0.8125rem', lineHeight: 1.45, color: 'var(--sidebar-text)', opacity: 0.7, fontStyle: 'italic' }}>
-                          «Social media does more harm than good to society»
-                        </p>
+                            {level}
+                          </button>
+                        ))}
+                      </div>
+                      <div className={createStyles.levelCopy}>
+                        <strong>{cefr}</strong>
+                        <em>{CEFR_INFO[cefr].name}</em>
+                        <p>{CEFR_INFO[cefr].text}</p>
+                        <q>{CEFR_INFO[cefr].sample}</q>
                       </div>
                     </div>
                   </div>
-
                   {topicPrepareError && (
-                    <p style={{ margin: '0.75rem 0 0', padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'var(--sidebar-text)', fontSize: '0.9375rem', flexShrink: 0 }}>
+                    <p style={{ margin: 0, padding: '0.75rem 1rem', borderRadius: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: '0.9375rem' }}>
                       {topicPrepareError}
                     </p>
                   )}
@@ -2177,247 +2065,95 @@ export function DebateSetupUI({
               )}
             </>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem 1.25rem', maxWidth: 900, alignContent: 'start' }}>
-              {/* Selected topic — full width */}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <span style={createSectionTitle}>Выбранная тема</span>
-                <div
-                  style={{
-                    padding: '0.75rem 1rem',
-                    borderRadius: 12,
-                    border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-hover)',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.25rem',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: 'linear-gradient(180deg, rgba(99, 102, 241, 1), transparent)', opacity: 0.6, borderRadius: '12px 0 0 12px' }} aria-hidden />
-                  <span style={{ fontSize: '1.0625rem', fontWeight: 600, color: 'var(--sidebar-text)', paddingLeft: 4 }}>{selectedTopicTitle || '—'}</span>
-                  {selectedTopicSubtitle && (
-                    <span style={{ fontSize: '0.8125rem', opacity: 0.72, color: 'var(--sidebar-text)', paddingLeft: 4 }}>{selectedTopicSubtitle}</span>
-                  )}
+            <div className={createStyles.grid}>
+              <div className={`${createStyles.topic} ${createStyles.full}`}>
+                <q>{selectedTopicTitle || '—'}</q>
+                <span className={createStyles.lvl}>{topicView === 'custom' ? `${cefr} · ${CEFR_INFO[cefr].name}` : DIFFICULTY_BADGE[selectedDifficulty].label}</span>
+              </div>
+              {selectedTopicSubtitle && <p className={`${createStyles.lead} ${createStyles.full}`} style={{ marginTop: -8 }}>{selectedTopicSubtitle}</p>}
+
+              <div>
+                <div className={createStyles.k}>Ваша позиция</div>
+                <div className={createStyles.pos}>
+                  <button type="button" className={userPosition === 'for' ? createStyles.forOn : ''} onClick={() => setUserPosition('for')}>
+                    <span className={createStyles.mk}>✓</span>
+                    За
+                    <small>Вы защищаете тему</small>
+                  </button>
+                  <button type="button" className={userPosition === 'against' ? createStyles.againstOn : ''} onClick={() => setUserPosition('against')}>
+                    <span className={createStyles.mk}>✕</span>
+                    Против
+                    <small>Вы оспариваете тему</small>
+                  </button>
                 </div>
               </div>
 
-              {/* Position — left column */}
               <div>
-                <span style={createSectionTitle}>Ваша позиция</span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
-                  {([
-                    { pos: 'for' as DebatePosition, label: 'За', icon: <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>, color: 'rgba(34, 197, 94, 1)', bg: 'rgba(34, 197, 94, 0.12)' },
-                    { pos: 'against' as DebatePosition, label: 'Против', icon: <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><line x1={18} y1={6} x2={6} y2={18} /><line x1={6} y1={6} x2={18} y2={18} /></svg>, color: 'rgba(239, 68, 68, 1)', bg: 'rgba(239, 68, 68, 0.1)' },
-                  ]).map(({ pos, label, icon, color, bg }) => {
-                    const isSelected = userPosition === pos;
+                <div className={createStyles.k}>
+                  Языковые цели
+                  <span style={{ fontWeight: 500, color: 'var(--mut, #a29fb3)' }}>{selectedMicroGoalIds.length} из 2</span>
+                </div>
+                <div className={createStyles.goals}>
+                  {availableMicroGoals.map((goal) => {
+                    const selected = selectedMicroGoalIds.includes(goal.id);
+                    const locked = !selected && selectedMicroGoalIds.length >= 2;
                     return (
-                      <button
-                        key={pos}
-                        type="button"
-                        onClick={() => setUserPosition(pos)}
-                        style={{
-                          width: '100%',
-                          padding: '0.85rem 1rem',
-                          borderRadius: 12,
-                          border: isSelected ? `2px solid ${color}` : '2px solid var(--sidebar-border)',
-                          background: isSelected ? bg : 'var(--sidebar-hover)',
-                          color: 'var(--sidebar-text)',
-                          fontSize: '1rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.65rem',
-                        }}
-                      >
-                        <span style={{ width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isSelected ? bg : 'transparent', color: isSelected ? color : 'var(--sidebar-text)', opacity: isSelected ? 1 : 0.6, flexShrink: 0, transition: 'all 0.2s ease' }}>
-                          {icon}
-                        </span>
-                        {label}
+                      <button key={goal.id} type="button" className={createStyles.goal} aria-pressed={selected} disabled={locked} onClick={() => toggleMicroGoal(goal.id)}>
+                        <span className={createStyles.cb}>✓</span>
+                        <span><b>{goal.labelRu}</b><small>{goal.hintRu}</small></span>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Micro-goals — right column */}
-              <div>
-                <span style={createSectionTitle}>Языковые микро-цели</span>
-                <label style={{ display: 'block' }}>
-                  <span style={createLabelStyle}>Выберите 1-2 цели для фокуса</span>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {availableMicroGoals.map((goal) => {
-                      const selected = selectedMicroGoalIds.includes(goal.id);
-                      const locked = !selected && selectedMicroGoalIds.length >= 2;
-                      return (
-                        <button
-                          key={goal.id}
-                          type="button"
-                          onClick={() => toggleMicroGoal(goal.id)}
-                          disabled={locked}
-                          title={goal.hintRu}
-                          style={{
-                            padding: '0.5rem 0.85rem',
-                            borderRadius: 10,
-                            border: selected ? '1px solid rgba(99, 102, 241, 0.55)' : '1px solid var(--sidebar-border)',
-                            background: selected ? 'rgba(99, 102, 241, 0.15)' : 'var(--sidebar-hover)',
-                            color: 'var(--sidebar-text)',
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            cursor: locked ? 'default' : 'pointer',
-                            opacity: locked ? 0.5 : 1,
-                            transition: 'all 0.2s ease',
-                          }}
-                        >
-                          {goal.labelRu}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </label>
-                <p style={{ margin: '0.5rem 0 0', fontSize: '0.8125rem', opacity: 0.7, color: 'var(--sidebar-text)' }}>
-                  Выбрано: {selectedMicroGoalIds.length}/2
-                </p>
-              </div>
-
-              {/* Who starts — full width */}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <span style={createSectionTitle}>Кто начинает дебат</span>
-                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem' }}>
-                  {([
-                    { value: 'ai' as DebateWhoStarts, label: 'ИИ начинает', hint: 'ИИ озвучит свою позицию первым — подходит для начинающих' },
-                    { value: 'user' as DebateWhoStarts, label: 'Я начну', hint: 'Вы представите свои аргументы первыми — ближе к реальным дебатам' },
-                  ]).map(({ value, label, hint }) => {
-                    const isSelected = whoStarts === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setWhoStarts(value)}
-                        style={{
-                          flex: 1,
-                          padding: '0.85rem 1rem',
-                          borderRadius: 12,
-                          border: isSelected ? '2px solid rgba(99, 102, 241, 0.55)' : '2px solid var(--sidebar-border)',
-                          background: isSelected ? 'rgba(99, 102, 241, 0.1)' : 'var(--sidebar-hover)',
-                          color: 'var(--sidebar-text)',
-                          fontSize: '0.9375rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.35rem',
-                          textAlign: 'left',
-                        }}
-                      >
-                        <span>{label}</span>
-                        <span style={{ fontSize: '0.8125rem', fontWeight: 400, opacity: 0.65, lineHeight: 1.35 }}>{hint}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div style={{ gridColumn: '1 / -1' }}>
-                <span style={createSectionTitle}>Сленг и 18+ настройки (необязательно)</span>
-                <div
-                  style={{
-                    marginTop: '0.25rem',
-                    padding: '0.85rem 1rem',
-                    borderRadius: 12,
-                    border: '1px solid var(--sidebar-border)',
-                    background: 'var(--sidebar-hover)',
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '0.85rem 1rem',
-                  }}
-                >
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <span style={{ ...createLabelStyle, marginBottom: 0, fontSize: '0.85rem' }}>Стиль сленга</span>
-                    <select
-                      className="roleplay-modern-select"
-                      value={debateSlangMode}
-                      onChange={(e) => setDebateSlangMode(e.target.value as DebateSlangMode)}
-                      style={{ ...inputStyle, padding: '0.55rem 2rem 0.55rem 0.75rem', fontSize: '0.9375rem', borderRadius: 8, border: '1px solid rgba(148, 163, 184, 0.45)', background: 'rgba(148, 163, 184, 0.14)' }}
-                    >
-                      {SLANG_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <span style={{ ...createLabelStyle, marginBottom: 0, fontSize: '0.85rem' }}>Интенсивность 18+</span>
-                    <select
-                      className="roleplay-modern-select"
-                      value={debateProfanityIntensity}
-                      onChange={(e) => setDebateProfanityIntensity(e.target.value as DebateProfanityIntensity)}
-                      disabled={!debateAllowProfanity}
-                      style={{ ...inputStyle, padding: '0.55rem 2rem 0.55rem 0.75rem', fontSize: '0.9375rem', borderRadius: 8, border: '1px solid rgba(148, 163, 184, 0.45)', background: 'rgba(148, 163, 184, 0.14)', opacity: debateAllowProfanity ? 1 : 0.6 }}
-                    >
-                      {PROFANITY_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', color: 'var(--sidebar-text)' }}>
-                    <input
-                      type="checkbox"
-                      checked={debateAllowProfanity}
-                      onChange={async (e) => {
-                        const next = e.target.checked;
-                        if (next) {
-                          const confirmed = await ensureAdultConfirmation('debate_setup');
-                          if (!confirmed) return;
-                        }
-                        setDebateAllowProfanity(next);
-                        if (!next) setDebateAiMayUseProfanity(false);
-                      }}
-                    />
-                    Разрешить нецензурную лексику (18+)
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', color: 'var(--sidebar-text)', opacity: debateAllowProfanity ? 1 : 0.6 }}>
-                    <input
-                      type="checkbox"
-                      checked={debateAiMayUseProfanity}
-                      disabled={!debateAllowProfanity}
-                      onChange={(e) => setDebateAiMayUseProfanity(e.target.checked)}
-                    />
-                    ИИ может использовать 18+ лексику
-                  </label>
+              <div className={createStyles.full}>
+                <div className={createStyles.k}>Кто начинает</div>
+                <div className={createStyles.who}>
+                  <button type="button" aria-pressed={whoStarts === 'ai'} onClick={() => setWhoStarts('ai')}>
+                    <span className={createStyles.rd} />
+                    <span><b>ИИ начинает</b><small>ИИ первым озвучит позицию. Хорошо для начала.</small></span>
+                  </button>
+                  <button type="button" aria-pressed={whoStarts === 'user'} onClick={() => setWhoStarts('user')}>
+                    <span className={createStyles.rd} />
+                    <span><b>Я начну</b><small>Вы говорите первым. Это ближе к реальным дебатам.</small></span>
+                  </button>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--sidebar-border)', display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', alignItems: 'center' }}>
-          {onClose && (
-            <button type="button" onClick={onClose} style={btnSecondary}>
-              Отмена
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handlePrimaryAction}
-            disabled={topicSaving || topicPreparing || (setupStep === 'topic' ? !canMoveToPosition : !canOpenBriefing)}
-            style={{
-              ...btnPrimary,
-              opacity: topicSaving || topicPreparing || (setupStep === 'topic' ? !canMoveToPosition : !canOpenBriefing) ? 0.5 : 1,
-              cursor: topicSaving || topicPreparing ? 'wait' : (setupStep === 'topic' ? canMoveToPosition : canOpenBriefing) ? 'pointer' : 'default',
-            }}
-          >
+        <div className={createStyles.foot}>
+          <span className={createStyles.hint}>
             {setupStep === 'topic'
-              ? 'Далее — настройки'
-              : topicSaving
-                ? 'Сохраняем тему...'
-                : topicPreparing
-                  ? 'Подготавливаем тему...'
-                  : 'Готово — к брифингу'}
-          </button>
+              ? (canMoveToPosition ? '' : 'Введите тему: от 10 до 180 символов')
+              : userPosition === null
+                ? 'Выберите позицию'
+                : selectedMicroGoalIds.length === 0
+                  ? 'Выберите хотя бы одну цель'
+                  : ''}
+          </span>
+          <div className={createStyles.actions}>
+            {onClose && (
+              <button type="button" className={createStyles.btn} onClick={onClose}>Отмена</button>
+            )}
+            <button
+              type="button"
+              className={`${createStyles.btn} ${createStyles.pri}`}
+              onClick={handlePrimaryAction}
+              disabled={topicSaving || topicPreparing || (setupStep === 'topic' ? !canMoveToPosition : !canOpenBriefing)}
+            >
+              {setupStep === 'topic'
+                ? 'Далее — настройки'
+                : topicSaving
+                  ? 'Сохраняем тему...'
+                  : topicPreparing
+                    ? 'Подготавливаем тему...'
+                    : 'Готово — к брифингу'}
+              <span aria-hidden>→</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

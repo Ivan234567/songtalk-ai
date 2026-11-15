@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { exchangeSupabaseToken } from '@/lib/exchange-backend-token'
 import { logSecurityEvent } from '@/lib/securityEvents'
+import { takeAuthNext } from '@/lib/auth-next'
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -31,25 +33,9 @@ export default function AuthCallbackPage() {
 
           const supabaseToken = sessionData.session?.access_token
           if (supabaseToken) {
-            const apiUrlRaw = process.env.NEXT_PUBLIC_API_URL || '';
-            const apiUrl = apiUrlRaw.endsWith('/') ? apiUrlRaw.slice(0, -1) : apiUrlRaw;
-            const resp = await fetch(`${apiUrl}/api/auth/exchange-supabase-token`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ supabase_token: supabaseToken }),
-            })
-
-            if (resp.ok) {
-              const data = await resp.json().catch(() => null)
-              // Сохраняем backend JWT в localStorage (или можно позже перенести в cookie)
-              if (data?.token) {
-                window.localStorage.setItem('backend_jwt', data.token)
-              }
-            } else {
-              // Не блокируем логин, просто логируем проблему обмена токена
-              console.error('[auth/callback] Failed to exchange Supabase token for backend JWT', resp.status)
+            const exchanged = await exchangeSupabaseToken(supabaseToken)
+            if (!exchanged) {
+              console.error('[auth/callback] Failed to exchange Supabase token for backend JWT')
             }
           }
         } catch (exchangeError) {
@@ -60,7 +46,7 @@ export default function AuthCallbackPage() {
         await logSecurityEvent('login', { method: code ? 'callback_code' : 'session_restore' })
 
         setMessage('Success. Redirecting…')
-        router.push('/')
+        router.push(takeAuthNext('/'))
         router.refresh()
       } catch (e: any) {
         setMessage(e?.message || 'Auth callback failed')

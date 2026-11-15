@@ -6,6 +6,7 @@ import { buildAgentAuthHeaders } from '@/lib/agent-request';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
 import { supabase } from '@/lib/supabase';
 import { SenseCourseTimeline } from '@/components/dictionary/SenseCourseTimeline';
+import type { CourseFunnelTotals } from './VocabCourseSection';
 import styles from './vocab-course-modules.module.css';
 
 type FunnelStats = {
@@ -138,7 +139,13 @@ function wordChipClass(status: string) {
   return styles.wordOther;
 }
 
-export function VocabCourseModules() {
+export function VocabCourseModules({
+  onTotals,
+  hideTitle = false,
+}: {
+  onTotals?: (totals: CourseFunnelTotals) => void;
+  hideTitle?: boolean;
+}) {
   const router = useRouter();
   const { learningLanguage } = useLearningLanguage();
   const [token, setToken] = useState<string | null>(null);
@@ -176,12 +183,22 @@ export function VocabCourseModules() {
     return () => { cancelled = true; };
   }, [token, learningLanguage]);
 
+  useEffect(() => {
+    if (!onTotals || state === 'loading') return;
+    onTotals(items.reduce((sum, item) => ({
+      due: sum.due + (item.stats?.due || 0),
+      learning: sum.learning + (item.stats?.learning || 0),
+      fresh: sum.fresh + (item.stats?.new || 0),
+      mastered: sum.mastered + (item.stats?.mastered || 0),
+    }), { due: 0, learning: 0, fresh: 0, mastered: 0 }));
+  }, [items, onTotals, state]);
+
   if (!token) return null;
   if (state === 'loading' && items.length === 0) {
     return (
       <section className={styles.section} aria-label="Модули слов">
         <div className={styles.head}>
-          <h2 className={styles.title}>Модули слов</h2>
+          {hideTitle ? null : <h2 className={styles.title}>Модули слов</h2>}
         </div>
         <p className={styles.muted}>Считаем воронку и слабые слова…</p>
       </section>
@@ -191,7 +208,7 @@ export function VocabCourseModules() {
     return (
       <section className={styles.section} aria-label="Модули слов">
         <div className={styles.head}>
-          <h2 className={styles.title}>Модули слов</h2>
+          {hideTitle ? null : <h2 className={styles.title}>Модули слов</h2>}
           <p className={styles.lead}>Не удалось загрузить модули — попробуй обновить страницу.</p>
         </div>
       </section>
@@ -201,7 +218,7 @@ export function VocabCourseModules() {
     return (
       <section className={styles.section} aria-label="Модули слов">
         <div className={styles.head}>
-          <h2 className={styles.title}>Модули слов</h2>
+          {hideTitle ? null : <h2 className={styles.title}>Модули слов</h2>}
           <p className={styles.lead}>
             Здесь появится усвоение списков, привязанных к сценам и дебатам.
           </p>
@@ -229,7 +246,7 @@ export function VocabCourseModules() {
   return (
     <section className={styles.section} aria-label="Модули слов">
       <div className={styles.head}>
-        <h2 className={styles.title}>Модули слов</h2>
+        {hideTitle ? null : <h2 className={styles.title}>Модули слов</h2>}
         <p className={styles.lead}>
           Список = модуль. Сессия = урок до 5 слов. Ниже — воронка, цели и слабые слова.
         </p>

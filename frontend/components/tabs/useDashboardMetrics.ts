@@ -14,6 +14,7 @@ export type DashboardMetrics = {
   phrasalVerbsCount: number;
   karaokeCount: number;
   streakDays: number;
+  weekDayMinutes: number[];
 };
 
 export function useDashboardMetrics() {
@@ -28,6 +29,7 @@ export function useDashboardMetrics() {
     phrasalVerbsCount: 0,
     karaokeCount: 0,
     streakDays: 0,
+    weekDayMinutes: [0, 0, 0, 0, 0, 0, 0],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,9 +137,13 @@ export function useDashboardMetrics() {
     weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
     weekStart.setHours(0, 0, 0, 0);
     let weekMinutes = 0;
+    const weekDayMinutes = [0, 0, 0, 0, 0, 0, 0];
     for (const [dateKey, mins] of minutesByDate) {
       const d = new Date(dateKey + 'T12:00:00');
-      if (d >= weekStart) weekMinutes += mins;
+      if (d < weekStart) continue;
+      weekMinutes += mins;
+      const index = (d.getDay() + 6) % 7;
+      weekDayMinutes[index] += mins;
     }
 
     const vocabularyCount = !vocabularyRes.error ? (vocabularyRes.count ?? 0) : 0;
@@ -189,6 +195,7 @@ export function useDashboardMetrics() {
       phrasalVerbsCount,
       karaokeCount,
       streakDays,
+      weekDayMinutes,
     });
   }, []);
 

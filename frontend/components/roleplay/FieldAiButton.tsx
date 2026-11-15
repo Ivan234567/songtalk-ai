@@ -7,9 +7,13 @@ type Props = {
   busy?: boolean;
   disabled?: boolean;
   onClick: () => void;
+  /** Только значок, без слова «ИИ» */
+  iconOnly?: boolean;
+  /** Подпись рядом со значком, например «Другие шаги» */
+  text?: string;
 };
 
-export function FieldAiButton({ label, busy, disabled, onClick }: Props) {
+export function FieldAiButton({ label, busy, disabled, onClick, iconOnly = false, text }: Props) {
   return (
     <button
       type="button"
@@ -18,22 +22,22 @@ export function FieldAiButton({ label, busy, disabled, onClick }: Props) {
       disabled={disabled || busy}
       onClick={onClick}
       style={{
-        height: 34,
-        padding: '0 10px',
+        width: iconOnly ? 32 : undefined,
+        height: iconOnly ? 32 : text ? 36 : 34,
+        padding: iconOnly ? 0 : text ? '0 12px' : '0 10px',
         borderRadius: 10,
-        border: '1px solid rgba(16, 140, 98, 0.55)',
-        background: busy ? 'rgba(16, 140, 98, 0.28)' : 'rgba(16, 140, 98, 0.16)',
-        color: 'rgb(8, 110, 74)',
+        border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
+        background: busy ? 'color-mix(in srgb, var(--accent) 28%, transparent)' : 'var(--accent-soft)',
+        color: 'var(--accent-fg)',
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 5,
+        gap: 6,
         cursor: disabled || busy ? 'default' : 'pointer',
         opacity: disabled ? 0.45 : 1,
         flexShrink: 0,
-        fontSize: '0.75rem',
-        fontWeight: 800,
-        letterSpacing: '0.04em',
+        fontSize: '0.8125rem',
+        fontWeight: 600,
       }}
     >
       {busy ? (
@@ -57,7 +61,7 @@ export function FieldAiButton({ label, busy, disabled, onClick }: Props) {
             <path d="M4 20l3.5-1.2L5.2 16.5 4 20z" />
             <path d="M15 4l1.2-1.2M19 8l1.2 1.2M17.2 3.2l.6 1.4M20.2 6.2l-1.4.6" />
           </svg>
-          <span>ИИ</span>
+          {iconOnly ? null : <span>{text || 'ИИ'}</span>}
         </>
       )}
       <style>{`@keyframes field-ai-spin { to { transform: rotate(360deg); } }`}</style>

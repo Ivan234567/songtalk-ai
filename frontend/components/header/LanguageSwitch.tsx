@@ -2,7 +2,8 @@
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { useLearningLanguage } from '@/context/LearningLanguageContext';
-import { LearningLanguage, LEARNING_LANGUAGE_LABELS } from '@/lib/learning-language';
+import { CHINESE_PRACTICE_OPEN, LearningLanguage, LEARNING_LANGUAGE_LABELS } from '@/lib/learning-language';
+import { getStoredBackendToken } from '@/lib/backend-jwt';
 import styles from './language-switch.module.css';
 
 const OPTIONS: LearningLanguage[] = ['en', 'zh'];
@@ -11,16 +12,25 @@ export const LanguageSwitch: React.FC = () => {
   const { learningLanguage, setLearningLanguage, isLanguageReady, isSavingLanguage } = useLearningLanguage();
   const isDisabled = !isLanguageReady || isSavingLanguage;
   const [hintOpen, setHintOpen] = useState(false);
+  const [zhNoticeOpen, setZhNoticeOpen] = useState(false);
+  const [vote, setVote] = useState<'yes' | 'no' | null>(null);
+  const [voteState, setVoteState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const clusterRef = useRef<HTMLDivElement>(null);
   const hintId = useId();
 
   useEffect(() => {
-    if (!hintOpen) return;
+    if (!hintOpen && !zhNoticeOpen) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!clusterRef.current?.contains(event.target as Node)) setHintOpen(false);
+      if (!clusterRef.current?.contains(event.target as Node)) {
+        setHintOpen(false);
+        setZhNoticeOpen(false);
+      }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setHintOpen(false);
+      if (event.key === 'Escape') {
+        setHintOpen(false);
+        setZhNoticeOpen(false);
+      }
     };
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -28,7 +38,36 @@ export const LanguageSwitch: React.FC = () => {
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [hintOpen]);
+  }, [hintOpen, zhNoticeOpen]);
+
+  const chooseZh = () => {
+    setHintOpen(false);
+    setZhNoticeOpen(true);
+  };
+
+  const sendVote = async (want: boolean) => {
+    const token = getStoredBackendToken();
+    if (!token) {
+      setVoteState('error');
+      return;
+    }
+    setVoteState('saving');
+    setVote(want ? 'yes' : 'no');
+    try {
+      const api = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${api}/api/interest/chinese`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ want }),
+      });
+      setVoteState(response.ok ? 'saved' : 'error');
+    } catch {
+      setVoteState('error');
+    }
+  };
 
   return (
     <div
@@ -70,8 +109,15 @@ export const LanguageSwitch: React.FC = () => {
               type="button"
               className={[styles.switchBtn, isActive ? styles.switchBtnActive : ''].filter(Boolean).join(' ')}
               aria-pressed={isActive}
-              disabled={isDisabled}
-              onClick={() => setLearningLanguage(lang)}
+              disabled={isDisabled && lang === 'en'}
+              onClick={() => {
+                if (lang === 'zh' && !CHINESE_PRACTICE_OPEN) {
+                  chooseZh();
+                  return;
+                }
+                setZhNoticeOpen(false);
+                setLearningLanguage(lang);
+              }}
             >
               {LEARNING_LANGUAGE_LABELS[lang]}
             </button>
@@ -87,8 +133,25 @@ export const LanguageSwitch: React.FC = () => {
       >
         <span className={styles.cardKicker}>Не перевод сайта</span>
         <p className={styles.cardText}>
-          English и 中文 — разные занятия. Словарь, сценарии и прогресс у каждого свои. Меню остаётся на русском.
+          Сейчас занятие на English. Китайский скоро откроем.
         </p>
+      </div>
+
+      <div
+        className={[styles.card, styles.notice, zhNoticeOpen ? styles.cardOpen : ''].filter(Boolean).join(' ')}
+        role="dialog"
+        aria-label="Китайский скоро"
+        hidden={!zhNoticeOpen}
+      >
+        <span className={styles.cardKicker}>Скоро</span>
+        <p className={styles.cardText}>Скоро запустим и китайский.</p>
+        <p className={styles.ask}>Хотели бы вы им пользоваться?</p>
+        <div className={styles.votes}>
+          <button type="button" className={vote === 'yes' ? styles.voteOn : styles.vote} disabled={voteState === 'saving'} onClick={() => void sendVote(true)}>Хочу</button>
+          <button type="button" className={vote === 'no' ? styles.voteOn : styles.vote} disabled={voteState === 'saving'} onClick={() => void sendVote(false)}>Пока нет</button>
+        </div>
+        {voteState === 'saved' ? <p className={styles.saved}>Ответ записан. Спасибо.</p> : null}
+        {voteState === 'error' ? <p className={styles.saved}>Не удалось записать ответ. Нажмите ещё раз.</p> : null}
       </div>
     </div>
   );

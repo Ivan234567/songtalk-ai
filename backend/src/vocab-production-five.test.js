@@ -75,7 +75,7 @@ test('одно и то же значение из двух рядов попад
   assert.equal(result.items.filter((item) => item.sense_id === 'nevertheless').length, 1)
 })
 
-test('ручной выбор раньше срока не двигает график', () => {
+test('ручной выбор раньше срока не двигает график и не добирает слова', () => {
   const result = selectProductionFive([
     sense('nevertheless', {
       headword: 'nevertheless',
@@ -86,48 +86,40 @@ test('ручной выбор раньше срока не двигает гра
       lastReviewedAt: '2026-05-01T00:00:00.000Z',
       dueAt: '2026-05-30T00:00:00.000Z',
     }),
-  ], ['nevertheless'], NOW)
+    sense('extra', { lastReviewedAt: null }),
+  ], ['nevertheless', 'due-word'], NOW)
+  assert.deepEqual(ids(result), ['nevertheless', 'due-word'])
   assert.equal(result.items[0].bucket, 'early')
   assert.equal(result.items[0].moves_schedule, false)
-  assert.equal(result.items[1].sense_id, 'due-word')
   assert.equal(result.items[1].moves_schedule, true)
 })
 
-test('новое слово в ручном наборе начинает цикл', () => {
+test('одно ручное слово не принимается', () => {
   const result = selectProductionFive([
     sense('fresh', { headword: 'refund', lastReviewedAt: null, dueAt: '2026-06-01T00:00:00.000Z' }),
+    sense('other', { lastReviewedAt: null }),
   ], ['fresh'], NOW)
-  assert.equal(result.items[0].bucket, 'new')
-  assert.equal(result.items[0].moves_schedule, true)
+  assert.equal(result.error, 'count')
+  assert.equal(result.count, 1)
 })
 
-test('пустые места ручного набора добираются сроком, затем новыми', () => {
+test('два ручных слова остаются двумя', () => {
   const manual = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const second = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
   const result = selectProductionFive([
     sense(manual, {
       lastReviewedAt: '2026-05-01T00:00:00.000Z',
       dueAt: '2026-07-01T00:00:00.000Z',
       position: 9,
     }),
-    sense('due-late', {
-      position: 2,
-      lastReviewedAt: '2026-05-01T00:00:00.000Z',
-      dueAt: '2026-05-31T00:00:00.000Z',
-    }),
+    sense(second, { position: 1, lastReviewedAt: null }),
     sense('due-early', {
       position: 8,
       lastReviewedAt: '2026-05-01T00:00:00.000Z',
       dueAt: '2026-05-10T00:00:00.000Z',
     }),
-    sense('fresh', { position: 1, lastReviewedAt: null }),
-    sense('waiting', {
-      position: 0,
-      lastReviewedAt: '2026-05-01T00:00:00.000Z',
-      dueAt: '2026-06-20T00:00:00.000Z',
-    }),
-  ], [manual], NOW)
-  assert.deepEqual(ids(result), [manual, 'due-early', 'due-late', 'fresh'])
-  assert.equal(result.items.some((item) => item.sense_id === 'waiting'), false)
+  ], [manual, second], NOW)
+  assert.deepEqual(ids(result), [manual, second])
 })
 
 test('слово без перевода и будущее слово сами не входят', () => {

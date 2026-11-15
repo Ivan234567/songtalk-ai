@@ -99,6 +99,83 @@
   color: var(--text-primary);
 }
 
+.notice {
+  width: min(280px, calc(100vw - 2.4rem));
+}
+
+.ask {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.votes {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.vote,
+.voteOn {
+  border-radius: 999px;
+  padding: 0.32rem 0.7rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.vote {
+  border: 1px solid var(--stroke);
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.voteOn {
+  border: 0;
+  background: var(--accent);
+  color: #0c2418;
+}
+
+.saved {
+  margin: 0.45rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.voiceCluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.voiceCue {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.voiceIcon,
+.voiceGlyph {
+  display: block;
+  flex-shrink: 0;
+}
+
+.voiceIcon {
+  width: 15px;
+  height: 15px;
+}
+
+.voiceGlyph {
+  width: 14px;
+  height: 14px;
+}
+
 .switchRoot {
   display: inline-flex;
   align-items: center;
@@ -120,6 +197,9 @@
 }
 
 .switchBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
   border: none;
   background: transparent;
   color: var(--text-muted);

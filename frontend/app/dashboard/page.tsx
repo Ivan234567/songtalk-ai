@@ -144,7 +144,7 @@ function DashboardPageContent() {
   const renderActiveTab = () => {
     switch (activeTab) {
       case 'karaoke':
-        if (learningLanguage === 'zh') return <DashboardTab />;
+        if (learningLanguage === 'zh') return <DashboardTab displayName={displayName} />;
         return <KaraokeTab />;
       case 'dictionary':
         return searchParams.get('review') === '1' ? (
@@ -166,7 +166,7 @@ function DashboardPageContent() {
         return <AccountTab userEmail={userEmail} onLogout={handleLogout} />;
       case 'dashboard':
       default:
-        return <DashboardTab />;
+        return <DashboardTab displayName={displayName} />;
     }
   };
 
@@ -175,12 +175,6 @@ function DashboardPageContent() {
   const displayName = usernameFromEmail
     ? usernameFromEmail.charAt(0).toUpperCase() + usernameFromEmail.slice(1).toLowerCase()
     : 'друг';
-  const dateLabel = new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit',
-    month: 'long',
-    weekday: 'short',
-  }).format(new Date());
-
   if (!authChecked || userEmail === null || !isLanguageReady) {
     return (
       <div
@@ -192,8 +186,6 @@ function DashboardPageContent() {
       </div>
     );
   }
-
-  const isChineseMode = learningLanguage === 'zh';
 
   return (
     <div className={layoutStyles.pageRoot}>
@@ -216,28 +208,6 @@ function DashboardPageContent() {
             <LanguageSwitch />
           </div>
         </div>
-        {activeTab === 'dashboard' && (
-          <header className={layoutStyles.header} data-language={learningLanguage}>
-            <div className={layoutStyles.headerInner}>
-              <span className={layoutStyles.greetingLabel}>
-                {isChineseMode ? 'Китайский режим' : 'Персональная зона обучения'}
-              </span>
-              <div className={layoutStyles.greetingRow}>
-                <p className={layoutStyles.greeting}>Привет, {displayName}!</p>
-                <span className={layoutStyles.greetingDot} aria-hidden="true" />
-                <p className={layoutStyles.greetingHint}>
-                  {isChineseMode
-                    ? 'Практикуй упрощённый китайский: диалог, словарь и прогресс'
-                    : 'Сфокусируйся на одной задаче и закрепи результат сегодня'}
-                </p>
-              </div>
-            </div>
-            <div className={layoutStyles.headerMeta}>
-              <span className={layoutStyles.metaLabel}>Сегодня</span>
-              <span className={layoutStyles.dateChip}>{dateLabel}</span>
-            </div>
-          </header>
-        )}
         <section
           className={[
             layoutStyles.contentScroll,

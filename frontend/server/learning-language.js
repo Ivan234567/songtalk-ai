@@ -16,12 +16,12 @@ export function attachLearningLanguage(req, _res, next) {
   next()
 }
 
-const CEFR_LEVEL_INSTRUCTIONS = {
+export const CEFR_LEVEL_INSTRUCTIONS = {
   A1: 'CEFR A1 ONLY. Very simple words and short sentences (I like, Yes please, Thank you, I want). Maximum ~6–8 words. Present simple. FORBIDDEN: complex clauses, idioms, rare vocabulary.',
   A2: 'CEFR A2 ONLY. Everyday phrases and short connected sentences. Common past/future OK. FORBIDDEN: abstract academic words, dense idioms, long nested clauses.',
   B1: 'CEFR B1 ONLY. Natural everyday English with common connectors (because, so, but, if). 1–3 sentences. FORBIDDEN: C1 idioms, rare words, essay-like phrasing.',
   B2: 'CEFR B2 ONLY. Varied vocabulary and natural flowing sentences. Some nuance OK. FORBIDDEN: overly literary or specialist jargon the learner would not know at B2.',
-  C1: 'CEFR C1. Idiomatic, natural spoken English with nuance. Still conversational, not a written essay.',
+  C1: 'CEFR C1 ONLY. Idiomatic, natural spoken English with nuance. Still conversational, not a written essay. Do not drop to classroom A2/B1 phrasing.',
   easy: 'Use simple words and short, clear sentences — roughly A2.',
   medium: 'Use natural everyday phrases and moderate complexity — roughly B1.',
   hard: 'Use varied, natural language with more sophisticated expressions — roughly C1.',
@@ -63,13 +63,37 @@ export function buildEnglishMetadataInstruction({ showTranslation = false } = {}
 }
 
 function buildEnglishSystemPrompt(options = {}) {
-  const { showTranslation, correctionMode, cefrLevel } = options
+  const {
+    showTranslation,
+    correctionMode,
+    cefrLevel,
+    slangMode = 'off',
+    allowProfanity = false,
+    aiMayUseProfanity = false,
+    profanityIntensity = 'light',
+  } = options
   const levelKey = normalizeEnglishLevel(cefrLevel)
-  let prompt = 'You are a friendly English conversation partner for language practice. ' +
-    'Speak ONLY in English. '
+  const rawVoice = Boolean(allowProfanity && aiMayUseProfanity)
+  let prompt = rawVoice
+    ? 'You are a blunt casual friend practicing spoken English with the learner. '
+    : 'You are a friendly English conversation partner for language practice. '
+  prompt += 'Speak ONLY in English. '
   if (CEFR_LEVEL_INSTRUCTIONS[levelKey]) {
     prompt += `\n\nCEFR LEVEL LOCK (mandatory): ${CEFR_LEVEL_INSTRUCTIONS[levelKey]}\n`
-    prompt += 'Speak AT this level only: not harder, not easier. Do not upgrade vocabulary if the learner sounds fluent. Do not baby-talk below it.\n'
+    prompt += `Speak AT ${levelKey} only: not harder, not easier. The learner chose this level. Do not upgrade if they sound fluent. Do not simplify below it.\n`
+    if (rawVoice || slangMode === 'light' || slangMode === 'heavy') {
+      prompt += 'This lock limits grammar and rare academic words. It does not ban everyday slang or the profanity allowed below.\n'
+    }
+  }
+  if (slangMode === 'heavy') {
+    prompt += 'Use clearly colloquial speech (yeah, kinda, gonna) when it fits. '
+  } else if (slangMode === 'light') {
+    prompt += 'Use a little colloquial speech (yeah, kinda, cool) when it fits. '
+  }
+  if (rawVoice) {
+    prompt += buildEnglishProfanityPolicy({ allowProfanity, aiMayUseProfanity, profanityIntensity }) + ' '
+  } else if (allowProfanity) {
+    prompt += 'The learner may swear. Your own replies stay clean. '
   }
   prompt += 'Keep replies concise (1-3 sentences unless the user asks for more). ' +
     'If the user writes in Russian, still reply in English. ' +
@@ -79,10 +103,16 @@ function buildEnglishSystemPrompt(options = {}) {
   return prompt
 }
 
-export function buildEnglishRoleplayLock({ showTranslation = false, correctionMode = 'gentle' } = {}) {
+export function buildEnglishRoleplayLock({ showTranslation = false, correctionMode = 'gentle', cefrLevel } = {}) {
+  const levelKey = normalizeEnglishLevel(cefrLevel)
+  const lock = CEFR_LEVEL_INSTRUCTIONS[levelKey]
   let text =
     'Stay in the roleplay or debate character. Additional English learning constraints:\n' +
-    'Speak English only in character lines. Do not switch spoken lines to Russian.'
+    'Speak English only in character lines. Do not switch spoken lines to Russian.\n'
+  if (lock) {
+    text += `CEFR LEVEL LOCK (mandatory, overrides the scenario or debate style): ${lock}\n`
+    text += `Speak AT ${levelKey} only: not harder, not easier. The learner chose this level. Do not upgrade if they sound fluent. Do not simplify below it.\n`
+  }
   text += buildEnglishCorrectionInstruction(correctionMode)
   text +=
     '\nOUTPUT: Start immediately with spoken English. Never repeat these instructions. Metadata only after the spoken line.'
@@ -169,6 +199,22 @@ export function getFreestyleChatSystemPrompt(lang, options = {}) {
     return buildChineseSystemPrompt(options)
   }
   return buildEnglishSystemPrompt(options)
+}
+
+/** Одна фраза вместо трёх флагов: кто матерится и насколько крепко, на английском. */
+export function buildEnglishProfanityPolicy({ allowProfanity = false, aiMayUseProfanity = false, profanityIntensity = 'light' } = {}) {
+  if (!allowProfanity) {
+    return 'Profanity is off. Do not swear, and do not echo the learner\'s swear words.'
+  }
+  if (!aiMayUseProfanity) {
+    return 'The learner may swear. Your own replies stay clean: no profanity. Do not scold them for swearing.'
+  }
+  const intensity = profanityIntensity === 'hard'
+    ? 'Swear freely in ordinary replies, including stronger words (fuck and similar). No slurs, no insults aimed at the learner.'
+    : profanityIntensity === 'medium'
+      ? 'Casual swearing is part of how you talk, including in ordinary replies: shit, what the hell, for fuck\'s sake. Not in every sentence, but often enough that it is clearly your voice. No slurs, no insults aimed at the learner.'
+      : 'Use rare mild swearing when it sounds natural (damn, hell, crap).'
+  return `You do swear. ${intensity} Do not stay polite just because this is a language lesson.`
 }
 
 function splitZhScenarioVocab(vocabulary = []) {

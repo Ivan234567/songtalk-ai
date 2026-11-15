@@ -4,6 +4,9 @@ export type LearningLanguage = 'en' | 'zh';
 
 export const DEFAULT_LEARNING_LANGUAGE: LearningLanguage = 'en';
 
+/** Китайский режим спрятан из переключателя, код занятий остаётся. */
+export const CHINESE_PRACTICE_OPEN = false;
+
 export const LEARNING_LANGUAGE_LABELS: Record<LearningLanguage, string> = {
   en: 'English',
   zh: '中文',
@@ -34,9 +37,16 @@ export async function fetchUserLearningLanguage(userId: string): Promise<Learnin
     return DEFAULT_LEARNING_LANGUAGE;
   }
 
-  return isLearningLanguage(data.learning_language)
+  const stored = isLearningLanguage(data.learning_language)
     ? data.learning_language
     : DEFAULT_LEARNING_LANGUAGE;
+  if (!CHINESE_PRACTICE_OPEN && stored === 'zh') {
+    setTimeout(() => {
+      void saveUserLearningLanguage(userId, DEFAULT_LEARNING_LANGUAGE);
+    }, 0);
+    return DEFAULT_LEARNING_LANGUAGE;
+  }
+  return stored;
 }
 
 export async function saveUserLearningLanguage(

@@ -21,7 +21,7 @@ export const CEFR_LEVEL_INSTRUCTIONS = {
   A2: 'CEFR A2 ONLY. Everyday phrases and short connected sentences. Common past/future OK. FORBIDDEN: abstract academic words, dense idioms, long nested clauses.',
   B1: 'CEFR B1 ONLY. Natural everyday English with common connectors (because, so, but, if). 1–3 sentences. FORBIDDEN: C1 idioms, rare words, essay-like phrasing.',
   B2: 'CEFR B2 ONLY. Varied vocabulary and natural flowing sentences. Some nuance OK. FORBIDDEN: overly literary or specialist jargon the learner would not know at B2.',
-  C1: 'CEFR C1. Idiomatic, natural spoken English with nuance. Still conversational, not a written essay.',
+  C1: 'CEFR C1 ONLY. Idiomatic, natural spoken English with nuance. Still conversational, not a written essay. Do not drop to classroom A2/B1 phrasing.',
   easy: 'Use simple words and short, clear sentences — roughly A2.',
   medium: 'Use natural everyday phrases and moderate complexity — roughly B1.',
   hard: 'Use varied, natural language with more sophisticated expressions — roughly C1.',
@@ -80,7 +80,7 @@ function buildEnglishSystemPrompt(options = {}) {
   prompt += 'Speak ONLY in English. '
   if (CEFR_LEVEL_INSTRUCTIONS[levelKey]) {
     prompt += `\n\nCEFR LEVEL LOCK (mandatory): ${CEFR_LEVEL_INSTRUCTIONS[levelKey]}\n`
-    prompt += 'Speak AT this level only: not harder, not easier. Do not upgrade vocabulary if the learner sounds fluent. Do not baby-talk below it.\n'
+    prompt += `Speak AT ${levelKey} only: not harder, not easier. The learner chose this level. Do not upgrade if they sound fluent. Do not simplify below it.\n`
     if (rawVoice || slangMode === 'light' || slangMode === 'heavy') {
       prompt += 'This lock limits grammar and rare academic words. It does not ban everyday slang or the profanity allowed below.\n'
     }
@@ -103,10 +103,16 @@ function buildEnglishSystemPrompt(options = {}) {
   return prompt
 }
 
-export function buildEnglishRoleplayLock({ showTranslation = false, correctionMode = 'gentle' } = {}) {
+export function buildEnglishRoleplayLock({ showTranslation = false, correctionMode = 'gentle', cefrLevel } = {}) {
+  const levelKey = normalizeEnglishLevel(cefrLevel)
+  const lock = CEFR_LEVEL_INSTRUCTIONS[levelKey]
   let text =
     'Stay in the roleplay or debate character. Additional English learning constraints:\n' +
-    'Speak English only in character lines. Do not switch spoken lines to Russian.'
+    'Speak English only in character lines. Do not switch spoken lines to Russian.\n'
+  if (lock) {
+    text += `CEFR LEVEL LOCK (mandatory, overrides the scenario or debate style): ${lock}\n`
+    text += `Speak AT ${levelKey} only: not harder, not easier. The learner chose this level. Do not upgrade if they sound fluent. Do not simplify below it.\n`
+  }
   text += buildEnglishCorrectionInstruction(correctionMode)
   text +=
     '\nOUTPUT: Start immediately with spoken English. Never repeat these instructions. Metadata only after the spoken line.'

@@ -1,13 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { buildAgentAuthHeaders } from '@/lib/agent-request';
 import type { LearningLanguage } from '@/lib/learning-language';
-import { DEBATE_TOPICS } from '@/lib/debate-topics';
-import { getRoleplayScenarios, type RoleplayScenario } from '@/lib/roleplay';
-import { listUserScenarios } from '@/lib/user-scenarios';
-import { listZhScenarios, zhScenarioToRoleplay, type ZhScenario } from '@/lib/zh-scenarios';
-import { rankPracticeMatches, type MatchCard } from '@/lib/practice-scene-match';
+import { loadPracticeMatches } from '@/lib/practice-close-scenes';
+import type { RoleplayScenario } from '@/lib/roleplay';
 import type { ChatPracticeSense } from './ChatPracticeWords';
 import styles from './practice-today.module.css';
 
@@ -25,32 +21,7 @@ type PracticeSceneMatchProps = {
   onBrowseAll: () => void;
 };
 
-type ListMeta = {
-  title: string;
-  themeKeys: string[];
-  boundKind: string | null;
-  boundRef: string | null;
-  boundLabel: string | null;
-};
-
 type Row = { id: string; title: string; reason: string };
-
-function baseUrl(apiUrl: string) {
-  return apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
-}
-
-function scenarioHaystack(scenario: RoleplayScenario): string {
-  const steps = (scenario.steps || []).map((step) => step.titleRu || step.titleEn || '').join(' ');
-  return [
-    scenario.title,
-    scenario.description,
-    scenario.settingRu,
-    scenario.scenarioTextRu,
-    scenario.goalRu,
-    scenario.themeId,
-    steps,
-  ].filter(Boolean).join(' ');
-}
 
 export function PracticeSceneMatch({
   apiUrl,
@@ -79,43 +50,29 @@ export function PracticeSceneMatch({
     }
     let cancelled = false;
     setState('loading');
-    const needlesPromise = fetch(`${baseUrl(apiUrl)}/api/vocabulary/lists/${encodeURIComponent(listId)}`, {
-      headers: buildAgentAuthHeaders(token, learningLanguage),
-    }).then(async (resp) => {
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error('list');
-      const item = data?.item || data;
-      const meta: ListMeta = {
-        title: typeof item?.title === 'string' ? item.title : '',
-        themeKeys: Array.isArray(item?.theme_keys) ? item.theme_keys.filter((key: unknown) => typeof key === 'string') : [],
-        boundKind: typeof item?.bound_kind === 'string' ? item.bound_kind : null,
-        boundRef: typeof item?.bound_ref === 'string' ? item.bound_ref : null,
-        boundLabel: typeof item?.bound_label === 'string' ? item.bound_label : null,
-      };
-      return meta;
-    });
-
-    const cardsPromise: Promise<{ cards: MatchCard[]; byId: Map<string, RoleplayScenario> }> = sceneMode
-      ? loadScenes(learningLanguage)
-      : loadTopics();
-
-    Promise.all([needlesPromise, cardsPromise])
-      .then(([meta, loaded]) => {
+    loadPracticeMatches({
+      apiUrl,
+      token,
+      learningLanguage,
+      mode,
+      listId,
+      glosses: glossKey.split('|').filter(Boolean),
+    })
+      .then((result) => {
         if (cancelled) return;
-        const needles = [meta.title, ...meta.themeKeys, ...glossKey.split('|').filter(Boolean)];
-        const boundKind = sceneMode ? 'scenario' : 'debate';
-        const boundCard = meta.boundKind === boundKind
-          ? loaded.cards.find((card) => card.id === meta.boundRef) || null
-          : null;
-        const ranked = rankPracticeMatches(
-          needles,
-          loaded.cards.filter((card) => card.id !== boundCard?.id),
-        );
-        setScenarios(loaded.byId);
-        setBound(boundCard
-          ? { id: boundCard.id, title: meta.boundLabel || boundCard.title, reason: sceneMode ? 'Список привязан к этой сцене' : 'Список привязан к этой теме' }
+        const byId = new Map<string, RoleplayScenario>();
+        for (const row of [result.bound, ...result.matches]) {
+          if (row?.scenario) byId.set(row.id, row.scenario);
+        }
+        setScenarios(byId);
+        setBound(result.bound
+          ? {
+            id: result.bound.id,
+            title: result.bound.title,
+            reason: sceneMode ? 'Список привязан к этой сцене' : 'Список привязан к этой теме',
+          }
           : null);
-        setMatches(ranked.map((row) => ({ id: row.id, title: row.title, reason: row.reason })));
+        setMatches(result.matches.map((row) => ({ id: row.id, title: row.title, reason: row.reason })));
         setState('idle');
       })
       .catch(() => {
@@ -191,44 +148,4 @@ export function PracticeSceneMatch({
       </div>
     </section>
   );
-}
-
-async function loadScenes(language: LearningLanguage): Promise<{ cards: MatchCard[]; byId: Map<string, RoleplayScenario> }> {
-  const byId = new Map<string, RoleplayScenario>();
-  const cards: MatchCard[] = [];
-  if (language === 'zh') {
-    const rows = await listZhScenarios({ archived: false }).catch(() => [] as ZhScenario[]);
-    for (const row of rows) {
-      const scenario = zhScenarioToRoleplay(row);
-      byId.set(scenario.id, scenario);
-      const steps = (row.steps || []).map((step) => step.title_ru || '').join(' ');
-      cards.push({
-        id: scenario.id,
-        title: row.title,
-        haystack: [row.title, row.setting_ru, ...(row.goals || []), steps].filter(Boolean).join(' '),
-      });
-    }
-    return { cards, byId };
-  }
-  for (const scenario of getRoleplayScenarios()) {
-    if (scenario.language === 'zh') continue;
-    byId.set(scenario.id, scenario);
-    cards.push({ id: scenario.id, title: scenario.title, haystack: scenarioHaystack(scenario) });
-  }
-  const mine = await listUserScenarios().catch(() => []);
-  for (const scenario of mine) {
-    if (scenario.archived) continue;
-    byId.set(scenario.id, scenario);
-    cards.push({ id: scenario.id, title: scenario.title, haystack: scenarioHaystack(scenario) });
-  }
-  return { cards, byId };
-}
-
-async function loadTopics(): Promise<{ cards: MatchCard[]; byId: Map<string, RoleplayScenario> }> {
-  const cards: MatchCard[] = DEBATE_TOPICS.map((topic) => ({
-    id: topic.id,
-    title: topic.topicRu,
-    haystack: [topic.topicRu, topic.topic, topic.category].join(' '),
-  }));
-  return { cards, byId: new Map() };
 }

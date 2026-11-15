@@ -5,6 +5,7 @@
  */
 import { ensureUserVocabularySenses } from './vocab-sense-sync.js'
 
+export const PRODUCTION_SET_MIN = 2
 export const PRODUCTION_FIVE_LIMIT = 5
 
 const UUID_RE =
@@ -87,10 +88,10 @@ function toItem(row, now) {
 }
 
 /**
- * Ручные значения идут первыми, не больше пяти, повторы смысла схлопываются.
- * Пустые места добираются из того же набора: сначала пора сказать, затем новые.
- * Смысл с будущим сроком сам не подставляется.
- * @returns {{ items: object[] } | { error: 'missing', senseId: string }}
+ * Без ручного списка берёт слова, которым пора, затем новые. Не больше пяти.
+ * Раньше срока само не подставляется.
+ * Ручной список возвращается как есть: от двух до пяти, без добора.
+ * @returns {{ items: object[] } | { error: 'missing', senseId: string } | { error: 'count', count: number }}
  */
 export function selectProductionFive(candidates, manualIds, now) {
   const byId = new Map()
@@ -101,28 +102,33 @@ export function selectProductionFive(candidates, manualIds, now) {
     if (!prev || compareNew(row, prev) < 0) byId.set(row.senseId, row)
   }
 
-  const items = []
+  const requested = []
   const taken = new Set()
   for (const rawId of Array.isArray(manualIds) ? manualIds : []) {
-    if (items.length >= PRODUCTION_FIVE_LIMIT) break
     const senseId = typeof rawId === 'string' ? rawId.trim() : ''
     if (!senseId || taken.has(senseId)) continue
     const row = byId.get(senseId)
     if (!row) return { error: 'missing', senseId }
     taken.add(senseId)
-    items.push(toItem(row, now))
+    requested.push(toItem(row, now))
+  }
+  if (taken.size > 0) {
+    if (requested.length < PRODUCTION_SET_MIN || requested.length > PRODUCTION_FIVE_LIMIT) {
+      return { error: 'count', count: requested.length }
+    }
+    return { items: requested }
   }
 
   const due = []
   const fresh = []
   for (const row of byId.values()) {
-    if (taken.has(row.senseId)) continue
     const bucket = classifyProductionBucket(row, now)
     if (bucket === 'due') due.push(row)
     else if (bucket === 'new') fresh.push(row)
   }
   due.sort(compareDue)
   fresh.sort(compareNew)
+  const items = []
   for (const row of [...due, ...fresh]) {
     if (items.length >= PRODUCTION_FIVE_LIMIT) break
     items.push(toItem(row, now))
@@ -146,8 +152,8 @@ function parseBody(body) {
     if (seen.has(id)) continue
     seen.add(id)
     senseIds.push(id)
-    if (senseIds.length === PRODUCTION_FIVE_LIMIT) break
   }
+  if (senseIds.length > PRODUCTION_FIVE_LIMIT) return { error: 'Choose from two to five words' }
   return { listId, senseIds }
 }
 
@@ -337,6 +343,10 @@ export function createProductionFiveHandler({
       const selected = selectProductionFive(candidates, parsed.senseIds, now())
       if (selected.error === 'missing') {
         res.status(400).json({ error: 'Practice sense is not in this list' })
+        return
+      }
+      if (selected.error === 'count') {
+        res.status(400).json({ error: 'Choose from two to five words' })
         return
       }
       res.status(200).json({

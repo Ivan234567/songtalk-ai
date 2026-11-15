@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
+  CHINESE_PRACTICE_OPEN,
   DEFAULT_LEARNING_LANGUAGE,
   fetchUserLearningLanguage,
   LearningLanguage,
@@ -101,6 +102,7 @@ export function LearningLanguageProvider({ children }: { children: React.ReactNo
   }, []);
 
   const setLearningLanguage = useCallback((next: LearningLanguage) => {
+    if (!CHINESE_PRACTICE_OPEN && next === 'zh') return;
     if (languageRef.current === next) return;
 
     const previous = languageRef.current;

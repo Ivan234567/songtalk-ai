@@ -6,11 +6,14 @@ import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import styles from './landing.module.css';
 import { useLandingPreviewLang } from './preview-lang';
+import { useAccountHome } from '@/lib/account-home';
 
 export function FinalCtaSection() {
   const { previewLang } = useLandingPreviewLang();
   const isZh = previewLang === 'zh';
   const [user, setUser] = useState<User | null>(null);
+  const home = useAccountHome();
+  const partner = Boolean(user) && home === 'partner';
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user: u } }) => setUser(u ?? null));
@@ -27,7 +30,9 @@ export function FinalCtaSection() {
           Начни практиковать
         </h2>
         <p className={styles.finalCtaSubtitle}>
-          {user
+          {partner
+            ? 'Откройте партнёрский кабинет.'
+            : user
             ? isZh
               ? 'Пополни баланс. Слова, которым пора, уже ждут ситуативный диалог HSK.'
               : 'Пополни баланс. Слова, которым пора, уже ждут сценарий или дебат.'
@@ -37,10 +42,14 @@ export function FinalCtaSection() {
         </p>
         <div className={styles.finalCtaWrap}>
           <Link
-            href={user ? '/dashboard?tab=balance' : '/auth/register'}
+            href={!user ? '/auth/register' : partner ? '/partner' : '/dashboard?tab=balance'}
             className={`${styles.finalCtaButton} ${!user ? styles.finalCtaButtonPulse : ''}`}
+            aria-disabled={Boolean(user) && home === 'loading'}
+            onClick={(event) => {
+              if (user && home === 'loading') event.preventDefault();
+            }}
           >
-            {user ? 'Пополнить баланс' : 'Зарегистрироваться'}
+            {!user ? 'Зарегистрироваться' : partner ? 'Партнёрский кабинет' : 'Пополнить баланс'}
             <span className={styles.finalCtaArrow} aria-hidden>→</span>
           </Link>
         </div>

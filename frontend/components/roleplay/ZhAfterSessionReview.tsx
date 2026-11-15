@@ -2,7 +2,6 @@
 
 import React from 'react';
 import {
-  nextZhPlayModeCta,
   type ZhListenReview,
   type ZhPlayMode,
   type ZhRewindFork,
@@ -22,20 +21,17 @@ export function ZhAfterSessionReview({
   review,
   rewindUsed,
   onRewind,
-  onNextMode,
 }: {
   playMode: ZhPlayMode;
   review: ZhListenReview | null;
   rewindUsed: boolean;
   onRewind?: (fork: ZhRewindFork) => void;
-  onNextMode?: () => void;
 }) {
-  const nextCta = nextZhPlayModeCta(playMode);
   const missed = review?.missed_listening || [];
   const phrases = review?.repair_phrases || [];
   const forks = review?.rewind_forks || [];
 
-  if (!review && !nextCta) return null;
+  if (!review) return null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', width: '100%' }}>
@@ -109,24 +105,6 @@ export function ZhAfterSessionReview({
         </div>
       )}
 
-      {nextCta && onNextMode && (
-        <button
-          type="button"
-          onClick={onNextMode}
-          style={{
-            padding: '0.55rem 1.1rem',
-            borderRadius: 10,
-            border: '1px solid rgba(79, 168, 134, 0.45)',
-            background: 'rgba(79, 168, 134, 0.14)',
-            color: 'var(--sidebar-text)',
-            fontSize: '0.8125rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          {nextCta}
-        </button>
-      )}
     </div>
   );
 }

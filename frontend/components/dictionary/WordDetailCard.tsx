@@ -30,6 +30,7 @@ export type WordCardPayload = {
 };
 
 type WordStatus = 'new' | 'learning' | 'due' | 'mastered';
+export type SpeechProgress = 'none' | 'said' | 'repeated';
 
 type Props = {
   card: WordCardPayload | null;
@@ -37,7 +38,10 @@ type Props = {
   error: string | null;
   speaking: boolean;
   status?: WordStatus | null;
+  speech?: SpeechProgress | null;
+  recognizes?: boolean;
   progress?: number | null;
+  nextLabel?: string | null;
   index?: number;
   total?: number;
   onClose: () => void;
@@ -45,6 +49,7 @@ type Props = {
   onPrev?: () => void;
   onNext?: () => void;
   onRemove?: () => void;
+  onPractice?: () => void;
 };
 
 const STATUS_LABEL: Record<WordStatus, string> = {
@@ -54,52 +59,35 @@ const STATUS_LABEL: Record<WordStatus, string> = {
   mastered: 'Освоены',
 };
 
-const STATUS_HINT: Record<WordStatus, string> = {
-  new: '— Ещё не изучалось',
-  learning: '— В процессе изучения',
-  due: '— Пора повторить',
-  mastered: '— Уже в долгой памяти',
+const STATUS_COLOR: Record<WordStatus, string> = {
+  new: '#7aa2ff',
+  learning: '#ffa14d',
+  due: '#ff7a7a',
+  mastered: '#6fdc9a',
 };
 
-function asExample(item: string | WordExample): WordExample {
-  if (typeof item === 'string') return { text: item, translation: null };
-  return { text: item.text, translation: item.translation || null };
+const SPEECH_LADDER: Array<{ id: SpeechProgress; label: string }> = [
+  { id: 'none', label: 'Новое' },
+  { id: 'said', label: 'Сказал сам' },
+  { id: 'repeated', label: 'Повторно использовал' },
+];
+
+function speechStage(speech: SpeechProgress | null) {
+  if (speech === 'repeated') return 2;
+  if (speech === 'said') return 1;
+  return 0;
 }
 
-function BookIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5V5.5Z" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
+function asExample(value: string | WordExample | undefined) {
+  if (!value) return null;
+  if (typeof value === 'string') return { text: value, translation: '' };
+  return { text: value.text, translation: value.translation || '' };
 }
 
-function CheckIcon() {
+function Chevron({ dir }: { dir: 'l' | 'r' }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.18" />
-      <path d="M8 12.5l2.5 2.5L16 9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SpeakerIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M4 10v4h3l4 3V7l-4 3H4Z" fill="currentColor" />
-      <path d="M15.5 9.5a4 4 0 0 1 0 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M17.8 7.2a7 7 0 0 1 0 9.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M5 7h14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M9 7V5h6v2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="M8 7l1 12h6l1-12" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    <svg className={styles.ico} viewBox="0 0 24 24" aria-hidden="true">
+      <path d={dir === 'l' ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} />
     </svg>
   );
 }
@@ -110,130 +98,106 @@ export function WordDetailCard({
   error,
   speaking,
   status = null,
-  progress = null,
+  speech = 'none',
+  recognizes = false,
+  nextLabel = null,
   index = 0,
   total = 0,
   onClose,
   onSpeak,
   onPrev,
   onNext,
-  onRemove,
+  onPractice,
 }: Props) {
-  const meta = [
-    card?.part_of_speech,
-    card?.difficulty_level,
-  ].filter(Boolean).map((item) => String(item).toUpperCase());
-
-  const progressValue = Math.max(0, Math.min(100, Number(progress) || 0));
+  const sense = card?.senses?.[0];
+  const example = asExample(sense?.examples?.[0] || card?.examples?.[0]);
   const statusKey = status || 'new';
+  const stage = speechStage(speech);
+  const ipa = [card?.phonetic || card?.pinyin, card?.part_of_speech || sense?.part_of_speech]
+    .filter(Boolean)
+    .join(' · ');
+  const gloss = sense?.gloss_ru || '';
+  const definition = sense?.definition || '';
 
   return (
-    <div className={styles.backdrop} onClick={onClose} role="presentation">
+    <div className={styles.scrim} onClick={onClose} role="presentation">
       <aside
-        className={styles.panel}
+        className={styles.sheet}
         role="dialog"
         aria-modal="true"
         aria-label={card?.headword || 'Слово в словаре'}
         onClick={(event) => event.stopPropagation()}
       >
         <div className={styles.nav}>
-          <div className={styles.navPager}>
-            <button type="button" className={styles.iconBtn} onClick={onPrev} disabled={!onPrev || index <= 0} aria-label="Предыдущее слово">
-              ‹
+          <div>
+            <button type="button" className={styles.ib} onClick={onPrev} disabled={!onPrev || index <= 0} aria-label="Предыдущее">
+              <Chevron dir="l" />
             </button>
-            <span className={styles.counter}>{total > 0 ? `${index + 1} / ${total}` : '—'}</span>
-            <button type="button" className={styles.iconBtn} onClick={onNext} disabled={!onNext || index >= total - 1} aria-label="Следующее слово">
-              ›
+            <span>{total > 0 ? `${index + 1} из ${total}` : '—'}</span>
+            <button type="button" className={styles.ib} onClick={onNext} disabled={!onNext || index >= total - 1} aria-label="Следующее">
+              <Chevron dir="r" />
             </button>
           </div>
-          <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Закрыть">
-            ×
+          <button type="button" className={styles.ib} onClick={onClose} aria-label="Закрыть">
+            <svg className={styles.ico} viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
           </button>
         </div>
 
-        {loading && <p className={styles.muted}>Ищем значения и примеры…</p>}
-        {error && <p className={styles.error}>{error}</p>}
+        {loading && !card && <p className={styles.mut}>Открываем слово…</p>}
+        {error && <p className={styles.err}>{error}</p>}
 
-        {!loading && card && (
+        {card && (
           <>
-            <div className={styles.hero}>
-              <div className={styles.heroTop}>
-                <div>
-                  {meta.length > 0 && <div className={styles.meta}>{meta.join(' • ')}</div>}
-                  <h1 className={styles.headword}>{card.headword}</h1>
-                  <div className={styles.phoneticRow}>
-                    {(card.phonetic || card.pinyin) && (
-                      <span className={styles.phonetic}>{card.phonetic || card.pinyin}</span>
-                    )}
-                    <button
-                      type="button"
-                      className={styles.speakBtn}
-                      onClick={onSpeak}
-                      disabled={speaking}
-                      aria-label="Произнести"
-                      title="Произношение"
-                    >
-                      <SpeakerIcon />
-                    </button>
-                  </div>
-                </div>
-                {onRemove && (
-                  <button type="button" className={styles.trashBtn} onClick={onRemove} aria-label="Убрать из списка" title="Убрать из списка">
-                    <TrashIcon />
-                  </button>
-                )}
-              </div>
+            <span className={styles.st} style={{ ['--c' as string]: STATUS_COLOR[statusKey] }}>
+              {STATUS_LABEL[statusKey]}{nextLabel ? ` · ${nextLabel}` : ''}
+            </span>
+            <div className={styles.hw}>{card.headword}</div>
+            <div className={styles.ph}>
+              <span>{ipa}</span>
+              <button type="button" className={styles.ib} aria-label="Произнести" disabled={speaking} onClick={onSpeak}>
+                <svg className={styles.ico} viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 9.5v5h4l5 4v-13l-5 4zM16.5 8.5a5 5 0 010 7" />
+                </svg>
+              </button>
             </div>
-
-            <section className={styles.meanings}>
-              <div className={styles.meaningsHead}>
-                <BookIcon />
-                <span>Значения</span>
+            {(gloss || definition) && (
+              <p className={styles.def}>
+                {gloss && <b>{gloss}</b>}
+                {gloss && definition ? ' — ' : ''}
+                {definition}
+              </p>
+            )}
+            {example?.text && (
+              <div className={styles.bub}>
+                <b>{example.text}</b>
+                {example.translation && <small>{example.translation}</small>}
               </div>
-              <div className={styles.senseList}>
-                {card.senses.map((sense, senseIndex) => {
-                  const examples = (sense.examples || []).map(asExample);
-                  return (
-                    <article key={sense.id || `${sense.gloss_ru}-${senseIndex}`} className={styles.senseCard}>
-                      <div className={styles.senseTitle}>
-                        <span className={styles.check}><CheckIcon /></span>
-                        <span>{sense.definition || sense.gloss_ru}</span>
-                      </div>
-                      <div className={styles.glossRow}>
-                        <span className={styles.glossArrow}>→ {sense.gloss_ru}</span>
-                        <div className={styles.chips}>
-                          {sense.part_of_speech && <span className={styles.chip}>{sense.part_of_speech}</span>}
-                          {card.difficulty_level && <span className={styles.chip}>{card.difficulty_level}</span>}
-                        </div>
-                      </div>
-                      {examples.map((example) => (
-                        <div key={example.text} className={styles.exampleBlock}>
-                          <p className={styles.exampleEn}>{example.text}</p>
-                          {example.translation && <p className={styles.exampleRu}>{example.translation}</p>}
-                        </div>
-                      ))}
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className={styles.progressCard}>
-              <div
-                className={styles.ring}
-                style={{ background: `conic-gradient(var(--accent) ${progressValue * 3.6}deg, rgba(255,255,255,0.08) 0deg)` }}
-              >
-                <div className={styles.ringInner}>{progressValue}%</div>
-              </div>
-              <div className={styles.progressText}>
-                <strong>{STATUS_LABEL[statusKey]}</strong>
-                <span className={styles.statusPill}>{STATUS_HINT[statusKey]}</span>
-              </div>
-            </section>
-
-            <SenseCourseTimeline
-              senseId={card.senses.find((sense) => typeof sense.id === 'string' && sense.id)?.id || null}
-            />
+            )}
+            <div className={styles.sec}>
+              <h3>Речь</h3>
+              <ol className={styles.lad}>
+                {SPEECH_LADDER.map((item, step) => (
+                  <li
+                    key={item.id}
+                    className={[
+                      step <= stage ? styles.done : '',
+                      step === stage ? styles.now : '',
+                    ].filter(Boolean).join(' ')}
+                  >
+                    {item.label}
+                  </li>
+                ))}
+              </ol>
+              {recognizes && <p className={styles.mut}>Узнавание · Узнаёт</p>}
+            </div>
+            <SenseCourseTimeline senseId={sense?.id} variant="sheet" />
+            {onPractice && (
+              <button type="button" className={styles.practice} onClick={onPractice}>
+                Сказать в сцене
+              </button>
+            )}
           </>
         )}
       </aside>

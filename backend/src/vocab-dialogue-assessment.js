@@ -6,6 +6,8 @@
 import { applySm2Review } from './srs.js'
 import { replyContainsTarget, sameLemma, DialogueRouteError } from './vocab-dialogue-routes.js'
 import { courseWordStatus } from './vocab-course-view.js'
+import { describeRetentionAttempt } from './vocab-retention.js'
+import { describeTransferAttempt } from './vocab-transfer.js'
 
 const MOVING = new Set(['produced', 'wrong_sense'])
 
@@ -52,6 +54,13 @@ export function evidenceQuote(text, headword) {
   return quote
 }
 
+function glossRevealed(text, target) {
+  if (target?.is_transfer !== true && target?.retention_days !== 7 && target?.retention_days !== 30) return false
+  const gloss = typeof target?.gloss_ru === 'string' ? target.gloss_ru.trim() : ''
+  if (gloss.length < 3) return false
+  return String(text || '').toLowerCase().includes(gloss.toLowerCase())
+}
+
 export function classifyDialogueTargets({ targets, turns, hints }) {
   const orderedTurns = (Array.isArray(turns) ? turns : [])
     .filter((turn) => turn && (turn.role === 'user' || turn.role === 'assistant') && typeof turn.content === 'string')
@@ -77,6 +86,14 @@ export function classifyDialogueTargets({ targets, turns, hints }) {
       Number.isInteger(hint.turn_index)
       && hint.turn_index <= userTurn.turn_index
       && replyContainsTarget(hint.hint_text, [{ headword: word }])
+    )) || orderedTurns.some((turn) => (
+      turn.role === 'assistant'
+      && turn.turn_index < userTurn.turn_index
+      && glossRevealed(turn.content, target)
+    )) || hintRows.some((hint) => (
+      Number.isInteger(hint.turn_index)
+      && hint.turn_index <= userTurn.turn_index
+      && glossRevealed(hint.hint_text, target)
     ))
     if (hinted) {
       return { sense_id: target.sense_id, verdict: 'hinted', evidence_text: quote || null, needsSense: false }
@@ -336,7 +353,7 @@ export function createDialogueAssessmentHandler({
       if (!session || session.user_id !== userId) throw new DialogueRouteError(404, 'Practice session was not found')
       if (
         session.language !== language
-        || (session.mode !== 'chat' && session.mode !== 'roleplay' && session.mode !== 'debate')
+        || (session.mode !== 'chat' && session.mode !== 'roleplay' && session.mode !== 'debate' && session.mode !== 'retention' && session.mode !== 'transfer')
         || (session.status !== 'active' && session.status !== 'assessed')
       ) {
         throw new DialogueRouteError(409, 'Practice session does not belong to this conversation')
@@ -346,13 +363,17 @@ export function createDialogueAssessmentHandler({
         safeSupabaseCall,
         () => supabase
           .from('vocab_dialogue_targets')
-          .select('sense_id, position, headword, gloss_ru, user_id, moves_schedule')
+          .select('sense_id, position, headword, gloss_ru, user_id, moves_schedule, retention_days')
           .eq('dialogue_session_id', dialogueSessionId)
           .eq('user_id', userId)
           .order('position', { ascending: true }),
       )
       const targets = (Array.isArray(targetRows) ? targetRows : [])
         .filter((row) => row && row.user_id === userId && row.headword && row.gloss_ru)
+        .map((row) => ({
+          ...row,
+          is_transfer: session.mode === 'transfer',
+        }))
       const turns = await readRows(
         safeSupabaseCall,
         () => supabase
@@ -425,7 +446,10 @@ export function createDialogueAssessmentHandler({
         }
       }
       classified = applyOpportunityVerdicts(classified, opportunities)
-      const movesBySense = new Map(targets.map((row) => [row.sense_id, row.moves_schedule !== false]))
+      const movesBySense = new Map(targets.map((row) => [
+        row.sense_id,
+        session.mode !== 'transfer' && row.moves_schedule !== false && row.retention_days == null,
+      ]))
       const stateRows = await readRows(
         safeSupabaseCall,
         () => supabase
@@ -454,6 +478,68 @@ export function createDialogueAssessmentHandler({
         const status = committed?.status === 'not_found' ? 404 : 409
         throw new DialogueRouteError(status, 'Practice assessment was not saved')
       }
+      let retention = null
+      if (session.mode === 'retention') {
+        const eventRows = await readRows(
+          safeSupabaseCall,
+          () => supabase
+            .from('vocab_review_events')
+            .select('sense_id, source, card_type, verdict, dialogue_session_id, evidence_text, due_before, due_after, retention_days, created_at')
+            .eq('user_id', userId)
+            .in('sense_id', targets.map((target) => target.sense_id)),
+        )
+        const heldRows = await readRows(
+          safeSupabaseCall,
+          () => supabase
+            .from('vocab_dialogue_targets')
+            .select('dialogue_session_id, sense_id, moves_schedule')
+            .eq('user_id', userId)
+            .eq('moves_schedule', false)
+            .in('sense_id', targets.map((target) => target.sense_id)),
+        )
+        retention = targets.map((target) => {
+          const events = (Array.isArray(eventRows) ? eventRows : []).filter((row) => row?.sense_id === target.sense_id)
+          const movesByKey = new Map()
+          for (const row of Array.isArray(heldRows) ? heldRows : []) {
+            if (row?.sense_id !== target.sense_id) continue
+            const sessionId = typeof row.dialogue_session_id === 'string' ? row.dialogue_session_id.trim() : ''
+            if (sessionId) movesByKey.set(`${sessionId}:${target.sense_id}`, false)
+          }
+          const attempt = events.find((row) => row.dialogue_session_id === dialogueSessionId && (row.retention_days === 7 || row.retention_days === 30))
+          const outcome = describeRetentionAttempt(events, movesByKey, attempt)
+          return {
+            sense_id: target.sense_id,
+            headword: target.headword,
+            gloss_ru: target.gloss_ru,
+            confirmed: outcome.confirmed,
+            interval_days: outcome.interval_days,
+            checked_at: outcome.checked_at,
+            windows: outcome.windows,
+          }
+        })
+      }
+      let transfer = null
+      if (session.mode === 'transfer') {
+        const eventRows = await readRows(
+          safeSupabaseCall,
+          () => supabase
+            .from('vocab_review_events')
+            .select('sense_id, verdict, dialogue_session_id, is_transfer, transfer_confirmed')
+            .eq('user_id', userId)
+            .eq('dialogue_session_id', dialogueSessionId),
+        )
+        transfer = targets.map((target) => {
+          const attempt = (Array.isArray(eventRows) ? eventRows : []).find((row) => row?.sense_id === target.sense_id)
+          const outcome = describeTransferAttempt(attempt)
+          return {
+            sense_id: target.sense_id,
+            headword: target.headword,
+            gloss_ru: target.gloss_ru,
+            verdict: outcome.verdict,
+            transfer_confirmed: outcome.transfer_confirmed,
+          }
+        })
+      }
       res.status(200).json({
         status: committed.status,
         dialogue_session_id: dialogueSessionId,
@@ -463,6 +549,8 @@ export function createDialogueAssessmentHandler({
           verdict: item.verdict,
           interval_days: item.interval_days,
         })) : [],
+        ...(retention ? { retention } : {}),
+        ...(transfer ? { transfer } : {}),
       })
     } catch (err) {
       if (res.headersSent) return

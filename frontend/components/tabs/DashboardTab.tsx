@@ -1,388 +1,424 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useLearningLanguage } from '@/context/LearningLanguageContext';
+import { supabase } from '@/lib/supabase';
+import { readIntroRun, writeIntroRun } from '@/lib/next-intro-run';
 import { useDashboardMetrics, formatDuration } from './useDashboardMetrics';
 import styles from './dashboard.module.css';
 
-const AgentIcon = () => (
-  <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2C10.9 2 10 2.9 10 4V12C10 13.1 10.9 14 12 14C13.1 14 14 13.1 14 12V4C14 2.9 13.1 2 12 2Z" />
-    <path d="M19 10V12C19 15.9 15.9 19 12 19C8.1 19 5 15.9 5 12V10" />
-    <path d="M12 19V22" />
-  </svg>
-);
+const WEEKLY_GOAL_MINUTES = 90;
+const DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-const DictionaryIcon = () => (
-  <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 19.5C4 18.1 5.1 17 6.5 17H20" />
-    <path d="M6.5 2H20V22H6.5C5.1 22 4 20.9 4 19.5V4.5C4 3.1 5.1 2 6.5 2Z" />
-    <path d="M8 7H16" />
-    <path d="M8 11H16" />
-  </svg>
-);
-
-const KaraokeIcon = () => (
-  <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 1C10.62 1 9.5 2.12 9.5 3.5V10.5C9.5 11.88 10.62 13 12 13C13.38 13 14.5 11.88 14.5 10.5V3.5C14.5 2.12 13.38 1 12 1Z" />
-    <path d="M12 13V16" />
-    <path d="M12 16C12 16 8 16.5 8 19" />
-    <path d="M12 16C12 16 16 16.5 16 19" />
-    <path d="M6 19H18" />
-  </svg>
-);
-
-const FlameIcon = () => (
-  <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
-  </svg>
-);
-
-const ProgressIcon = () => (
-  <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 3v18h18" />
-    <path d="M7 14l4-4 4 4 5-8" />
-  </svg>
-);
-
-const QUICK_ACCESS_ITEMS: {
-  tab: 'karaoke' | 'dictionary' | 'agent' | 'progress';
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-}[] = [
-  { tab: 'karaoke', label: 'Караоке', description: 'Тренируй ритм и произношение', icon: <KaraokeIcon /> },
-  { tab: 'dictionary', label: 'Словарь', description: 'Закрепляй лексику по темам', icon: <DictionaryIcon /> },
-  { tab: 'agent', label: 'AI-собеседник', description: 'Практикуй живой разговор', icon: <AgentIcon /> },
-  { tab: 'progress', label: 'Прогресс', description: 'Отслеживай рост по навыкам', icon: <ProgressIcon /> },
+const PLAN = [
+  { title: '10–15 минут диалога с ИИ', hint: 'Прокачка беглости и уверенности', go: 'Начать', tab: 'agent' as const },
+  { title: 'Добавь 3–5 новых выражений', hint: 'Слова и идиомы в контексте', go: 'Добавить', tab: 'dictionary' as const },
+  { title: 'Повтори слова, которым пора', hint: 'До пяти слов за занятие', go: 'Повторить', tab: 'agent' as const },
 ];
 
-export const DashboardTab: React.FC = () => {
-  const { learningLanguage } = useLearningLanguage();
-  const isChineseMode = learningLanguage === 'zh';
+type NextSense = { sense_id: string; headword: string; gloss_ru: string };
+
+type NextAction = {
+  action: 'repair' | 'due_speech' | 'recognized_speech' | 'new_speech' | 'retention' | 'transfer' | 'recognition' | 'free';
+  title: string;
+  reason: string;
+  count: number;
+  list_id: string | null;
+  senses: NextSense[];
+  intro_run_after: number;
+};
+
+function getApiUrl() {
+  const url = process.env.NEXT_PUBLIC_API_URL || '';
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+function pluralWords(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'слово';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'слова';
+  return 'слов';
+}
+
+function pluralDays(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'день';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
+  return 'дней';
+}
+
+function Arrow() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+function Check() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+function StatIcon({ name }: { name: 'fire' | 'clock' | 'chat' | 'book' }) {
+  if (name === 'fire') {
+    return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 01-10 0c0-2 1-3 2-4 .2 1.5 1 2 2 2 0-3-1-5 1-8z" /></svg>;
+  }
+  if (name === 'clock') {
+    return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+  }
+  if (name === 'chat') {
+    return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 5h16v11H9l-5 4z" /></svg>;
+  }
+  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2zM8 7h8M8 11h8" /></svg>;
+}
+
+export const DashboardTab: React.FC<{ displayName?: string }> = ({ displayName = 'друг' }) => {
   const { metrics, loading, error } = useDashboardMetrics();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const WEEKLY_GOAL_MINUTES = 90;
+  const [done, setDone] = useState([false, false, false]);
+  const [userId, setUserId] = useState('');
+  const [recommendation, setRecommendation] = useState<NextAction | null>(null);
+  const [recommendationState, setRecommendationState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [recommendationTry, setRecommendationTry] = useState(0);
 
-  const quickAccessItems = useMemo(
-    () => QUICK_ACCESS_ITEMS.filter((item) => !isChineseMode || item.tab !== 'karaoke'),
-    [isChineseMode],
-  );
-
-  const goToTab = (tab: 'karaoke' | 'dictionary' | 'agent' | 'progress') => {
-    const base = pathname || '/';
+  const goToTab = (tab: 'dictionary' | 'agent' | 'progress') => {
     const next = new URLSearchParams(searchParams.toString());
     next.set('tab', tab);
-    router.replace(`${base}?${next.toString()}`, { scroll: false });
+    router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
   };
 
-  const weeklyGoalProgress = Math.min(100, Math.round((metrics.weekMinutes / WEEKLY_GOAL_MINUTES) * 100));
-  const weekMinutesLeft = Math.max(0, WEEKLY_GOAL_MINUTES - metrics.weekMinutes);
-  const conversationShare = metrics.conversationMinutes > 0
+  const openRecommendation = (item: NextAction) => {
+    try {
+      writeIntroRun(window.localStorage, userId, item.intro_run_after);
+    } catch {
+      // Без хранилища переход остаётся, а счётчик вводных не сохранится.
+    }
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('review');
+    next.delete('senses');
+    next.delete('list');
+    next.delete('mode');
+    next.delete('target');
+    next.delete('repick');
+    if (item.action === 'recognition') {
+      next.set('tab', 'dictionary');
+      next.set('review', '1');
+    } else if (item.action === 'free') {
+      next.set('tab', 'agent');
+      next.set('from', 'vocab');
+      next.set('mode', 'free');
+    } else if ((item.action === 'retention' || item.action === 'transfer') && item.senses.length >= 1) {
+      next.set('tab', 'agent');
+      next.set('from', 'vocab');
+      next.set('mode', item.action);
+      next.set('senses', item.senses.map((sense) => sense.sense_id).join(','));
+    } else if (item.list_id && item.senses.length >= 2) {
+      next.set('tab', 'agent');
+      next.set('from', 'vocab');
+      next.set('list', item.list_id);
+      next.set('senses', item.senses.map((sense) => sense.sense_id).join(','));
+    } else {
+      next.set('tab', 'agent');
+    }
+    router.replace(`${pathname || '/dashboard'}?${next.toString()}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setRecommendationState('loading');
+    supabase.auth.getSession().then(async ({ data }) => {
+      const token = data.session?.access_token;
+      const nextUserId = data.session?.user?.id || '';
+      if (!cancelled) setUserId(nextUserId);
+      if (!token) {
+        if (!cancelled) setRecommendationState('error');
+        return;
+      }
+      try {
+        let run = 0;
+        try {
+          run = readIntroRun(window.localStorage, nextUserId);
+        } catch {
+          run = 0;
+        }
+        const response = await fetch(`${getApiUrl()}/api/vocabulary/next-action?intro_run=${run}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.title || !payload?.reason) throw new Error('next');
+        const keepHiddenWords = payload.action === 'retention' || payload.action === 'transfer';
+        const senses = Array.isArray(payload.senses) ? payload.senses.flatMap((item: NextSense) => {
+          const headword = typeof item?.headword === 'string' ? item.headword.trim() : '';
+          const senseId = typeof item?.sense_id === 'string' ? item.sense_id : '';
+          if (!senseId || (!headword && !keepHiddenWords)) return [];
+          return [{
+            sense_id: senseId,
+            headword,
+            gloss_ru: typeof item?.gloss_ru === 'string' ? item.gloss_ru.trim() : '',
+          }];
+        }) : [];
+        if (cancelled) return;
+        setRecommendation({
+          action: payload.action,
+          title: payload.title,
+          reason: payload.reason,
+          count: Number(payload.count) || senses.length,
+          list_id: typeof payload.list_id === 'string' ? payload.list_id : null,
+          senses,
+          intro_run_after: Number.isInteger(payload.intro_run_after) ? payload.intro_run_after : 0,
+        });
+        setRecommendationState('ready');
+      } catch {
+        if (!cancelled) setRecommendationState('error');
+      }
+    });
+    return () => { cancelled = true; };
+  }, [recommendationTry]);
+
+  const todayIndex = (new Date().getDay() + 6) % 7;
+  const weekLeft = Math.max(0, WEEKLY_GOAL_MINUTES - metrics.weekMinutes);
+  const goalPercent = Math.min(100, Math.round((metrics.weekMinutes / WEEKLY_GOAL_MINUTES) * 100));
+  const daysLeft = Math.max(1, 7 - todayIndex);
+  const pace = Math.max(1, Math.round(weekLeft / daysLeft));
+  const ring = 2 * Math.PI * 38;
+  const dash = (goalPercent / 100) * ring;
+  const share = metrics.conversationMinutes > 0
     ? Math.round((metrics.weekMinutes / metrics.conversationMinutes) * 100)
     : 0;
-
-  const streakLabel = metrics.streakDays === 1
-    ? 'день подряд'
-    : metrics.streakDays > 1 && metrics.streakDays < 5
-      ? 'дня подряд'
-      : 'дней подряд';
-  const karaokeLabel = metrics.karaokeCount === 1
-    ? 'песня'
-    : metrics.karaokeCount > 1 && metrics.karaokeCount < 5
-      ? 'песни'
-      : 'песен';
-  const wordsRatio = metrics.dictionaryCount > 0 ? Math.round((metrics.wordsCount / metrics.dictionaryCount) * 100) : 0;
-  const idiomsRatio = metrics.dictionaryCount > 0 ? Math.round((metrics.idiomsCount / metrics.dictionaryCount) * 100) : 0;
-  const phrasalRatio = metrics.dictionaryCount > 0 ? Math.round((metrics.phrasalVerbsCount / metrics.dictionaryCount) * 100) : 0;
+  const dayMax = Math.max(20, ...metrics.weekDayMinutes);
+  const dictParts = [
+    { label: 'Слова', count: metrics.wordsCount, color: '#7aa2ff' },
+    { label: 'Идиомы', count: metrics.idiomsCount, color: 'var(--accent)' },
+    { label: 'Фразовые глаголы', count: metrics.phrasalVerbsCount, color: '#a5b0ff' },
+  ];
+  const dictTotal = dictParts.reduce((sum, part) => sum + part.count, 0);
+  const doneCount = done.filter(Boolean).length;
+  const dateLabel = useMemo(() => {
+    const raw = new Intl.DateTimeFormat('ru-RU', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(new Date());
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }, []);
 
   if (loading) {
     return (
-      <div className={styles.wrapper}>
-        <section className={styles.heroSection}>
-          <div className={styles.heroGrid}>
-            {[1, 2].map((i) => (
-              <div key={i} className={`${styles.card} ${styles.skeletonCard} ${styles.skeletonHeroCard}`}>
-                <div className={styles.skeletonTitle} />
-                <div className={styles.skeletonValue} />
-              </div>
-            ))}
-          </div>
-        </section>
-        <section className={styles.metricsSection}>
-          <div className={styles.kpiGrid}>
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className={`${styles.card} ${styles.skeletonCard}`}>
-                <div className={styles.skeletonTitle} />
-                <div className={styles.skeletonValue} />
-              </div>
-            ))}
-          </div>
-        </section>
+      <div className={styles.page} aria-busy="true">
+        <div className={styles.hello}><h1>Главная</h1></div>
       </div>
     );
   }
 
   if (error) {
-    return (
-      <div
-        style={{
-          padding: '1.5rem',
-          borderRadius: 'var(--radius-lg)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          background: 'rgba(239, 68, 68, 0.08)',
-          color: 'rgba(248, 113, 113, 0.95)',
-        }}
-      >
-        Не удалось загрузить метрики: {error}
-      </div>
-    );
+    return <div className={styles.error}>Не удалось загрузить метрики: {error}</div>;
   }
 
   return (
-    <div className={styles.wrapper}>
-      <section className={styles.heroSection} aria-label="Учебный обзор">
-        <div className={styles.heroGrid}>
-          <div className={`${styles.card} ${styles.heroMainCard}`}>
-            <div className={styles.heroBadge}>
-              {isChineseMode ? 'Китайский учебный трек' : 'Персональный учебный трек'}
-            </div>
-            <h2 className={styles.heroTitle}>
-              {isChineseMode
-                ? 'Двигайся к уверенной речи на упрощённом китайском каждый день'
-                : 'Двигайся к уверенной разговорной речи каждый день'}
-            </h2>
-            <p className={styles.heroSub}>
-              {isChineseMode
-                ? 'Комбинируй диалоги с AI и словарь, чтобы быстрее закреплять иероглифы, pinyin и живые выражения.'
-                : 'Комбинируй диалоги с AI, словарь и караоке-практику, чтобы быстрее закреплять лексику и говорить свободнее.'}
-            </p>
-            <button type="button" className={styles.heroCta} onClick={() => goToTab('agent')}>
-              <span className={styles.heroCtaIcon} aria-hidden="true">
-                <AgentIcon />
-              </span>
-              <span className={styles.heroCtaCopy}>
-                <span className={styles.heroCtaTitle}>
-                  {metrics.todayMinutes > 0 ? 'Продолжить практику' : 'Начать практику'}
-                </span>
-                <span className={styles.heroCtaHint}>
-                  {isChineseMode
-                    ? 'Диалог или голосовая минутка на вашем HSK'
-                    : 'Сценарий, свободный разговор или дебаты'}
-                </span>
-              </span>
-              <span className={styles.heroCtaMeta}>
-                <span className={styles.heroCtaTime}>10 мин</span>
-                <span className={styles.heroCtaGo} aria-hidden="true">→</span>
-              </span>
-            </button>
-            <div className={styles.heroStats}>
-              <div className={styles.heroStat}>
-                <span className={styles.heroStatLabel}>На этой неделе</span>
-                <span className={styles.heroStatValue}>{formatDuration(metrics.weekMinutes)}</span>
-              </div>
-              <div className={styles.heroStat}>
-                <span className={styles.heroStatLabel}>Сегодня</span>
-                <span className={styles.heroStatValue}>{formatDuration(metrics.todayMinutes)}</span>
-              </div>
-              <div className={styles.heroStat}>
-                <span className={styles.heroStatLabel}>Streak</span>
-                <span className={styles.heroStatValue}>{metrics.streakDays}</span>
-              </div>
-            </div>
-          </div>
-          <div className={`${styles.card} ${styles.heroGoalCard}`}>
-            <div className={styles.goalTitleWrap}>
-              <div className={styles.cardIcon}>
-                <ProgressIcon />
-              </div>
-              <div>
-                <p className={styles.goalCaption}>Недельная цель</p>
-                <h3 className={styles.goalTitle}>{WEEKLY_GOAL_MINUTES} минут практики</h3>
-              </div>
-            </div>
-            <div className={styles.goalProgressBar}>
-              <div className={styles.goalProgressValue} style={{ width: `${weeklyGoalProgress}%` }} />
-            </div>
-            <p className={styles.goalProgressText}>
-              {weeklyGoalProgress}% выполнено
-              {' · '}
-              {weekMinutesLeft > 0 ? `осталось ${formatDuration(weekMinutesLeft)}` : 'цель достигнута'}
-            </p>
-            <button type="button" onClick={() => goToTab('progress')} className={styles.goalActionBtn}>
-              Открыть детальный прогресс
-            </button>
-          </div>
+    <div className={styles.page}>
+      <div className={styles.hello}>
+        <div>
+          <h1>Привет, {displayName}!</h1>
+          <p>Сфокусируйся на одной задаче и закрепи результат сегодня.</p>
         </div>
-      </section>
+        <span className={styles.date}>{dateLabel}</span>
+      </div>
 
-      <section className={styles.wordsSection} aria-label="Как учить слова">
-        <h2 className={styles.wordsLead}>Скажи слова в сцене</h2>
-        <div className={styles.wordsGrid}>
-          <article className={`${styles.card} ${styles.wordsStep}`}>
-            <p className={styles.wordsStepMark}>Практика</p>
-            <h3 className={styles.wordsStepTitle}>Сказать в сцене</h3>
-            <p className={styles.wordsStepText}>
-              {isChineseMode
-                ? 'Список соберёт до пяти слов, которым пора. Дальше ситуативный диалог.'
-                : 'Список соберёт до пяти слов, которым пора. Дальше сценарий или дебат.'}
-            </p>
-            <button type="button" className={styles.wordsStepButton} onClick={() => goToTab('agent')}>
-              Сказать в сцене
-            </button>
-          </article>
-        </div>
-      </section>
-
-      <section className={styles.metricsSection} aria-label="Ключевые метрики">
-        <h2 className={styles.sectionTitle}>Ключевые метрики обучения</h2>
-        <div className={styles.kpiGrid}>
-          <div className={`${styles.card} ${styles.kpiCard} ${styles.cardStreak}`}>
-            <div className={styles.cardIcon}>
-              <FlameIcon />
-            </div>
-            <div className={styles.cardTitle}>Текущий streak</div>
-            <div className={styles.cardValue}>{metrics.streakDays}</div>
-            <div className={styles.cardSub}>
-              {metrics.streakDays === 0 ? 'Запусти практику сегодня' : streakLabel}
-            </div>
-          </div>
-
-          <div className={`${styles.card} ${styles.kpiCard} ${styles.cardAgent}`}>
-            <div className={styles.cardIcon}>
-              <AgentIcon />
-            </div>
-            <div className={styles.cardTitle}>AI-разговоры (всего)</div>
-            <div className={styles.cardValue}>{formatDuration(metrics.conversationMinutes)}</div>
-            <div className={styles.cardSub}>Живая практика с ассистентом</div>
-          </div>
-
-          <div className={`${styles.card} ${styles.kpiCard} ${styles.cardDictionary}`}>
-            <div className={styles.cardIcon}>
-              <DictionaryIcon />
-            </div>
-            <div className={styles.cardTitle}>Словарь</div>
-            <div className={styles.cardValue}>{metrics.dictionaryCount}</div>
-            <div className={styles.cardSub}>Добавленных единиц лексики</div>
-          </div>
-
-          {!isChineseMode && (
-            <div className={`${styles.card} ${styles.kpiCard} ${styles.cardKaraoke}`}>
-              <div className={styles.cardIcon}>
-                <KaraokeIcon />
+      <div className={styles.grid}>
+        <section className={`${styles.card} ${styles.hero}`} aria-label="Следующее занятие">
+          <span className={styles.eyebrow}><i />Следующее занятие</span>
+          {recommendationState === 'ready' && recommendation ? (
+            <>
+              <h2>{recommendation.title}</h2>
+              <p className={styles.lead}>{recommendation.reason}</p>
+              {recommendation.count > 0 ? (
+                <p className={styles.sub}>{recommendation.count} {pluralWords(recommendation.count)}</p>
+              ) : null}
+              {recommendation.action !== 'retention' && recommendation.action !== 'transfer' && recommendation.senses.length > 0 ? (
+                <div className={styles.wchips}>
+                  {recommendation.senses.map((word) => (
+                    <div className={styles.wc} key={word.sense_id}>
+                      <b>{word.headword}</b>
+                      {word.gloss_ru ? <span>{word.gloss_ru}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className={styles.acts}>
+                <button type="button" className={`${styles.btn} ${styles.pri}`} onClick={() => openRecommendation(recommendation)}>
+                  {recommendation.action === 'free'
+                    ? 'Свободный разговор'
+                    : recommendation.action === 'recognition'
+                      ? 'Повторить'
+                      : recommendation.action === 'retention' || recommendation.action === 'transfer'
+                        ? 'Начать разговор'
+                        : 'Начать занятие'}
+                  <Arrow />
+                </button>
               </div>
-              <div className={styles.cardTitle}>Караоке-активность</div>
-              <div className={styles.cardValue}>{metrics.karaokeCount}</div>
-              <div className={styles.cardSub}>{karaokeLabel} отработано</div>
-            </div>
+            </>
+          ) : recommendationState === 'error' ? (
+            <>
+              <h2>Занятие пока не выбрано</h2>
+              <p className={styles.lead}>Не удалось прочитать учебное состояние.</p>
+              <div className={styles.acts}>
+                <button type="button" className={`${styles.btn} ${styles.pri}`} onClick={() => setRecommendationTry((value) => value + 1)}>
+                  Попробовать снова
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2>Подбираем занятие</h2>
+              <p className={styles.lead}>Смотрим, что сейчас важнее всего.</p>
+            </>
           )}
-        </div>
-      </section>
+          <div className={styles.orb} aria-hidden="true" />
+        </section>
 
-      <section className={styles.learningSection} aria-label="Развитие навыков">
-        <div className={`${styles.card} ${styles.learningCard}`}>
-          <div className={styles.learningHeader}>
-            <h2 className={styles.sectionTitle}>Фокус недели</h2>
-          </div>
-          <p className={styles.learningLead}>
-            {weekMinutesLeft > 0
-              ? `До недельной цели осталось ${formatDuration(weekMinutesLeft)}. Лучше всего добивать цель короткими ежедневными сессиями.`
-              : 'Ты закрыл недельную цель. Сфокусируйся на качестве: разбирай ошибки и расширяй лексику.'}
-          </p>
-          <div className={styles.learningChecklist}>
-            <button type="button" className={styles.learningStep} onClick={() => goToTab('agent')}>
-              <span className={styles.learningStepTitle}>10-15 минут диалога с AI</span>
-              <span className={styles.learningStepSub}>Прокачка fluency и уверенности</span>
-            </button>
-            <button type="button" className={styles.learningStep} onClick={() => goToTab('dictionary')}>
-              <span className={styles.learningStepTitle}>
-                {isChineseMode ? 'Добавь 3-5 новых слов или 成语' : 'Добавь 3-5 новых выражений'}
-              </span>
-              <span className={styles.learningStepSub}>
-                {isChineseMode
-                  ? 'Закрепление иероглифов и выражений в контексте'
-                  : 'Закрепление слов и идиом в контексте'}
-              </span>
-            </button>
-            {!isChineseMode && (
-              <button type="button" className={styles.learningStep} onClick={() => goToTab('karaoke')}>
-                <span className={styles.learningStepTitle}>Одна песня на повторе</span>
-                <span className={styles.learningStepSub}>Тренировка слуха, ритма и произношения</span>
-              </button>
-            )}
-            {isChineseMode && (
-              <button type="button" className={styles.learningStep} onClick={() => goToTab('progress')}>
-                <span className={styles.learningStepTitle}>Проверь прогресс за неделю</span>
-                <span className={styles.learningStepSub}>Отслеживай рост по навыкам и HSK-фокусу</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className={`${styles.card} ${styles.breakdownCard}`}>
-          <h2 className={styles.sectionTitle}>Структура словаря</h2>
-          <div className={styles.breakdownList}>
-            <div className={styles.breakdownRow}>
-              <div className={styles.breakdownMeta}>
-                <span>{isChineseMode ? '词语' : 'Слова'}</span>
-                <span>{metrics.wordsCount}</span>
-              </div>
-              <div className={styles.breakdownBar}>
-                <div className={styles.breakdownBarValue} style={{ width: `${wordsRatio}%` }} />
-              </div>
+        <section className={`${styles.card} ${styles.goal}`} aria-label="Недельная цель">
+          <div className={styles.ch}>
+            <div>
+              <h2>Цель недели</h2>
+              <p className={styles.sub}>{WEEKLY_GOAL_MINUTES} минут практики</p>
             </div>
-            <div className={styles.breakdownRow}>
-              <div className={styles.breakdownMeta}>
-                <span>{isChineseMode ? '成语' : 'Идиомы'}</span>
-                <span>{metrics.idiomsCount}</span>
-              </div>
-              <div className={styles.breakdownBar}>
-                <div className={styles.breakdownBarValue} style={{ width: `${idiomsRatio}%` }} />
-              </div>
-            </div>
-            {!isChineseMode && (
-              <div className={styles.breakdownRow}>
-                <div className={styles.breakdownMeta}>
-                  <span>Фразовые глаголы</span>
-                  <span>{metrics.phrasalVerbsCount}</span>
-                </div>
-                <div className={styles.breakdownBar}>
-                  <div className={styles.breakdownBarValue} style={{ width: `${phrasalRatio}%` }} />
-                </div>
-              </div>
-            )}
+            <button type="button" className={styles.link} onClick={() => goToTab('progress')}>Прогресс</button>
           </div>
-          <p className={styles.breakdownFooter}>
-            {metrics.dictionaryCount > 0
-              ? `${conversationShare}% твоего общего разговорного времени приходится на текущую неделю.`
-              : 'Начни добавлять лексику, чтобы видеть структуру словаря и персональные рекомендации.'}
+          <div className={styles.gr}>
+            <svg className={styles.ring} viewBox="0 0 92 92" role="img" aria-label={`Выполнено ${goalPercent}%`}>
+              <circle cx="46" cy="46" r="38" fill="none" stroke="#2e2c3a" strokeWidth="9" />
+              <circle
+                cx="46"
+                cy="46"
+                r="38"
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="9"
+                strokeLinecap="round"
+                strokeDasharray={`${dash} ${ring - dash}`}
+                transform="rotate(-90 46 46)"
+              />
+              <text x="46" y="52" textAnchor="middle" fontSize="20" fontWeight="700">{goalPercent}%</text>
+            </svg>
+            <div>
+              <b>{formatDuration(metrics.weekMinutes)} из {WEEKLY_GOAL_MINUTES} мин</b>
+              <span>{weekLeft > 0 ? `Осталось ${formatDuration(weekLeft)}` : 'Цель закрыта'}</span>
+            </div>
+          </div>
+          <div className={styles.days} aria-label="Минуты по дням недели">
+            {DAY_LABELS.map((label, index) => (
+              <div
+                key={label}
+                className={`${styles.dy} ${index === todayIndex ? styles.today : ''} ${index > todayIndex ? styles.future : ''}`}
+                title={`${metrics.weekDayMinutes[index] || 0} мин`}
+              >
+                <i style={{ height: `${Math.max(6, ((metrics.weekDayMinutes[index] || 0) / dayMax) * 80)}px` }} />
+                {label}
+              </div>
+            ))}
+          </div>
+          <p className={styles.gn}>
+            {weekLeft > 0
+              ? <>Чтобы успеть, занимайтесь по <b>{pace} мин в день</b> до воскресенья.</>
+              : <>Недельная цель закрыта. Можно говорить спокойнее и разбирать ошибки.</>}
           </p>
-        </div>
-      </section>
+          <p className={styles.foot}>
+            {metrics.conversationMinutes > 0
+              ? `Это ${share}% всего времени разговоров с ИИ.`
+              : 'Разговоры с ИИ появятся здесь после первой сессии.'}
+          </p>
+        </section>
 
-      <section className={styles.quickAccessSection}>
-        <h2 className={styles.sectionTitle}>Быстрый старт занятий</h2>
-        <div className={styles.quickAccessGrid}>
-          {quickAccessItems.map((item) => (
-            <button
-              key={item.tab}
-              type="button"
-              onClick={() => goToTab(item.tab)}
-              className={styles.quickAccessBtn}
-              data-tab={item.tab}
-            >
-              <span className={styles.quickAccessBtnIcon}>{item.icon}</span>
-              <span className={styles.quickAccessBtnTextWrap}>
-                <span className={styles.quickAccessBtnLabel}>{item.label}</span>
-                <span className={styles.quickAccessBtnSub}>{item.description}</span>
+        <section className={`${styles.card} ${styles.stats}`} aria-label="Ключевые показатели">
+          <div className={`${styles.stat} ${styles.fire}`}>
+            <small><StatIcon name="fire" />Серия</small>
+            <b>{metrics.streakDays} {pluralDays(metrics.streakDays)}</b>
+            <span>{metrics.streakDays === 0 ? 'начните сегодня' : 'подряд'}</span>
+          </div>
+          <div className={styles.stat}>
+            <small><StatIcon name="clock" />Сегодня</small>
+            <b>{formatDuration(metrics.todayMinutes)}</b>
+            <span>на этой неделе {formatDuration(metrics.weekMinutes)}</span>
+          </div>
+          <div className={styles.stat}>
+            <small><StatIcon name="chat" />Разговоры с ИИ</small>
+            <b>{formatDuration(metrics.conversationMinutes)}</b>
+            <span>за всё время</span>
+          </div>
+          <div className={styles.stat}>
+            <small><StatIcon name="book" />Словарь</small>
+            <b>{metrics.dictionaryCount}</b>
+            <span>единиц лексики</span>
+          </div>
+        </section>
+
+        <section className={`${styles.card} ${styles.plan}`} aria-label="План на неделю">
+          <div className={styles.ch}>
+            <div>
+              <h2>План на неделю</h2>
+              <p className={styles.sub}>Три коротких шага, чтобы закрыть цель</p>
+            </div>
+            <span className={styles.cnt}>{doneCount} из 3</span>
+          </div>
+          {PLAN.map((item, index) => (
+            <div className={styles.task} role="checkbox" aria-checked={done[index]} key={item.title} onClick={() => {
+              setDone((prev) => prev.map((value, itemIndex) => (itemIndex === index ? !value : value)));
+            }}>
+              <span className={styles.cb}><Check /></span>
+              <span>
+                <b>{item.title}</b>
+                <small>{item.hint}</small>
               </span>
-            </button>
+              {!done[index] ? (
+                <button
+                  type="button"
+                  className={styles.go}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    goToTab(item.tab);
+                  }}
+                >
+                  {item.go}
+                </button>
+              ) : null}
+            </div>
           ))}
-        </div>
-      </section>
+        </section>
+
+        <section className={`${styles.card} ${styles.dict}`} aria-label="Структура словаря">
+          <div className={styles.ch}>
+            <div>
+              <h2>Словарь</h2>
+              <p className={styles.sub}>Что вы уже собрали</p>
+            </div>
+            <button type="button" className={styles.link} onClick={() => goToTab('dictionary')}>Открыть</button>
+          </div>
+          <div className={styles.big}>{dictTotal}<small>единиц</small></div>
+          <div className={styles.stack} role="img" aria-label={dictParts.map((part) => `${part.label} ${part.count}`).join(', ')}>
+            {dictParts.map((part) => (
+              part.count > 0 ? <i key={part.label} style={{ flex: part.count, ['--c' as string]: part.color }} /> : null
+            ))}
+          </div>
+          <div className={styles.dl}>
+            {dictParts.map((part) => (
+              <div className={styles.dlRow} key={part.label} style={{ ['--c' as string]: part.color }}>
+                <i className={styles.swatch} />
+                <span>{part.label}</span>
+                <b>{part.count}</b>
+                <em>{dictTotal > 0 ? `${Math.round((part.count / dictTotal) * 100)}%` : '0%'}</em>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   );
 };

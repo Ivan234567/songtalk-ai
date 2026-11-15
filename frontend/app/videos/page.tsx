@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { clearBackendToken, getStoredBackendToken, storeBackendToken } from '@/lib/backend-jwt'
+import { clearBackendToken, getStoredBackendToken } from '@/lib/backend-jwt'
+import { exchangeSupabaseToken } from '@/lib/exchange-backend-token'
 import { readStoredTtsVoice } from '@/context/TtsVoiceContext'
 import type { User } from '@supabase/supabase-js'
 
@@ -76,22 +77,8 @@ export default function VideosPage() {
           const supabaseToken = sessionData.session?.access_token || null
           if (supabaseToken) {
             try {
-              const apiUrl = getApiUrl()
-              const resp = await fetch(`${apiUrl}/api/auth/exchange-supabase-token`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ supabase_token: supabaseToken }),
-              })
-
-              if (resp.ok) {
-                const data = await resp.json().catch(() => null)
-                if (data?.token) {
-                  storeBackendToken(data.token)
-                  token = data.token
-                }
-              }
+              const exchanged = await exchangeSupabaseToken(supabaseToken)
+              if (exchanged) token = exchanged
             } catch (e) {
               console.error('[Videos] Failed to exchange Supabase token for backend JWT', e)
             }
@@ -137,23 +124,11 @@ export default function VideosPage() {
       if (supabaseToken) {
         ;(async () => {
           try {
-            const apiUrl = getApiUrl()
-            const resp = await fetch(`${apiUrl}/api/auth/exchange-supabase-token`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ supabase_token: supabaseToken }),
-            })
-
-            if (resp.ok) {
-              const data = await resp.json().catch(() => null)
-              if (data?.token) {
-                storeBackendToken(data.token)
-                setAccessToken(data.token)
-                router.refresh()
-                return
-              }
+            const exchanged = await exchangeSupabaseToken(supabaseToken)
+            if (exchanged) {
+              setAccessToken(exchanged)
+              router.refresh()
+              return
             }
           } catch (e) {
             console.error('[Videos] Failed to refresh backend JWT', e)

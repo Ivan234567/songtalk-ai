@@ -98,6 +98,8 @@ export type RoleplayModeUIProps = {
   /** Для панели в углу: открыт ли модал выбора сценария */
   scenarioModalOpen?: boolean;
   onScenarioModalOpenChange?: (open: boolean) => void;
+  /** Закрытие каталога без старта: родитель решает, куда вернуть ученика */
+  onScenarioDismiss?: () => void;
   /** Рендер: "bar" — компактная полоска (режим + кнопка сценария), "hint" — под орбом (чип + подсказка) */
   placement: 'bar' | 'hint';
   /** Текущий экран модалки: каталог, создание с ИИ или мои сценарии */
@@ -108,6 +110,12 @@ export type RoleplayModeUIProps = {
   onCopyToMineSuccess?: (newScenarioId: string) => void;
   initialScenarioId?: string | null;
   initialPlayMode?: PlayMode;
+  /** Раскрыть тему каталога, не перескакивая в брифинг */
+  initialExpandedThemeId?: string | null;
+  /** Свой сценарий сверху каталога: тема, карточка, затем брифинг */
+  pinnedScenario?: RoleplayScenario | null;
+  /** Практика: карточка открывает мастер уровня и цели, а не сразу брифинг */
+  onPracticePrepare?: (scenario: RoleplayScenario) => void;
   /** Открыт ли модал настройки дебата */
   debateSetupOpen?: boolean;
   onDebateSetupOpenChange?: (open: boolean) => void;
@@ -473,12 +481,16 @@ export function RoleplayModeUI({
   onClearScenario,
   scenarioModalOpen = false,
   onScenarioModalOpenChange,
+  onScenarioDismiss,
   placement,
   scenarioView = 'catalog',
   onScenarioViewChange,
   onCopyToMineSuccess,
   initialScenarioId,
   initialPlayMode,
+  initialExpandedThemeId,
+  pinnedScenario = null,
+  onPracticePrepare,
   debateSetupOpen = false,
   onDebateSetupOpenChange,
   debateView = 'catalog',
@@ -750,12 +762,16 @@ export function RoleplayModeUI({
             }}
             onClose={() => {
               onScenarioModalOpenChange(false);
-              if (!selectedScenario) onModeChange('chat');
+              if (onScenarioDismiss) onScenarioDismiss();
+              else if (!selectedScenario) onModeChange('chat');
             }}
             onScenarioViewChange={onScenarioViewChange}
             onCopyToMineSuccess={onCopyToMineSuccess}
             initialScenarioId={initialScenarioId}
             initialPlayMode={initialPlayMode}
+            initialExpandedThemeId={initialExpandedThemeId}
+            pinnedScenario={pinnedScenario}
+            onPracticePrepare={onPracticePrepare}
             practiceWords={practiceWords}
           />
         )}
@@ -1492,6 +1508,9 @@ function ScenarioModal({
   onCopyToMineSuccess,
   initialScenarioId,
   initialPlayMode,
+  initialExpandedThemeId,
+  pinnedScenario = null,
+  onPracticePrepare,
   practiceWords = null,
 }: {
   learningLanguage: LearningLanguage;
@@ -1501,6 +1520,9 @@ function ScenarioModal({
   onCopyToMineSuccess?: (newScenarioId: string) => void;
   initialScenarioId?: string | null;
   initialPlayMode?: PlayMode;
+  initialExpandedThemeId?: string | null;
+  pinnedScenario?: RoleplayScenario | null;
+  onPracticePrepare?: (scenario: RoleplayScenario) => void;
   practiceWords?: PracticeWordsSession | null;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -1569,6 +1591,22 @@ function ScenarioModal({
   }, [initialScenarioId, initialPlayMode, learningLanguage, masteredById]);
 
   useEffect(() => {
+    if (!initialExpandedThemeId) return;
+    setExpandedThemes((prev) => {
+      if (prev.has(initialExpandedThemeId)) return prev;
+      const next = new Set(prev);
+      next.add(initialExpandedThemeId);
+      return next;
+    });
+  }, [initialExpandedThemeId]);
+
+  useEffect(() => {
+    if (!initialExpandedThemeId || !expandedThemes.has(initialExpandedThemeId)) return;
+    const node = document.getElementById(`theme-${initialExpandedThemeId}`);
+    node?.scrollIntoView({ block: 'nearest' });
+  }, [expandedThemes, initialExpandedThemeId]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (briefingScenario) setBriefingScenario(null);
@@ -1602,6 +1640,10 @@ function ScenarioModal({
   }, [query, difficultyFilter, learningLanguage, masteredById]);
 
   const handleCardSelect = (scenario: RoleplayScenario) => {
+    if (onPracticePrepare) {
+      onPracticePrepare(scenario);
+      return;
+    }
     setBriefingScenario(scenario);
   };
 
@@ -1861,6 +1903,20 @@ function ScenarioModal({
                 </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {pinnedScenario && !sections.some((section) => section.scenarios.some((item) => item.id === pinnedScenario.id)) && (
+                    <section aria-label={pinnedScenario.title} style={{ borderRadius: 12, border: '1px solid rgba(94, 234, 212, 0.45)', overflow: 'hidden', background: 'var(--sidebar-hover)' }}>
+                      <div id="theme-practice-scene" style={{ padding: '1rem 1.25rem', fontSize: '1rem', fontWeight: 600, color: 'var(--sidebar-text)' }}>
+                        {pinnedScenario.title}
+                      </div>
+                      <div style={{ padding: '0 1.25rem 1.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
+                        <ul style={{ listStyle: 'none', margin: '1rem 0 0', padding: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                          <li>
+                            <ScenarioCard scenario={pinnedScenario} onSelect={() => handleCardSelect(pinnedScenario)} />
+                          </li>
+                        </ul>
+                      </div>
+                    </section>
+                  )}
                   {sections.map(({ themeId, label, scenarios: list }) => {
                     const isExpanded = expandedThemes.has(themeId);
                     return (

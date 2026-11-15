@@ -22,6 +22,73 @@ export async function getBalance(supabase, userId) {
   return data ? Number(data.balance_rub) : 0
 }
 
+function money(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return null
+  return Math.round(amount * 100) / 100
+}
+
+/**
+ * Состав баланса. Общая сумма берётся из user_balances.
+ * Бонус и paid — остатки партий. Разница — legacy, без подмены неизвестного нулём.
+ * Если части не сходятся с общей суммой, состав недоступен.
+ */
+export function composeBalance(balanceRub, lots) {
+  const balance = money(balanceRub)
+  const unavailable = {
+    balance_rub: balance,
+    composition_available: false,
+    bonus_rub: null,
+    paid_rub: null,
+    legacy_rub: null,
+  }
+  if (balance == null) return unavailable
+
+  let bonus = 0
+  let paid = 0
+  for (const lot of lots || []) {
+    const amount = money(lot?.remaining_amount)
+    if (amount == null || amount < 0) return unavailable
+    if (lot.source_type === 'bonus') bonus += amount
+    else if (lot.source_type === 'paid') paid += amount
+    else if (lot.source_type !== 'legacy_unclassified') return unavailable
+  }
+
+  bonus = money(bonus)
+  paid = money(paid)
+  const legacy = money(balance - bonus - paid)
+  if (bonus == null || paid == null || legacy == null || legacy < 0) return unavailable
+
+  return {
+    balance_rub: balance,
+    composition_available: true,
+    bonus_rub: bonus,
+    paid_rub: paid,
+    legacy_rub: legacy,
+  }
+}
+
+export async function getBalanceComposition(supabase, userId) {
+  const balanceRub = await getBalance(supabase, userId)
+  const { data, error } = await supabase
+    .from('user_balance_lots')
+    .select('source_type, remaining_amount')
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('[balance] composition unavailable:', error.message)
+    return {
+      balance_rub: money(balanceRub),
+      composition_available: false,
+      bonus_rub: null,
+      paid_rub: null,
+      legacy_rub: null,
+    }
+  }
+
+  return composeBalance(balanceRub, data || [])
+}
+
 /**
  * Порог баланса (₽): ниже — возвращаем 402 и не вызываем платный API (п. 2.2 плана).
  */

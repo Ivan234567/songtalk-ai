@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import styles from './landing.module.css';
+import { useAccountHome } from '@/lib/account-home';
 
 const IconTTS = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -71,6 +72,7 @@ export function PricingSection() {
   const sectionRef = useRef<HTMLElement>(null);
   const [inView, setInView] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const home = useAccountHome();
 
   useEffect(() => {
     const el = sectionRef.current;
@@ -148,10 +150,14 @@ export function PricingSection() {
 
               <div className={styles.pricingCardCta}>
                 <Link
-                  href={user ? '/dashboard?tab=balance' : '/auth/register'}
+                  href={!user ? '/auth/register' : home === 'partner' ? '/partner' : '/dashboard?tab=balance'}
                   className={styles.pricingCardButton}
+                  aria-disabled={Boolean(user) && home === 'loading'}
+                  onClick={(event) => {
+                    if (user && home === 'loading') event.preventDefault();
+                  }}
                 >
-                  Пополнить баланс
+                  {home === 'partner' ? 'Партнёрский кабинет' : 'Пополнить баланс'}
                 </Link>
               </div>
             </article>

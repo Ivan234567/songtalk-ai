@@ -16,7 +16,8 @@ import { dirname } from 'path'
 import { Readable } from 'stream'
 import { transcribe as sttTranscribe } from './stt.js'
 import { synthesize as ttsSynthesize, ttsInputLength } from './tts.js'
-import { getBalance, deductBalance, topupBalance, readOperationId, reservationDeps, BALANCE_THRESHOLD_RUB } from './balance.js'
+import { getBalance, getBalanceComposition, deductBalance, topupBalance, readOperationId, reservationDeps, BALANCE_THRESHOLD_RUB } from './balance.js'
+import { clipOptional, createClickLimiter, normalizeAnonymousId, normalizeReferralCode } from './referral.js'
 import { getCost, prepareSttBilling, clampVoiceMaxTokens, llmCeilingRub, llmSettledChargeRub, ttsReservationRub, ttsSettledChargeRub, SERVER_MAX_OUTPUT_TOKENS } from './balance-rates.js'
 import { runReserved, runBillableChat, completionFromPaid } from './paid-call.js'
 import { attachLearningLanguage, buildReplyHintChatSystemZh, getFreestyleChatSystemPrompt, REPLY_HINT_LEVEL_ZH, buildChineseRoleplayLock, buildChineseMetadataInstruction, buildEnglishRoleplayLock, buildEnglishMetadataInstruction, buildEnglishProfanityPolicy, CEFR_LEVEL_INSTRUCTIONS } from './learning-language.js'
@@ -24,7 +25,47 @@ import { registerZhScenarioRoutes } from './zh-scenarios.js'
 import { registerZhVoiceTaskRoutes } from './zh-voice-tasks.js'
 import { registerYandexAuthRoutes } from './yandex-auth.js'
 import { registerYookassaRoutes } from './yookassa.js'
+import { registerPartnerCabinetRoutes } from './partner-cabinet.js'
+import { registerVocabSrsDueRoute } from './vocab-srs-routes.js'
+import { registerProductionFiveRoute } from './vocab-production-five.js'
+import { registerNextActionRoute } from './vocab-next-action.js'
+import { registerVocabListsRoutes } from './vocab-lists-routes.js'
+import { createResolveListEntries } from './vocab-list-ai.js'
 import { registerVocabularySystemListRoutes } from './vocabulary-system-lists.js'
+import {
+  registerVocabDialogueRoutes,
+  assertChatPracticeRequest,
+  assertRoleplayPracticeRequest,
+  assertDebatePracticeRequest,
+  loadActiveChatPractice,
+  buildChatPracticeInstruction,
+  buildRoleplayPracticeInstruction,
+  buildDebatePracticeInstruction,
+  buildRetentionPracticeInstruction,
+  buildTransferPracticeInstruction,
+  replyContainsTarget,
+  repairPracticeReply,
+  loadChatPracticeHint,
+  saveDialogueHint,
+  buildChatPracticeHintInstruction,
+  buildRoleplayPracticeHintInstruction,
+  buildDebatePracticeHintInstruction,
+  buildRetentionPracticeHintInstruction,
+  buildTransferPracticeHintInstruction,
+  classifyPracticeHint,
+  createDialogueProgressHandler,
+  createRecentDialogueSessionsHandler,
+  createSenseCourseHandler,
+  DialogueRouteError,
+} from './vocab-dialogue-routes.js'
+import {
+  createDialogueAssessmentHandler,
+  latestUserText,
+  recordChatPracticeExchange,
+  loadDialogueProgressSnapshot,
+  classifyDialogueTargets,
+  buildCourseProgressItems,
+} from './vocab-dialogue-assessment.js'
 import {
   buildZhRoleplayFeedbackSystem,
   buildZhRoleplayFeedbackUserPrompt,
@@ -65,7 +106,9 @@ const allowedOrigins = [
   'https://songtalk-ai-frontend-ivans-projects-bf7082bb.vercel.app',
   'https://songtalk-ai-qt84.vercel.app',
   'http://localhost:3000',
+  'http://127.0.0.1:3000',
   'http://localhost:3001',
+  'http://127.0.0.1:3001',
   'http://localhost:3002',
   'http://localhost:3003',
   'http://localhost:3004',
@@ -444,8 +487,7 @@ app.get('/api/balance', asyncHandler(async (req, res) => {
   if (!userId) {
     return res.status(401).json({ error: 'Missing or invalid Authorization' })
   }
-  const balance_rub = await getBalance(supabase, userId)
-  return res.json({ balance_rub })
+  return res.json(await getBalanceComposition(supabase, userId))
 }))
 
 // Balance transactions history — requires auth
@@ -483,7 +525,7 @@ app.get('/api/balance/topups', asyncHandler(async (req, res) => {
   }
   const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 100), 200)
 
-  const [ordersResult, manualResult] = await Promise.all([
+  const [ordersResult, manualResult, welcomeResult] = await Promise.all([
     supabase
       .from('payment_orders')
       .select('id, credit_rub, charge_rub, status, payment_method, created_at, credited_at')
@@ -497,10 +539,18 @@ app.get('/api/balance/topups', asyncHandler(async (req, res) => {
       .eq('type', 'topup_manual')
       .order('created_at', { ascending: false })
       .limit(limit),
+    supabase
+      .from('balance_transactions')
+      .select('id, amount_rub, created_at')
+      .eq('user_id', userId)
+      .eq('type', 'welcome_bonus')
+      .order('created_at', { ascending: false })
+      .limit(limit),
   ])
 
   if (ordersResult.error) throw ordersResult.error
   if (manualResult.error) throw manualResult.error
+  if (welcomeResult.error) throw welcomeResult.error
 
   const asNumber = (value) => {
     const n = Number(value)
@@ -529,7 +579,18 @@ app.get('/api/balance/topups', asyncHandler(async (req, res) => {
     source: 'manual',
   }))
 
-  const items = [...gateway, ...manual]
+  const welcome = (welcomeResult.data || []).map((row) => ({
+    id: row.id,
+    created_at: row.created_at,
+    credited_at: row.created_at,
+    credit_rub: asNumber(row.amount_rub) ?? 0,
+    charge_rub: null,
+    status: 'paid',
+    payment_method: null,
+    source: 'welcome',
+  }))
+
+  const items = [...gateway, ...manual, ...welcome]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, limit)
 
@@ -539,6 +600,54 @@ app.get('/api/balance/topups', asyncHandler(async (req, res) => {
 // Admin: manual balance topup (no gateway). Requires ADMIN_BALANCE_SECRET in header X-Admin-Key or Authorization: Bearer <secret>.
 const ADMIN_BALANCE_SECRET = process.env.ADMIN_BALANCE_SECRET
 const MIN_TOPUP_RUB = 300
+
+const chineseVoteFile = path.join(__dirname, '..', 'data', 'chinese-interest-votes.json')
+
+function rememberChineseVote(userId, want) {
+  fs.mkdirSync(path.dirname(chineseVoteFile), { recursive: true })
+  let rows = []
+  try {
+    rows = JSON.parse(fs.readFileSync(chineseVoteFile, 'utf8'))
+    if (!Array.isArray(rows)) rows = []
+  } catch {
+    rows = []
+  }
+  const now = new Date().toISOString()
+  const index = rows.findIndex((row) => row && row.user_id === userId)
+  const next = {
+    user_id: userId,
+    want,
+    created_at: index >= 0 ? rows[index].created_at : now,
+    updated_at: now,
+  }
+  if (index >= 0) rows[index] = next
+  else rows.push(next)
+  fs.writeFileSync(chineseVoteFile, JSON.stringify(rows, null, 2))
+}
+
+app.post('/api/interest/chinese', asyncHandler(async (req, res) => {
+  const userId = await resolveUserId(req)
+  if (!userId) return res.status(401).json({ error: 'Нужна авторизация' })
+  const want = req.body?.want
+  if (typeof want !== 'boolean') return res.status(400).json({ error: 'Нужен ответ да или нет' })
+  const { error } = await supabase
+    .from('chinese_interest_votes')
+    .upsert({
+      user_id: userId,
+      want,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+  if (error) {
+    console.error('chinese interest vote', error.message)
+  }
+  try {
+    rememberChineseVote(userId, want)
+  } catch (err) {
+    console.error('chinese interest vote file', err?.message || err)
+    if (error) return res.status(500).json({ error: 'Не удалось записать ответ' })
+  }
+  return res.json({ ok: true })
+}))
 
 app.post('/api/admin/balance/topup', asyncHandler(async (req, res) => {
   const rawToken = getBearerToken(req)
@@ -572,8 +681,40 @@ app.post('/api/admin/balance/topup', asyncHandler(async (req, res) => {
   return res.json({ ok: true, new_balance: result.newBalance })
 }))
 
+const allowReferralClick = createClickLimiter()
+
+app.post('/api/referral/click', asyncHandler(async (req, res) => {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown'
+  if (!allowReferralClick(ip)) {
+    return res.status(429).json({ ok: false, error: 'rate_limited' })
+  }
+
+  const referralCode = normalizeReferralCode(req.body?.referral_code)
+  const anonymousId = normalizeAnonymousId(req.body?.anonymous_id)
+  if (!referralCode || !anonymousId) {
+    return res.status(400).json({ ok: false, error: 'invalid_input' })
+  }
+
+  const { data, error } = await supabase.rpc('record_referral_click', {
+    p_referral_code: referralCode,
+    p_anonymous_id: anonymousId,
+    p_landing_path: clipOptional(req.body?.landing_path, 512),
+    p_campaign: clipOptional(req.body?.campaign, 64),
+    p_referrer: clipOptional(req.body?.referrer, 512),
+  })
+  if (error) {
+    console.error('[referral/click]', error.message)
+    return res.status(500).json({ ok: false, error: 'click_failed' })
+  }
+  if (!data?.ok) {
+    const status = data?.error === 'unknown_code' ? 404 : data?.error === 'partner_inactive' ? 403 : 400
+    return res.status(status).json({ ok: false, error: data?.error || 'click_rejected' })
+  }
+  return res.json({ ok: true, referral_code: data.referral_code })
+}))
+
 // Exchange Supabase access token for backend JWT
-// Expected body: { supabase_token: string }
+// Expected body: { supabase_token: string, anonymous_id?: string }
 // This endpoint is called rarely (при логине/обновлении сессии),
 // а все дальнейшие запросы (например, /api/chat) используют только backend JWT.
 app.post('/api/auth/exchange-supabase-token', asyncHandler(async (req, res) => {
@@ -609,25 +750,40 @@ app.post('/api/auth/exchange-supabase-token', asyncHandler(async (req, res) => {
 
     const user = userData.user
 
-    // Приветственный бонус: если у пользователя ещё нет записи баланса — начисляем 50 ₽
-    const WELCOME_BONUS_RUB = 50
-    try {
-      const { data: balanceRow } = await supabase
-        .from('user_balances')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (!balanceRow) {
-        console.log(`[auth/exchange] New user detected (no balance row): ${user.email}, crediting ${WELCOME_BONUS_RUB}₽`)
-        const topupResult = await topupBalance(supabase, user.id, WELCOME_BONUS_RUB, 'topup_manual', {
-          reason: 'welcome_bonus',
+    const anonymousId = normalizeAnonymousId(req.body?.anonymous_id)
+    if (anonymousId) {
+      try {
+        const { data: attribution, error: attributionError } = await supabase.rpc('attribute_referral', {
+          p_user_id: user.id,
+          p_anonymous_id: anonymousId,
         })
-        if (topupResult.ok) {
-          console.log(`[auth/exchange] Welcome bonus ${WELCOME_BONUS_RUB}₽ credited to ${user.email}, new balance: ${topupResult.newBalance}`)
-        } else {
-          console.error(`[auth/exchange] Welcome bonus topup failed:`, topupResult.error)
+        if (attributionError) {
+          console.error('[auth/exchange] Referral attribution error (non-fatal):', attributionError.message)
+        } else if (
+          !attribution?.ok
+          && attribution?.error
+          && attribution.error !== 'no_click_in_window'
+          && attribution.error !== 'account_created_before_click'
+        ) {
+          console.error('[auth/exchange] Referral attribution rejected:', attribution.error)
         }
+      } catch (attributionErr) {
+        console.error('[auth/exchange] Referral attribution error (non-fatal):', attributionErr?.message)
+      }
+    }
+
+    // Приветственный бонус: только grant_welcome_bonus. topup_balance здесь не вызывается,
+    // иначе повторный exchange начислит вторые 50.
+    try {
+      const { data: bonusResult, error: bonusError } = await supabase.rpc('grant_welcome_bonus', {
+        p_user_id: user.id,
+      })
+      if (bonusError) {
+        console.error('[auth/exchange] Welcome bonus error (non-fatal):', bonusError.message)
+      } else if (!bonusResult?.ok) {
+        console.error('[auth/exchange] Welcome bonus rejected:', bonusResult?.error)
+      } else if (bonusResult.granted) {
+        console.log(`[auth/exchange] Welcome bonus 50₽ credited to ${user.email}, new balance: ${bonusResult.new_balance}`)
       }
     } catch (bonusErr) {
       console.error('[auth/exchange] Welcome bonus error (non-fatal):', bonusErr?.message)
@@ -679,6 +835,7 @@ app.post('/api/auth/exchange-supabase-token', asyncHandler(async (req, res) => {
 
 registerYandexAuthRoutes(app, { supabase, asyncHandler })
 registerYookassaRoutes(app, { supabase, asyncHandler, resolveUserId })
+registerPartnerCabinetRoutes(app, { supabase, asyncHandler, resolveUserId })
 
 // Chat endpoint (AITUNNEL proxy) — requires backend JWT (independent of Supabase availability)
 app.post('/api/chat', asyncHandler(async (req, res) => {
@@ -1504,6 +1661,7 @@ app.post('/api/agent/chat', async (req, res) => {
         ? buildEnglishRoleplayLock({
           showTranslation: englishShowTranslation,
           correctionMode: englishCorrectionMode,
+          cefrLevel: englishCefrLevel,
         })
         : getFreestyleChatSystemPrompt('en', {
           showTranslation: englishShowTranslation,
@@ -1574,9 +1732,115 @@ app.post('/api/agent/chat', async (req, res) => {
     : [
       ...(roleplaySafetySystem ? [roleplaySafetySystem] : []),
       ...(freestyleCoachSystem ? [freestyleCoachSystem] : []),
-      ...(steps.length > 0 && learningCoachSystem ? [learningCoachSystem] : []),
+      ...(steps.length > 0 && learningCoachSystem && req.learningLanguage !== 'en' ? [learningCoachSystem] : []),
       ...baseMessages,
+      ...(steps.length > 0 && req.learningLanguage === 'en' && learningCoachSystem ? [learningCoachSystem] : []),
     ]
+
+  let practiceAllTargets = null
+  let practiceAntiSpoilTargets = null
+  let practiceDialogueSessionId = null
+  let attachedPracticeMode = 'chat'
+  let practiceScene = null
+  const requestedDialogueId = typeof req.body?.dialogue_session_id === 'string'
+    ? req.body.dialogue_session_id.trim()
+    : ''
+  try {
+    const rawPracticeMode = req.body?.practice_mode
+    const practiceMode = rawPracticeMode === 'roleplay' || rawPracticeMode === 'debate' || rawPracticeMode === 'retention' || rawPracticeMode === 'transfer'
+      ? rawPracticeMode
+      : 'chat'
+    const attachPractice = practiceMode === 'roleplay'
+      ? assertRoleplayPracticeRequest({
+        dialogueSessionId: requestedDialogueId,
+        annotate: Boolean(annotateMessages),
+      })
+      : practiceMode === 'debate'
+        ? assertDebatePracticeRequest({
+          dialogueSessionId: requestedDialogueId,
+          annotate: Boolean(annotateMessages),
+        })
+        : assertChatPracticeRequest({
+          dialogueSessionId: requestedDialogueId,
+          stepCount: steps.length,
+          annotate: Boolean(annotateMessages),
+        })
+    if (attachPractice) {
+      const practice = await loadActiveChatPractice({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        language: req.learningLanguage === 'zh' ? 'zh' : 'en',
+        dialogueSessionId: requestedDialogueId,
+        agentSessionId: req.body?.agent_session_id,
+        expectedMode: practiceMode,
+      })
+      practiceAllTargets = practice.targets
+      practiceDialogueSessionId = practice.dialogueSessionId
+      attachedPracticeMode = practiceMode
+      const progress = await loadDialogueProgressSnapshot({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        dialogueSessionId: practice.dialogueSessionId,
+        targets: practice.targets,
+      })
+      practiceAntiSpoilTargets = progress.remaining_targets
+      if (practiceAntiSpoilTargets.length > 0) {
+        const rawScene = req.body?.practice_scene && typeof req.body.practice_scene === 'object'
+          ? req.body.practice_scene
+          : null
+        const firstOpenStep = Array.isArray(steps) && steps.length > 0 ? steps[0] : null
+        const requestedStep = typeof rawScene?.currentStep === 'string' ? rawScene.currentStep.trim() : ''
+        const matchedStep = requestedStep && Array.isArray(steps)
+          ? steps.find((step) => [step?.titleRu, step?.titleEn, step?.id]
+            .some((value) => String(value || '').trim().toLowerCase() === requestedStep.toLowerCase()))
+          : null
+        const openStep = matchedStep || firstOpenStep
+        const openStepEn = openStep
+          ? String(openStep.titleEn || openStep.expectedUserAction || openStep.completionCriteria?.evidence_hint_en || '').trim()
+          : ''
+        practiceScene = {
+          title: typeof rawScene?.title === 'string' ? rawScene.title.trim() : '',
+          setting: typeof rawScene?.setting === 'string' ? rawScene.setting.trim() : '',
+          goal: typeof rawScene?.goal === 'string' ? rawScene.goal.trim() : '',
+          topic: typeof rawScene?.topic === 'string' ? rawScene.topic.trim() : '',
+          userPosition: typeof rawScene?.userPosition === 'string' ? rawScene.userPosition.trim() : '',
+          wordStep: typeof rawScene?.wordStep === 'string' ? rawScene.wordStep.trim() : '',
+          currentStepEn: (typeof rawScene?.currentStepEn === 'string' && rawScene.currentStepEn.trim())
+            ? rawScene.currentStepEn.trim()
+            : openStepEn,
+          currentStep: requestedStep
+            || (openStep
+              ? String(openStep.titleRu || openStep.titleEn || openStep.id || '').trim()
+              : ''),
+          stepAction: (typeof rawScene?.stepAction === 'string' && rawScene.stepAction.trim())
+            ? rawScene.stepAction.trim()
+            : openStepEn,
+          replyLanguage: req.learningLanguage === 'zh' ? 'zh' : 'en',
+        }
+        chatMessages.unshift({
+          role: 'system',
+          content: practiceMode === 'roleplay'
+            ? buildRoleplayPracticeInstruction(practiceAntiSpoilTargets, practiceScene)
+            : practiceMode === 'debate'
+              ? buildDebatePracticeInstruction(practiceAntiSpoilTargets, practiceScene)
+              : practiceMode === 'retention'
+                ? buildRetentionPracticeInstruction(practiceAntiSpoilTargets)
+                : practiceMode === 'transfer'
+                  ? buildTransferPracticeInstruction(practiceAntiSpoilTargets, practice.situation)
+                  : buildChatPracticeInstruction(practiceAntiSpoilTargets),
+        })
+      }
+    }
+  } catch (err) {
+    const status = err instanceof DialogueRouteError ? err.status : 500
+    console.error('[api/agent/chat] practice targets rejected')
+    return res.status(status).json({
+      error: err instanceof DialogueRouteError ? err.message : 'Failed to load practice targets',
+    })
+  }
+  const holdPracticeReply = Array.isArray(practiceAntiSpoilTargets) && practiceAntiSpoilTargets.length > 0
 
   try {
     console.log('[api/agent/chat] Starting chat request:', {
@@ -1624,10 +1888,72 @@ app.post('/api/agent/chat', async (req, res) => {
             noteProduced()
             chunkCount++
             fullReply += delta
-            send({ type: 'chunk', delta })
+            if (!holdPracticeReply) send({ type: 'chunk', delta })
           }
         }
         if (timeoutId) clearTimeout(timeoutId)
+        if (holdPracticeReply && replyContainsTarget(fullReply, practiceAntiSpoilTargets)) {
+          const recentAssistant = (Array.isArray(messages) ? messages : [])
+            .filter((m) => m?.role === 'assistant' && typeof m.content === 'string')
+            .map((m) => String(m.content).trim())
+            .filter(Boolean)
+            .slice(-6)
+          const seed = `${latestUserText(messages) || ''}|${recentAssistant.join('|')}|${fullReply.slice(0, 80)}`
+          fullReply = repairPracticeReply(fullReply, practiceAntiSpoilTargets, {
+            language: req.learningLanguage === 'zh' ? 'zh' : 'en',
+            seed,
+            avoid: recentAssistant,
+            mode: attachedPracticeMode,
+            scene: practiceScene,
+          })
+        }
+        if (holdPracticeReply && fullReply) send({ type: 'chunk', delta: fullReply })
+        if (Array.isArray(practiceAllTargets) && practiceAllTargets.length > 0 && fullReply.trim()) {
+          const practiceUserText = latestUserText(messages)
+          if (practiceUserText) {
+            try {
+              await recordChatPracticeExchange({
+                supabase,
+                safeSupabaseCall,
+                userId,
+                language: req.learningLanguage === 'zh' ? 'zh' : 'en',
+                dialogueSessionId: practiceDialogueSessionId || requestedDialogueId,
+                userText: practiceUserText,
+                assistantText: fullReply.trim(),
+              })
+              try {
+                const progress = await loadDialogueProgressSnapshot({
+                  supabase,
+                  safeSupabaseCall,
+                  userId,
+                  dialogueSessionId: practiceDialogueSessionId || requestedDialogueId,
+                  targets: practiceAllTargets,
+                })
+                send({
+                  type: 'practice_progress',
+                  used_count: progress.used_count,
+                  total_count: progress.total_count,
+                  items: progress.items.map((item) => (
+                    attachedPracticeMode === 'retention'
+                      ? { sense_id: item.sense_id, status: item.status, verdict: item.verdict }
+                      : {
+                        sense_id: item.sense_id,
+                        headword: item.headword,
+                        gloss_ru: item.gloss_ru,
+                        status: item.status,
+                        verdict: item.verdict,
+                      }
+                  )),
+                })
+              } catch {
+                console.error('[api/agent/chat] practice progress was not computed')
+              }
+            } catch {
+              console.error('[api/agent/chat] practice exchange was not stored')
+              send({ type: 'practice_store', ok: false })
+            }
+          }
+        }
         console.log('[api/agent/chat] Stream completed:', {
           chunkCount,
           duration: (Date.now() - startTime) + 'ms',
@@ -2248,7 +2574,7 @@ app.post('/api/agent/reply-hint', async (req, res) => {
     scenario_vocabulary,
   } = req.body || {}
   const agentMessage = typeof last_assistant_message === 'string' ? last_assistant_message.trim() : ''
-  const hintMode = mode === 'debate' ? 'debate' : mode === 'chat' ? 'chat' : 'roleplay'
+  const hintMode = mode === 'debate' ? 'debate' : mode === 'retention' ? 'retention' : mode === 'transfer' ? 'transfer' : mode === 'chat' ? 'chat' : 'roleplay'
   if (!agentMessage && hintMode !== 'roleplay') {
     return res.status(400).json({ error: 'Expected { last_assistant_message: "..." }' })
   }
@@ -2367,7 +2693,7 @@ The hint must do three things at once when possible:
 
 Rules:
 - Output ONLY the suggested reply text, in the SAME language the agent used (usually English). No explanations, no "You could say:", no quotation marks around the whole thing.
-- Match the learner level: ${levelText}
+- Stay strictly at the chosen level, not harder and not easier: ${levelText}
 - Hint mode: ${hintModeValue}. ${freestyleModeInstruction}
 - If they conflict, still answer the other person and move the next step; apply hint mode only to phrasing and vocabulary.
 - If the agent has not spoken yet, suggest a natural opening line that already aims at the first step.
@@ -2391,7 +2717,7 @@ Rules:
 Rules:
 - Output ONLY the suggested reply text. No explanations, no labels, no quotation marks around the whole answer.
 - Use the SAME language as the opponent's last message.
-- Match learner level: ${levelText}
+- Stay strictly at the chosen level, not harder and not easier: ${levelText}
 - The reply must directly react to the opponent's latest argument and stay logically consistent with recent dialogue context.
 - Keep the user's side consistent with their debate position (do not switch sides).
 - If a current debate step exists, naturally move toward it while still answering the latest opponent point.
@@ -2423,7 +2749,7 @@ Rules:
 Rules:
 - Output ONLY the suggested reply text. No explanations, no labels, no quote wrappers.
 - Use the SAME language as the assistant's last message.
-- Match learner level: ${levelText}
+- Stay strictly at the chosen level, not harder and not easier: ${levelText}
 - Keep the suggestion directly relevant to the latest assistant message and recent context.
 - Apply style settings:
   - slang_mode=${slangMode}
@@ -2450,6 +2776,27 @@ Rules:
     `\n\nAssistant's latest message:\n${agentMessage}\n\nSuggest the user's next reply.`
 
   try {
+    let practiceHintContext = null
+    const requestedDialogueId = typeof req.body?.dialogue_session_id === 'string'
+      ? req.body.dialogue_session_id.trim()
+      : ''
+    if (requestedDialogueId) {
+      if (hintMode !== 'chat' && hintMode !== 'roleplay' && hintMode !== 'debate' && hintMode !== 'retention' && hintMode !== 'transfer') {
+        return res.status(409).json({ error: 'Practice hint belongs to free chat, roleplay, or debate only' })
+      }
+      practiceHintContext = await loadChatPracticeHint({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        language: req.learningLanguage === 'zh' ? 'zh' : 'en',
+        dialogueSessionId: requestedDialogueId,
+        agentSessionId: req.body?.agent_session_id,
+        expectedMode: hintMode,
+      })
+      if (practiceHintContext.existingHint) {
+        return res.json({ hint: practiceHintContext.existingHint })
+      }
+    }
     const zhHintSystem = req.learningLanguage === 'zh'
       ? buildReplyHintChatSystemZh({
         levelText,
@@ -2478,16 +2825,38 @@ Rules:
       : ''
     const systemContent = hintMode === 'debate'
       ? debateSystemContent + englishHintMeta
-      : hintMode === 'chat'
+      : hintMode === 'chat' || hintMode === 'retention' || hintMode === 'transfer'
         ? (zhHintSystem || chatSystemContent + englishHintMeta)
         : (zhHintSystem || roleplaySystemContent + englishHintMeta)
     const userContent = hintMode === 'debate'
       ? debateUserContent
-      : hintMode === 'chat'
+      : hintMode === 'chat' || hintMode === 'retention' || hintMode === 'transfer'
         ? chatUserContent
         : roleplayUserContent
     const hintMessages = [
-      { role: 'system', content: systemContent },
+      {
+        role: 'system',
+        content: practiceHintContext
+          ? `${systemContent}\n\n${hintMode === 'roleplay'
+            ? buildRoleplayPracticeHintInstruction(practiceHintContext.targets, {
+              title: typeof req.body?.scenario_title === 'string' ? req.body.scenario_title.trim() : '',
+              goal: scenarioGoal || '',
+              currentStep: currentStepLabel || '',
+              stepAction: currentStepAction || '',
+            })
+            : hintMode === 'debate'
+              ? buildDebatePracticeHintInstruction(practiceHintContext.targets, {
+                topic: debateTopic || '',
+                userPosition: userPosition || '',
+                currentStep: currentStepLabel || '',
+              })
+              : hintMode === 'retention'
+                ? buildRetentionPracticeHintInstruction()
+                : hintMode === 'transfer'
+                  ? buildTransferPracticeHintInstruction()
+                  : buildChatPracticeHintInstruction(practiceHintContext.targets)}`
+          : systemContent,
+      },
       { role: 'user', content: userContent },
     ]
     const paidHint = await billableChatCreate(
@@ -2499,9 +2868,28 @@ Rules:
     const completion = paidHint.replay
       ? { choices: [{ message: { content: paidHint.result?.text || '' } }] }
       : paidHint.outcome.completion
-    const hint = (completion.choices?.[0]?.message?.content ?? '').trim()
+    const hintText = (completion.choices?.[0]?.message?.content ?? '').trim()
+    const hint = practiceHintContext && (hintMode === 'retention' || hintMode === 'transfer') && replyContainsTarget(hintText, practiceHintContext.targets)
+      ? 'Could you add one concrete detail?'
+      : hintText
+    if (practiceHintContext) {
+      const classified = classifyPracticeHint(hint)
+      if (!classified.ok) return res.status(classified.status).json({ error: classified.error })
+      const saved = await saveDialogueHint({
+        supabase,
+        safeSupabaseCall,
+        userId,
+        dialogueSessionId: practiceHintContext.dialogueSessionId,
+        turnIndex: practiceHintContext.turnIndex,
+        hintText: classified.hint,
+      })
+      return res.json({ hint: saved.hint })
+    }
     res.json({ hint: hint || '' })
   } catch (err) {
+    if (err instanceof DialogueRouteError) {
+      return res.status(err.status).json({ error: err.message })
+    }
     console.error('[api/agent/reply-hint] error:', err?.message)
     res.status(500).json({ error: err?.message || 'Reply hint failed' })
   }
@@ -2651,7 +3039,7 @@ Structure (each block title followed by one or more sentences):
 1) Character: You are a [role]. [One short trait.]
 2) Situation: [One sentence: where and what the user needs.]
 3) Goal: [One sentence: what the AI must achieve in the dialogue.]
-4) Style: Speak only in English. Use short, simple sentences (1–2). [Then: flow for this scenario — what to ask first, confirm what you heard, recast small mistakes naturally, offer simple choice if they struggle. Any extra rule.]
+4) Style: Speak only in English at the mandatory CEFR level from the user message, exactly that level, not harder and not easier. [Then: flow for this scenario — what to ask first, confirm what you heard, recast small mistakes naturally. Any extra rule.]
 5) First line: [One sentence: how the AI should start.]
 
 Example (taxi) — in your JSON the systemPrompt string must look like this (use \\n for line breaks):
@@ -2661,7 +3049,7 @@ Situation: The caller just finished work outside an office building and needs a 
 
 Goal: Get the pick-up location and destination, then confirm the booking.
 
-Style: Speak only in English. Use short, simple sentences (1–2). Ask for pick-up first, then destination. Confirm what you heard. If the user makes a small mistake, recast naturally. If they struggle, offer a simple choice. Only ask about payment after pick-up and destination are clear.
+Style: Speak only in English at the mandatory CEFR level, exactly that level, not harder and not easier. Ask for pick-up first, then destination. Confirm what you heard. If the user makes a small mistake, recast naturally at the same level. Only ask about payment after pick-up and destination are clear.
 
 First line: Answer like a taxi driver and ask where they are now.
 
@@ -2693,7 +3081,7 @@ Output ONLY valid JSON, no markdown, no code fence. Required structure:
 }
 
 Rules:
-- systemPrompt: exactly 5 blocks (Character, Situation, Goal, Style, First line), separated by \\n\\n. Style must include "Speak only in English" and "Use short, simple sentences (1–2)" and recast/choice guidance.
+- systemPrompt: exactly 5 blocks (Character, Situation, Goal, Style, First line), separated by \\n\\n. Style must include "Speak only in English" and the mandatory CEFR level, and must not freeze the scene at A1 if the level is higher.
 - Language: scenario and dialogue in English; Russian only for title, description, *Ru, maxScoreTipsRu.
 - steps: 2–4 checkpoints (id: lowercase, no spaces).
 - Always include slangMode/allowProfanity/aiMayUseProfanity/profanityIntensity in output JSON.
@@ -3038,6 +3426,153 @@ registerZhVoiceTaskRoutes(app, {
   getCost,
   BALANCE_THRESHOLD_RUB,
 })
+
+registerVocabSrsDueRoute(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+})
+
+registerProductionFiveRoute(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+})
+
+registerNextActionRoute(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+})
+
+registerVocabListsRoutes(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+  resolveListEntries: createResolveListEntries({ billableChatCreate }),
+  billableChatCreate,
+  classifyTargets: classifyDialogueTargets,
+  buildCourseItems: buildCourseProgressItems,
+})
+
+registerVocabDialogueRoutes(app, {
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  asyncHandler,
+})
+
+app.get('/api/vocabulary/srs/dialogue/recent', asyncHandler(createRecentDialogueSessionsHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  classifyTargets: classifyDialogueTargets,
+  buildCourseItems: buildCourseProgressItems,
+})))
+
+app.get('/api/vocabulary/srs/senses/:senseId/course', asyncHandler(createSenseCourseHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  classifyTargets: classifyDialogueTargets,
+  buildCourseItems: buildCourseProgressItems,
+})))
+
+app.get('/api/vocabulary/srs/dialogue/:id/progress', asyncHandler(createDialogueProgressHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  loadProgress: loadDialogueProgressSnapshot,
+})))
+
+app.post('/api/vocabulary/srs/dialogue/assess', asyncHandler(createDialogueAssessmentHandler({
+  supabase,
+  resolveUserId,
+  getBearerToken,
+  safeSupabaseCall,
+  judgeSenses: async ({ userId, items }) => {
+    const paid = await billableChatCreate(
+      userId,
+      crypto.randomUUID(),
+      {
+        messages: [
+          {
+            role: 'system',
+            content: 'You judge whether a learner used a target meaning. Return JSON only: {"items":[{"sense_id":"...","verdict":"produced|wrong_sense|mentioned"}]}. produced means the quote uses that meaning. wrong_sense means the word is used for a different meaning. mentioned means the meaning is not clear. Do not add words.',
+          },
+          { role: 'user', content: JSON.stringify({ items }) },
+        ],
+        max_tokens: 300,
+        temperature: 0,
+        metadata: { vocab_dialogue_assessment: true },
+      },
+    )
+    if (!paid.ok) {
+      const error = new Error(paid.error || 'Practice assessment did not confirm the meaning')
+      error.status = paid.status || 502
+      throw error
+    }
+    const raw = String(paid.result?.text || paid.outcome?.completion?.choices?.[0]?.message?.content || '').trim()
+    const jsonStart = raw.indexOf('{')
+    const jsonEnd = raw.lastIndexOf('}')
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw)
+    } catch {
+      const error = new Error('Practice assessment did not confirm the meaning')
+      error.status = 502
+      throw error
+    }
+    return Array.isArray(parsed?.items) ? parsed.items : []
+  },
+  judgeOpportunities: async ({ userId, items }) => {
+    const paid = await billableChatCreate(
+      userId,
+      crypto.randomUUID(),
+      {
+        messages: [
+          {
+            role: 'system',
+            content: 'You judge whether the assistant created a natural need for each meaning. Return JSON only: {"items":[{"sense_id":"...","opportunity":true}]}. opportunity is true only if the learner had a real communicative reason to express that gloss. Do not require the headword to appear. If the assistant never made the meaning useful, opportunity is false.',
+          },
+          { role: 'user', content: JSON.stringify({ items }) },
+        ],
+        max_tokens: 300,
+        temperature: 0,
+        metadata: { vocab_dialogue_opportunity: true },
+      },
+    )
+    if (!paid.ok) {
+      const error = new Error(paid.error || 'Practice opportunity was not judged')
+      error.status = paid.status || 502
+      throw error
+    }
+    const raw = String(paid.result?.text || paid.outcome?.completion?.choices?.[0]?.message?.content || '').trim()
+    const jsonStart = raw.indexOf('{')
+    const jsonEnd = raw.lastIndexOf('}')
+    let parsed
+    try {
+      parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw)
+    } catch {
+      const error = new Error('Practice opportunity was not judged')
+      error.status = 502
+      throw error
+    }
+    return Array.isArray(parsed?.items) ? parsed.items : []
+  },
+})))
 
 registerVocabularySystemListRoutes(app, {
   supabase,

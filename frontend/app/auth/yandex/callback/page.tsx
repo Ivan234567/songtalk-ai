@@ -3,9 +3,10 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { storeBackendToken } from '@/lib/backend-jwt'
+import { exchangeSupabaseToken } from '@/lib/exchange-backend-token'
 import { consumeYandexOAuthReturn, getApiBaseUrl } from '@/lib/yandex-auth'
 import { logSecurityEvent } from '@/lib/securityEvents'
+import { takeAuthNext } from '@/lib/auth-next'
 import styles from '../../auth.module.css'
 
 function YandexCallbackFallback() {
@@ -93,14 +94,9 @@ function YandexCallbackInner() {
         const supabaseToken = sessionData.session?.access_token
         if (supabaseToken) {
           try {
-            const exchangeResp = await fetch(`${getApiBaseUrl()}/api/auth/exchange-supabase-token`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ supabase_token: supabaseToken }),
-            })
-            if (exchangeResp.ok) {
-              const exchangeData = await exchangeResp.json().catch(() => null)
-              if (exchangeData?.token) storeBackendToken(exchangeData.token)
+            const exchanged = await exchangeSupabaseToken(supabaseToken)
+            if (!exchanged) {
+              console.error('[auth/yandex] backend JWT exchange failed')
             }
           } catch (exchangeError) {
             console.error('[auth/yandex] backend JWT exchange failed', exchangeError)
@@ -109,7 +105,7 @@ function YandexCallbackInner() {
 
         await logSecurityEvent('login', { method: 'yandex' })
         setMessage('Готово. Переходим в кабинет…')
-        router.push('/dashboard')
+        router.push(takeAuthNext('/dashboard'))
         router.refresh()
       } catch (err: unknown) {
         setFailed(true)

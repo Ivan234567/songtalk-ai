@@ -17,6 +17,7 @@ import {
   classifySenseMilestone,
   MILESTONE_LABELS,
 } from './vocab-session-picks.js'
+import { readSpeechBySense, summarizeSenseSpeech } from './vocab-speech-progress.js'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -185,7 +186,8 @@ async function loadLearningLanguage({ supabase, safeSupabaseCall, userId }) {
   if (error) throw error
   const raw = typeof data?.learning_language === 'string' ? data.learning_language.trim() : ''
   if (!raw || raw === 'en') return 'en'
-  if (raw === 'zh') return 'zh'
+  // Китайский режим спрятан: списки читаем как английские, строки в базе не трогаем.
+  if (raw === 'zh') return 'en'
   const err = new Error('Unsupported learning language')
   err.code = 'bad_language'
   throw err
@@ -1118,6 +1120,30 @@ export function createListDetailHandler(deps) {
         )
         : { data: [] }
       const stateBySense = new Map((states || []).map((row) => [row.sense_id, row]))
+      let speechBySense = new Map()
+      if (senseIds.length) {
+        const [speechEventsResult, speechTargetsResult] = await Promise.all([
+          safeSupabaseCall(
+            () => supabase
+              .from('vocab_review_events')
+              .select('sense_id, source, card_type, verdict, dialogue_session_id, evidence_text, due_before, due_after, retention_days, created_at')
+              .eq('user_id', userId)
+              .in('sense_id', senseIds),
+          ),
+          safeSupabaseCall(
+            () => supabase
+              .from('vocab_dialogue_targets')
+              .select('sense_id, dialogue_session_id, moves_schedule')
+              .eq('user_id', userId)
+              .in('sense_id', senseIds),
+          ),
+        ])
+        if (speechEventsResult?.error || speechTargetsResult?.error) {
+          res.status(500).json({ error: 'Failed to load list words' })
+          return
+        }
+        speechBySense = readSpeechBySense(speechEventsResult?.data || [], speechTargetsResult?.data || [])
+      }
 
       words = vocabularyIds.flatMap((vocabularyId) => {
         const row = byId.get(vocabularyId)
@@ -1141,6 +1167,7 @@ export function createListDetailHandler(deps) {
         let progress = 0
         if (status === 'mastered') progress = 100
         else if (status !== 'new') progress = Math.min(90, Math.round((interval / MASTERED_INTERVAL_DAYS) * 100))
+        const speech = summarizeSenseSpeech(senseList.map((sense) => sense.id), speechBySense)
         return [{
           vocabulary_id: vocabularyId,
           headword: row.word,
@@ -1156,6 +1183,9 @@ export function createListDetailHandler(deps) {
           progress,
           next_review_at: nextReviewAt,
           sense_ids: senseList.map((sense) => sense.id),
+          speech: speech.speech,
+          recognizes: speech.recognizes,
+          sense_speech: speech.sense_speech,
         }]
       })
     }
