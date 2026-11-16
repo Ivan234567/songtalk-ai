@@ -1541,6 +1541,14 @@ app.post('/api/agent/tts', async (req, res) => {
   }
 })
 
+// Служебный замок уровня ставится сразу после системных сообщений.
+// Если поставить его после реплик, модель зачитывает его вслух.
+function insertAfterLeadingSystems(messages, systemMessage) {
+  let index = 0
+  while (index < messages.length && messages[index]?.role === 'system') index += 1
+  return [...messages.slice(0, index), systemMessage, ...messages.slice(index)]
+}
+
 // Agent chat (streaming NDJSON) — заменяет WebSocket /ws/agent
 app.post('/api/agent/chat', async (req, res) => {
   const rawToken = getBearerToken(req)
@@ -1733,8 +1741,9 @@ app.post('/api/agent/chat', async (req, res) => {
       ...(roleplaySafetySystem ? [roleplaySafetySystem] : []),
       ...(freestyleCoachSystem ? [freestyleCoachSystem] : []),
       ...(steps.length > 0 && learningCoachSystem && req.learningLanguage !== 'en' ? [learningCoachSystem] : []),
-      ...baseMessages,
-      ...(steps.length > 0 && req.learningLanguage === 'en' && learningCoachSystem ? [learningCoachSystem] : []),
+      ...(steps.length > 0 && req.learningLanguage === 'en' && learningCoachSystem
+        ? insertAfterLeadingSystems(baseMessages, learningCoachSystem)
+        : baseMessages),
     ]
 
   let practiceAllTargets = null

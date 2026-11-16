@@ -113,6 +113,7 @@ import {
   extractTranslation,
   extractSpeakableChineseText,
   sanitizeChineseAssistantReply,
+  sanitizeEnglishAssistantReply,
   type ChineseSegment,
 } from '@/components/ChineseRubyText';
 
@@ -204,7 +205,8 @@ async function readNdjsonChatReply(resp: Response): Promise<string> {
 }
 
 function zhSafeAssistantContent(content: string, lang: string): string {
-  return lang === 'zh' ? sanitizeChineseAssistantReply(content) : content;
+  if (lang === 'zh') return sanitizeChineseAssistantReply(content);
+  return sanitizeEnglishAssistantReply(content);
 }
 
 function zhSafeHistory(history: Message[], lang: string): Message[] {
@@ -1956,6 +1958,10 @@ export function AgentTab() {
         }
 
         const assistantContent = zhSafeAssistantContent(fullReply, learningLanguage);
+        if (!assistantContent.trim()) {
+          setState('idle');
+          return;
+        }
         const newMessages: Message[] = [...history, { role: 'assistant', content: assistantContent }];
         setMessages((prev) => [...prev, { role: 'assistant', content: assistantContent }]);
 
@@ -4396,7 +4402,9 @@ export function AgentTab() {
                 const parsed = showPinyinNow
                   ? parseStructuredChineseResponse(m.content)
                   : null;
-                const cleanText = extractCleanChineseText(m.content) || m.content;
+                const source = !isChinese && m.role === 'assistant' ? sanitizeEnglishAssistantReply(m.content) : m.content;
+                if (!source.trim()) return null;
+                const cleanText = extractCleanChineseText(source) || source;
                 const showTranslationNow = (isChinese ? chineseShowTranslation : englishShowTranslation) && (pinyinPolicy === 'always' || metaUnlocked);
                 const translation = showTranslationNow
                   ? extractTranslation(m.content)

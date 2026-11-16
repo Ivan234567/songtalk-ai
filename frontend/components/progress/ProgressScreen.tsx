@@ -197,6 +197,44 @@ export function ProgressScreen(props: ProgressScreenProps) {
     else props.onPracticeHome();
   };
 
+  const sessionsSection = (
+    <section className={styles.card}>
+      <div className={styles.ch}>
+        <div>
+          <h2>Сессии</h2>
+          <p className={styles.sub}>Нажмите, чтобы открыть разбор</p>
+        </div>
+        <div className={styles.flt}>
+          <div className={styles.seg}>
+            <button type="button" aria-pressed={props.mode === 'roleplay'} onClick={() => props.onMode('roleplay')}>Сценарии <b>{props.roleplayCount}</b></button>
+            <button type="button" aria-pressed={props.mode === 'debate'} onClick={() => props.onMode('debate')}>Дебаты <b>{props.debateCount}</b></button>
+          </div>
+          <div className={styles.seg}>
+            <button type="button" aria-pressed={props.view === 'system'} onClick={() => props.onView('system')}>Системные <b>{props.systemCount}</b></button>
+            <button type="button" aria-pressed={props.view === 'personal'} onClick={() => props.onView('personal')}>Личные <b>{props.personalCount}</b></button>
+          </div>
+          <div className={styles.seg}>
+            <button type="button" aria-pressed={sort === 'date'} onClick={() => setSort('date')}>Дата</button>
+            <button type="button" aria-pressed={sort === 'down'} onClick={() => setSort('down')}>Балл ↓</button>
+            <button type="button" aria-pressed={sort === 'up'} onClick={() => setSort('up')}>Балл ↑</button>
+          </div>
+        </div>
+      </div>
+      {shown.length === 0 ? <p className={styles.empty}>Нет сессий за выбранный период. Попробуйте другой период или фильтр.</p> : shown.map((row) => (
+        <button key={row.id} type="button" className={styles.ses} onClick={() => props.onOpen(row.objectKey, row.completionId)}>
+          <span className={styles.tile} style={{ ['--c' as string]: row.score != null ? tone(row.score) : 'var(--mut)' }}>{row.score != null ? row.score.toFixed(1) : '—'}</span>
+          <span><b>{row.title}</b><small>{row.kind === 'debate' ? 'Дебаты' : 'Сценарий'} · {when(row.completedAt)}</small></span>
+          <span className={styles.go}>→</span>
+        </button>
+      ))}
+      {sorted.length > 5 ? (
+        <button type="button" className={`${styles.btn} ${styles.sm}`} style={{ marginTop: 10 }} onClick={() => setShowAll((value) => !value)}>
+          {showAll ? 'Скрыть' : `Показать все (${sorted.length})`}
+        </button>
+      ) : null}
+    </section>
+  );
+
   return (
     <div className={styles.screen}>
       <div className={styles.stick}>
@@ -229,6 +267,7 @@ export function ProgressScreen(props: ProgressScreenProps) {
 
       {tab === 'overview' && (
         <>
+          {sessionsSection}
           <section className={styles.card}>
             <div className={styles.hero}>
               <div>
@@ -300,6 +339,7 @@ export function ProgressScreen(props: ProgressScreenProps) {
 
       {tab === 'speech' && (
         <>
+          {sessionsSection}
           <section className={styles.card}>
             <div className={styles.ch}>
               <div>
@@ -363,41 +403,6 @@ export function ProgressScreen(props: ProgressScreenProps) {
             )}
           </section>
 
-          <section className={styles.card}>
-            <div className={styles.ch}>
-              <div>
-                <h2>Сессии</h2>
-                <p className={styles.sub}>Нажмите, чтобы открыть разбор</p>
-              </div>
-              <div className={styles.flt}>
-                <div className={styles.seg}>
-                  <button type="button" aria-pressed={props.mode === 'roleplay'} onClick={() => props.onMode('roleplay')}>Сценарии <b>{props.roleplayCount}</b></button>
-                  <button type="button" aria-pressed={props.mode === 'debate'} onClick={() => props.onMode('debate')}>Дебаты <b>{props.debateCount}</b></button>
-                </div>
-                <div className={styles.seg}>
-                  <button type="button" aria-pressed={props.view === 'system'} onClick={() => props.onView('system')}>Системные <b>{props.systemCount}</b></button>
-                  <button type="button" aria-pressed={props.view === 'personal'} onClick={() => props.onView('personal')}>Личные <b>{props.personalCount}</b></button>
-                </div>
-                <div className={styles.seg}>
-                  <button type="button" aria-pressed={sort === 'date'} onClick={() => setSort('date')}>Дата</button>
-                  <button type="button" aria-pressed={sort === 'down'} onClick={() => setSort('down')}>Балл ↓</button>
-                  <button type="button" aria-pressed={sort === 'up'} onClick={() => setSort('up')}>Балл ↑</button>
-                </div>
-              </div>
-            </div>
-            {shown.length === 0 ? <p className={styles.empty}>Нет сессий за выбранный период. Попробуйте другой период или фильтр.</p> : shown.map((row) => (
-              <button key={row.id} type="button" className={styles.ses} onClick={() => props.onOpen(row.objectKey, row.completionId)}>
-                <span className={styles.tile} style={{ ['--c' as string]: row.score != null ? tone(row.score) : 'var(--mut)' }}>{row.score != null ? row.score.toFixed(1) : '—'}</span>
-                <span><b>{row.title}</b><small>{row.kind === 'debate' ? 'Дебаты' : 'Сценарий'} · {when(row.completedAt)}</small></span>
-                <span className={styles.go}>→</span>
-              </button>
-            ))}
-            {sorted.length > 5 ? (
-              <button type="button" className={`${styles.btn} ${styles.sm}`} style={{ marginTop: 10 }} onClick={() => setShowAll((value) => !value)}>
-                {showAll ? 'Скрыть' : `Показать все (${sorted.length})`}
-              </button>
-            ) : null}
-          </section>
         </>
       )}
 

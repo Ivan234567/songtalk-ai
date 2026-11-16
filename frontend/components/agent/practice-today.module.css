@@ -468,14 +468,17 @@
   padding: 12px 16px;
   border: 0;
   border-radius: 14px;
-  background: var(--acc);
-  color: var(--acc-ink);
+  background: #1c6b45;
+  color: #f4fff8;
   font-weight: 600;
   font-size: 16px;
   text-align: center;
 }
 
-.go:hover { filter: brightness(1.07); }
+.go:hover {
+  background: #238056;
+  filter: none;
+}
 
 .go:disabled {
   background: var(--raise);
