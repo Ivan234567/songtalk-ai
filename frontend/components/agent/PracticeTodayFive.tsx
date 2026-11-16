@@ -35,6 +35,12 @@ type VocabListCard = {
   system_key: string | null;
 };
 
+type StarterPackOffer = {
+  key: string;
+  title: string;
+  word_count: number;
+};
+
 type LessonDraft = {
   kind: 'roleplay' | 'debate';
   title: string;
@@ -190,6 +196,8 @@ export function PracticeTodayFive({
 }: PracticeTodayFiveProps) {
   const base = baseUrl(apiUrl);
   const [lists, setLists] = useState<VocabListCard[]>([]);
+  const [starterPacks, setStarterPacks] = useState<StarterPackOffer[]>([]);
+  const [addingPackKey, setAddingPackKey] = useState<string | null>(null);
   const [listsState, setListsState] = useState<'loading' | 'idle' | 'error'>('loading');
   const [listQuery, setListQuery] = useState('');
   const [listScope, setListScope] = useListScope();
@@ -286,8 +294,20 @@ export function PracticeTodayFive({
             : null;
           return [{ id, title, word_count: Number(item.word_count) || 0, system_key: systemKey }];
         });
+        const offered = (Array.isArray(data?.starter_packs) ? data.starter_packs : []).flatMap((pack: {
+          key?: unknown;
+          title?: unknown;
+          word_count?: unknown;
+          in_library?: unknown;
+        }) => {
+          const key = typeof pack?.key === 'string' ? pack.key.trim() : '';
+          const title = typeof pack?.title === 'string' ? pack.title.trim() : '';
+          if (!key || !title || pack?.in_library === true) return [];
+          return [{ key, title, word_count: Number(pack.word_count) || 0 }];
+        });
         if (cancelled) return;
         setLists(mapped);
+        setStarterPacks(offered.filter((pack) => !mapped.some((item) => item.system_key === pack.key)));
         setListsState('idle');
         if (listId && mapped.some((item) => item.id === listId)) {
           void loadFive(listId, seedRef.current);
@@ -685,8 +705,40 @@ export function PracticeTodayFive({
   const visibleLists = lists.filter((item) => !needle || item.title.toLowerCase().includes(needle));
   const ownLists = visibleLists.filter((item) => !item.system_key);
   const packLists = visibleLists.filter((item) => item.system_key);
+  const savedPackKeys = new Set(lists.flatMap((item) => (item.system_key ? [item.system_key] : [])));
+  const offeredPacks = starterPacks.filter((pack) => !savedPackKeys.has(pack.key) && (!needle || pack.title.toLowerCase().includes(needle)));
   const mineTotal = lists.filter((item) => !item.system_key).length;
-  const packTotal = lists.length - mineTotal;
+  const packTotal = lists.filter((item) => item.system_key).length + starterPacks.filter((pack) => !savedPackKeys.has(pack.key)).length;
+
+  const addStarterPack = async (key: string) => {
+    if (!token || addingPackKey) return;
+    setAddingPackKey(key);
+    setWordsError(null);
+    try {
+      const resp = await fetch(`${base}/api/vocabulary/lists/starter`, {
+        method: 'POST',
+        headers: buildAgentJsonHeaders(token, learningLanguage),
+        body: JSON.stringify({ key }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      const id = typeof data?.item?.id === 'string' ? data.item.id : '';
+      if (!resp.ok || !id) throw new Error('starter');
+      const offer = starterPacks.find((pack) => pack.key === key);
+      const card: VocabListCard = {
+        id,
+        title: typeof data.item.title === 'string' && data.item.title.trim() ? data.item.title.trim() : (offer?.title || key),
+        word_count: Number(data.item.word_count) || offer?.word_count || 0,
+        system_key: key,
+      };
+      setLists((prev) => (prev.some((item) => item.id === id || item.system_key === key) ? prev : [...prev, card]));
+      setStarterPacks((prev) => prev.filter((pack) => pack.key !== key));
+      await loadFive(id, []);
+    } catch {
+      setWordsError('Не удалось добавить набор');
+    } finally {
+      setAddingPackKey(null);
+    }
+  };
 
   const listButton = (item: VocabListCard) => {
     const known = item.id in readyByList;
@@ -783,7 +835,7 @@ export function PracticeTodayFive({
               </label>
               <div className={styles.pillSeg} role="group" aria-label="Показать">
                 {([
-                  ['all', 'Все', lists.length],
+                  ['all', 'Все', mineTotal + packTotal],
                   ['mine', 'Мои', mineTotal],
                   ['packs', 'Наборы', packTotal],
                 ] as const).map(([id, label, count]) => (
@@ -796,20 +848,32 @@ export function PracticeTodayFive({
             <div className={styles.lists}>
               {listsState === 'loading' && <p className={styles.mut}>Собираю списки…</p>}
               {listsState === 'error' && <p className={styles.mut}>Не удалось открыть списки.</p>}
-              {listsState === 'idle' && needle && visibleLists.length === 0 && <p className={styles.mut}>Такого списка нет.</p>}
+              {listsState === 'idle' && needle && visibleLists.length === 0 && offeredPacks.length === 0 && <p className={styles.mut}>Такого списка нет.</p>}
               {listScope !== 'packs' && ownLists.length > 0 && (
                 <>
                   <h3>Мои списки</h3>
                   {ownLists.map(listButton)}
                 </>
               )}
-              {listScope !== 'mine' && packLists.length > 0 && (
+              {listScope !== 'mine' && (packLists.length > 0 || offeredPacks.length > 0) && (
                 <>
                   <h3>Готовые наборы</h3>
                   {packLists.map(listButton)}
+                  {offeredPacks.map((pack) => (
+                    <button
+                      key={pack.key}
+                      type="button"
+                      className={styles.li}
+                      disabled={addingPackKey !== null}
+                      onClick={() => void addStarterPack(pack.key)}
+                    >
+                      <b>{pack.title}</b>
+                      <small>{addingPackKey === pack.key ? 'Добавляю…' : listSizeLabel(pack.word_count)}</small>
+                    </button>
+                  ))}
                 </>
               )}
-              {listScope === 'packs' && packLists.length === 0 && listsState === 'idle' && (
+              {listScope === 'packs' && packLists.length === 0 && offeredPacks.length === 0 && listsState === 'idle' && (
                 <p className={styles.mut}>{needle ? 'В наборах такого нет.' : 'Готовых наборов пока нет.'}</p>
               )}
             </div>

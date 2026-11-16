@@ -33,17 +33,6 @@ const IconWhisper = () => (
 
 const TARIFFS = [
   {
-    id: 'base',
-    name: 'Базовый',
-    price: 50,
-    dialogue: '≈ 15 мин практики',
-    rows: [
-      { model: 'Диалог с агентом', get: '≈ 15 мин', like: 'слова, которым пора, внутри сцены', Icon: IconWhisper },
-      { model: 'Озвучка', get: 'до 70 озвучек', like: 'слова и фразы в словаре', Icon: IconTTS },
-      { model: 'Получение', get: 'сразу в аккаунте', like: 'сумма падает на баланс, доставки нет', Icon: IconBook },
-    ],
-  },
-  {
     id: 'start',
     name: 'Стартовый',
     price: 300,
@@ -112,7 +101,7 @@ export function PricingSection() {
           Выбери объём практики
         </h2>
         <p className={styles.pricingSubtitle}>
-          Фиксированные суммы 50, 300, 500 и 1 000 ₽. После оплаты баланс сразу появляется в аккаунте, подписки нет.
+          Фиксированные суммы 300, 500 и 1 000 ₽. После оплаты баланс сразу появляется в аккаунте, подписки нет.
         </p>
 
         <div className={styles.pricingGrid}>

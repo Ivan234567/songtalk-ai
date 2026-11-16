@@ -24,9 +24,6 @@ export default function PartnerFinancePage() {
 
   return (
     <>
-      <div className={styles.warn}>
-        Комиссия равна ставке от квалифицируемой прибыли. Налог уже заложен в цену и второй раз не вычитается. Выплату проводит администратор по запросу из раздела выплат.
-      </div>
       {month && month.ok !== false ? (
         <section className={styles.card}>
           <h2>Расчёт за {monthLabel(month.month)} <StatusChip month={month} /></h2>
