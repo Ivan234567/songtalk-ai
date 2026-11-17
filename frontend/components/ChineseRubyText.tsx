@@ -418,17 +418,33 @@ export function extractCleanChineseText(raw: string): string {
  * Извлекает перевод из ответа ИИ — только блок TRANSLATION, без пиньинь.
  */
 const ENGLISH_PROMPT_LEAK_RE =
-  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|stay in the roleplay/i;
+  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|stay in the roleplay|additional english learning constraints|speak english only in character lines|do not switch spoken lines to russian|speak at [abc][12] only|the learner chose this level|metadata only after the spoken line|start immediately with spoken english/i;
 
-/** Английская реплика без зачитанного служебного промпта. Перевод сохраняется. */
+/** Вырезает зачитанные служебные фразы. Обычная реплика и перевод остаются. */
+function stripEnglishPromptSentences(spoken: string): string {
+  if (!ENGLISH_PROMPT_LEAK_RE.test(spoken)) return spoken;
+  return spoken
+    .split('\n')
+    .map((line) => line
+      .split(/(?<=[.!?])\s+/)
+      .map((part) => part.trim())
+      .filter((part) => part && !ENGLISH_PROMPT_LEAK_RE.test(part))
+      .join(' '))
+    .filter((line) => line.trim())
+    .join('\n')
+    .trim();
+}
+
+/** Английская реплика без зачитанного служебного промпта. Живая фраза и перевод сохраняются. */
 export function sanitizeEnglishAssistantReply(raw: string): string {
   const original = (raw || '').replace(/\r\n/g, '\n').trim();
   if (!original) return '';
   const markerAt = original.indexOf(TRANSLATION_MARKER);
   const spoken = (markerAt === -1 ? original : original.slice(0, markerAt)).trim();
   const metadata = markerAt === -1 ? '' : original.slice(markerAt).trim();
-  if (ENGLISH_PROMPT_LEAK_RE.test(spoken)) return '';
-  return metadata ? `${spoken}\n${metadata}` : spoken;
+  const cleanSpoken = stripEnglishPromptSentences(spoken);
+  if (!cleanSpoken) return '';
+  return metadata ? `${cleanSpoken}\n${metadata}` : cleanSpoken;
 }
 
 export function extractTranslation(raw: string): string | null {
