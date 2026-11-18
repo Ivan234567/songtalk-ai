@@ -415,41 +415,72 @@ export function extractCleanChineseText(raw: string): string {
 }
 
 /**
- * Извлекает перевод из ответа ИИ — только блок TRANSLATION, без пиньинь.
+ * Перевод из блока TRANSLATION.
+ * Китайский путь сначала отрезает пересказ промпта. Английский этот отрез не использует.
  */
 const ENGLISH_PROMPT_LEAK_RE =
-  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|stay in the roleplay|additional english learning constraints|speak english only in character lines|do not switch spoken lines to russian|speak at [abc][12] only|the learner chose this level|metadata only after the spoken line|start immediately with spoken english/i;
+  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|stay in the roleplay|adult learner|teacher-ish|one idea per turn|continue the scenario|scenario ends soon|do not talk down|evaluative statements/i;
 
-/** Вырезает зачитанные служебные фразы. Обычная реплика и перевод остаются. */
-function stripEnglishPromptSentences(spoken: string): string {
-  if (!ENGLISH_PROMPT_LEAK_RE.test(spoken)) return spoken;
+/** «Let's go:» — служебная метка китайского промпта. Снимается с фразы, текст до неё остаётся. */
+function stripLetsGoLabel(spoken: string): string {
   return spoken
-    .split('\n')
-    .map((line) => line
-      .split(/(?<=[.!?])\s+/)
-      .map((part) => part.trim())
-      .filter((part) => part && !ENGLISH_PROMPT_LEAK_RE.test(part))
-      .join(' '))
-    .filter((line) => line.trim())
-    .join('\n')
+    .replace(/(?:let'?s go|let us go)\s*[:：]\s*/gi, ' ')
+    .replace(/[^\S\n]{2,}/g, ' ')
+    .replace(/[^\S\n]*\n[^\S\n]*/g, '\n')
     .trim();
 }
 
-/** Английская реплика без зачитанного служебного промпта. Живая фраза и перевод сохраняются. */
+/** Хвостовая » остаётся, если модель закрыла метку лишний раз, а кавычек « в переводе нет. */
+function tidyTranslation(value: string): string {
+  const text = sanitizeDisplayText(value);
+  if (!text || text.includes('«')) return text;
+  return text.replace(/^»+/, '').replace(/»+$/, '').trim();
+}
+
+/** Английская реплика без зачитанного служебного промпта. Перевод и живая фраза сохраняются. */
 export function sanitizeEnglishAssistantReply(raw: string): string {
   const original = (raw || '').replace(/\r\n/g, '\n').trim();
   if (!original) return '';
   const markerAt = original.indexOf(TRANSLATION_MARKER);
-  const spoken = (markerAt === -1 ? original : original.slice(0, markerAt)).trim();
+  const spoken = stripLetsGoLabel(markerAt === -1 ? original : original.slice(0, markerAt));
   const metadata = markerAt === -1 ? '' : original.slice(markerAt).trim();
-  const cleanSpoken = stripEnglishPromptSentences(spoken);
-  if (!cleanSpoken) return '';
+  let cleanSpoken = spoken;
+  if (ENGLISH_PROMPT_LEAK_RE.test(spoken)) {
+    const parts = spoken
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    let lastLeak = -1;
+    parts.forEach((part, index) => {
+      if (ENGLISH_PROMPT_LEAK_RE.test(part)) lastLeak = index;
+    });
+    cleanSpoken = stripLetsGoLabel(parts.slice(lastLeak + 1).join(' '));
+  }
+  if (!cleanSpoken) return metadata;
   return metadata ? `${cleanSpoken}\n${metadata}` : cleanSpoken;
+}
+
+/** Английская фраза для экрана и озвучки: без перевода и без китайской обрезки. */
+export function extractCleanEnglishText(raw: string): string {
+  const cleaned = sanitizeEnglishAssistantReply(raw);
+  const markerAt = cleaned.indexOf(TRANSLATION_MARKER);
+  const spoken = markerAt === -1 ? cleaned : cleaned.slice(0, markerAt);
+  return spoken
+    .split('\n')
+    .filter((line) => !/^\s*✏️/.test(line) && !/^\s*Исправление\s*:/i.test(line))
+    .join('\n')
+    .trim();
+}
+
+export function extractEnglishTranslation(raw: string): string | null {
+  const value = extractMarkedValue(sanitizeEnglishAssistantReply(raw), TRANSLATION_MARKER);
+  const translation = tidyTranslation(value || '');
+  return translation || null;
 }
 
 export function extractTranslation(raw: string): string | null {
   const value = extractMarkedValue(isolateAssistantPayload(raw || ''), TRANSLATION_MARKER);
-  const translation = sanitizeDisplayText(value || '');
+  const translation = tidyTranslation(value || '');
   return translation || null;
 }
 

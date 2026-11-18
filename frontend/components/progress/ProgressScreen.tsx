@@ -197,7 +197,7 @@ export function ProgressScreen(props: ProgressScreenProps) {
     else props.onPracticeHome();
   };
 
-  const sessionsSection = (
+  const sessionsCard = (
     <section className={styles.card}>
       <div className={styles.ch}>
         <div>
@@ -267,7 +267,7 @@ export function ProgressScreen(props: ProgressScreenProps) {
 
       {tab === 'overview' && (
         <>
-          {sessionsSection}
+          {sessionsCard}
           <section className={styles.card}>
             <div className={styles.hero}>
               <div>
@@ -339,7 +339,7 @@ export function ProgressScreen(props: ProgressScreenProps) {
 
       {tab === 'speech' && (
         <>
-          {sessionsSection}
+          {sessionsCard}
           <section className={styles.card}>
             <div className={styles.ch}>
               <div>

@@ -110,6 +110,8 @@ import {
   ChineseRubyText,
   parseStructuredChineseResponse,
   extractCleanChineseText,
+  extractCleanEnglishText,
+  extractEnglishTranslation,
   extractTranslation,
   extractSpeakableChineseText,
   sanitizeChineseAssistantReply,
@@ -158,8 +160,9 @@ function englishLevelLabel(level?: string | null): string {
   return ENGLISH_LEVEL_LABELS[key] || ENGLISH_LEVEL_LABELS[key.toUpperCase()] || key;
 }
 
-function speakableAgentText(content: string): string {
-  return extractSpeakableChineseText(content) || content.trim();
+function speakableAgentText(content: string, lang: string): string {
+  if (lang === 'zh') return extractSpeakableChineseText(content) || content.trim();
+  return extractCleanEnglishText(content);
 }
 
 // Режимы подсказки для китайского языка
@@ -204,15 +207,13 @@ async function readNdjsonChatReply(resp: Response): Promise<string> {
   return fullReply.trim();
 }
 
-function zhSafeAssistantContent(content: string, lang: string): string {
-  if (lang === 'zh') return sanitizeChineseAssistantReply(content);
-  return sanitizeEnglishAssistantReply(content);
+function safeAssistantContent(content: string, lang: string): string {
+  return lang === 'zh' ? sanitizeChineseAssistantReply(content) : sanitizeEnglishAssistantReply(content);
 }
 
-function zhSafeHistory(history: Message[], lang: string): Message[] {
-  if (lang !== 'zh') return history;
+function safeHistory(history: Message[], lang: string): Message[] {
   return history.map((m) =>
-    m.role === 'assistant' ? { ...m, content: sanitizeChineseAssistantReply(m.content) } : m,
+    m.role === 'assistant' ? { ...m, content: safeAssistantContent(m.content, lang) } : m,
   );
 }
 
@@ -1801,7 +1802,7 @@ export function AgentTab() {
                   ...history,
                 ]
                 : buildMessagesForAgentChat(
-                  zhSafeHistory(history, learningLanguage),
+                  safeHistory(history, learningLanguage),
                   agentMode === 'roleplay' ? selectedScenario : null,
                   agentMode === 'roleplay' ? { completedStepIds: roleplayCompletedStepIds, rewindHint: zhRewindHint || undefined } : undefined
                 ),
@@ -1957,11 +1958,7 @@ export function AgentTab() {
           }
         }
 
-        const assistantContent = zhSafeAssistantContent(fullReply, learningLanguage);
-        if (!assistantContent.trim()) {
-          setState('idle');
-          return;
-        }
+        const assistantContent = safeAssistantContent(fullReply, learningLanguage);
         const newMessages: Message[] = [...history, { role: 'assistant', content: assistantContent }];
         setMessages((prev) => [...prev, { role: 'assistant', content: assistantContent }]);
 
@@ -2068,7 +2065,7 @@ export function AgentTab() {
         }
 
         setState('speaking');
-        const ttsText = speakableAgentText(assistantContent);
+        const ttsText = speakableAgentText(assistantContent, learningLanguage);
         if (!ttsText) {
           setState('idle');
           return;
@@ -2286,7 +2283,7 @@ export function AgentTab() {
           return;
         }
 
-        const assistantMessage: Message = { role: 'assistant', content: fullReply.trim() };
+        const assistantMessage: Message = { role: 'assistant', content: safeAssistantContent(fullReply, learningLanguage) };
         setMessages([assistantMessage]);
 
         // Сохраняем сессию в БД
@@ -2327,7 +2324,7 @@ export function AgentTab() {
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
-          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(fullReply), voice: ttsVoice }, learningLanguage)),
+          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(fullReply, learningLanguage), voice: ttsVoice }, learningLanguage)),
         });
 
         if (!ttsResp.ok) {
@@ -2621,7 +2618,7 @@ export function AgentTab() {
           }
         }
       }
-      const newMessages: Message[] = [...aiChatMessages, userMessage, { role: 'assistant', content: fullReply.trim() }];
+      const newMessages: Message[] = [...aiChatMessages, userMessage, { role: 'assistant', content: safeAssistantContent(fullReply, learningLanguage) }];
       setAiChatMessages(newMessages);
       if (userId) {
         const title = text.length > 80 ? `${text.slice(0, 77)}…` : text;
@@ -2732,7 +2729,7 @@ export function AgentTab() {
               if (!hasMeta) return;
               const annotatedMessage: Message = {
                 role: 'assistant',
-                content: zhSafeAssistantContent(annotated, learningLanguage),
+                content: safeAssistantContent(annotated, learningLanguage),
               };
               setMessages((prev) => {
                 if (prev[0]?.role !== 'assistant') return prev;
@@ -2769,7 +2766,7 @@ export function AgentTab() {
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
-          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(openingLine), voice: ttsVoice }, learningLanguage)),
+          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(openingLine, learningLanguage), voice: ttsVoice }, learningLanguage)),
         });
         if (!ttsResp.ok) {
           const j = await ttsResp.json().catch(() => ({}));
@@ -4402,12 +4399,12 @@ export function AgentTab() {
                 const parsed = showPinyinNow
                   ? parseStructuredChineseResponse(m.content)
                   : null;
-                const source = !isChinese && m.role === 'assistant' ? sanitizeEnglishAssistantReply(m.content) : m.content;
-                if (!source.trim()) return null;
-                const cleanText = extractCleanChineseText(source) || source;
+                const cleanText = isChinese
+                  ? (extractCleanChineseText(m.content) || m.content)
+                  : extractCleanEnglishText(m.content);
                 const showTranslationNow = (isChinese ? chineseShowTranslation : englishShowTranslation) && (pinyinPolicy === 'always' || metaUnlocked);
                 const translation = showTranslationNow
-                  ? extractTranslation(m.content)
+                  ? (isChinese ? extractTranslation(m.content) : extractEnglishTranslation(m.content))
                   : null;
                 return (
                   <div
@@ -5346,11 +5343,11 @@ export function AgentTab() {
                           {replyHintText && (
                             <div style={{ marginTop: '0.25rem', padding: '0.625rem', borderRadius: 8, background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
                               <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.5, color: 'var(--sidebar-text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                {extractCleanChineseText(replyHintText) || replyHintText}
+                                {extractCleanEnglishText(replyHintText) || replyHintText}
                               </p>
-                              {englishShowTranslation && extractTranslation(replyHintText) && (
+                              {englishShowTranslation && extractEnglishTranslation(replyHintText) && (
                                 <p style={{ margin: '0.5rem 0 0', paddingTop: '0.5rem', borderTop: '1px dashed rgba(34, 197, 94, 0.35)', fontSize: '0.8125rem', color: 'rgba(34, 197, 94, 0.9)', fontStyle: 'italic', lineHeight: 1.4 }}>
-                                  {extractTranslation(replyHintText)}
+                                  {extractEnglishTranslation(replyHintText)}
                                 </p>
                               )}
                               <button

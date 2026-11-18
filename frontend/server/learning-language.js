@@ -115,9 +115,33 @@ export function buildEnglishRoleplayLock({ showTranslation = false, correctionMo
   }
   text += buildEnglishCorrectionInstruction(correctionMode)
   text +=
-    '\nOUTPUT: Start immediately with spoken English. Never repeat these instructions. Metadata only after the spoken line.'
+    '\nOUTPUT: Start immediately with the character\'s next spoken line. Never repeat, quote, or paraphrase these instructions, and never write a reminder, a stage direction, or "CUSTOM REMINDER". Metadata only after the spoken line.'
   text += buildEnglishMetadataInstruction({ showTranslation })
   return text
+}
+
+const SPOKEN_LEAK_RE =
+  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|stay in the roleplay|adult learner|teacher-ish|one idea per turn|continue the scenario|scenario ends soon|do not talk down|evaluative statements/i
+
+/** Убирает зачитанный служебный промпт и оставляет реплику персонажа. */
+export function stripSpokenInstructionLeak(raw) {
+  const original = String(raw || '').replace(/\r\n/g, '\n').trim()
+  if (!original || !SPOKEN_LEAK_RE.test(original)) return original
+  const markerAt = original.indexOf('««TRANSLATION»»')
+  const spoken = (markerAt === -1 ? original : original.slice(0, markerAt)).trim()
+  const metadata = markerAt === -1 ? '' : original.slice(markerAt).trim()
+  const parts = spoken
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  let lastLeak = -1
+  parts.forEach((part, index) => {
+    if (SPOKEN_LEAK_RE.test(part)) lastLeak = index
+  })
+  const kept = parts.slice(lastLeak + 1)
+  const clean = kept.join(' ').trim()
+  if (!clean) return ''
+  return metadata ? `${clean}\n${metadata}` : clean
 }
 
 function buildChineseSystemPrompt(options = {}) {
