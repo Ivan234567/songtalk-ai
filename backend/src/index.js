@@ -48,7 +48,6 @@ import {
   buildRetentionPracticeInstruction,
   buildTransferPracticeInstruction,
   replyContainsTarget,
-  repairPracticeReply,
   loadChatPracticeHint,
   saveDialogueHint,
   buildChatPracticeHintInstruction,
@@ -1870,8 +1869,6 @@ app.post('/api/agent/chat', async (req, res) => {
       error: err instanceof DialogueRouteError ? err.message : 'Failed to load practice targets',
     })
   }
-  const holdPracticeReply = Array.isArray(practiceAntiSpoilTargets) && practiceAntiSpoilTargets.length > 0
-
   try {
     console.log('[api/agent/chat] Starting chat request:', {
       model: AITUNNEL_MODEL,
@@ -1922,26 +1919,10 @@ app.post('/api/agent/chat', async (req, res) => {
             noteProduced()
             chunkCount++
             fullReply += delta
-            if (!holdPracticeReply) send({ type: 'chunk', delta })
+            send({ type: 'chunk', delta })
           }
         }
         if (timeoutId) clearTimeout(timeoutId)
-        if (holdPracticeReply && replyContainsTarget(fullReply, practiceAntiSpoilTargets)) {
-          const recentAssistant = (Array.isArray(messages) ? messages : [])
-            .filter((m) => m?.role === 'assistant' && typeof m.content === 'string')
-            .map((m) => String(m.content).trim())
-            .filter(Boolean)
-            .slice(-6)
-          const seed = `${latestUserText(messages) || ''}|${recentAssistant.join('|')}|${fullReply.slice(0, 80)}`
-          fullReply = repairPracticeReply(fullReply, practiceAntiSpoilTargets, {
-            language: req.learningLanguage === 'zh' ? 'zh' : 'en',
-            seed,
-            avoid: recentAssistant,
-            mode: attachedPracticeMode,
-            scene: practiceScene,
-          })
-        }
-        if (holdPracticeReply && fullReply) send({ type: 'chunk', delta: fullReply })
         if (Array.isArray(practiceAllTargets) && practiceAllTargets.length > 0 && fullReply.trim()) {
           const practiceUserText = latestUserText(messages)
           if (practiceUserText) {

@@ -94,10 +94,10 @@ test('live-прогресс отмечает produced как used и остав�
   assert.equal(remaining[0].headword, 'run')
 })
 
-test('эхо, подсказка, молчание и самостоятельное слово различаются по серверным репликам', () => {
+test('слово пользователя засчитывается, даже если его уже сказали собеседник или подсказка', () => {
   const targets = [{ sense_id: SENSE_A, headword: 'apple', gloss_ru: 'яблоко' }]
   assert.equal(classifyDialogueTargets({ targets, turns: [], hints: [] })[0].verdict, 'unused')
-  const echoed = classifyDialogueTargets({
+  const afterPartner = classifyDialogueTargets({
     targets,
     turns: [
       { turn_index: 0, role: 'user', content: 'hello' },
@@ -107,8 +107,9 @@ test('эхо, подсказка, молчание и самостоятельн
     ],
     hints: [],
   })[0]
-  assert.equal(echoed.verdict, 'echoed')
-  const hinted = classifyDialogueTargets({
+  assert.equal(afterPartner.verdict, 'produced')
+  assert.equal(afterPartner.needsSense, true)
+  const afterHint = classifyDialogueTargets({
     targets,
     turns: [
       { turn_index: 0, role: 'user', content: 'I want an apple' },
@@ -116,7 +117,8 @@ test('эхо, подсказка, молчание и самостоятельн
     ],
     hints: [{ turn_index: 0, hint_text: 'Речь про apple' }],
   })[0]
-  assert.equal(hinted.verdict, 'hinted')
+  assert.equal(afterHint.verdict, 'produced')
+  assert.equal(afterHint.needsSense, true)
   const own = classifyDialogueTargets({
     targets,
     turns: [

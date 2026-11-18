@@ -125,13 +125,14 @@ test('wrong_sense не подтверждает перенос', () => {
   assert.equal(confirm({ verdict: 'wrong_sense', quality: 1, evidence: judged[0].evidence_text }), false)
 })
 
-test('hinted не подтверждает перенос', () => {
+test('подсказка не отменяет слово пользователя в переносе', () => {
   const row = classifyDialogueTargets({
     targets: [target()],
     turns: [{ turn_index: 1, role: 'user', content: QUOTE }],
     hints: [{ turn_index: 1, hint_text: 'Try to clarify it.' }],
   })[0]
-  assert.equal(row.verdict, 'hinted')
+  assert.equal(row.verdict, 'produced')
+  assert.equal(row.needsSense, true)
   assert.equal(confirm({ verdict: 'hinted', quality: 0 }), false)
 })
 
@@ -159,7 +160,7 @@ test('unused не подтверждает перенос', () => {
   assert.equal(confirm({ verdict: 'unused', quality: 0, evidence: '' }), false)
 })
 
-test('echoed не подтверждает перенос', () => {
+test('слово собеседника не отменяет слово пользователя в переносе', () => {
   const row = classifyDialogueTargets({
     targets: [target()],
     turns: [
@@ -168,7 +169,8 @@ test('echoed не подтверждает перенос', () => {
     ],
     hints: [],
   })[0]
-  assert.equal(row.verdict, 'echoed')
+  assert.equal(row.verdict, 'produced')
+  assert.equal(row.needsSense, true)
   assert.equal(confirm({
     verdict: 'echoed',
     quality: 0,

@@ -33,6 +33,7 @@ export type DebateCompletionRow = {
   id: string;
   topic: string;
   topic_ru: string | null;
+  topic_source?: 'catalog' | 'custom' | null;
   user_position: 'for' | 'against';
   ai_position: 'for' | 'against';
   difficulty: 'easy' | 'medium' | 'hard' | null;
@@ -110,7 +111,7 @@ export function useProgressData() {
         .limit(500),
       supabase
         .from('debate_completions')
-        .select('id, topic, topic_ru, user_position, ai_position, difficulty, completed_step_ids, step_schema_version, micro_goals, feedback_json, feedback, useful_phrase_en, useful_phrase_ru, assessment_id, debate_session_id, completed_at')
+        .select('id, topic, topic_ru, topic_source, user_position, ai_position, difficulty, completed_step_ids, step_schema_version, micro_goals, feedback_json, feedback, useful_phrase_en, useful_phrase_ru, assessment_id, debate_session_id, completed_at')
         .eq('user_id', uid)
         .order('completed_at', { ascending: false })
         .limit(500),
@@ -178,7 +179,7 @@ export function useProgressData() {
     if (debateSessionsRes.error) {
       const fallbackRes = await supabase
         .from('debate_sessions')
-        .select('id, topic, user_position, ai_position, difficulty, completed_step_ids, feedback, assessment_id, created_at')
+        .select('id, topic, topic_source, user_position, ai_position, difficulty, completed_step_ids, feedback, assessment_id, created_at')
         .eq('user_id', uid)
         .not('feedback', 'is', null)
         .order('created_at', { ascending: false })
@@ -190,6 +191,7 @@ export function useProgressData() {
           id: row.id,
           topic: row.topic,
           topic_ru: null,
+          topic_source: row.topic_source === 'catalog' || row.topic_source === 'custom' ? row.topic_source : null,
           user_position: row.user_position,
           ai_position: row.ai_position,
           difficulty: row.difficulty ?? null,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { isUserScenarioId } from '@/lib/user-scenarios';
+import { isSystemScenarioId } from '@/lib/roleplay';
 import { DEBATE_TOPICS } from '@/lib/debate-topics';
 import type { CriteriaScores } from '@/lib/speaking-assessment';
 import type { CompletionRow, AssessmentRow, DebateCompletionRow } from './useProgressData';
@@ -84,26 +84,29 @@ export function useProgressFilters(
   }, [periodFilteredDebateCompletions, debateAssessments]);
 
   const isSystemDebate = useMemo(
-    () => (topic: string, topicRu?: string | null) =>
-      DEBATE_TOPICS.some(
+    () => (topic: string, topicRu?: string | null, topicSource?: string | null) => {
+      if (topicSource === 'catalog') return true;
+      if (topicSource === 'custom') return false;
+      return DEBATE_TOPICS.some(
         (dt) =>
           dt.topic === topic ||
           dt.topicRu === topic ||
           (typeof topicRu === 'string' && (dt.topic === topicRu || dt.topicRu === topicRu))
-      ),
+      );
+    },
     []
   );
 
   const scopedRoleplayCompletions = useMemo(() => {
     return progressView === 'system'
-      ? periodFilteredCompletions.filter((row) => !isUserScenarioId(row.scenario_id))
-      : periodFilteredCompletions.filter((row) => isUserScenarioId(row.scenario_id));
+      ? periodFilteredCompletions.filter((row) => isSystemScenarioId(row.scenario_id))
+      : periodFilteredCompletions.filter((row) => !isSystemScenarioId(row.scenario_id));
   }, [periodFilteredCompletions, progressView]);
 
   const scopedDebateCompletions = useMemo(() => {
     return progressView === 'system'
-      ? periodFilteredDebateCompletions.filter((row) => isSystemDebate(row.topic, row.topic_ru))
-      : periodFilteredDebateCompletions.filter((row) => !isSystemDebate(row.topic, row.topic_ru));
+      ? periodFilteredDebateCompletions.filter((row) => isSystemDebate(row.topic, row.topic_ru, row.topic_source))
+      : periodFilteredDebateCompletions.filter((row) => !isSystemDebate(row.topic, row.topic_ru, row.topic_source));
   }, [periodFilteredDebateCompletions, progressView, isSystemDebate]);
 
   const scopedAssessments = useMemo(() => {

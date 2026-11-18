@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { extractChineseCharacters } from '@/lib/vocabulary';
-import { buildMessagesForAgentChat, type RoleplayScenario } from '@/lib/roleplay';
+import { buildMessagesForAgentChat, isSystemScenarioId, type RoleplayScenario } from '@/lib/roleplay';
 import { getStoredBackendToken } from '@/lib/backend-jwt';
 import { exchangeSupabaseToken } from '@/lib/exchange-backend-token';
 import { RoleplayModeUI } from '@/components/roleplay/RoleplayModeUI';
@@ -296,23 +296,6 @@ function AgentOrbFace() {
       <span className="agent-orb__glass" aria-hidden />
     </>
   );
-}
-
-function practiceSeedFromScenario(scenario: RoleplayScenario, level: EnglishCefrLevel): ScenarioCreateSeed {
-  const { id: _id, ...payload } = scenario;
-  return {
-    level,
-    prompt: scenario.scenarioTextRu || scenario.description || scenario.title,
-    topic: scenario.title,
-    place: scenario.settingRu || scenario.setting || '',
-    role: scenario.yourRoleRu || scenario.yourRole || '',
-    goal: scenario.goalRu || scenario.goal || '',
-    generated: {
-      title: scenario.title,
-      level,
-      payload: payload as Record<string, unknown>,
-    },
-  };
 }
 
 export function AgentTab() {
@@ -714,7 +697,7 @@ export function AgentTab() {
     setAgentMode('roleplay');
     setScenarioModalOpen(true);
     if (learningLanguage !== 'zh') {
-      setScenarioView(isUserScenarioId(scenarioId) ? 'my' : 'catalog');
+      setScenarioView(isSystemScenarioId(scenarioId) ? 'catalog' : 'my');
     }
     const next = new URLSearchParams(searchParams.toString());
     next.delete('from');
@@ -3089,22 +3072,30 @@ export function AgentTab() {
     setChatPracticeLocked(false);
     setChatInviteDismissed(true);
     practiceMenuReturnRef.current = 'today';
-    setPracticeScenePrep(true);
+    setPracticeScenePrep(false);
+    setScenarioCreateSeed(null);
     setProgressDeepLink(null);
     setAgentMode('roleplay');
     setScenarioModalOpen(true);
-    setHighlightedUserScenarioId(null);
     setCatalogThemeId(null);
-    setPinnedMenuScenario(null);
     setPracticeHome(null);
     if (learningLanguage === 'zh') {
-      setScenarioCreateSeed(null);
+      setPinnedMenuScenario(null);
+      setHighlightedUserScenarioId(null);
+      setProgressDeepLink({ id: scenario.id, playMode: parsePlayMode(scenario.playMode) });
+      setScenarioView('catalog');
+      return;
+    }
+    if (isUserScenarioId(scenario.id)) {
+      setPinnedMenuScenario(null);
+      setHighlightedUserScenarioId(scenario.id);
       setScenarioView('my');
       return;
     }
-    setScenarioCreateSeed(practiceSeedFromScenario(scenario, englishCefrLevel));
-    setScenarioView('create');
-  }, [learningLanguage, englishCefrLevel]);
+    setHighlightedUserScenarioId(null);
+    setPinnedMenuScenario(scenario);
+    setScenarioView('catalog');
+  }, [learningLanguage]);
 
   const openScenarioDraft = useCallback((seed: ScenarioCreateSeed, senses: ChatPracticeSense[], listId: string) => {
     const requestId = crypto.randomUUID();
@@ -3131,12 +3122,20 @@ export function AgentTab() {
   }, []);
 
   const preparePracticeScene = useCallback((scenario: RoleplayScenario) => {
-    setScenarioCreateSeed(practiceSeedFromScenario(scenario, englishCefrLevel));
-    setScenarioView('create');
+    setScenarioCreateSeed(null);
+    setPracticeScenePrep(false);
     setCatalogThemeId(null);
-    setPinnedMenuScenario(null);
     setProgressDeepLink(null);
-  }, [englishCefrLevel]);
+    if (isUserScenarioId(scenario.id)) {
+      setPinnedMenuScenario(null);
+      setHighlightedUserScenarioId(scenario.id);
+      setScenarioView('my');
+      return;
+    }
+    setHighlightedUserScenarioId(null);
+    setPinnedMenuScenario(scenario);
+    setScenarioView('catalog');
+  }, []);
 
   const dismissSceneMenu = useCallback(() => {
     setProgressDeepLink(null);
@@ -6104,10 +6103,17 @@ export function AgentTab() {
               setChatPracticeRequestId(requestId);
               setChatPracticeLocked(false);
               setChatInviteDismissed(true);
-              setDebateTopicId(null);
-              setSceneSeed(topic);
+              const catalogTopic = DEBATE_TOPICS.find((item) => item.topic === topic || item.topicRu === topic);
+              if (catalogTopic) {
+                setSceneSeed(null);
+                setDebateTopicId(catalogTopic.id);
+                handleDebateViewChange('catalog');
+              } else {
+                setDebateTopicId(null);
+                setSceneSeed(topic);
+                handleDebateViewChange('create');
+              }
               handleModeChange('debate');
-              handleDebateViewChange('create');
               setDebateSetupOpen(true);
               setPracticeHome(null);
             }}

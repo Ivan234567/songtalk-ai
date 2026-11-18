@@ -4,7 +4,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getCriteriaLabel } from '@/lib/speaking-assessment';
 import type { CriteriaScores } from '@/lib/speaking-assessment';
-import { isUserScenarioId } from '@/lib/user-scenarios';
+import { isSystemScenarioId } from '@/lib/roleplay';
 import { useProgressData } from './hooks/useProgressData';
 import { useProgressFilters, normalizeDebateTopicKey } from './hooks/useProgressFilters';
 import { type RecentSessionRow } from './RecentSessions';
@@ -116,12 +116,12 @@ export function ProgressDashboard() {
     // View badges: count per view for current mode + period (not filtered by view)
     const systemCount =
       mode === 'roleplay'
-        ? periodFilteredCompletions.filter((r) => !isUserScenarioId(r.scenario_id)).length
-        : periodFilteredDebateCompletions.filter((r) => isSystemDebate(r.topic, r.topic_ru)).length;
+        ? periodFilteredCompletions.filter((r) => isSystemScenarioId(r.scenario_id)).length
+        : periodFilteredDebateCompletions.filter((r) => isSystemDebate(r.topic, r.topic_ru, r.topic_source)).length;
     const personalCount =
       mode === 'roleplay'
-        ? periodFilteredCompletions.filter((r) => isUserScenarioId(r.scenario_id)).length
-        : periodFilteredDebateCompletions.filter((r) => !isSystemDebate(r.topic, r.topic_ru)).length;
+        ? periodFilteredCompletions.filter((r) => !isSystemScenarioId(r.scenario_id)).length
+        : periodFilteredDebateCompletions.filter((r) => !isSystemDebate(r.topic, r.topic_ru, r.topic_source)).length;
 
     return {
       roleplay: scopedRoleplayCompletions.length,
@@ -255,12 +255,12 @@ export function ProgressDashboard() {
 
     const prevRoleplayFiltered =
       progressView === 'system'
-        ? prevRoleplay.filter((r) => !isUserScenarioId(r.scenario_id))
-        : prevRoleplay.filter((r) => isUserScenarioId(r.scenario_id));
+        ? prevRoleplay.filter((r) => isSystemScenarioId(r.scenario_id))
+        : prevRoleplay.filter((r) => !isSystemScenarioId(r.scenario_id));
     const prevDebateFiltered =
       progressView === 'system'
-        ? prevDebate.filter((r) => isSystemDebate(r.topic, r.topic_ru))
-        : prevDebate.filter((r) => !isSystemDebate(r.topic, r.topic_ru));
+        ? prevDebate.filter((r) => isSystemDebate(r.topic, r.topic_ru, r.topic_source))
+        : prevDebate.filter((r) => !isSystemDebate(r.topic, r.topic_ru, r.topic_source));
 
     const prevCompletions = mode === 'roleplay' ? prevRoleplayFiltered : prevDebateFiltered;
 

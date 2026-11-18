@@ -166,7 +166,7 @@ test('no_opportunity не подтверждает и не закрывает о
   assert.equal(plan.next.days, 7)
 })
 
-test('AI произнёс слово первым — produced невозможен', () => {
+test('слово пользователя засчитывается, даже если AI сказал его первым', () => {
   const rows = classifyDialogueTargets({
     targets: [{ sense_id: SENSE, headword: 'negotiate', gloss_ru: 'договариваться', retention_days: 7 }],
     turns: [
@@ -175,10 +175,11 @@ test('AI произнёс слово первым — produced невозмож�
     ],
     hints: [],
   })
-  assert.equal(rows[0].verdict, 'echoed')
+  assert.equal(rows[0].verdict, 'produced')
+  assert.equal(rows[0].needsSense, true)
 })
 
-test('перевод в реплике AI до ответа тоже не даёт produced', () => {
+test('перевод в реплике AI до ответа не отменяет слово пользователя', () => {
   const rows = classifyDialogueTargets({
     targets: [{ sense_id: SENSE, headword: 'negotiate', gloss_ru: 'договариваться', retention_days: 7 }],
     turns: [
@@ -187,7 +188,8 @@ test('перевод в реплике AI до ответа тоже не даё
     ],
     hints: [],
   })
-  assert.equal(rows[0].verdict, 'hinted')
+  assert.equal(rows[0].verdict, 'produced')
+  assert.equal(rows[0].needsSense, true)
 })
 
 test('ошибка T+30 не отменяет подтверждение T+7', () => {

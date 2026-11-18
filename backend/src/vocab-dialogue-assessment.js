@@ -1,5 +1,6 @@
 /**
  * Разбор речи свободного чата.
+ * Слово засчитано, если его сказал пользователь: реплика собеседника и подсказка это не отменяют.
  * Вердикт produced принимается только с цитатой из серверной реплики пользователя.
  * Карточка узнавания не читается и не обновляется.
  */
@@ -54,19 +55,11 @@ export function evidenceQuote(text, headword) {
   return quote
 }
 
-function glossRevealed(text, target) {
-  if (target?.is_transfer !== true && target?.retention_days !== 7 && target?.retention_days !== 30) return false
-  const gloss = typeof target?.gloss_ru === 'string' ? target.gloss_ru.trim() : ''
-  if (gloss.length < 3) return false
-  return String(text || '').toLowerCase().includes(gloss.toLowerCase())
-}
-
-export function classifyDialogueTargets({ targets, turns, hints }) {
+export function classifyDialogueTargets({ targets, turns }) {
   const orderedTurns = (Array.isArray(turns) ? turns : [])
     .filter((turn) => turn && (turn.role === 'user' || turn.role === 'assistant') && typeof turn.content === 'string')
     .slice()
     .sort((a, b) => a.turn_index - b.turn_index || (a.role === 'user' ? -1 : 1))
-  const hintRows = Array.isArray(hints) ? hints : []
   return targets.map((target) => {
     const word = target.headword
     const userTurn = orderedTurns.find((turn) => turn.role === 'user' && replyContainsTarget(turn.content, [{ headword: word }]))
@@ -74,30 +67,6 @@ export function classifyDialogueTargets({ targets, turns, hints }) {
       return { sense_id: target.sense_id, verdict: 'unused', evidence_text: null, needsSense: false }
     }
     const quote = evidenceQuote(userTurn.content, word)
-    const echoed = orderedTurns.some((turn) => (
-      turn.role === 'assistant'
-      && turn.turn_index < userTurn.turn_index
-      && replyContainsTarget(turn.content, [{ headword: word }])
-    ))
-    if (echoed) {
-      return { sense_id: target.sense_id, verdict: 'echoed', evidence_text: quote || null, needsSense: false }
-    }
-    const hinted = hintRows.some((hint) => (
-      Number.isInteger(hint.turn_index)
-      && hint.turn_index <= userTurn.turn_index
-      && replyContainsTarget(hint.hint_text, [{ headword: word }])
-    )) || orderedTurns.some((turn) => (
-      turn.role === 'assistant'
-      && turn.turn_index < userTurn.turn_index
-      && glossRevealed(turn.content, target)
-    )) || hintRows.some((hint) => (
-      Number.isInteger(hint.turn_index)
-      && hint.turn_index <= userTurn.turn_index
-      && glossRevealed(hint.hint_text, target)
-    ))
-    if (hinted) {
-      return { sense_id: target.sense_id, verdict: 'hinted', evidence_text: quote || null, needsSense: false }
-    }
     if (!quote) {
       return { sense_id: target.sense_id, verdict: 'mentioned', evidence_text: null, needsSense: false }
     }
@@ -183,7 +152,7 @@ async function readRows(safeSupabaseCall, fn) {
 
 /**
  * Live-прогресс без SM-2 и без LLM.
- * used = форма найдена у пользователя без эха/подсказки.
+ * used = пользователь сам сказал слово.
  */
 export function buildPracticeProgressItems(targets, classified) {
   const byId = new Map((Array.isArray(classified) ? classified : []).map((row) => [row.sense_id, row]))

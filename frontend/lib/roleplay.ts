@@ -123,6 +123,13 @@ export function getRoleplayScenarioById(id: string): RoleplayScenario | undefine
   return scenarios.find((s) => s.id === id);
 }
 
+const systemScenarioIds = new Set(scenarios.map((scenario) => scenario.id));
+
+/** Каталожный сценарий. Личная копия сюда не входит. */
+export function isSystemScenarioId(id: string | null | undefined): boolean {
+  return typeof id === 'string' && systemScenarioIds.has(id);
+}
+
 /**
  * Возвращает сценарии по категории.
  */

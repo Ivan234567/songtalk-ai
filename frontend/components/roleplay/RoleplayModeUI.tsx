@@ -1453,7 +1453,6 @@ function ScenarioModal({
   initialPlayMode,
   initialExpandedThemeId,
   pinnedScenario = null,
-  onPracticePrepare,
   practiceWords = null,
 }: {
   learningLanguage: LearningLanguage;
@@ -1583,10 +1582,6 @@ function ScenarioModal({
   }, [query, difficultyFilter, learningLanguage, masteredById]);
 
   const handleCardSelect = (scenario: RoleplayScenario) => {
-    if (onPracticePrepare) {
-      onPracticePrepare(scenario);
-      return;
-    }
     setBriefingScenario(scenario);
   };
 
