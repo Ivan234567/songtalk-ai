@@ -68,6 +68,9 @@ venv/
 env/
 ENV/
 
+# Graphify rebuild cache
+graphify-out/cache/
+
 # ML Models and Caches (should not be in repo)
 *.pth
 *.pt

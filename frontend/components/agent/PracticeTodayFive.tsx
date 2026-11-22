@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { buildAgentAuthHeaders, buildAgentJsonHeaders } from '@/lib/agent-request';
 import type { LearningLanguage } from '@/lib/learning-language';
 import type { RoleplayScenario } from '@/lib/roleplay';
-import { createUserScenario, generateUserScenario, type UserScenarioLevel } from '@/lib/user-scenarios';
+import { createUserScenario, generateUserScenario, isUserScenarioId, type UserScenarioLevel } from '@/lib/user-scenarios';
 import type { ScenarioCreateSeed } from '@/components/roleplay/PersonalScenariosUI';
 import { generateDebateTopic, saveUserDebateTopic } from '@/lib/user-debate-topics';
 import { bindPracticeList } from '@/lib/practice-list-binding';
@@ -629,11 +629,36 @@ export function PracticeTodayFive({
   }, [swapOpen]);
   const startClose = (scene: CloseScene) => {
     if (!activeList || !scene.scenario || starting || phase === 'working') return;
-    if (onOpenSceneMenu) {
-      onOpenSceneMenu(scene.scenario, words, activeList.id);
+    const scenario = scene.scenario;
+    if (learningLanguage !== 'zh' && onOpenScenarioDraft) {
+      const { id, ...rest } = scenario;
+      const sceneLevel: UserScenarioLevel = scenario.difficulty === 'easy' || scenario.difficulty === 'medium' || scenario.difficulty === 'hard'
+        ? scenario.difficulty
+        : cefrLevel(level);
+      onOpenScenarioDraft({
+        level: sceneLevel,
+        topic: scenario.title,
+        place: scenario.settingRu || scenario.setting || '',
+        role: scenario.yourRoleRu || scenario.yourRole || '',
+        goal: scenario.goalRu || scenario.goal || '',
+        prompt: scenario.scenarioTextRu || scenario.scenarioText || scenario.description || '',
+        savedId: isUserScenarioId(scenario.id) ? scenario.id : null,
+        generated: {
+          title: scenario.title,
+          level: sceneLevel,
+          payload: {
+            ...rest,
+            ...(isUserScenarioId(id) ? {} : { catalogScenarioId: id }),
+          },
+        },
+      }, words, activeList.id);
       return;
     }
-    onBeginScenario(scene.scenario, words, activeList.id);
+    if (onOpenSceneMenu) {
+      onOpenSceneMenu(scenario, words, activeList.id);
+      return;
+    }
+    onBeginScenario(scenario, words, activeList.id);
   };
 
   const enough = words.length >= 2;

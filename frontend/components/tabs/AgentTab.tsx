@@ -238,8 +238,6 @@ type EnglishCefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 type ChineseHskLevel = 1 | 2 | 3 | 4 | 5 | 6;
 type ChineseSpeechSpeed = 0.5 | 0.75 | 1 | 1.25 | 1.5 | 2;
 const SPEECH_SPEED_OPTIONS: ChineseSpeechSpeed[] = [0.5, 0.75, 1, 1.25, 1.5, 2];
-type ChineseCorrectionMode = 'gentle' | 'active';
-
 type Session = {
   id: string;
   title: string;
@@ -301,6 +299,8 @@ function AgentOrbFace() {
 export function AgentTab() {
   const { learningLanguage } = useLearningLanguage();
   const { ttsVoice } = useTtsVoice();
+  const ttsVoiceRef = useRef(ttsVoice);
+  ttsVoiceRef.current = ttsVoice;
   const showSystemCatalog = hasRoleplaySystemCatalog(learningLanguage);
   const systemCatalogView = showSystemCatalog ? 'catalog' as const : 'create' as const;
   const router = useRouter();
@@ -472,12 +472,10 @@ export function AgentTab() {
   const [chineseShowPinyin, setChineseShowPinyin] = useState(true);
   const [chineseShowTranslation, setChineseShowTranslation] = useState(true);
   const [chineseToneFocus, setChineseToneFocus] = useState(false);
-  const [chineseCorrectionMode, setChineseCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
   const [chineseHintMode, setChineseHintMode] = useState<ChineseHintMode>('basic');
   const [englishSettingsOpen, setEnglishSettingsOpen] = useState(true);
   const [englishCefrLevel, setEnglishCefrLevel] = useState<EnglishCefrLevel>('B1');
   const [englishShowTranslation, setEnglishShowTranslation] = useState(true);
-  const [englishCorrectionMode, setEnglishCorrectionMode] = useState<ChineseCorrectionMode>('gentle');
   const [savedDialogueWords, setSavedDialogueWords] = useState<Set<string>>(() => new Set());
   const [savingDialogueWord, setSavingDialogueWord] = useState<string | null>(null);
   const [vocabToast, setVocabToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -565,10 +563,9 @@ export function AgentTab() {
       show_pinyin: chineseShowPinyin,
       show_translation: chineseShowTranslation,
       tone_focus: chineseToneFocus,
-      correction_mode: chineseCorrectionMode,
       hint_mode: chineseHintMode,
     }),
-    [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin, chineseShowTranslation, chineseToneFocus, chineseCorrectionMode, chineseHintMode]
+    [chineseHskLevel, chineseSpeechSpeed, chineseShowPinyin, chineseShowTranslation, chineseToneFocus, chineseHintMode]
   );
   const chineseSettingsSummary = useMemo(() => {
     const hsk = `HSK ${chineseHskLevel}`;
@@ -653,10 +650,9 @@ export function AgentTab() {
     () => ({
       cefr_level: lockedEnglishLevel,
       show_translation: englishShowTranslation,
-      correction_mode: englishCorrectionMode,
       hint_mode: freestyleHintMode,
     }),
-    [lockedEnglishLevel, englishShowTranslation, englishCorrectionMode, freestyleHintMode]
+    [lockedEnglishLevel, englishShowTranslation, freestyleHintMode]
   );
   const englishSettingsSummary = useMemo(() => {
     const level = englishLevelLabel(lockedEnglishLevel);
@@ -1942,6 +1938,12 @@ export function AgentTab() {
         }
 
         const assistantContent = safeAssistantContent(fullReply, learningLanguage);
+        const spokenReply = speakableAgentText(assistantContent, learningLanguage).trim();
+        if (!spokenReply) {
+          setError('Пустой ответ от ИИ');
+          setState('idle');
+          return;
+        }
         const newMessages: Message[] = [...history, { role: 'assistant', content: assistantContent }];
         setMessages((prev) => [...prev, { role: 'assistant', content: assistantContent }]);
 
@@ -2042,21 +2044,11 @@ export function AgentTab() {
           }
         }
 
-        if (!assistantContent.trim()) {
-          setState('idle');
-          return;
-        }
-
         setState('speaking');
-        const ttsText = speakableAgentText(assistantContent, learningLanguage);
-        if (!ttsText) {
-          setState('idle');
-          return;
-        }
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
-          body: JSON.stringify(withLearningLanguageBody({ text: ttsText, voice: ttsVoice }, learningLanguage)),
+          body: JSON.stringify(withLearningLanguageBody({ text: spokenReply, voice: ttsVoiceRef.current }, learningLanguage)),
         });
 
         if (!ttsResp.ok) {
@@ -2245,7 +2237,8 @@ export function AgentTab() {
               const data = JSON.parse(line);
               if (data.type === 'chunk' && typeof data.delta === 'string') {
                 fullReply += data.delta;
-                setMessages([{ role: 'assistant', content: fullReply }]);
+                const visible = safeAssistantContent(fullReply, learningLanguage);
+                if (visible.trim()) setMessages([{ role: 'assistant', content: visible }]);
               } else if (data.type === 'done') {
                 break;
               } else if (data.type === 'error') {
@@ -2260,13 +2253,16 @@ export function AgentTab() {
           }
         }
 
-        if (!fullReply.trim()) {
+        const assistantContent = safeAssistantContent(fullReply, learningLanguage);
+        const spokenReply = speakableAgentText(assistantContent, learningLanguage).trim();
+        if (!spokenReply) {
+          setMessages([]);
           setError('Пустой ответ от ИИ');
           setState('idle');
           return;
         }
 
-        const assistantMessage: Message = { role: 'assistant', content: safeAssistantContent(fullReply, learningLanguage) };
+        const assistantMessage: Message = { role: 'assistant', content: assistantContent };
         setMessages([assistantMessage]);
 
         // Сохраняем сессию в БД
@@ -2307,7 +2303,7 @@ export function AgentTab() {
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
-          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(fullReply, learningLanguage), voice: ttsVoice }, learningLanguage)),
+          body: JSON.stringify(withLearningLanguageBody({ text: spokenReply, voice: ttsVoiceRef.current }, learningLanguage)),
         });
 
         if (!ttsResp.ok) {
@@ -2749,7 +2745,7 @@ export function AgentTab() {
         const ttsResp = await fetch(`${getApiUrl()}/api/agent/tts`, {
           method: 'POST',
           headers: buildAgentJsonHeaders(token, learningLanguage),
-          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(openingLine, learningLanguage), voice: ttsVoice }, learningLanguage)),
+          body: JSON.stringify(withLearningLanguageBody({ text: speakableAgentText(openingLine, learningLanguage), voice: ttsVoiceRef.current }, learningLanguage)),
         });
         if (!ttsResp.ok) {
           const j = await ttsResp.json().catch(() => ({}));
@@ -3077,19 +3073,13 @@ export function AgentTab() {
     setProgressDeepLink(null);
     setAgentMode('roleplay');
     setScenarioModalOpen(true);
-    setCatalogThemeId(null);
+    setCatalogThemeId(scenario.themeId ?? null);
     setPracticeHome(null);
     if (learningLanguage === 'zh') {
       setPinnedMenuScenario(null);
       setHighlightedUserScenarioId(null);
       setProgressDeepLink({ id: scenario.id, playMode: parsePlayMode(scenario.playMode) });
       setScenarioView('catalog');
-      return;
-    }
-    if (isUserScenarioId(scenario.id)) {
-      setPinnedMenuScenario(null);
-      setHighlightedUserScenarioId(scenario.id);
-      setScenarioView('my');
       return;
     }
     setHighlightedUserScenarioId(null);
@@ -5369,38 +5359,6 @@ export function AgentTab() {
                           )}
                         </div>
                       ) : null}
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.5rem',
-                          padding: '0.625rem 0.75rem',
-                          borderRadius: 10,
-                          background: 'var(--sidebar-bg)',
-                          border: '1px solid var(--sidebar-border)',
-                        }}
-                      >
-                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                          Исправление ошибок
-                        </span>
-                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', overflow: 'hidden' }}>
-                          <span style={{ opacity: 0.85, flexShrink: 0 }}>Режим коррекции</span>
-                          <select
-                            className="roleplay-modern-select"
-                            value={englishCorrectionMode}
-                            onChange={(e) => setEnglishCorrectionMode(e.target.value as ChineseCorrectionMode)}
-                            style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.75rem', minWidth: 0, maxWidth: '55%' }}
-                          >
-                            <option value="gentle">Мягкий</option>
-                            <option value="active">Активный</option>
-                          </select>
-                        </label>
-                        <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4 }}>
-                          {englishCorrectionMode === 'gentle'
-                            ? 'ИИ будет корректно продолжать диалог, мягко исправляя серьёзные ошибки'
-                            : 'ИИ будет указывать на все ошибки и предлагать правильные варианты'}
-                        </p>
-                      </div>
                       </div>
                   </div>
                 </div>
@@ -5966,40 +5924,6 @@ export function AgentTab() {
                           })()}
                         </div>
                       ) : null}
-
-                      {/* --- Коррекция ошибок --- */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '0.5rem',
-                          padding: '0.625rem 0.75rem',
-                          borderRadius: 10,
-                          background: 'var(--sidebar-bg)',
-                          border: '1px solid var(--sidebar-border)',
-                        }}
-                      >
-                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.55 }}>
-                          Исправление ошибок
-                        </span>
-                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: '0.8125rem', color: 'var(--sidebar-text)', overflow: 'hidden' }}>
-                          <span style={{ opacity: 0.85, flexShrink: 0 }}>Режим коррекции</span>
-                          <select
-                            className="roleplay-modern-select"
-                            value={chineseCorrectionMode}
-                            onChange={(e) => setChineseCorrectionMode(e.target.value as ChineseCorrectionMode)}
-                            style={{ borderRadius: 8, border: '1px solid var(--sidebar-border)', background: 'var(--sidebar-hover)', color: 'var(--sidebar-text)', padding: '0.3rem 1.5rem 0.3rem 0.5rem', fontSize: '0.75rem', minWidth: 0, maxWidth: '55%' }}
-                          >
-                            <option value="gentle">Мягкий</option>
-                            <option value="active">Активный</option>
-                          </select>
-                        </label>
-                        <p style={{ margin: 0, fontSize: '0.6875rem', opacity: 0.55, lineHeight: 1.4 }}>
-                          {chineseCorrectionMode === 'gentle'
-                            ? 'ИИ будет корректно продолжать диалог, мягко исправляя серьёзные ошибки'
-                            : 'ИИ будет указывать на все ошибки и предлагать правильные варианты'}
-                        </p>
-                      </div>
 
                       {/* --- Фокус на тонах --- */}
                       <div

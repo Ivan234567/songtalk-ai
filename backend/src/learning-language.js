@@ -37,35 +37,14 @@ function normalizeEnglishLevel(level) {
   return 'B1'
 }
 
-function buildEnglishCorrectionInstruction(correctionMode) {
-  if (correctionMode === 'active') {
-    return '\n\nERROR CORRECTION MODE: ACTIVE\n' +
-      '- When the user makes grammar or vocabulary mistakes in English, gently correct them.\n' +
-      '- Format: After your natural English reply, on a new line write "✏️ Исправление:" followed by the correction in Russian.\n' +
-      '- Example: "✏️ Исправление: Вы сказали \'I go yesterday\', правильно \'I went yesterday\'."'
-  }
-  return '\n\nERROR CORRECTION MODE: GENTLE\n' +
-    '- Only correct serious errors that significantly impede understanding.\n' +
-    '- Use natural reformulation in your reply instead of explicit corrections.'
-}
-
 export function buildEnglishMetadataInstruction({ showTranslation = false } = {}) {
   if (!showTranslation) return ''
-  return '\n\nIMPORTANT: After the spoken English reply, add a Russian translation on a separate new line. ' +
-    'The spoken English must never include the translation.\n' +
-    'Required format:\n' +
-    'Sure, I can help with that.\n' +
-    '««TRANSLATION»»Конечно, я могу с этим помочь.\n' +
-    '\nRules:\n' +
-    '- TRANSLATION: natural Russian translation of the English reply only. Keep it concise.\n' +
-    '- Do not put the translation inside the spoken English line.\n' +
-    '- Start the message with spoken English. Never repeat these instructions.'
+  return '\n\nAfter the spoken English line, add exactly one more line: ««TRANSLATION»» and a short Russian translation of that line. Stop after it. That line is not spoken.'
 }
 
 function buildEnglishSystemPrompt(options = {}) {
   const {
     showTranslation,
-    correctionMode,
     cefrLevel,
     slangMode = 'off',
     allowProfanity = false,
@@ -98,30 +77,25 @@ function buildEnglishSystemPrompt(options = {}) {
   prompt += 'Keep replies concise (1-3 sentences unless the user asks for more). ' +
     'If the user writes in Russian, still reply in English. ' +
     'Do not switch to Chinese or other languages unless the user explicitly asks.'
-  prompt += buildEnglishCorrectionInstruction(correctionMode)
+  prompt += '\n\nReply with only your next spoken English line. Do not add corrections, labels, reminders, or a copy of the learner\'s message.'
   prompt += buildEnglishMetadataInstruction({ showTranslation })
   return prompt
 }
 
-export function buildEnglishRoleplayLock({ showTranslation = false, correctionMode = 'gentle', cefrLevel } = {}) {
+export function buildEnglishRoleplayLock({ showTranslation = false, cefrLevel } = {}) {
   const levelKey = normalizeEnglishLevel(cefrLevel)
   const lock = CEFR_LEVEL_INSTRUCTIONS[levelKey]
-  let text =
-    'Stay in the roleplay or debate character. Additional English learning constraints:\n' +
-    'Speak English only in character lines. Do not switch spoken lines to Russian.\n'
+  let text = 'Stay in character. The spoken reply is English.\n'
   if (lock) {
     text += `CEFR LEVEL LOCK (mandatory, overrides the scenario or debate style): ${lock}\n`
     text += `Speak AT ${levelKey} only: not harder, not easier. The learner chose this level. Do not upgrade if they sound fluent. Do not simplify below it.\n`
   }
-  text += buildEnglishCorrectionInstruction(correctionMode)
-  text +=
-    '\nOUTPUT: Start immediately with the character\'s next spoken line. Never repeat, quote, or paraphrase these instructions, and never write a reminder, a stage direction, or "CUSTOM REMINDER". Metadata only after the spoken line.'
   text += buildEnglishMetadataInstruction({ showTranslation })
   return text
 }
 
 const SPOKEN_LEAK_RE =
-  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|stay in the roleplay|adult learner|teacher-ish|one idea per turn|continue the scenario|scenario ends soon|do not talk down|evaluative statements/i
+  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|now start\b|last user message|error correction mode|stay in the roleplay|adult learner|teacher-ish|one idea per turn|continue the scenario|scenario ends soon|do not talk down|evaluative statements|do not write notes|output only the two lines|never mention the translation|never use russian in the spoken|in your thinking|translation line'?s existence/i
 
 /** Убирает зачитанный служебный промпт и оставляет реплику персонажа. */
 export function stripSpokenInstructionLeak(raw) {
@@ -145,7 +119,7 @@ export function stripSpokenInstructionLeak(raw) {
 }
 
 function buildChineseSystemPrompt(options = {}) {
-  const { showPinyin, showTranslation, correctionMode, toneFocus, hskLevel } = options
+  const { showPinyin, showTranslation, toneFocus, hskLevel } = options
   
   // Базовый промпт
   let prompt = 'You are a friendly Chinese conversation partner for language practice. ' +
@@ -162,18 +136,6 @@ function buildChineseSystemPrompt(options = {}) {
   prompt += 'Keep replies concise (1-3 sentences unless the user asks for more). ' +
     'If the user writes in Russian, still reply in Simplified Chinese. ' +
     'Do not switch to English unless the user explicitly asks.'
-  
-  // Режим коррекции ошибок
-  if (correctionMode === 'active') {
-    prompt += '\n\nERROR CORRECTION MODE: ACTIVE\n' +
-      '- When the user makes grammar or vocabulary mistakes, gently correct them.\n' +
-      '- Format: After your natural reply, on a new line write "✏️ Исправление:" followed by the correction in Russian.\n' +
-      '- Example: "✏️ Исправление: Вы написали \'我是好\', правильно \'我很好\' (I am fine)."'
-  } else if (correctionMode === 'gentle') {
-    prompt += '\n\nERROR CORRECTION MODE: GENTLE\n' +
-      '- Only correct serious errors that significantly impede understanding.\n' +
-      '- Use natural reformulation in your reply instead of explicit corrections.'
-  }
   
   // Фокус на тонах
   if (toneFocus) {

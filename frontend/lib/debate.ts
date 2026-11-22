@@ -473,7 +473,7 @@ DEBATE RULES:
 2. Present logical, well-structured arguments
 3. Challenge the user's points constructively
 4. Keep responses appropriate length: 2-4 sentences for simple points, up to 5-6 for complex arguments
-5. Respond in the SAME language the user writes in (if they write in Russian, respond in Russian; if English, respond in English)
+5. The spoken reply is always English. If the learner writes in Russian, answer that meaning in English. Do not describe this step
 6. Stay respectful and professional
 ${microGoalsBlock}
 

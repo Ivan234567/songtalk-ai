@@ -26,7 +26,6 @@ import { buildRoleplayPracticeContext } from '@/lib/practice-list-context';
 import { bindPracticeList } from '@/lib/practice-list-binding';
 import { ZhPlayModeDots } from '@/components/roleplay/ZhPlayModeDots';
 import type { PlayMode } from '@/lib/play-mode';
-import { SpeechVoicePicker } from '@/components/roleplay/SpeechVoicePicker';
 
 type SlangMode = 'off' | 'light' | 'heavy';
 type ProfanityIntensity = 'light' | 'medium' | 'hard';
@@ -104,19 +103,6 @@ const inputStyle: React.CSSProperties = {
   transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
 };
 
-const btnPrimary: React.CSSProperties = {
-  padding: '0.75rem 1.5rem',
-  borderRadius: 12,
-  border: 'none',
-  background: 'rgba(99, 102, 241, 0.9)',
-  color: '#fff',
-  fontSize: '1.0625rem',
-  fontWeight: 600,
-  cursor: 'pointer',
-  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
-  transition: 'opacity 0.2s ease, transform 0.1s ease',
-};
-
 const btnSecondary: React.CSSProperties = {
   padding: '0.7rem 1.25rem',
   borderRadius: 12,
@@ -126,25 +112,6 @@ const btnSecondary: React.CSSProperties = {
   fontSize: '1rem',
   cursor: 'pointer',
   transition: 'background 0.2s ease, border-color 0.2s ease',
-};
-
-const createSectionTitle: React.CSSProperties = {
-  marginBottom: '0.5rem',
-  fontSize: '0.875rem',
-  fontWeight: 700,
-  color: 'var(--sidebar-text)',
-  opacity: 0.7,
-  textTransform: 'uppercase',
-  letterSpacing: '0.06em',
-};
-
-const createLabelStyle: React.CSSProperties = {
-  display: 'block',
-  marginBottom: 8,
-  fontSize: '0.9375rem',
-  fontWeight: 500,
-  color: 'var(--sidebar-text)',
-  opacity: 0.9,
 };
 
 /** Иконки для мини-превью брифинга (как в BriefingView, компактно) */
@@ -667,7 +634,7 @@ export function PersonalScenariosUI({
   seedPrompt = null,
   initialSeed = null,
 }: PersonalScenariosUIProps) {
-  const [view, setView] = useState<'create' | 'my' | 'edit'>(initialView);
+  const [view, setView] = useState<'create' | 'my'>(initialView);
 
   // Create flow
   const [prompt, setPrompt] = useState(initialSeed?.prompt || seedPrompt || '');
@@ -714,13 +681,8 @@ export function PersonalScenariosUI({
   /** Id сценария, для которого выполняется «Создать копию» (из меню карточки) */
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
-  // Edit flow
+  /** Сценарий, который правим в мастере «Подготовка сцены». Сохранение обновляет его, а не создаёт второй. */
   const [editId, setEditId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<{ title: string; level: UserScenarioLevel; payload: Record<string, unknown> } | null>(null);
-  const [editSaveLoading, setEditSaveLoading] = useState(false);
-  const [editDuplicateLoading, setEditDuplicateLoading] = useState(false);
-  /** Вкладка в модалке редактирования: main = основное, practice = для практики */
-  const [editTab, setEditTab] = useState<'main' | 'practice'>('main');
 
   const highlightedCardRef = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -793,14 +755,13 @@ export function PersonalScenariosUI({
       if (e.key === 'Escape') {
         if (cardMenuOpenId) setCardMenuOpenId(null);
         else if (briefingScenario) setBriefingScenario(null);
-        else if (view === 'edit' && editId) {
+        else if (generated) {
+          setGenerated(null);
+          setEditTitle('');
+          setCreateStep(1);
           setEditId(null);
-          setEditDraft(null);
-        } else if (generated) {
-      setGenerated(null);
-      setEditTitle('');
-      setCreateStep(1);
-    } else {
+          savedScenarioIdRef.current = null;
+        } else {
           onClose();
         }
       }
@@ -995,6 +956,8 @@ export function PersonalScenariosUI({
   const fillFromScenario = (s: UserScenario) => {
     setBriefingScenario(null);
     setReadyScenario(s);
+    setEditId(null);
+    savedScenarioIdRef.current = null;
     setView('create');
     setEditTitle(s.title || '');
     setLevel(s.level);
@@ -1042,16 +1005,33 @@ export function PersonalScenariosUI({
     try {
       const title = editTitle.trim();
       const existingId = savedScenarioIdRef.current;
+      const payload: Record<string, unknown> = {
+        ...generated.payload,
+        settingRu: place.trim() || generated.payload.settingRu,
+        yourRoleRu: userRole.trim() || generated.payload.yourRoleRu,
+        goalRu: goalStructured.trim() || generated.payload.goalRu,
+        scenarioTextRu: prompt.trim() || generated.payload.scenarioTextRu,
+      };
+      if (existingId) {
+        payload.slangMode = createSlangMode;
+        payload.allowProfanity = createAllowProfanity;
+        payload.aiMayUseProfanity = createAllowProfanity ? createAiMayUseProfanity : false;
+        payload.profanityIntensity = createProfanityIntensity;
+        if (whoStarts === 'user') {
+          payload.characterOpening = '';
+          payload.openingInstruction = '';
+        }
+      }
       const created = existingId
         ? await updateUserScenario(existingId, {
           title,
           level: level || generated.level,
-          payload: generated.payload,
+          payload,
         })
         : await createUserScenario({
           title,
           level: level || generated.level,
-          payload: generated.payload,
+          payload,
         });
       savedScenarioIdRef.current = created.id;
       setReadyScenario(created);
@@ -1096,10 +1076,26 @@ export function PersonalScenariosUI({
     }
   };
 
-  const startEdit = async (s: UserScenario) => {
+  const startEdit = (s: UserScenario) => {
+    setCardMenuOpenId(null);
+    setBriefingScenario(null);
+    setReadyScenario(null);
+    setSaveError(null);
     setEditId(s.id);
-    setEditTab('main');
-    setEditDraft({
+    savedScenarioIdRef.current = s.id;
+    setView('create');
+    setEditTitle(s.title || '');
+    setLevel(s.level);
+    setPlace(s.settingRu || s.setting || '');
+    setUserRole(s.yourRoleRu || s.yourRole || '');
+    setGoalStructured(s.goalRu || s.goal || '');
+    setPrompt(s.scenarioTextRu || s.scenarioText || s.description || '');
+    setTopic(s.title || '');
+    setCreateSlangMode((s.slangMode as SlangMode) || 'light');
+    setCreateAllowProfanity(Boolean(s.allowProfanity));
+    setCreateAiMayUseProfanity(Boolean(s.aiMayUseProfanity));
+    setCreateProfanityIntensity((s.profanityIntensity as ProfanityIntensity) || 'light');
+    setGenerated({
       title: s.title,
       level: s.level,
       payload: {
@@ -1113,7 +1109,6 @@ export function PersonalScenariosUI({
         settingRu: s.settingRu,
         scenarioTextRu: s.scenarioTextRu,
         yourRoleRu: s.yourRoleRu,
-        goalRu: s.goalRu,
         openingInstruction: s.openingInstruction,
         characterOpening: s.characterOpening,
         suggestedFirstLine: s.suggestedFirstLine,
@@ -1127,41 +1122,25 @@ export function PersonalScenariosUI({
         profanityIntensity: s.profanityIntensity,
       },
     });
+    setCreateStep(1);
+    setWhoStarts(s.characterOpening?.trim() ? 'ai' : 'user');
   };
 
-  const handleSaveEdit = async () => {
-    if (!editId || !editDraft) return;
-    setEditSaveLoading(true);
-    try {
-      await updateUserScenario(editId, {
-        title: editDraft.title,
-        level: editDraft.level,
-        payload: editDraft.payload,
-      });
-      setEditId(null);
-      setEditDraft(null);
-      loadList();
-    } finally {
-      setEditSaveLoading(false);
-    }
-  };
-
-  /** Создать копию сценария из текущего черновика (в модалке редактирования) */
-  const handleDuplicateFromDraft = async () => {
-    if (!editDraft) return;
-    setEditDuplicateLoading(true);
-    try {
-      await createUserScenario({
-        title: editDraft.title.trim() ? `${editDraft.title.trim()} (копия)` : 'Сценарий (копия)',
-        level: editDraft.level,
-        payload: editDraft.payload,
-      });
-      setEditId(null);
-      setEditDraft(null);
-      loadList();
-    } finally {
-      setEditDuplicateLoading(false);
-    }
+  const resetCreateDraft = () => {
+    setEditId(null);
+    savedScenarioIdRef.current = null;
+    setGenerated(null);
+    setReadyScenario(null);
+    setEditTitle('');
+    setPrompt(seedPrompt || '');
+    setTopic('');
+    setPlace('');
+    setUserRole('');
+    setGoalStructured('');
+    setLevel(null);
+    setCreateStep(1);
+    setWhoStarts('ai');
+    setSaveError(null);
   };
 
   /** Создать копию сценария из карточки (без открытия редактирования) */
@@ -1205,90 +1184,6 @@ export function PersonalScenariosUI({
     }
   };
 
-  const renderHeader = (title: string, showTabs?: boolean, onBack?: () => void) => (
-    <div
-      style={{
-        padding: '1rem 1.25rem',
-        borderBottom: '1px solid var(--sidebar-border)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.75rem',
-      }}
-    >
-      {onBack && (
-        <button type="button" onClick={onBack} style={{ ...btnSecondary, padding: '0.4rem' }} aria-label="Назад">
-          <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path d="M19 12H5M12 19l-7-7 7-7" />
-          </svg>
-        </button>
-      )}
-      {showTabs && !onBack && (
-        <div
-          style={{
-            display: 'inline-flex',
-            padding: 4,
-            borderRadius: 14,
-            background: 'var(--sidebar-hover)',
-            border: '1px solid var(--sidebar-border)',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.04)',
-            marginRight: 'auto',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setView('create')}
-            style={{
-              padding: '0.5rem 0.875rem',
-              borderRadius: 10,
-              border: 'none',
-              background: view === 'create' ? 'var(--sidebar-active)' : 'transparent',
-              color: 'var(--sidebar-text)',
-              fontSize: '0.8125rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              boxShadow: view === 'create' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-            }}
-          >
-            Создать
-          </button>
-          <button
-            type="button"
-            onClick={() => setView('my')}
-            style={{
-              padding: '0.5rem 0.875rem',
-              borderRadius: 10,
-              border: 'none',
-              background: view === 'my' ? 'var(--sidebar-active)' : 'transparent',
-              color: 'var(--sidebar-text)',
-              fontSize: '0.8125rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              boxShadow: view === 'my' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-            }}
-          >
-            Мои сценарии
-          </button>
-        </div>
-      )}
-      <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: 'var(--sidebar-text)', flex: 1 }}>
-        {title}
-      </h2>
-      <button type="button" onClick={onClose} aria-label="Закрыть" style={{ ...btnSecondary, padding: '0.4rem' }}>
-        <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-          <line x1={18} y1={6} x2={6} y2={18} />
-          <line x1={6} y1={6} x2={18} y2={18} />
-        </svg>
-      </button>
-    </div>
-  );
   const renderCreateForm = () => {
   const shownStep: 1 | 2 | 3 = !generated ? 1 : createStep;
   const rawSteps = Array.isArray(generated?.payload.steps)
@@ -1353,9 +1248,9 @@ export function PersonalScenariosUI({
   return (
     <div className={createStyles.shell}>
       <header className={createStyles.top}>
-        <h2>Подготовка сцены</h2>
+        <h2>{editId ? 'Редактирование' : 'Подготовка сцены'}</h2>
         <div className={createStyles.seg} role="group" aria-label="Раздел">
-          <button type="button" aria-pressed="true" onClick={() => setView('create')}>Создать</button>
+          <button type="button" aria-pressed="true" onClick={() => { if (editId) resetCreateDraft(); setView('create'); }}>Создать</button>
           <button type="button" aria-pressed="false" onClick={() => { setView('my'); loadList(); }}>Мои сценарии</button>
         </div>
         <button type="button" className={createStyles.x} onClick={onClose} aria-label="Закрыть">✕</button>
@@ -1382,7 +1277,7 @@ export function PersonalScenariosUI({
               <h3>О чём будет сцена</h3>
               <p className={createStyles.sub}>Опишите ситуацию своими словами и ИИ соберёт сцену. Или заполните поля вручную.</p>
               <div className={createStyles.hero}>
-                <textarea className={createStyles.field} rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Описание ситуации" placeholder="Диалог в кафе — заказать кофе и десерт, уточнить счёт" />
+                <textarea className={createStyles.field} rows={3} value={prompt} onChange={(e) => { const value = e.target.value; setPrompt(value); if (generated) patchGeneratedPayload({ scenarioTextRu: value }); }} aria-label="Описание ситуации" placeholder="Диалог в кафе — заказать кофе и десерт, уточнить счёт" />
                 <div className={createStyles.heroFoot}>
                   <small>Поля ниже заполнятся автоматически</small>
                   <button type="button" className={createStyles.assemble} onClick={handleGenerate} disabled={generateLoading || Boolean(fieldBusy)}>
@@ -1644,8 +1539,14 @@ export function PersonalScenariosUI({
           type="button"
           className={createStyles.btn}
           onClick={() => {
-            if (shownStep === 1) onClose();
-            else setCreateStep((shownStep - 1) as 1 | 2);
+            if (shownStep === 1) {
+              if (editId) {
+                resetCreateDraft();
+                setView('my');
+              } else {
+                onClose();
+              }
+            } else setCreateStep((shownStep - 1) as 1 | 2);
           }}
         >
           Назад
@@ -1654,7 +1555,11 @@ export function PersonalScenariosUI({
           <button
             type="button"
             className={createStyles.btn}
-            onClick={() => { setGenerated(null); setEditTitle(''); setCreateStep(1); setReadyScenario(null); }}
+            onClick={() => {
+              const wasEditing = Boolean(editId);
+              resetCreateDraft();
+              if (wasEditing) setView('my');
+            }}
           >
             Отмена
           </button>
@@ -1695,9 +1600,16 @@ export function PersonalScenariosUI({
       : listToShow;
 
     return (
-      <>
-        {renderHeader('Мои сценарии', true)}
-        <div style={{ padding: '0 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <div className={createStyles.shell}>
+        <header className={createStyles.top}>
+          <h2>Мои сценарии</h2>
+          <div className={createStyles.seg} role="group" aria-label="Раздел">
+            <button type="button" aria-pressed="false" onClick={() => { resetCreateDraft(); setView('create'); }}>Создать</button>
+            <button type="button" aria-pressed="true">Мои сценарии</button>
+          </div>
+          <button type="button" className={createStyles.x} onClick={onClose} aria-label="Закрыть">✕</button>
+        </header>
+        <div style={{ padding: '16px 1.25rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', overflow: 'auto', minHeight: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button
               type="button"
@@ -1855,330 +1767,16 @@ export function PersonalScenariosUI({
             </>
           )}
         </div>
-      </>
-    );
-  };
-
-  const renderEditModal = () => {
-    if (!editId || !editDraft) return null;
-    const p = editDraft.payload;
-    const steps = (Array.isArray(p.steps) ? p.steps : []) as { id?: string; order: number; titleRu: string; titleEn?: string }[];
-    const setPayload = (updates: Record<string, unknown>) =>
-      setEditDraft((d) => (d ? { ...d, payload: { ...d.payload, ...updates } } : null));
-    const updateStep = (index: number, field: 'titleRu' | 'titleEn', value: string) => {
-      const next = steps.map((st, i) => (i === index ? { ...st, [field]: value } : st));
-      setPayload({ steps: next });
-    };
-    const addStep = () => {
-      const next = [...steps, { id: `step-${Date.now()}`, order: steps.length, titleRu: '', titleEn: '' }];
-      setPayload({ steps: next });
-    };
-    const removeStep = (index: number) => {
-      const next = steps.filter((_, i) => i !== index).map((st, i) => ({ ...st, order: i }));
-      setPayload({ steps: next });
-    };
-
-    const editTabButton = (tab: 'main' | 'practice', label: string) => (
-      <button
-        type="button"
-        onClick={() => setEditTab(tab)}
-        style={{
-          padding: '0.5rem 0.875rem',
-          borderRadius: 10,
-          border: 'none',
-          background: editTab === tab ? 'var(--sidebar-active)' : 'transparent',
-          color: 'var(--sidebar-text)',
-          fontSize: '0.8125rem',
-          fontWeight: 500,
-          cursor: 'pointer',
-          transition: 'background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '0.4rem',
-          boxShadow: editTab === tab ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
-        }}
-      >
-        {label}
-      </button>
-    );
-
-    return (
-      <div style={modalOverlayStyle} onClick={() => { setEditId(null); setEditDraft(null); }}>
-        <div style={{ ...modalPanelStyle, maxWidth: 1680, maxHeight: '94vh' }} onClick={(e) => e.stopPropagation()}>
-          {renderHeader('Редактировать сценарий', false, () => { setEditId(null); setEditDraft(null); })}
-          <div
-            style={{
-              padding: '0.5rem 1.25rem 0.75rem',
-              borderBottom: '1px solid var(--sidebar-border)',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            <div
-              style={{
-                display: 'inline-flex',
-                padding: 4,
-                borderRadius: 14,
-                background: 'var(--sidebar-hover)',
-                border: '1px solid var(--sidebar-border)',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.04)',
-              }}
-            >
-              {editTabButton('main', 'Основное')}
-              {editTabButton('practice', 'Для практики')}
-            </div>
-          </div>
-          <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            {editTab === 'main' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', flexShrink: 0 }}>
-                <div>
-                  <span style={createSectionTitle}>Название и уровень</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Название</span>
-                      <input
-                        type="text"
-                        value={editDraft.title}
-                        onChange={(e) => setEditDraft((d) => (d ? { ...d, title: e.target.value } : null))}
-                        style={inputStyle}
-                        placeholder="Название сценария"
-                      />
-                    </label>
-                    <label style={{ display: 'block' }}>
-                      <span style={{ ...createLabelStyle, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                        Уровень
-                        <span
-                          title="Уровень задаёт сложность сценария при генерации и фильтры; в диалоге ИИ подстраивается под вашу речь."
-                          style={{ cursor: 'help', display: 'inline-flex', color: 'var(--sidebar-text)', opacity: 0.65 }}
-                          aria-label="Подсказка про уровень"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                            <line x1="12" y1="17" x2="12.01" y2="17" />
-                          </svg>
-                        </span>
-                      </span>
-                      <LevelDropdown
-                        value={editDraft.level}
-                        onChange={(v) => setEditDraft((d) => (d ? { ...d, level: v } : null))}
-                        options={LEVELS}
-                        ariaLabel="Уровень сценария"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div>
-                  <span style={createSectionTitle}>Цель</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Цель (EN)</span>
-                      <input
-                        type="text"
-                        value={(p.goal as string) ?? ''}
-                        onChange={(e) => setPayload({ goal: e.target.value })}
-                        style={inputStyle}
-                        placeholder="Goal of the dialogue"
-                      />
-                    </label>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Цель (RU)</span>
-                      <input
-                        type="text"
-                        value={(p.goalRu as string) ?? ''}
-                        onChange={(e) => setPayload({ goalRu: e.target.value })}
-                        style={inputStyle}
-                        placeholder="Цель диалога"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <SpeechVoicePicker
-                  slangMode={(p.slangMode as SlangMode) ?? 'light'}
-                  allowProfanity={Boolean(p.allowProfanity)}
-                  aiMayUseProfanity={Boolean(p.aiMayUseProfanity)}
-                  profanityIntensity={(p.profanityIntensity as ProfanityIntensity) ?? 'light'}
-                  confirmSource="personal_scenario_edit"
-                  onChange={(next) => setPayload({ ...next })}
-                />
-                <div>
-                  <span style={createSectionTitle}>Инструкция для ИИ-персонажа</span>
-                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: 'var(--sidebar-text)', opacity: 0.7, lineHeight: 1.4 }}>
-                    System prompt — как вести себя персонажу в диалоге.
-                  </p>
-                  <textarea
-                    value={(p.systemPrompt as string) ?? ''}
-                    onChange={(e) => setPayload({ systemPrompt: e.target.value })}
-                    rows={6}
-                    style={{ ...inputStyle, resize: 'vertical', minHeight: 120 }}
-                    placeholder="Опишите характер, тон, правила ответов…"
-                  />
-                </div>
-              </div>
-            )}
-            {editTab === 'practice' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', flexShrink: 0 }}>
-                <div>
-                  <span style={createSectionTitle}>Место и ситуация</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Место (EN)</span>
-                      <input
-                        type="text"
-                        value={(p.setting as string) ?? ''}
-                        onChange={(e) => setPayload({ setting: e.target.value })}
-                        style={inputStyle}
-                        placeholder="e.g. café, airport"
-                      />
-                    </label>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Место (RU)</span>
-                      <input
-                        type="text"
-                        value={(p.settingRu as string) ?? ''}
-                        onChange={(e) => setPayload({ settingRu: e.target.value })}
-                        style={inputStyle}
-                        placeholder="Например: кафе, аэропорт"
-                      />
-                    </label>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Ситуация (EN)</span>
-                      <input
-                        type="text"
-                        value={(p.scenarioText as string) ?? ''}
-                        onChange={(e) => setPayload({ scenarioText: e.target.value })}
-                        style={inputStyle}
-                        placeholder="Short scenario description"
-                      />
-                    </label>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Ситуация (RU)</span>
-                      <input
-                        type="text"
-                        value={(p.scenarioTextRu as string) ?? ''}
-                        onChange={(e) => setPayload({ scenarioTextRu: e.target.value })}
-                        style={inputStyle}
-                        placeholder="Краткое описание ситуации"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div>
-                  <span style={createSectionTitle}>Ваша роль</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Роль (EN)</span>
-                      <input
-                        type="text"
-                        value={(p.yourRole as string) ?? ''}
-                        onChange={(e) => setPayload({ yourRole: e.target.value })}
-                        style={inputStyle}
-                        placeholder="e.g. customer, passenger"
-                      />
-                    </label>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Роль (RU)</span>
-                      <input
-                        type="text"
-                        value={(p.yourRoleRu as string) ?? ''}
-                        onChange={(e) => setPayload({ yourRoleRu: e.target.value })}
-                        style={inputStyle}
-                        placeholder="Например: клиент, пассажир"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={createSectionTitle}>Шаги сценария</span>
-                    <button type="button" onClick={addStep} style={{ ...btnSecondary, padding: '0.4rem 0.75rem', fontSize: '0.8125rem' }}>
-                      Добавить шаг
-                    </button>
-                  </div>
-                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: 'var(--sidebar-text)', opacity: 0.7, lineHeight: 1.4 }}>
-                    Чекпоинты, которые отображаются ученику по ходу диалога.
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {steps.map((st, i) => (
-                      <div key={st.id ?? i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.9375rem', fontWeight: 500, width: 28, color: 'var(--sidebar-text)', opacity: 0.8, flexShrink: 0 }}>{i + 1}.</span>
-                        <input
-                          type="text"
-                          value={st.titleRu ?? ''}
-                          onChange={(e) => updateStep(i, 'titleRu', e.target.value)}
-                          placeholder="Название шага (RU)"
-                          style={{ ...inputStyle, flex: 1 }}
-                        />
-                        <button type="button" onClick={() => removeStep(i)} aria-label="Удалить шаг" style={{ ...btnSecondary, padding: '0.4rem', flexShrink: 0 }}>
-                          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <span style={createSectionTitle}>Старт диалога и подсказки</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Начните с фразы</span>
-                      <input
-                        type="text"
-                        value={(p.suggestedFirstLine as string) ?? ''}
-                        onChange={(e) => setPayload({ suggestedFirstLine: e.target.value })}
-                        style={inputStyle}
-                        placeholder="Фраза, с которой ученик может начать"
-                      />
-                    </label>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Первая реплика персонажа</span>
-                      <input
-                        type="text"
-                        value={(p.characterOpening as string) ?? ''}
-                        onChange={(e) => setPayload({ characterOpening: e.target.value })}
-                        style={inputStyle}
-                        placeholder="Что говорит ИИ в начале"
-                      />
-                    </label>
-                    <label style={{ display: 'block' }}>
-                      <span style={createLabelStyle}>Советы по баллам</span>
-                      <textarea
-                        value={(p.maxScoreTipsRu as string) ?? ''}
-                        onChange={(e) => setPayload({ maxScoreTipsRu: e.target.value })}
-                        rows={2}
-                        style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
-                        placeholder="Как говорить, чтобы получить максимальные баллы"
-                      />
-                    </label>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0, paddingTop: '0.25rem', borderTop: '1px solid var(--sidebar-border)' }}>
-              <button type="button" onClick={handleSaveEdit} disabled={editSaveLoading} style={{ ...btnPrimary, opacity: editSaveLoading ? 0.7 : 1 }}>
-                {editSaveLoading ? 'Сохранение…' : 'Сохранить'}
-              </button>
-              <button type="button" onClick={handleDuplicateFromDraft} disabled={editDuplicateLoading} style={btnSecondary}>
-                {editDuplicateLoading ? '…' : 'Создать копию'}
-              </button>
-              <button type="button" onClick={() => { setEditId(null); setEditDraft(null); }} style={btnSecondary}>
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     );
   };
 
   return (
-    <>
-      <div role="dialog" aria-modal="true" aria-label="Личные сценарии" style={modalOverlayStyle} onClick={onClose}>
-        <div style={{ ...modalPanelStyle, maxWidth: view === 'my' ? 960 : 1120, height: 'min(860px, calc(100vh - 48px))', maxHeight: '94vh' }} onClick={(e) => e.stopPropagation()}>
-          {view === 'create' && renderCreateForm()}
-          {view === 'my' && renderMyList()}
-        </div>
+    <div role="dialog" aria-modal="true" aria-label="Личные сценарии" style={modalOverlayStyle} onClick={onClose}>
+      <div style={{ ...modalPanelStyle, maxWidth: view === 'my' ? 960 : 1120, height: 'min(860px, calc(100vh - 48px))', maxHeight: '94vh' }} onClick={(e) => e.stopPropagation()}>
+        {view === 'create' && renderCreateForm()}
+        {view === 'my' && renderMyList()}
       </div>
-      {renderEditModal()}
-    </>
+    </div>
   );
 }

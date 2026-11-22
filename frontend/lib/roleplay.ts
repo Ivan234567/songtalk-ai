@@ -125,9 +125,25 @@ export function getRoleplayScenarioById(id: string): RoleplayScenario | undefine
 
 const systemScenarioIds = new Set(scenarios.map((scenario) => scenario.id));
 
-/** Каталожный сценарий. Личная копия сюда не входит. */
+/** Каталожный сценарий по id из roleplay-scenarios.json. */
 export function isSystemScenarioId(id: string | null | undefined): boolean {
   return typeof id === 'string' && systemScenarioIds.has(id);
+}
+
+/**
+ * Снимок системного сценария в «Мои».
+ * Контент наш: id уже личный, но это не сценарий, созданный учеником вручную или через ИИ.
+ */
+export function isCatalogScenarioCopy(input: {
+  title?: string | null;
+  themeId?: string | null;
+  catalogScenarioId?: string | null;
+}): boolean {
+  if (isSystemScenarioId(input.catalogScenarioId)) return true;
+  const title = typeof input.title === 'string' ? input.title.trim() : '';
+  const themeId = typeof input.themeId === 'string' ? input.themeId.trim() : '';
+  if (!title || !themeId) return false;
+  return scenarios.some((scenario) => scenario.themeId === themeId && scenario.title === title);
 }
 
 /**
@@ -414,6 +430,7 @@ function buildScenarioSystemContent(scenario: RoleplayScenario, ctx: ScenarioPro
   if (scenario.goal?.trim()) {
     content += '\n\nGoal: ' + scenario.goal.trim() + '.' + GOAL_COMPLETION_INSTRUCTION;
   }
+  content += '\n\nThe reply is only the character\'s next spoken English line. No labels, no reminder, and no copy of the learner\'s message.';
   return content;
 }
 

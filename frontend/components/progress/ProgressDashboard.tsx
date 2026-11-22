@@ -1,16 +1,14 @@
 'use client';
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getCriteriaLabel } from '@/lib/speaking-assessment';
 import type { CriteriaScores } from '@/lib/speaking-assessment';
-import { isSystemScenarioId } from '@/lib/roleplay';
 import { useProgressData } from './hooks/useProgressData';
 import { useProgressFilters, normalizeDebateTopicKey } from './hooks/useProgressFilters';
 import { type RecentSessionRow } from './RecentSessions';
 import { type RecommendRow } from './RecommendedScenarios';
 import { ProgressScreen } from './ProgressScreen';
-import type { CourseFunnelTotals } from './VocabCourseSection';
 import type { CompletionRow, AssessmentRow, DebateCompletionRow } from './hooks/useProgressData';
 import styles from './progress.module.css';
 
@@ -88,39 +86,29 @@ export function ProgressDashboard() {
     scopedDebateCompletions,
     scopedAssessments,
     overviewSessions,
+    isSystemRoleplay,
     isSystemDebate,
     resetFilters,
   } = useProgressFilters(
     data.completions,
     data.assessments,
     data.debateCompletions,
-    data.debateAssessments
+    data.debateAssessments,
+    data.catalogCopyIds
   );
 
   const [selectedCriterionKey, setSelectedCriterionKey] = useState<keyof CriteriaScores | null>(null);
-  const [wordTotals, setWordTotals] = useState<CourseFunnelTotals | null>(null);
-  const onWordTotals = useCallback((totals: CourseFunnelTotals) => {
-    setWordTotals((prev) => (
-      prev
-      && prev.due === totals.due
-      && prev.learning === totals.learning
-      && prev.fresh === totals.fresh
-      && prev.mastered === totals.mastered
-        ? prev
-        : totals
-    ));
-  }, []);
 
   /* Badge counts for filter buttons */
   const filterBadgeCounts = useMemo(() => {
     // View badges: count per view for current mode + period (not filtered by view)
     const systemCount =
       mode === 'roleplay'
-        ? periodFilteredCompletions.filter((r) => isSystemScenarioId(r.scenario_id)).length
+        ? periodFilteredCompletions.filter((r) => isSystemRoleplay(r.scenario_id)).length
         : periodFilteredDebateCompletions.filter((r) => isSystemDebate(r.topic, r.topic_ru, r.topic_source)).length;
     const personalCount =
       mode === 'roleplay'
-        ? periodFilteredCompletions.filter((r) => !isSystemScenarioId(r.scenario_id)).length
+        ? periodFilteredCompletions.filter((r) => !isSystemRoleplay(r.scenario_id)).length
         : periodFilteredDebateCompletions.filter((r) => !isSystemDebate(r.topic, r.topic_ru, r.topic_source)).length;
 
     return {
@@ -135,6 +123,7 @@ export function ProgressDashboard() {
     periodFilteredDebateCompletions,
     scopedRoleplayCompletions,
     scopedDebateCompletions,
+    isSystemRoleplay,
     isSystemDebate,
   ]);
 
@@ -255,17 +244,15 @@ export function ProgressDashboard() {
 
     const prevRoleplayFiltered =
       progressView === 'system'
-        ? prevRoleplay.filter((r) => isSystemScenarioId(r.scenario_id))
-        : prevRoleplay.filter((r) => !isSystemScenarioId(r.scenario_id));
+        ? prevRoleplay.filter((r) => isSystemRoleplay(r.scenario_id))
+        : prevRoleplay.filter((r) => !isSystemRoleplay(r.scenario_id));
     const prevDebateFiltered =
       progressView === 'system'
         ? prevDebate.filter((r) => isSystemDebate(r.topic, r.topic_ru, r.topic_source))
         : prevDebate.filter((r) => !isSystemDebate(r.topic, r.topic_ru, r.topic_source));
 
-    const prevCompletions = mode === 'roleplay' ? prevRoleplayFiltered : prevDebateFiltered;
-
     if (mode === 'roleplay') {
-      const scenarioIds = new Set(prevCompletions.map((r) => r.scenario_id));
+      const scenarioIds = new Set(prevRoleplayFiltered.map((r) => r.scenario_id));
       const prevAssessments = data.assessments.filter(
         (a) =>
           a.scenario_id &&
@@ -296,6 +283,7 @@ export function ProgressDashboard() {
     data.debateCompletions,
     data.assessments,
     data.debateAssessments,
+    isSystemRoleplay,
     isSystemDebate,
   ]);
 
@@ -310,6 +298,15 @@ export function ProgressDashboard() {
       isPositive: diff > 0,
     };
   }, [overviewAvgScore, prevPeriodAvgScore, periodFilter]);
+
+  const compareNote = useMemo(() => {
+    if (deltaVsPrevious) return null;
+    if (periodFilter === 'all') return 'Для «всё время» сравнения нет';
+    if (overviewAvgScore == null || prevPeriodAvgScore == null) {
+      return 'Пока не с чем сравнивать: в прошлом периоде нет сессий';
+    }
+    return 'Почти без изменений к прошлому периоду';
+  }, [deltaVsPrevious, periodFilter, overviewAvgScore, prevPeriodAvgScore]);
 
   /* Streak: consecutive days with practice */
   const streakDays = useMemo(() => {
@@ -618,7 +615,7 @@ export function ProgressDashboard() {
 
   if (loading) {
     return (
-      <div className={styles.dashboard}>
+      <div className={`${styles.dashboard} ${styles.flow}`}>
         <div className={styles.filters} style={{ opacity: 0.7 }} />
         <div className={styles.kpiGrid}>
           {Array.from({ length: 4 }).map((_, i) => (
@@ -650,11 +647,11 @@ export function ProgressDashboard() {
   };
 
   return (
-    <div className={styles.dashboard}>
+    <div className={`${styles.dashboard} ${styles.flow}`}>
       <ProgressScreen
         period={periodFilter}
         onPeriod={setPeriodFilter}
-        mode={mode}
+        mode={mode === 'debate' ? 'debate' : 'roleplay'}
         onMode={setMode}
         view={progressView}
         onView={setProgressView}
@@ -667,6 +664,7 @@ export function ProgressDashboard() {
         bestScore={bestScore}
         streakDays={streakDays}
         delta={deltaVsPrevious ? { value: deltaVsPrevious.value, isPositive: deltaVsPrevious.isPositive } : null}
+        compareNote={compareNote}
         trendPoints={trendPoints}
         criteria={criteriaOverview.map((item) => ({
           ...item,
@@ -692,6 +690,7 @@ export function ProgressDashboard() {
           title: row.title,
           score: row.score,
           reason: row.reasonText || 'Полезно повторить для закрепления.',
+          criterionScore: row.criterionScore,
           completedAt: row.completedAt,
           objectKey: row.objectKey,
           completionId: row.completionId,
@@ -703,8 +702,6 @@ export function ProgressDashboard() {
           router.push(`/dashboard?${params.toString()}`);
         }}
         onPracticeHome={() => router.push('/dashboard?tab=agent')}
-        wordTotals={wordTotals}
-        onWordTotals={onWordTotals}
       />
     </div>
   );

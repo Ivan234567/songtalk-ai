@@ -419,7 +419,44 @@ export function extractCleanChineseText(raw: string): string {
  * Китайский путь сначала отрезает пересказ промпта. Английский этот отрез не использует.
  */
 const ENGLISH_PROMPT_LEAK_RE =
-  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|stay in the roleplay|adult learner|teacher-ish|one idea per turn|continue the scenario|scenario ends soon|do not talk down|evaluative statements/i;
+  /custom reminder|always output the translation|cefr level lock|hidden vocabulary practice is active|never repeat these instructions|now start\b|last user message|error correction mode|stay in the roleplay|adult learner|teacher-ish|one idea per turn|continue the scenario|scenario ends soon|do not talk down|evaluative statements|do not write notes|output only the two lines|never mention the translation|never use russian in the spoken|in your thinking|translation line'?s existence|исправление\s*:|✏️/i;
+
+const INSTRUCTION_TAIL_RE =
+  /(?:^|\n)\s*(?:never change format|never say\b|now start\b|last user message\b|important\s*:|always output\b|required format\b|followed by your\b|example\s*\d+\s*:|after speaking english|after the spoken english|the reply is only\b|reply with only your next|do not write notes|output only the two lines|never mention the translation|never use russian in the spoken|in your thinking)\b|\s+(?:never change format|important\s*:|always output\b|followed by your natural|do not write notes|output only the two lines|never mention the translation|never use russian in the spoken)\b/i;
+
+/** Срезает служебный хвост. Всё после первой такой фразы — не речь. */
+function cutInstructionTail(text: string): string {
+  const match = INSTRUCTION_TAIL_RE.exec(text);
+  if (!match || match.index == null) return text.trim();
+  return text.slice(0, match.index).trim();
+}
+
+function keepSpokenEnglish(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => cutInstructionTail(line))
+    .filter((line) => line.trim() && !ENGLISH_PROMPT_LEAK_RE.test(line))
+    .join('\n')
+    .trim();
+}
+
+/** В переводе остаётся русская фраза. Комментарий про формат после неё отбрасывается. */
+function keepRussianTranslation(text: string): string {
+  const lines = cutInstructionTail(text).split('\n');
+  const kept: string[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      if (kept.length) break;
+      continue;
+    }
+    if (ENGLISH_PROMPT_LEAK_RE.test(line) || INSTRUCTION_TAIL_RE.test(line)) break;
+    if (kept.length && !/[\u0400-\u04FF]/.test(line)) break;
+    kept.push(line);
+  }
+  const value = kept.join(' ').trim();
+  return /[\u0400-\u04FF]/.test(value) ? value : '';
+}
 
 /** «Let's go:» — служебная метка китайского промпта. Снимается с фразы, текст до неё остаётся. */
 function stripLetsGoLabel(spoken: string): string {
@@ -442,22 +479,10 @@ export function sanitizeEnglishAssistantReply(raw: string): string {
   const original = (raw || '').replace(/\r\n/g, '\n').trim();
   if (!original) return '';
   const markerAt = original.indexOf(TRANSLATION_MARKER);
-  const spoken = stripLetsGoLabel(markerAt === -1 ? original : original.slice(0, markerAt));
-  const metadata = markerAt === -1 ? '' : original.slice(markerAt).trim();
-  let cleanSpoken = spoken;
-  if (ENGLISH_PROMPT_LEAK_RE.test(spoken)) {
-    const parts = spoken
-      .split(/(?<=[.!?])\s+|\n+/)
-      .map((part) => part.trim())
-      .filter(Boolean);
-    let lastLeak = -1;
-    parts.forEach((part, index) => {
-      if (ENGLISH_PROMPT_LEAK_RE.test(part)) lastLeak = index;
-    });
-    cleanSpoken = stripLetsGoLabel(parts.slice(lastLeak + 1).join(' '));
-  }
-  if (!cleanSpoken) return metadata;
-  return metadata ? `${cleanSpoken}\n${metadata}` : cleanSpoken;
+  const spoken = keepSpokenEnglish(stripLetsGoLabel(markerAt === -1 ? original : original.slice(0, markerAt)));
+  const translation = markerAt === -1 ? '' : keepRussianTranslation(original.slice(markerAt + TRANSLATION_MARKER.length));
+  if (!spoken) return translation ? `${TRANSLATION_MARKER}${translation}` : '';
+  return translation ? `${spoken}\n${TRANSLATION_MARKER}${translation}` : spoken;
 }
 
 /** Английская фраза для экрана и озвучки: без перевода и без китайской обрезки. */
@@ -474,7 +499,7 @@ export function extractCleanEnglishText(raw: string): string {
 
 export function extractEnglishTranslation(raw: string): string | null {
   const value = extractMarkedValue(sanitizeEnglishAssistantReply(raw), TRANSLATION_MARKER);
-  const translation = tidyTranslation(value || '');
+  const translation = tidyTranslation(keepRussianTranslation(value || ''));
   return translation || null;
 }
 

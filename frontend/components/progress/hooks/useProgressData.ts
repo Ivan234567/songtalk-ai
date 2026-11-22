@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { isCatalogScenarioCopy } from '@/lib/roleplay';
 import type { CriteriaScores, AssessmentFeedback } from '@/lib/speaking-assessment';
 import { parsePlayMode, type PlayMode } from '@/lib/play-mode';
 
@@ -67,6 +68,8 @@ export type ProgressData = {
   dueWordsNow: number;
   vocabularyRows: UserVocabularyMiniRow[];
   vocabularyProgressRows: VocabularyProgressMiniRow[];
+  /** Личные id, которые на самом деле снимки системного каталога. */
+  catalogCopyIds: string[];
 };
 
 export function useProgressData() {
@@ -79,6 +82,7 @@ export function useProgressData() {
     dueWordsNow: 0,
     vocabularyRows: [],
     vocabularyProgressRows: [],
+    catalogCopyIds: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +97,7 @@ export function useProgressData() {
       dueWordsRes,
       vocabularyRes,
       vocabularyProgressRes,
+      ownedScenariosRes,
     ] = await Promise.all([
       supabase
         .from('roleplay_completions')
@@ -139,7 +144,39 @@ export function useProgressData() {
         .eq('user_id', uid)
         .not('last_review_score', 'is', null)
         .limit(5000),
+      supabase
+        .from('user_roleplay_scenarios')
+        .select('id, title, theme_id:payload->>themeId, catalog_scenario_id:payload->>catalogScenarioId')
+        .eq('user_id', uid)
+        .limit(500),
     ]);
+
+    let ownedRows = (ownedScenariosRes.data ?? []) as Array<{
+      id: string;
+      title: string | null;
+      theme_id?: string | null;
+      catalog_scenario_id?: string | null;
+      payload?: unknown;
+    }>;
+    if (ownedScenariosRes.error) {
+      const fallback = await supabase
+        .from('user_roleplay_scenarios')
+        .select('id, title, payload')
+        .eq('user_id', uid)
+        .limit(500);
+      ownedRows = fallback.error ? [] : ((fallback.data ?? []) as typeof ownedRows);
+    }
+    const catalogCopyIds = ownedRows
+      .filter((row) => {
+        const payload = row.payload && typeof row.payload === 'object' ? row.payload as Record<string, unknown> : {};
+        return isCatalogScenarioCopy({
+          title: row.title,
+          themeId: row.theme_id ?? (typeof payload.themeId === 'string' ? payload.themeId : null),
+          catalogScenarioId: row.catalog_scenario_id ?? (typeof payload.catalogScenarioId === 'string' ? payload.catalogScenarioId : null),
+        });
+      })
+      .map((row) => row.id);
+    setData((prev) => ({ ...prev, catalogCopyIds }));
 
     if (completionsRes.error) {
       const retry = await supabase

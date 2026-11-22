@@ -1559,14 +1559,12 @@ app.post('/api/agent/chat', async (req, res) => {
   const chineseSettings = chinese_settings && typeof chinese_settings === 'object' ? chinese_settings : null
   const chineseShowPinyin = chineseSettings ? Boolean(chineseSettings.show_pinyin) : req.learningLanguage === 'zh'
   const chineseShowTranslation = chineseSettings ? Boolean(chineseSettings.show_translation) : req.learningLanguage === 'zh'
-  const chineseCorrectionMode = ['gentle', 'active'].includes(chineseSettings?.correction_mode) ? chineseSettings.correction_mode : 'gentle'
   const chineseToneFocus = Boolean(chineseSettings?.tone_focus)
   const chineseHskLevel = [1, 2, 3, 4, 5, 6].includes(Number(chineseSettings?.hsk_level)) ? Number(chineseSettings.hsk_level) : 3
   const chineseGrammarFocus = typeof chineseSettings?.grammar_focus === 'string' ? chineseSettings.grammar_focus.trim() : ''
   const chineseFromLife = chineseSettings?.from_life === true || chineseSettings?.fromLife === true
   const englishSettings = english_settings && typeof english_settings === 'object' ? english_settings : null
   const englishShowTranslation = englishSettings ? Boolean(englishSettings.show_translation) : false
-  const englishCorrectionMode = ['gentle', 'active'].includes(englishSettings?.correction_mode) ? englishSettings.correction_mode : 'gentle'
   const englishCefrRaw = typeof englishSettings?.cefr_level === 'string' ? englishSettings.cefr_level.trim() : ''
   const englishCefrLevel = /^(A1|A2|B1|B2|C1|easy|medium|hard)$/i.test(englishCefrRaw) ? englishCefrRaw : 'B1'
   const annotateSource = typeof annotateSourceText === 'string' ? annotateSourceText.trim() : ''
@@ -1647,7 +1645,6 @@ app.post('/api/agent/chat', async (req, res) => {
         : getFreestyleChatSystemPrompt('zh', {
           showPinyin: chineseShowPinyin,
           showTranslation: chineseShowTranslation,
-          correctionMode: chineseCorrectionMode,
           toneFocus: chineseToneFocus,
           hskLevel: chineseHskLevel,
         }),
@@ -1659,12 +1656,10 @@ app.post('/api/agent/chat', async (req, res) => {
       content: steps.length > 0
         ? buildEnglishRoleplayLock({
           showTranslation: englishShowTranslation,
-          correctionMode: englishCorrectionMode,
           cefrLevel: englishCefrLevel,
         })
         : getFreestyleChatSystemPrompt('en', {
           showTranslation: englishShowTranslation,
-          correctionMode: englishCorrectionMode,
           cefrLevel: englishCefrLevel,
           slangMode,
           allowProfanity,
@@ -1714,7 +1709,6 @@ app.post('/api/agent/chat', async (req, res) => {
           content: getFreestyleChatSystemPrompt(req.learningLanguage || 'en', {
             showPinyin: chineseShowPinyin,
             showTranslation: req.learningLanguage === 'zh' ? chineseShowTranslation : englishShowTranslation,
-            correctionMode: req.learningLanguage === 'zh' ? chineseCorrectionMode : englishCorrectionMode,
             toneFocus: chineseToneFocus,
             hskLevel: chineseHskLevel,
             cefrLevel: englishCefrLevel,
@@ -1726,15 +1720,26 @@ app.post('/api/agent/chat', async (req, res) => {
         },
         ...messages,
       ]
-  const chatMessages = annotateMessages
+  const dialogueMessages = annotateMessages
     ? annotateMessages
     : [
       ...(roleplaySafetySystem ? [roleplaySafetySystem] : []),
       ...(freestyleCoachSystem ? [freestyleCoachSystem] : []),
       ...(steps.length > 0 && learningCoachSystem && req.learningLanguage !== 'en' ? [learningCoachSystem] : []),
       ...baseMessages,
-      ...(steps.length > 0 && req.learningLanguage === 'en' && learningCoachSystem ? [learningCoachSystem] : []),
     ]
+  const englishCoachAtEnd = !annotateMessages && steps.length > 0 && req.learningLanguage === 'en' && learningCoachSystem
+  const chatMessages = !englishCoachAtEnd
+    ? dialogueMessages
+    : (() => {
+      const firstTurn = dialogueMessages.findIndex((message) => message.role === 'user' || message.role === 'assistant')
+      if (firstTurn === -1) return [...dialogueMessages, learningCoachSystem]
+      return [
+        ...dialogueMessages.slice(0, firstTurn),
+        learningCoachSystem,
+        ...dialogueMessages.slice(firstTurn),
+      ]
+    })()
 
   let practiceAllTargets = null
   let practiceAntiSpoilTargets = null

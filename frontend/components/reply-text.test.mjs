@@ -23,6 +23,21 @@ test('китайская очистка по-прежнему оставляет
   assert.equal(extractTranslation(raw), 'Привет!')
 })
 
+test('служебная заметка дебата не попадает в речь и не съедает живую фразу', () => {
+  const onlyNote = [
+    'Do not write notes.',
+    'Output ONLY the two lines in this format. Never mention the translation line\'s existence. Never use Russian in the spoken lines. If the user\'s last message was in Russian, translate their line in your thinking without speaking it, and then write your English line.',
+  ].join('\n')
+  assert.equal(extractCleanEnglishText(onlyNote), '')
+  const mixed = [
+    'I think cooking at home is better. It is healthier.',
+    '««TRANSLATION»»Домашняя еда полезнее.',
+    'Do not write notes. Output ONLY the two lines in this format.',
+  ].join('\n')
+  assert.equal(extractCleanEnglishText(mixed), 'I think cooking at home is better. It is healthier.')
+  assert.equal(extractEnglishTranslation(mixed), 'Домашняя еда полезнее.')
+})
+
 test('английский промпт не съедает реплику, которая стоит после него', () => {
   const raw = [
     'CUSTOM REMINDER: stay in the roleplay.',

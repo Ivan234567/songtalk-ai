@@ -934,8 +934,8 @@ export function RoleplayModeUI({
 
 /** Собрать payload для createUserScenario из системного сценария (без id) */
 function scenarioToPayload(scenario: RoleplayScenario): Record<string, unknown> {
-  const { id: _id, ...rest } = scenario;
-  return rest as Record<string, unknown>;
+  const { id, ...rest } = scenario;
+  return { ...rest, catalogScenarioId: id };
 }
 
 /** Крупная карточка сценария: описание + как пользователь должен себя вести */
@@ -944,11 +944,13 @@ function ScenarioCard({
   onSelect,
   onSaveToMine,
   savingToMineId,
+  selected = false,
 }: {
   scenario: RoleplayScenario;
   onSelect: () => void;
   onSaveToMine?: (s: RoleplayScenario) => void;
   savingToMineId?: string | null;
+  selected?: boolean;
 }) {
   const [hover, setHover] = useState(false);
   const colors = ROLEPLAY_CATEGORY_COLORS[scenario.category];
@@ -970,7 +972,7 @@ function ScenarioCard({
         width: '100%',
         padding: '1.25rem 1.5rem',
         borderRadius: 14,
-        border: '1px solid var(--sidebar-border)',
+        border: selected ? '1px solid rgba(94, 234, 212, 0.85)' : '1px solid var(--sidebar-border)',
         borderLeftWidth: 5,
         borderLeftColor: colors.bar,
         background: hover ? 'var(--sidebar-active)' : 'var(--sidebar-hover)',
@@ -1936,6 +1938,7 @@ function ScenarioModal({
                                 <li key={scenario.id}>
                                   <ScenarioCard
                                     scenario={scenario}
+                                    selected={pinnedScenario?.id === scenario.id}
                                     onSelect={() => handleCardSelect(scenario)}
                                     onSaveToMine={onScenarioViewChange && onCopyToMineSuccess ? handleSaveToMine : undefined}
                                     savingToMineId={savingToMineId}

@@ -170,7 +170,7 @@ function DashboardPageContent() {
     }
   };
 
-  const shouldEnableScroll = activeTab === 'dictionary' || activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account';
+  const shouldEnableScroll = activeTab === 'dictionary' || activeTab === 'dashboard' || activeTab === 'balance' || activeTab === 'faq' || activeTab === 'account' || (activeTab === 'progress' && learningLanguage !== 'zh');
   const usernameFromEmail = userEmail?.split('@')[0];
   const displayName = usernameFromEmail
     ? usernameFromEmail.charAt(0).toUpperCase() + usernameFromEmail.slice(1).toLowerCase()

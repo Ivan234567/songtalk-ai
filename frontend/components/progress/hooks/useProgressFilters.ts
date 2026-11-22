@@ -50,7 +50,8 @@ export function useProgressFilters(
   completions: CompletionRow[],
   assessments: AssessmentRow[],
   debateCompletions: DebateCompletionRow[],
-  debateAssessments: AssessmentRow[]
+  debateAssessments: AssessmentRow[],
+  catalogCopyIds: readonly string[] = []
 ) {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterValue>('30d');
   const [mode, setMode] = useState<ProgressModeValue>('roleplay');
@@ -83,6 +84,12 @@ export function useProgressFilters(
     return debateAssessments.filter((row) => ids.has(row.id));
   }, [periodFilteredDebateCompletions, debateAssessments]);
 
+  const systemCopyIds = useMemo(() => new Set(catalogCopyIds), [catalogCopyIds]);
+  const isSystemRoleplay = useCallback(
+    (scenarioId: string | null | undefined) => isSystemScenarioId(scenarioId) || (typeof scenarioId === 'string' && systemCopyIds.has(scenarioId)),
+    [systemCopyIds]
+  );
+
   const isSystemDebate = useMemo(
     () => (topic: string, topicRu?: string | null, topicSource?: string | null) => {
       if (topicSource === 'catalog') return true;
@@ -99,9 +106,9 @@ export function useProgressFilters(
 
   const scopedRoleplayCompletions = useMemo(() => {
     return progressView === 'system'
-      ? periodFilteredCompletions.filter((row) => isSystemScenarioId(row.scenario_id))
-      : periodFilteredCompletions.filter((row) => !isSystemScenarioId(row.scenario_id));
-  }, [periodFilteredCompletions, progressView]);
+      ? periodFilteredCompletions.filter((row) => isSystemRoleplay(row.scenario_id))
+      : periodFilteredCompletions.filter((row) => !isSystemRoleplay(row.scenario_id));
+  }, [periodFilteredCompletions, progressView, isSystemRoleplay]);
 
   const scopedDebateCompletions = useMemo(() => {
     return progressView === 'system'
@@ -176,6 +183,7 @@ export function useProgressFilters(
     scopedDebateCompletions,
     scopedAssessments,
     overviewSessions,
+    isSystemRoleplay,
     isSystemDebate,
     resetFilters,
   };
