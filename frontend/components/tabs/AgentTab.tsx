@@ -3691,6 +3691,7 @@ export function AgentTab() {
             titleRu: s.titleRu,
             titleEn: s.titleEn,
             expectedUserAction: s.titleEn || s.completionCriteria?.evidence_hint_en || '',
+            completionCriteria: s.completionCriteria,
           })),
           completed_step_ids: debateCompletedStepIds,
           ...(chatDialogueSessionIdRef.current && chatPracticeAgentSessionIdRef.current

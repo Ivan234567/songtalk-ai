@@ -9,6 +9,8 @@ import {
   buildDebatePracticeInstruction,
   buildChatPracticeInstruction,
   buildChatPracticeHintInstruction,
+  buildDebatePracticeHintInstruction,
+  describeDebateHintStep,
   classifyPracticeHint,
   createDialogueSessionHandler,
   createSenseCatalogHandler,
@@ -244,6 +246,31 @@ test('инструкция чата содержит форму из базы и
   const noWords = buildChatPracticeHintInstruction([])
   assert.match(noWords, /No practice word is waiting/)
   assert.match(noWords, /latest message/)
+  const debateStep = describeDebateHintStep({
+    id: 'counter-argument',
+    completionCriteria: {
+      min_sentences: 2,
+      must_reference_opponent: true,
+      required_markers: ['however', 'однако'],
+      evidence_hint_en: 'User acknowledges the opponent and then counters.',
+    },
+  })
+  assert.match(debateStep, /at least 2 sentences/)
+  assert.match(debateStep, /however/)
+  assert.doesNotMatch(debateStep, /однако/)
+  assert.match(debateStep, /opponent/)
+  const debateHint = buildDebatePracticeHintInstruction(
+    [{ headword: 'bread', gloss_ru: 'хлеб' }, { headword: 'tea', gloss_ru: 'чай' }],
+    { topic: 'Food', currentStep: 'Ответить', stepClose: debateStep, minSentences: 2 },
+  )
+  assert.match(debateHint, /bread/)
+  assert.match(debateHint, /tea/)
+  assert.match(debateHint, /leave it out/)
+  assert.match(debateHint, /at least 2 sentences/)
+  assert.match(debateHint, /however/)
+  const debateBare = buildDebatePracticeHintInstruction([], { minSentences: 1 })
+  assert.match(debateBare, /No practice word is waiting/)
+  assert.match(debateBare, /complete the current open step/)
   const roleplay = buildRoleplayPracticeInstruction(
     [{ headword: 'apple', gloss_ru: 'яблоко' }],
     { title: 'At the market', goal: 'Buy fruit', currentStep: 'Ask for fruit' },

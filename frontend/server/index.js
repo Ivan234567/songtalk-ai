@@ -49,6 +49,7 @@ import {
   buildChatPracticeHintInstruction,
   buildRoleplayPracticeHintInstruction,
   buildDebatePracticeHintInstruction,
+  describeDebateHintStep,
   buildRetentionPracticeHintInstruction,
   buildTransferPracticeHintInstruction,
   classifyPracticeHint,
@@ -2698,6 +2699,7 @@ Rules:
   const debateTopic = typeof topic === 'string' ? topic.trim() : ''
   const userPosition = typeof user_position === 'string' ? user_position.trim() : ''
   const aiPosition = typeof ai_position === 'string' ? ai_position.trim() : ''
+  const debateStepClose = hintMode === 'debate' ? describeDebateHintStep(currentStep) : ''
   const debateSystemContent = `You are a speaking coach for an English debate practice session. The AI opponent just spoke. Your task is to suggest what the USER could reply next.
 
 Rules:
@@ -2706,9 +2708,9 @@ Rules:
 - Stay strictly at the chosen level, not harder and not easier: ${levelText}
 - The reply must directly react to the opponent's latest argument and stay logically consistent with recent dialogue context.
 - Keep the user's side consistent with their debate position (do not switch sides).
-- If a current debate step exists, naturally move toward it while still answering the latest opponent point.
+${debateStepClose ? `\n${debateStepClose}\n` : '- If a current debate step exists, answer the latest point and make that step complete.'}
 - Hint mode: ${hintModeValue}. ${freestyleModeInstruction}
-- If they conflict, still answer the opponent and keep the user's side; apply hint mode only to phrasing and vocabulary.
+- If they conflict, still answer the opponent, keep the user's side, and keep the step requirements above. Apply hint mode only to the other words.
 - Style settings for this debate:
   - slang_mode=${slangMode}
   - allow_profanity=${allowProfanity}
@@ -2719,13 +2721,14 @@ Rules:
 - If allow_profanity is false: keep the hint clean.
 - If allow_profanity is true but ai_may_use_profanity is false: user hint may include profanity only when contextually needed, avoid excess.
 - If allow_profanity and ai_may_use_profanity are true: hint may include context-appropriate profanity with the selected intensity.
-- Keep it concise and natural (usually 1-3 sentences; optionally 1-2 short variants on separate lines).`
+- One reply only. Do not add a second variant.`
   const debateUserContent =
     `${debateTopic ? `Debate topic: ${debateTopic}\n` : ''}` +
     `${userPosition ? `User position: ${userPosition}\n` : ''}` +
     `${aiPosition ? `Opponent position: ${aiPosition}\n` : ''}` +
     `${scenarioGoal ? `Debate completion goal: ${scenarioGoal}\n` : ''}` +
     `${currentStepLabel ? `Current stage to move toward: ${currentStepLabel}\n` : ''}` +
+    `${debateStepClose ? `${debateStepClose}\n` : ''}` +
     historyBlock +
     stepsBlock +
     `\n\nOpponent's latest message:\n${agentMessage}\n\nSuggest the user's next reply.`
@@ -2835,6 +2838,8 @@ Rules:
                 topic: debateTopic || '',
                 userPosition: userPosition || '',
                 currentStep: currentStepLabel || '',
+                stepClose: debateStepClose,
+                minSentences: Number(currentStep?.completionCriteria?.min_sentences) || 1,
               })
               : hintMode === 'retention'
                 ? buildRetentionPracticeHintInstruction()

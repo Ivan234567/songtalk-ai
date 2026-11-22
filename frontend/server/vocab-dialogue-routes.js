@@ -242,21 +242,58 @@ export function buildChatPracticeInstruction(targets) {
   ].join('\n')
 }
 
+/** Текст для подсказки дебата: реплика должна закрыть текущий шаг. */
+export function describeDebateHintStep(step) {
+  if (!step || typeof step !== 'object') return ''
+  const criteria = step.completionCriteria && typeof step.completionCriteria === 'object'
+    ? step.completionCriteria
+    : {}
+  const minSentences = Number(criteria.min_sentences) >= 2
+    ? Math.min(3, Number(criteria.min_sentences))
+    : 1
+  const markers = Array.isArray(criteria.required_markers)
+    ? criteria.required_markers
+      .filter((marker) => typeof marker === 'string' && marker.trim() && !/[а-яё]/i.test(marker))
+      .map((marker) => marker.trim())
+      .slice(0, 6)
+    : []
+  const evidence = typeof criteria.evidence_hint_en === 'string' ? criteria.evidence_hint_en.trim() : ''
+  const lines = [
+    `Write one reply of at least ${minSentences} sentence${minSentences > 1 ? 's' : ''}. No second variant.`,
+    'This reply must be enough for the current open step to count as complete.',
+  ]
+  if (criteria.must_reference_opponent === true) {
+    lines.push('Refer to the opponent\'s latest point, then answer it. Do not only add another argument for the learner\'s own side.')
+  }
+  if (markers.length) lines.push(`Use one of these connectors naturally: ${markers.join(', ')}.`)
+  if (evidence) lines.push(`What counts: ${evidence}`)
+  lines.push('If a simpler hint style conflicts with this length or connector, keep the step and simplify only the other words.')
+  return lines.join('\n')
+}
+
 export function buildDebatePracticeHintInstruction(targets, scene = null) {
   const ordered = orderPracticeTargetsForScene(targets, [scene?.topic, scene?.currentStep].filter(Boolean).join(' '))
   const focus = ordered[0]
+  const second = ordered[1]
   const lines = practiceHintTargetLines(ordered)
+  const minSentences = Number(scene?.minSentences) >= 2 ? Math.min(3, Number(scene.minSentences)) : 1
+  const stepClose = typeof scene?.stepClose === 'string' ? scene.stepClose.trim() : ''
   return [
-    'Write ONE example reply the learner can say next in the debate.',
+    'Write ONE reply the learner can say next in the debate.',
     'Use the same language as the opponent, usually English.',
+    stepClose || `The reply must complete the current open step in at least ${minSentences} sentence${minSentences > 1 ? 's' : ''}.`,
+    'Completing the step comes before vocabulary.',
     focus
-      ? `If it fits the opponent's last point, include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
+      ? `If it fits inside that step-closing reply, include this word naturally: ${JSON.stringify(focus.headword)} (${JSON.stringify(focus.gloss_ru)}).`
       : 'No practice word is waiting.',
-    'If the word does not fit, or there is no word, ignore vocabulary and answer from the latest point and the current step.',
-    'Output only that sentence. No labels.',
+    second
+      ? `Add ${JSON.stringify(second.headword)} only when it also fits naturally. Otherwise leave it out.`
+      : '',
+    'If a word does not fit, leave it out and still complete the step.',
+    'Output only the reply. No labels and no second variant.',
     ...sceneContextLines(scene),
-    ...(lines.length ? ['Words still to say:', ...lines] : []),
-  ].join('\n')
+    ...(lines.length ? ['Words still waiting:', ...lines] : []),
+  ].filter(Boolean).join('\n')
 }
 
 export function buildRoleplayPracticeHintInstruction(targets, scene = null) {
