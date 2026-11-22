@@ -62,9 +62,10 @@ export function normalizePracticeMode(raw) {
   return ''
 }
 
-function practiceTargetLines(targets) {
+function practiceTargetLines(targets, { conceal = true } = {}) {
+  const label = conceal ? 'private headword, never quote it' : 'headword'
   return targets.map((target, index) => (
-    `${index + 1}. private headword, never quote it: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
+    `${index + 1}. ${label}: ${JSON.stringify(target.headword)} meaning: ${JSON.stringify(target.gloss_ru)}`
   ))
 }
 
@@ -111,16 +112,16 @@ export function orderPracticeTargetsForScene(targets, sceneText = '') {
 export function buildDebatePracticeInstruction(targets, scene = null) {
   const ordered = orderPracticeTargetsForScene(targets, [scene?.topic, scene?.userPosition, scene?.currentStep].filter(Boolean).join(' '))
   const focus = ordered[0]
-  const lines = practiceTargetLines(ordered)
+  const lines = practiceTargetLines(ordered, { conceal: false })
   return [
     'Hidden vocabulary practice is ACTIVE inside this debate — weave meanings into THIS topic, not a side drill.',
     'Each reply must create a real argumentative need for one unused target meaning.',
     'Never tell the learner to use, say, practice, or insert a word. The meaning itself has to be what the answer needs.',
     focus
-      ? `This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`
+      ? `This turn focus meaning: ${JSON.stringify(focus.gloss_ru)}.`
       : 'Create pressure for the next unused meaning.',
     'Ask a pointed question or raise a counterpoint where that meaning is the natural precise word for THIS debate.',
-    'Never say, spell, translate, or hint the letter shape of any unused headword. Do not say the headword aloud.',
+    'Do not turn the turn into a fill-in-the-blank.',
     'Do not list targets. Keep debate roles, positions, and tone.',
     'Advance the argument every turn — never stall with a generic filler.',
     ...sceneContextLines(scene),
@@ -139,7 +140,7 @@ export function buildRoleplayPracticeInstruction(targets, scene = null) {
     ? orderPracticeTargetsForScene(targets, [currentStep, scene?.stepAction].filter(Boolean).join(' '))
     : []
   const focus = ordered[0]
-  const lines = practiceTargetLines(ordered)
+  const lines = practiceTargetLines(ordered, { conceal: false })
   const linesOut = [
     'Hidden vocabulary practice is ACTIVE inside this roleplay.',
     'You stay IN CHARACTER as the other person in THIS scene (dispatcher, clerk, host). You are not a teacher and not a coach.',
@@ -147,15 +148,14 @@ export function buildRoleplayPracticeInstruction(targets, scene = null) {
     'Never leave the scene. Forbidden: "what would you do next", "what did you try", "what changed", "what would make this easier", "and then", lesson recap, or any meta question about the exercise.',
   ]
   if (scene?.replyLanguage === 'zh') {
-    linesOut.push('Reply in Simplified Chinese only. Stay within the learner HSK. The private headword is hanzi: do not write it or say it before the learner does.')
+    linesOut.push('Reply in Simplified Chinese only. Stay within the learner HSK.')
   }
   if (!sameStep) {
     linesOut.push('The hidden words belong to an earlier step. Ignore them. Play only the current step. Do not start a side quest for leftover words.')
   } else if (focus) {
     linesOut.push('Create an in-world situation where the learner must express one unused target meaning to complete THIS step.')
     linesOut.push('Never tell the learner to use, say, practice, or insert a word. Do not turn the turn into a fill-in-the-blank.')
-    linesOut.push(`This turn focus meaning (do not say the headword): ${JSON.stringify(focus.gloss_ru)}.`)
-    linesOut.push('Never say, spell, translate, or leak any unused headword before the learner uses it.')
+    linesOut.push(`This turn focus meaning: ${JSON.stringify(focus.gloss_ru)}.`)
     linesOut.push('Do not list targets. Keep persona, place, and the current step.')
     if (wordStep) linesOut.push(`These words serve only this step: ${JSON.stringify(wordStep)}.`)
   } else {

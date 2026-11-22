@@ -437,7 +437,7 @@ export function PracticeTodayFive({
         });
       } else if (learningLanguage === 'zh') {
         const result = await generateZhScenario({
-          prompt: `Список ученика «${activeList.title}». Ситуативный диалог, где ученику самому нужно выразить: ${wordBrief(words)}. Не называй эти слова первым и не проси вставить слово.`,
+          prompt: `Список ученика «${activeList.title}». Ситуативный диалог, где ученику самому нужно выразить: ${wordBrief(words)}. Не проси вставить слово и не оставляй пропуск.`,
           hsk_level: hskLevel(level),
           goal: 'Ученик сам говорит значения из своего списка, потому что ситуация этого требует.',
         });
@@ -454,7 +454,7 @@ export function PracticeTodayFive({
         });
       } else {
         const result = await generateUserScenario({
-          prompt: `The learner chose their own list "${activeList.title}". Build one short everyday scene where the learner will naturally need to express these meanings themselves: ${wordBrief(words)}. Do not ask them to use, say, or insert a word. Do not name these English words in the character's first line. Do not make a fill-in-the-blank.`,
+          prompt: `The learner chose their own list "${activeList.title}". Build one short everyday scene where the learner will naturally need to express these meanings themselves: ${wordBrief(words)}. Do not ask them to use, say, or insert a word. Do not make a fill-in-the-blank.`,
           level: cefrLevel(level),
           structured: {
             topic: activeList.title,

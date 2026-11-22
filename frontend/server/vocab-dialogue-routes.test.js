@@ -280,26 +280,31 @@ test('инструкция чата содержит форму из базы и
   assert.match(roleplay, /what would you do next/)
   assert.match(roleplay, /At the market/)
   assert.match(roleplay, /Never tell the learner to use/)
-  assert.match(roleplay, /do not say the headword/)
+  assert.doesNotMatch(roleplay, /do not say the headword/)
+  assert.doesNotMatch(roleplay, /never quote it/)
   assert.match(roleplay, /fill-in-the-blank/)
+  assert.match(roleplay, /apple/)
   const chinese = buildRoleplayPracticeInstruction(
     [{ headword: '苹果', gloss_ru: 'яблоко' }],
     { title: 'В магазине', currentStep: 'Купить фрукт', replyLanguage: 'zh' },
   )
   assert.match(chinese, /Simplified Chinese/)
   assert.match(chinese, /苹果/)
-  assert.match(chinese, /do not say the headword/)
+  assert.doesNotMatch(chinese, /do not say the headword/)
+  assert.doesNotMatch(chinese, /before the learner does/)
   assert.doesNotMatch(chinese, /debate/)
   const debate = buildDebatePracticeInstruction(
     [{ headword: 'apple', gloss_ru: 'яблоко' }],
     { topic: 'School lunches', userPosition: 'For fruit' },
   )
   assert.match(debate, /debate/)
-  assert.match(debate, /Do not say/)
+  assert.doesNotMatch(debate, /do not say the headword/i)
+  assert.doesNotMatch(debate, /never quote it/)
+  assert.match(debate, /fill-in-the-blank/)
   assert.match(debate, /Targets still unused/)
   assert.match(debate, /School lunches/)
   assert.match(debate, /Never tell the learner to use/)
-  assert.match(debate, /private headword, never quote it/)
+  assert.match(debate, /apple/)
 })
 
 test('ответ с целевым словом заменяется одной безопасной репликой', () => {
