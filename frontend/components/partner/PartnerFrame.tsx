@@ -200,6 +200,7 @@ export function PartnerFrame({ children }: { children: ReactNode }) {
           rememberNext
           switchMode="toggle"
           showYandex={false}
+          showPromo={false}
           onAuthenticated={(nextToken) => setToken(nextToken)}
           loginTitle="Партнёрский кабинет"
           loginSubtitle="Войдите в аккаунт"

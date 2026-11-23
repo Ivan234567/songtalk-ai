@@ -23,6 +23,7 @@ type AccountAuthProps = {
   registerSubtitle?: string
   switchMode?: 'link' | 'toggle'
   showYandex?: boolean
+  showPromo?: boolean
 }
 
 export default function AccountAuth({
@@ -36,6 +37,7 @@ export default function AccountAuth({
   registerSubtitle = 'Начните использование сервиса',
   switchMode = 'link',
   showYandex = true,
+  showPromo = true,
 }: AccountAuthProps) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>(initialMode)
@@ -56,8 +58,9 @@ export default function AccountAuth({
   const [promoError, setPromoError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!showPromo) return
     setPromo(storedReferralPrefill())
-  }, [])
+  }, [showPromo])
 
   const translateError = (errorMessage: string): string => {
     const errorMsg = errorMessage.toLowerCase()
@@ -166,7 +169,7 @@ export default function AccountAuth({
     }
     setLoading(true)
     try {
-      const promoResult = await commitRegistrationPromo(promo)
+      const promoResult = await commitRegistrationPromo(showPromo ? promo : '')
       if (promoResult === 'invalid') {
         const message = 'Промокод: латиница, цифры, дефис или подчёркивание, от 2 до 32 символов.'
         setPromoError(message)
@@ -357,7 +360,7 @@ export default function AccountAuth({
               </div>
               {emailError && <p className={styles.authFieldError}>{emailError}</p>}
             </div>
-            <div className={styles.authField}>
+            <div className={`${styles.authField} ${showPromo ? '' : styles.authFieldLast}`}>
               <label className={styles.authLabel} htmlFor="register-password">
                 Пароль
                 <span className={styles.authLabelHint}>(мин. 6 символов, буквы и цифры)</span>
@@ -429,7 +432,7 @@ export default function AccountAuth({
               )}
               {passwordError && <p className={styles.authFieldError}>{passwordError}</p>}
             </div>
-            <div className={`${styles.authField} ${styles.authFieldLast}`}>
+            {showPromo && <div className={`${styles.authField} ${styles.authFieldLast}`}>
               <label className={styles.authLabel} htmlFor="register-promo">
                 Промокод
                 <span className={styles.authLabelHint}>необязательно</span>
@@ -454,7 +457,7 @@ export default function AccountAuth({
                 50 ₽ начислятся только если указан промокод партнёра, от которого вы пришли.
               </p>
               {promoError && <p className={styles.authFieldError}>{promoError}</p>}
-            </div>
+            </div>}
             <button type="submit" disabled={registerDisabled} className={styles.authBtnPrimary}>
               {loading || checkingEmail ? (
                 <>
