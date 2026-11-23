@@ -1,5 +1,6 @@
 const ANON_KEY = 'referral_anonymous_id'
 const CODE_KEY = 'referral_code'
+const VISIT_KEY = 'referral_visit_code'
 const SUBMITTED_KEY = 'referral_submitted_code'
 const RECORDED_KEY = 'referral_click_code'
 const CODE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/
@@ -29,9 +30,16 @@ function anonymousId(): string | null {
   return created
 }
 
+function rememberReferralVisit(value: string | null | undefined): void {
+  if (typeof window === 'undefined' || !value) return
+  const code = value.trim()
+  if (!CODE_RE.test(code)) return
+  window.sessionStorage.setItem(VISIT_KEY, code.toUpperCase())
+}
+
 export function storedReferralPrefill(): string {
   if (typeof window === 'undefined') return ''
-  const value = window.localStorage.getItem(CODE_KEY) || ''
+  const value = window.sessionStorage.getItem(VISIT_KEY) || ''
   return CODE_RE.test(value) ? value.toUpperCase() : ''
 }
 
@@ -101,9 +109,10 @@ export async function ensureReferralClickRecorded(): Promise<void> {
   if (typeof window === 'undefined') return
   const params = new URLSearchParams(window.location.search)
   const pathCode = window.location.pathname.match(/^\/r\/([^/]+)/)
-  const raw = params.get('ref')
+  const fromLink = params.get('ref')
     || (pathCode ? decodeURIComponent(pathCode[1]) : null)
-    || window.localStorage.getItem(CODE_KEY)
+  if (fromLink) rememberReferralVisit(fromLink)
+  const raw = fromLink || window.localStorage.getItem(CODE_KEY)
   if (!raw) return
   await recordReferralClick(raw)
 }
